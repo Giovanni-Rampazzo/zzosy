@@ -11,6 +11,19 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params
   const piece = await prisma.piece.findUnique({ where: { id } })
   if (!piece) return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  // DEBUG: log piece.data structure
+  let pdata: any = null
+  try {
+    pdata = typeof piece.data === "string" ? JSON.parse(piece.data as string) : piece.data
+  } catch {}
+  console.log("[DEBUG-GET-PIECE]", id, "data keys:", pdata ? Object.keys(pdata) : "PARSE_FAIL",
+    "version:", pdata?.version,
+    "layersCount:", Array.isArray(pdata?.layers) ? pdata.layers.length : "NOT_ARRAY",
+    "hasCanvasData:", !!pdata?.canvasData,
+    "rawType:", typeof piece.data,
+    "rawLen:", typeof piece.data === "string" ? (piece.data as string).length : null)
+
   return NextResponse.json(piece)
 }
 
