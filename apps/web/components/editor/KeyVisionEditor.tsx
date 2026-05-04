@@ -142,6 +142,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const [selected, setSelected] = useState<any>(null)
   const [hexInput, setHexInput] = useState<string>("#111111")
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
+  const [selectedTick, setSelectedTick] = useState(0)
   const undoStack = useRef<string[]>([])
   const redoStack = useRef<string[]>([])
   const isDirtyRef = useRef(false)
@@ -884,12 +885,12 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   // Sincroniza hexInput com a cor do objeto selecionado
   useEffect(() => {
     if (selected?.fill) setHexInput(selected.fill)
-  }, [selected?.fill, selected?.id])
+  }, [selected, selectedTick])
 
-  // Sincroniza fontSizeInput com o tamanho do objeto selecionado (quando muda objeto, não a cada keystroke)
+  // Sincroniza fontSizeInput com o tamanho do objeto selecionado
   useEffect(() => {
     if (selected?.fontSize !== undefined) setFontSizeInput(String(Math.round(selected.fontSize)))
-  }, [selected?.id])
+  }, [selected, selectedTick])
 
   function applyStyle(key: string, val: any) {
     const fc = fabricRef.current; const obj = selected
@@ -927,21 +928,9 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
 
     obj.setCoords()
     fc.renderAll()
-    // Força React a re-renderizar o painel com os novos valores
-    // (criamos um proxy leve com os campos que o painel le, preservando referencia metodica do Fabric)
-    setSelected(Object.assign(Object.create(Object.getPrototypeOf(obj)), obj, {
-      fontSize: obj.fontSize,
-      fontFamily: obj.fontFamily,
-      fontWeight: obj.fontWeight,
-      fill: obj.fill,
-      type: obj.type,
-      __assetId: obj.__assetId,
-      __assetLabel: obj.__assetLabel,
-      isEditing: obj.isEditing,
-      selectionStart: obj.selectionStart,
-      selectionEnd: obj.selectionEnd,
-      _ts: Date.now(),
-    }))
+    // Mantém a referencia REAL do Fabric (sem proxy zumbi).
+    // Para forcar re-render do painel, incrementa um contador separado.
+    setSelectedTick(t => t + 1)
     doSave()
   }
 
