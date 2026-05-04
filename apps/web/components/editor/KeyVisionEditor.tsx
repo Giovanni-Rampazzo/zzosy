@@ -208,51 +208,18 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     load()
   }, [campaignId, pieceId])
 
-  // Sempre que voltar para o editor (foco), atualiza dados em memoria.
-  // IMPORTANTE: nao chamamos setCampaign aqui porque isso forçaria re-mount do canvas
-  // e perderia overrides de estilo aplicados localmente (cor por letra etc).
+  // Sempre que voltar para o editor (foco), apenas atualiza campaignRef em memoria.
+  // NAO toca no canvas: qualquer "sync" automatico apaga edicoes locais nao salvas
+  // (cor por letra, tamanho custom, etc). Sync visual real acontece so no remount da pagina.
   useEffect(() => {
     function onFocus() {
       fetch(`/api/campaigns/${campaignId}`).then(r => r.json()).then((d: Campaign) => {
         campaignRef.current = d
-        const fc = fabricRef.current
-        if (!fc) return
-        const assetMap = Object.fromEntries(d.assets.map(a => [a.id, a]))
-        for (const obj of fc.getObjects()) {
-          if (!obj.__assetId || obj.__isBg) continue
-          const a = assetMap[obj.__assetId]
-          if (!a) continue
-          if ((obj.type === "textbox" || obj.type === "i-text") && a.type === "TEXT") {
-            const spans = getSpans(a)
-            const data = spansToTextboxData(spans)
-            if (pieceId) {
-              // PECA: nao mexer em texto/estilos durante o uso normal -- isso resetaria
-              // os styles per-character e os overrides locais que ainda nao foram salvos.
-              // O sync com asset acontece so ao recarregar a pagina (mount inicial).
-            } else {
-              // MATRIZ: atualiza texto + estilo default + styles per-char do asset
-              const def = data.defaultStyle
-              if (obj.text !== data.text) obj.set({ text: data.text })
-              obj.set({ fill: def.color, fontSize: def.fontSize, fontFamily: def.fontFamily, fontWeight: def.fontWeight, styles: data.styles })
-            }
-          }
-          if (!pieceId && obj.type === "image" && a.type === "IMAGE" && a.imageUrl) {
-            // Apenas em modo MATRIZ: trocar imagem se mudou
-            const img = obj as any
-            if (img.getSrc && img.getSrc() !== a.imageUrl) {
-              const el = new window.Image()
-              el.crossOrigin = "anonymous"
-              el.onload = () => { img.setElement(el); fc.renderAll() }
-              el.src = a.imageUrl
-            }
-          }
-        }
-        fc.renderAll()
-      })
+      }).catch(() => {})
     }
     window.addEventListener("focus", onFocus)
     return () => window.removeEventListener("focus", onFocus)
-  }, [campaignId, pieceId])
+  }, [campaignId])
 
   // Atalhos Cmd/Ctrl+Z (undo) e Cmd/Ctrl+Shift+Z (redo)
   useEffect(() => {
@@ -916,20 +883,11 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     if (isText && hasSelection) {
       // Photoshop: aplica so nos caracteres selecionados
       obj.setSelectionStyles({ [styleKey]: value }, selStart, selEnd)
+      if ((obj as any).initDimensions) (obj as any).initDimensions()
     } else if (isText) {
-      // Aplica no textbox inteiro (sem selecao) -- limpa styles per-char e seta default
+      // Aplica como default do textbox. Caracteres com override per-char MANTEM seu estilo
+      // (igual Photoshop: mudar a cor padrao nao apaga as cores das letras especificas).
       obj.set(styleKey, value)
-      const stylesObj = (obj.styles ?? {}) as any
-      for (const lineNum in stylesObj) {
-        for (const charIdx in stylesObj[lineNum]) {
-          if (styleKey in stylesObj[lineNum][charIdx]) {
-            delete stylesObj[lineNum][charIdx][styleKey]
-            if (Object.keys(stylesObj[lineNum][charIdx]).length === 0) delete stylesObj[lineNum][charIdx]
-          }
-        }
-        if (Object.keys(stylesObj[lineNum]).length === 0) delete stylesObj[lineNum]
-      }
-      // Forca o textbox a re-medir e re-renderizar com fonte/tamanho novo
       if ((obj as any).initDimensions) (obj as any).initDimensions()
     } else {
       obj.set(styleKey, value)
