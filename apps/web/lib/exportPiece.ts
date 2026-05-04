@@ -15,7 +15,20 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 function safeName(s: string) {
-  return s.replace(/[^a-zA-Z0-9_\-]/g, "_").substring(0, 80)
+  return s
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/[^a-zA-Z0-9]+/g, "-")                    // tudo que nao for alfanumerico vira '-'
+    .replace(/^-+|-+$/g, "")                           // tira '-' nas pontas
+    .replace(/-{2,}/g, "-")                            // colapsa multiplos '-'
+    .substring(0, 80)
+}
+
+function buildFileName(campaignName: string | undefined, piece: { name: string; width: number; height: number }) {
+  const camp = campaignName ? safeName(campaignName) : ""
+  const midia = safeName(piece.name)
+  const dims = `${Math.round(piece.width)}x${Math.round(piece.height)}`
+  // Formato: CAMPANHA_MIDIA_DIMENSOESxDIMENSOES (separador entre os 3 campos = '_')
+  return [camp, midia, dims].filter(Boolean).join("_")
 }
 
 interface Asset {
@@ -420,7 +433,8 @@ async function buildBlob(piece: { id?: string; name: string; data: any; width: n
 export async function exportPieces(
   pieces: Array<{ id?: string; name: string; data: any; width: number; height: number }>,
   formats: ExportFormat[],
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  campaignName?: string,
 ): Promise<void> {
   const total = pieces.length * formats.length
   if (total === 0) return
@@ -430,7 +444,7 @@ export async function exportPieces(
     const fmt = formats[0]
     onProgress?.(`Gerando ${piece.name} (${fmt})`)
     const blob = await buildBlob(piece, fmt)
-    downloadBlob(blob, `${safeName(piece.name)}.${EXT_MAP[fmt]}`)
+    downloadBlob(blob, `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`)
     return
   }
 
@@ -438,14 +452,13 @@ export async function exportPieces(
   const zip = new JSZip()
   let done = 0
   for (const piece of pieces) {
-    const folder = pieces.length > 1 ? zip.folder(safeName(piece.name)) ?? zip : zip
     for (const fmt of formats) {
       done++
       onProgress?.(`${done}/${total} — ${piece.name} (${fmt})`)
       try {
         const blob = await buildBlob(piece, fmt)
         const buf = await blob.arrayBuffer()
-        folder.file(`${safeName(piece.name)}.${EXT_MAP[fmt]}`, buf)
+        zip.file(`${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`, buf)
       } catch (e) {
         console.error("Falha exportar", piece.name, fmt, e)
       }
@@ -454,9 +467,8 @@ export async function exportPieces(
 
   onProgress?.(`Empacotando zip...`)
   const zipBlob = await zip.generateAsync({ type: "blob" })
-  const zipName = pieces.length === 1
-    ? `${safeName(pieces[0].name)}.zip`
-    : `pecas-${new Date().toISOString().slice(0, 10)}.zip`
+  const zipBase = campaignName ? safeName(campaignName) : "export"
+  const zipName = `${zipBase}_${new Date().toISOString().slice(0, 10)}.zip`
   downloadBlob(zipBlob, zipName)
 }
 
