@@ -621,6 +621,29 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     setSelected(null)
   }
 
+  function fitLayerToCanvas() {
+    const fc = fabricRef.current
+    const obj: any = selected
+    if (!fc || !obj) return
+    const cw = canvasWRef.current, ch = canvasHRef.current
+    // Tamanho real do objeto (sem escala) - pega bounding box logico do textbox/imagem
+    const ow = obj.width ?? 100
+    const oh = obj.height ?? 100
+    if (!ow || !oh) return
+    // Escala que faz o objeto caber por inteiro dentro do canvas (FIT - menor lado limita)
+    const scale = Math.min(cw / ow, ch / oh)
+    const newW = ow * scale
+    const newH = oh * scale
+    // Centralizar
+    const left = (cw - newW) / 2
+    const top = (ch - newH) / 2
+    obj.set({ scaleX: scale, scaleY: scale, left, top, angle: 0 })
+    obj.setCoords()
+    fc.renderAll()
+    setSelectedTick(t => t + 1)
+    doSave()
+  }
+
   function applyZoom(fc: any, z: number) {
     if (!fc || fc.disposed) return
     // Fabric v7 expoe canvas DOM em diferentes propriedades dependendo do estado
@@ -1134,6 +1157,11 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                 </select>
               </div>
             </div>
+            <button onClick={fitLayerToCanvas}
+              style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
+              title="Escala e centraliza o layer dentro da peça">
+              ⊞ Encaixar no canvas
+            </button>
             <div>
               <div style={secS}>Cor</div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -1170,9 +1198,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             </div>
           </div>
         ) : (
-          <div style={{ padding: 16 }}>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{selected.__assetLabel ?? "Elemento"}</div>
-            <div style={{ color: "#444", fontSize: 11, marginTop: 8 }}>Mova e redimensione no canvas.</div>
+            <div style={{ color: "#444", fontSize: 11 }}>Mova e redimensione no canvas.</div>
+            <button onClick={fitLayerToCanvas}
+              style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
+              title="Escala e centraliza o layer dentro da peça">
+              ⊞ Encaixar no canvas
+            </button>
           </div>
         )}
       </div>
