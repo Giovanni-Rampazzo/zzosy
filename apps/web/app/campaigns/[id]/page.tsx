@@ -29,24 +29,34 @@ export default function CampaignOverviewPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadTs, setLoadTs] = useState(Date.now())
 
   async function loadAll() {
     const [c, p] = await Promise.all([
-      fetch(`/api/campaigns/${id}`).then(r => r.json()),
-      fetch(`/api/pieces?campaignId=${id}`).then(r => r.json()),
+      fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
+      fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
     ])
     setCampaign(c)
     setPieces(Array.isArray(p) ? p : [])
+    setLoadTs(Date.now())
     setLoading(false)
   }
 
   useEffect(() => { loadAll() }, [id])
 
-  // Sempre que voltar pro overview (foco na aba), recarregar para pegar thumb novo do KV/peças
+  // Sempre que a overview volta a ficar ativa, recarrega para pegar thumb novo do KV/peças.
+  // Cobre todos os cenarios: troca de aba, navegacao SPA, back/forward, etc.
   useEffect(() => {
-    function onFocus() { loadAll() }
-    window.addEventListener("focus", onFocus)
-    return () => window.removeEventListener("focus", onFocus)
+    function refetch() { loadAll() }
+    window.addEventListener("focus", refetch)
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refetch()
+    })
+    window.addEventListener("pageshow", refetch)
+    return () => {
+      window.removeEventListener("focus", refetch)
+      window.removeEventListener("pageshow", refetch)
+    }
   }, [id])
 
   async function deletePiece(pieceId: string) {
@@ -108,7 +118,7 @@ export default function CampaignOverviewPage() {
               color: "#aaa", fontSize: 13, position: "relative", overflow: "hidden"
             }}>
               {campaign.keyVision?.thumbnailUrl ? (
-                <img src={`${campaign.keyVision.thumbnailUrl}?v=${encodeURIComponent(campaign.keyVision.updatedAt ?? "")}`} alt="KV preview"
+                <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
                   style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               ) : (
                 <span>{kvW} × {kvH}</span>
