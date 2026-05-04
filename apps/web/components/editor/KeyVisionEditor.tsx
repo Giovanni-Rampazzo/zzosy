@@ -465,11 +465,28 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         const savedLayers = c.keyVision?.layers
         if (savedLayers && Array.isArray(savedLayers) && savedLayers.length > 0) {
           const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
-          const sorted = [...savedLayers].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+          const sorted = [...savedLayers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
           for (const layer of sorted) {
             const asset = assetMap[layer.assetId] as Asset
             if (!asset) continue
             await addAssetToCanvas(fc, asset, layer)
+            // Aplicar overrides depois (igual modo peça)
+            const objs = fc.getObjects()
+            const created = objs[objs.length - 1] as any
+            if (created && (created.type === "textbox" || created.type === "i-text") && (layer as any).overrides) {
+              const ov = (layer as any).overrides
+              if (ov.fill !== undefined) created.set("fill", ov.fill)
+              if (ov.fontSize !== undefined) created.set("fontSize", ov.fontSize)
+              if (ov.fontFamily !== undefined) created.set("fontFamily", ov.fontFamily)
+              if (ov.fontWeight !== undefined) created.set("fontWeight", ov.fontWeight)
+              if (ov.charSpacing !== undefined) created.set("charSpacing", ov.charSpacing)
+              if (ov.lineHeight !== undefined) created.set("lineHeight", ov.lineHeight)
+              if (ov.textAlign !== undefined) created.set("textAlign", ov.textAlign)
+              if (ov.styles !== undefined) {
+                created.set("styles", ov.styles)
+                if (created.initDimensions) created.initDimensions()
+              }
+            }
           }
         }
       }
@@ -831,19 +848,35 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         setIsDirty(false)
       } else {
         // MODO MATRIZ
-        const layersToSave: Layer[] = fc.getObjects()
+        const layersToSave: any[] = fc.getObjects()
           .filter((o: any) => !o.__isBg)
-          .map((o: any, i: number) => ({
-            assetId: o.__assetId ?? "",
-            posX: Math.round(o.left ?? 0),
-            posY: Math.round(o.top ?? 0),
-            scaleX: o.scaleX ?? 1,
-            scaleY: o.scaleY ?? 1,
-            rotation: o.angle ?? 0,
-            zIndex: i,
-            width: Math.round(o.width ?? 400),
-            height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
-          }))
+          .map((o: any, i: number) => {
+            const layer: any = {
+              assetId: o.__assetId ?? "",
+              posX: Math.round(o.left ?? 0),
+              posY: Math.round(o.top ?? 0),
+              scaleX: o.scaleX ?? 1,
+              scaleY: o.scaleY ?? 1,
+              rotation: o.angle ?? 0,
+              zIndex: i,
+              width: Math.round(o.width ?? 400),
+              height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
+              overrides: {},
+            }
+            // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
+            // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset
+            if (o.type === "textbox" || o.type === "i-text") {
+              layer.overrides.fill = o.fill
+              layer.overrides.fontSize = o.fontSize
+              layer.overrides.fontFamily = o.fontFamily
+              layer.overrides.fontWeight = o.fontWeight
+              if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
+              if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
+              if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
+              if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
+            }
+            return layer
+          })
         await fetch(`/api/campaigns/${campaignId}/key-vision`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
@@ -961,7 +994,11 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           const go = () => router.push(`/campaigns/${campaignId}`)
           if (isDirtyRef.current) setConfirmExit(() => go)
           else go()
-        }} style={{ ...bS, fontSize: 13 }}>← {isPieceMode && piece ? `${piece.name}` : campaign.name}</button>
+        }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
+          title="Voltar para a campanha">
+          ← Voltar para campanha
+        </button>
+        <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
         <div style={{ flex: 1 }} />
         {saving && <span style={{ fontSize: 11, color: "#555" }}>Salvando...</span>}
         <span style={{ fontSize: 11, color: "#555" }}>{canvasW} × {canvasH}</span>
