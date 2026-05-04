@@ -36,10 +36,16 @@ function PiecesContent() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<"grid" | "list">("grid")
   const [exportOpen, setExportOpen] = useState(false)
+  const [campaignName, setCampaignName] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const url = campaignId ? `/api/pieces?campaignId=${campaignId}` : "/api/pieces"
     fetch(url).then(r => r.json()).then(d => { setPieces(d); setLoading(false) })
+    if (campaignId) {
+      fetch(`/api/campaigns/${campaignId}`).then(r => r.json()).then((c: any) => {
+        setCampaignName(c?.title ?? c?.name)
+      }).catch(() => {})
+    }
   }, [campaignId])
 
   function toggleSelect(id: string) {
@@ -161,6 +167,7 @@ function PiecesContent() {
       {exportOpen && (
         <ExportDialog
           pieces={pieces.filter(p => selected.includes(p.id)).map(p => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height }))}
+          campaignName={campaignName}
           onClose={() => setExportOpen(false)}
         />
       )}
