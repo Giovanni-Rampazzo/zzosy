@@ -666,11 +666,12 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         editable: true,
         scaleX, scaleY, angle,
       })
-      // Aplicar styles per-char DEPOIS da criação (Fabric Textbox às vezes ignora styles no construtor)
-      if (data.styles && Object.keys(data.styles).length > 0) {
-        ;(t as any).set("styles", data.styles)
-        if ((t as any).initDimensions) (t as any).initDimensions()
-      }
+      // NOTA: NAO aplicar `data.styles` per-char vindos do asset aqui.
+      // O texto literal (caracteres) eh fonte de verdade no asset; quando o usuario edita o
+      // texto na pagina de assets, o numero de caracteres muda e os indices dos styles ficam
+      // dessincronizados. Comportamento Photoshop-style: estilo default vem do asset,
+      // styles per-char so existem quando editados localmente DENTRO do editor da matriz
+      // (e a partir desse momento sao parte do estado do textbox no canvas, nao do asset).
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
       fc.add(t)
