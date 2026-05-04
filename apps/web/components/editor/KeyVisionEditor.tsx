@@ -1165,6 +1165,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             width: canvasWRef.current,
             height: canvasHRef.current,
           }]}
+          campaignName={(campaign as any)?.title ?? (campaign as any)?.name}
           onClose={() => setExportOpen(false)}
         />
       )}
