@@ -335,7 +335,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:cleared", () => setSelected(null))
       fc.on("object:modified", () => { if (alive) doSave() })
-      fc.on("text:changed", (e: any) => { if (alive && e?.target) setSelected((s: any) => s === e.target ? Object.assign(Object.create(Object.getPrototypeOf(e.target)), e.target) : s) })
+      fc.on("text:changed", () => { if (alive) setSelectedTick(t => t + 1) })
       fc.on("object:added", () => { if (alive) refreshLayers(fc) })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
       // Captura mudancas para historico de undo/redo
@@ -419,7 +419,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         ;(fc as any).__blockPasteHandler = onPaste
       }
 
-      // Restaurar layers
+      // Restaurar layers (bloquear push history para nao poluir undo stack durante init)
+      isApplyingHistory.current = true
       const c = campaignRef.current!
       if (pieceId && pieceRef.current) {
         // MODO PEÇA v2: layers + assets (sync automatico com asset)
@@ -514,6 +515,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
+      isApplyingHistory.current = false
     }
 
     init()
