@@ -286,6 +286,20 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   const agpsd = await import("ag-psd") as any
 
   const psdLayers: any[] = []
+
+  // BACKGROUND: adiciona como primeira layer (vai pro fundo no Photoshop) com a cor de fundo do canvas
+  const bgColor = data?.bgColor ?? "#ffffff"
+  const bgCanvas = document.createElement("canvas")
+  bgCanvas.width = W; bgCanvas.height = H
+  const bgCtx = bgCanvas.getContext("2d")!
+  bgCtx.fillStyle = bgColor
+  bgCtx.fillRect(0, 0, W, H)
+  psdLayers.push({
+    name: "Background",
+    top: 0, left: 0, bottom: H, right: W,
+    canvas: bgCanvas,
+  })
+
   for (const obj of objects) {
     if ((obj as any).__isBg) continue
     const ox = obj.left ?? 0
