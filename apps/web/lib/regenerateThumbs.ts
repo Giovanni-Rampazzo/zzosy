@@ -110,3 +110,43 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
     }
   }
 }
+
+
+// Regenera o thumbnail do KV (matriz) a partir dos assets atuais.
+// Usa-se a mesma logica de buildThumbnailFromPieceData mas para o keyVision.
+export async function regenerateKVThumb(campaignId: string): Promise<void> {
+  const camp = await fetch(`/api/campaigns/${campaignId}`).then(r => r.json())
+  const kv = camp?.keyVision
+  if (!kv) return
+  let kvData: any = null
+  try {
+    kvData = typeof kv.data === "string" ? JSON.parse(kv.data) : kv.data
+  } catch {}
+  // KV usa layers no formato Fabric serializado em kv.data.layers (canvasData) ou
+  // em kv.layers como array de assetIds com posicao. Se nao tiver layers utilizaveis, sai.
+  // Mais simples: usa kv.layers (cada item: assetId/posX/posY/scaleX/scaleY/rotation/zIndex/width/height/overrides?)
+  let layers: any[] = []
+  if (Array.isArray(kv.layers)) layers = kv.layers
+  else if (Array.isArray(kvData?.layers)) layers = kvData.layers
+
+  if (!layers.length) return
+
+  // Reaproveita buildThumbnailFromPieceData usando um pseudo-pieceData
+  const pseudoPiece = {
+    version: 2,
+    width: kv.width ?? 1080,
+    height: kv.height ?? 1080,
+    bgColor: kv.bgColor ?? "#ffffff",
+    layers,
+  }
+  const assets: Asset[] = camp.assets ?? []
+  try {
+    const blob = await buildThumbnailFromPieceData(pseudoPiece, assets)
+    if (!blob) return
+    const fd = new FormData()
+    fd.append("thumbnail", blob, "kv-thumb.jpg")
+    await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+  } catch (e) {
+    console.warn("regen KV thumb falhou:", e)
+  }
+}
