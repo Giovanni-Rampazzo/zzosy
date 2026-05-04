@@ -26,6 +26,8 @@ const DEFAULT_W = 1920, DEFAULT_H = 1080
 const LW = 220, PW = 260, TH = 48, BH = 44
 const FONTS = ["Arial","Arial Black","Georgia","Times New Roman","Courier New","Verdana","Impact","Trebuchet MS","Helvetica Neue"]
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
+// Margem em volta da peça onde layers podem vazar e seus handles ficam acessíveis (em unidades do canvas, antes do zoom)
+const CANVAS_PADDING = 200
 
 function parseContent(raw: any): TextSpan[] {
   if (!raw) return []
@@ -280,13 +282,19 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       zoomRef.current = z
       setZoom(z)
 
+      // Canvas DOM com area de respiro (PADDING) em volta da peça pra layers vazarem
+      const totalW = Math.round((cw + CANVAS_PADDING * 2) * z)
+      const totalH = Math.round((ch + CANVAS_PADDING * 2) * z)
       const fc = new Canvas(canvasRef.current, {
-        width: Math.round(cw * z),
-        height: Math.round(ch * z),
+        width: totalW,
+        height: totalH,
         selection: true,
         preserveObjectStacking: true,
+        backgroundColor: "#1e1e1e",  // cinza escuro = area "fora da peça"
       })
-      fc.setZoom(z)
+      // Viewport: zoom z + offset PADDING*z (assim coordenadas dos objetos comecam em 0,0 = canto da peça)
+      const offset = CANVAS_PADDING * z
+      fc.setViewportTransform([z, 0, 0, z, offset, offset])
       fabricRef.current = fc
 
       const bg = new Rect({
@@ -630,7 +638,23 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     setZoom(z)
     try {
       fc.setZoom(z)
-      fc.setDimensions({ width: Math.round(canvasWRef.current * z), height: Math.round(canvasHRef.current * z) })
+      // Canvas DOM = (peça + 2*padding) * zoom. Permite layers vazarem pra fora da peça
+      // mantendo handles de transformação acessíveis. ViewportTransform desloca a "vista"
+      // por +PADDING para que coordenada (0,0) do objeto continue sendo o canto da peça.
+      const cw = canvasWRef.current, ch = canvasHRef.current
+      const totalW = Math.round((cw + CANVAS_PADDING * 2) * z)
+      const totalH = Math.round((ch + CANVAS_PADDING * 2) * z)
+      fc.setDimensions({ width: totalW, height: totalH })
+      // Aplicar viewport transform com offset = PADDING * zoom
+      // Mantem zoom z mas desloca conteudo por (PADDING*z, PADDING*z)
+      const offset = CANVAS_PADDING * z
+      fc.setViewportTransform([z, 0, 0, z, offset, offset])
+      // Reposicionar o bg para cobrir exatamente a area da peça (canto 0,0 em coord do canvas)
+      const bg = bgRef.current
+      if (bg) {
+        bg.set({ left: 0, top: 0, width: cw, height: ch })
+        bg.setCoords()
+      }
       fc.renderAll()
     } catch (e) { console.warn("applyZoom fail:", e) }
   }
