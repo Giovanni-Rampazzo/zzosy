@@ -569,11 +569,22 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         const r = fc.loadFromJSON(JSON.parse(snap), () => resolve())
         if (r && typeof r.then === "function") r.then(() => resolve())
       })
-      await new Promise(r => setTimeout(r, 80))
+      // CRITICO: loadFromJSON substitui TODOS os objetos do canvas pelos do snapshot.
+      // Como o bg eh excludeFromExport, ele nao esta no snapshot e some apos undo/redo.
+      // Re-adiciona o bg no fundo (Photoshop-style: background sempre presente).
+      const { Rect } = await import("fabric")
+      const newBg = new Rect({
+        left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
+        fill: bgColorRef.current,
+        selectable: false, evented: false, excludeFromExport: true,
+      })
+      ;(newBg as any).__isBg = true
+      bgRef.current = newBg
+      fc.add(newBg)
+      fc.sendObjectToBack(newBg)
       fc.renderAll()
-    } finally {
-      isApplyingHistory.current = false
-    }
+    } catch (e) { console.warn("applySnapshot fail:", e) }
+    isApplyingHistory.current = false
   }
 
   async function undo() {
