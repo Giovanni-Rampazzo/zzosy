@@ -450,7 +450,10 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               if (layer.overrides.charSpacing !== undefined) created.set("charSpacing", layer.overrides.charSpacing)
               if (layer.overrides.lineHeight !== undefined) created.set("lineHeight", layer.overrides.lineHeight)
               if (layer.overrides.textAlign !== undefined) created.set("textAlign", layer.overrides.textAlign)
-              if (layer.overrides.styles !== undefined) created.set("styles", layer.overrides.styles)
+              if (layer.overrides.styles !== undefined) {
+                created.set("styles", layer.overrides.styles)
+                if (created.initDimensions) created.initDimensions()
+              }
               ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
               // Em modo peca, deixa editavel pra permitir seleção de caracteres,
               // mas o key handler abaixo bloqueia digitacao real
@@ -669,8 +672,12 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         fill: def.color ?? "#111111",
         editable: true,
         scaleX, scaleY, angle,
-        styles: data.styles,
       })
+      // Aplicar styles per-char DEPOIS da criação (Fabric Textbox às vezes ignora styles no construtor)
+      if (data.styles && Object.keys(data.styles).length > 0) {
+        ;(t as any).set("styles", data.styles)
+        if ((t as any).initDimensions) (t as any).initDimensions()
+      }
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
       fc.add(t)
