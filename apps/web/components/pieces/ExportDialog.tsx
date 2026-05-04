@@ -13,6 +13,7 @@ interface PieceLite {
 interface Props {
   pieces: PieceLite[]
   onClose: () => void
+  campaignName?: string
 }
 
 const FORMATS: { value: ExportFormat; label: string; desc: string }[] = [
@@ -22,7 +23,7 @@ const FORMATS: { value: ExportFormat; label: string; desc: string }[] = [
   { value: "PDF", label: "PDF", desc: "PDF com pagina unica do tamanho exato da peca" },
 ]
 
-export function ExportDialog({ pieces, onClose }: Props) {
+export function ExportDialog({ pieces, onClose, campaignName }: Props) {
   const [selectedFormats, setSelectedFormats] = useState<ExportFormat[]>(["PNG"])
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState("")
@@ -35,7 +36,7 @@ export function ExportDialog({ pieces, onClose }: Props) {
     if (!selectedFormats.length) return
     setExporting(true)
     try {
-      await exportPieces(pieces, selectedFormats, setProgress)
+      await exportPieces(pieces, selectedFormats, setProgress, campaignName)
     } catch (e) {
       console.error("Falha geral na exportacao", e)
     }
