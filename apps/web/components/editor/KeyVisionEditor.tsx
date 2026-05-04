@@ -1086,13 +1086,12 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               <div>
                 <div style={secS}>Tamanho</div>
                 <input
+                  key={`fs-${(selected as any).__assetId ?? "x"}-${selectedTick}`}
                   type="number"
-                  value={fontSizeInput}
-                  onChange={e => setFontSizeInput(e.target.value)}
-                  onBlur={() => {
-                    const n = Number(fontSizeInput)
+                  defaultValue={Math.round(selected.fontSize ?? 80)}
+                  onBlur={(e) => {
+                    const n = Number((e.target as HTMLInputElement).value)
                     if (Number.isFinite(n) && n > 0) applyStyle("fontSize", n)
-                    else setFontSizeInput(String(Math.round(selected?.fontSize ?? 80)))
                   }}
                   onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
                   style={inpS}
