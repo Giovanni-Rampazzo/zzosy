@@ -60,6 +60,29 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
         const spans = parseContent(asset.content)
         const fullText = spans.length ? spans.map((s: any) => s.text).join("") : (asset.value ?? asset.label)
         const def = spans[0]?.style ?? {}
+        // Calcular styles per-char a partir dos spans (usados quando peça NAO tem overrides.styles)
+        let assetStyles: any = undefined
+        if (spans.length > 1) {
+          const stylesMap: Record<number, Record<number, any>> = {}
+          let lineNum = 0, col = 0
+          const defaultKey = JSON.stringify(def)
+          for (const span of spans) {
+            const sStyle = span.style ?? {}
+            const sKey = JSON.stringify(sStyle)
+            for (const ch of (span.text ?? "")) {
+              if (ch === "\n") { lineNum++; col = 0; continue }
+              if (sKey !== defaultKey) {
+                if (!stylesMap[lineNum]) stylesMap[lineNum] = {}
+                stylesMap[lineNum][col] = {
+                  fill: sStyle.color, fontSize: sStyle.fontSize,
+                  fontWeight: sStyle.fontWeight, fontFamily: sStyle.fontFamily,
+                }
+              }
+              col++
+            }
+          }
+          if (Object.keys(stylesMap).length > 0) assetStyles = stylesMap
+        }
         const t = new Textbox(fullText, {
           left: layer.posX, top: layer.posY,
           width: Math.max(layer.width ?? 400, 100),
@@ -73,8 +96,14 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
           charSpacing: overrides.charSpacing ?? 0,
           lineHeight: overrides.lineHeight ?? 1.16,
           textAlign: overrides.textAlign ?? "left",
-          styles: overrides.styles ?? undefined,
         })
+        // Aplicar styles per-char DEPOIS (Fabric Textbox ignora styles no construtor)
+        // Prioridade: overrides.styles (peca) > assetStyles (matriz/asset)
+        const finalStyles = overrides.styles ?? assetStyles
+        if (finalStyles && Object.keys(finalStyles).length > 0) {
+          ;(t as any).set("styles", finalStyles)
+          if ((t as any).initDimensions) (t as any).initDimensions()
+        }
         ;(t as any).__assetId = asset.id
         ;(t as any).__assetLabel = asset.label
         fc.add(t)
