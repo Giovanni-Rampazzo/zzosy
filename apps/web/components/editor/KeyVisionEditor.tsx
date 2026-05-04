@@ -538,13 +538,36 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     if (!fc) return
     isApplyingHistory.current = true
     try {
+      // Parse o snapshot pra ter acesso aos dados originais (precisaremos pra restaurar
+      // styles per-char e props customizadas que loadFromJSON pode perder)
+      const snapData = JSON.parse(snap)
+      const snapObjects: any[] = Array.isArray(snapData?.objects) ? snapData.objects : []
+
       await new Promise<void>((resolve) => {
-        const r = fc.loadFromJSON(JSON.parse(snap), () => resolve())
+        const r = fc.loadFromJSON(snapData, () => resolve())
         if (r && typeof r.then === "function") r.then(() => resolve())
       })
-      // CRITICO: loadFromJSON substitui TODOS os objetos do canvas pelos do snapshot.
-      // Como o bg eh excludeFromExport, ele nao esta no snapshot e some apos undo/redo.
-      // Re-adiciona o bg no fundo (Photoshop-style: background sempre presente).
+
+      // CRITICO 1: Fabric Textbox ignora `styles` no construtor. Apos loadFromJSON,
+      // os textboxes restaurados perdem styles per-char. Reaplica manualmente do snapshot.
+      // CRITICO 2: __assetId / __assetLabel podem se perder na reconstrucao - garante.
+      const restored = fc.getObjects().filter((o: any) => !o.__isBg)
+      for (let i = 0; i < restored.length; i++) {
+        const obj: any = restored[i]
+        const src = snapObjects[i]
+        if (!src) continue
+        // Restaurar props customizadas
+        if (src.__assetId !== undefined) obj.__assetId = src.__assetId
+        if (src.__assetLabel !== undefined) obj.__assetLabel = src.__assetLabel
+        if (src.__isImage !== undefined) obj.__isImage = src.__isImage
+        // Restaurar styles per-char em textboxes
+        if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
+          obj.set("styles", src.styles)
+          if (obj.initDimensions) obj.initDimensions()
+        }
+      }
+
+      // CRITICO 3: bg tem excludeFromExport=true, fica fora do snapshot. Re-adiciona no fundo.
       const { Rect } = await import("fabric")
       const newBg = new Rect({
         left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
@@ -556,6 +579,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.add(newBg)
       fc.sendObjectToBack(newBg)
       fc.renderAll()
+      refreshLayers(fc)
     } catch (e) { console.warn("applySnapshot fail:", e) }
     isApplyingHistory.current = false
   }
