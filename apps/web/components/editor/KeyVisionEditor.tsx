@@ -302,7 +302,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:cleared", () => setSelected(null))
       fc.on("object:modified", () => { if (alive) doSave() })
-      fc.on("text:changed", () => { if (alive) { setSelectedTick(t => t + 1); refreshLayers(fc) } })
+      fc.on("text:changed", () => { if (alive) setSelectedTick(t => t + 1) })
       fc.on("object:added", () => { if (alive) refreshLayers(fc) })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
       // Captura mudancas para historico de undo/redo
@@ -722,16 +722,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     setLayers(
       fc.getObjects()
         .filter((o: any) => !o.__isBg)
-        .map((o: any, i: number) => {
-          // Para textboxes, usa o conteudo do texto como label (igual Photoshop).
-          // Para imagens/outros, mantem __assetLabel.
-          let label = o.__assetLabel ?? o.type
-          if (o.type === "textbox" || o.type === "i-text") {
-            const txt = (o.text ?? "").trim().replace(/\s+/g, " ")
-            if (txt.length > 0) label = txt.length > 32 ? txt.substring(0, 32) + "…" : txt
-          }
-          return { id: i, label, type: o.type, obj: o }
-        })
+        .map((o: any, i: number) => ({ id: i, label: o.__assetLabel ?? o.type, type: o.type, obj: o }))
         .reverse()
     )
   }
