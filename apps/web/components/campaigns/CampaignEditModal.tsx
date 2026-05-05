@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 interface CampaignData {
   id: string
   name: string
-  description?: string | null
 }
 
 interface Props {
@@ -15,7 +14,6 @@ interface Props {
 
 export function CampaignEditModal({ campaign, onClose, onSaved }: Props) {
   const [name, setName] = useState(campaign.name ?? "")
-  const [description, setDescription] = useState(campaign.description ?? "")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,10 +29,7 @@ export function CampaignEditModal({ campaign, onClose, onSaved }: Props) {
     try {
       const res = await fetch(`/api/campaigns/${campaign.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || null,
-        }),
+        body: JSON.stringify({ name: name.trim() }),
       })
       if (!res.ok) throw new Error()
       const updated = await res.json()
@@ -67,11 +62,6 @@ export function CampaignEditModal({ campaign, onClose, onSaved }: Props) {
           <div>
             <label style={labelStyle}>Nome*</label>
             <input value={name} onChange={e => setName(e.target.value)} style={inputStyle} autoFocus />
-          </div>
-          <div>
-            <label style={labelStyle}>Descrição</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
-              style={{ ...inputStyle, resize: "vertical", minHeight: 60 }} rows={3} />
           </div>
           {error && <div style={{ color: "#dc2626", fontSize: 12 }}>{error}</div>}
         </div>
