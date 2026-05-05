@@ -35,6 +35,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
   const [progress, setProgress] = useState("")
 
   async function handleFile(file: File) {
+    if (loading) return // guard de re-entrada
     setLoading(true)
     setError("")
     setProgress("Lendo PSD...")
@@ -55,8 +56,6 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       const allLayers = collectAllLayers(psd.children ?? [])
       const assets: any[] = []
       const imageBlobs: Blob[] = []
-      // ag-psd retorna children na ordem do arquivo PSD: [0] = embaixo, [N] = topo
-      // zIndex 0 = embaixo, N = topo (mesmo sentido)
       let zIndex = 0
 
       for (const layer of allLayers) {
@@ -71,8 +70,6 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         if (layer.text) {
           const td = layer.text
           const rawText = String(td.text ?? name).split("\r\n").join("\n").split("\r").join("\n")
-
-          // Preserva styleRuns do PSD original (cor/fonte/tamanho por trecho)
           const defStyle = td.style ?? {}
           const defFontName = defStyle.font?.name ?? "Arial"
           const defFontSize = defStyle.fontSize ?? 48
@@ -82,7 +79,6 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           let spans: any[] = []
           const runs = td.styleRuns ?? []
           if (runs.length > 0) {
-            // Fragmenta o texto em spans seguindo os styleRuns
             let cursor = 0
             for (const run of runs) {
               const len = run.length ?? 0
@@ -96,7 +92,6 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontFamily: fontName } })
               cursor += len
             }
-            // Restante (se houver) com style padrao
             if (cursor < rawText.length) {
               spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(defFontSize), fontWeight: defWeight, fontFamily: defFontName } })
             }
@@ -141,10 +136,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       fd.append("bgColor", "#ffffff")
       imageBlobs.forEach((b, i) => fd.append("images", b, `layer-${i}.png`))
 
-      const res = await fetch(`/api/campaigns/${campaignId}/import-psd`, {
-        method: "POST",
-        body: fd,
-      })
+      const res = await fetch(`/api/campaigns/${campaignId}/import-psd`, { method: "POST", body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? "Falha ao importar")
 
@@ -158,6 +150,9 @@ export function PsdImporter({ campaignId, onImported }: Props) {
     }
   }
 
+  // Padrão: <label> envolvendo <input> SEM disabled no input.
+  // O `loading` controla só o visual (cursor/opacity) e o guard interno em handleFile.
+  // Isso evita que o input fique travado caso loading fique preso em true por algum bug.
   return (
     <>
       <label
@@ -168,13 +163,13 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           cursor: loading ? "wait" : "pointer",
           opacity: loading ? 0.6 : 1,
           userSelect: "none",
+          height: "fit-content",
         }}>
         {loading ? (progress || "Processando...") : "Importar PSD"}
         <input
           type="file"
           accept=".psd"
           style={{ display: "none" }}
-          disabled={loading}
           onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = "" }}
         />
       </label>
