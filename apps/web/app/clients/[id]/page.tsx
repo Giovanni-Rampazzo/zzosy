@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
+import { ClientEditModal } from "@/components/clients/ClientEditModal"
 
 interface Campaign {
   id: string; name: string; createdAt: string; _count: { pieces: number }
@@ -21,6 +22,7 @@ export default function ClientPage() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null) // campanha id
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false)
   const [activeTab, setActiveTab] = useState("campaigns")
+  const [showEditModal, setShowEditModal] = useState(false)
 
   async function load() {
     const res = await fetch(`/api/clients/${id}`)
@@ -59,11 +61,15 @@ export default function ClientPage() {
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
             <div>
-              <div style={{fontSize:20,fontWeight:700, display:"flex", alignItems:"center"}}><EditableText value={client.name} variant="h2" onSave={async (newName) => {
-                const res = await fetch(`/api/clients/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
-                if (!res.ok) throw new Error()
-                setClient(c => c ? { ...c, name: newName } : c)
-              }} /></div>
+              <div style={{fontSize:20,fontWeight:700, display:"flex", alignItems:"center", gap: 10}}>
+                <span>{client.name}</span>
+                <button
+                  onClick={() => setShowEditModal(true)}
+                  style={{ padding: "5px 12px", fontSize: 11, fontWeight: 600, background: "#f0f0f0", color: "#555", border: "none", borderRadius: 6, cursor: "pointer" }}
+                >
+                  Editar
+                </button>
+              </div>
               {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
             </div>
             <div style={{display:"flex",gap:10}}>
@@ -162,6 +168,14 @@ export default function ClientPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showEditModal && client && (
+        <ClientEditModal
+          client={client}
+          onClose={() => setShowEditModal(false)}
+          onSaved={(u) => setClient(prev => prev ? { ...prev, ...u } : prev)}
+        />
       )}
 
       {showModal && (
