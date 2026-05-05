@@ -5,6 +5,7 @@ import { Suspense } from "react"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
+import { EditableText } from "@/components/EditableText"
 
 interface Piece {
   id: string
@@ -116,7 +117,11 @@ function PiecesContent() {
                   </div>
                 </div>
                 <div className="p-3">
-                  <div className="text-xs font-semibold truncate">{p.name}</div>
+                  <div className="text-xs font-semibold" onClick={(e) => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
+                    const res = await fetch(`/api/pieces/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
+                    if (!res.ok) throw new Error()
+                    setPieces(prev => prev.map(x => x.id === p.id ? { ...x, name: newName } : x))
+                  }} /></div>
                   <div className="flex items-center justify-between mt-1">
                     <div className="text-xs text-[#888888]">{p.width}×{p.height} px</div>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[p.status]?.color}`}>
@@ -151,7 +156,11 @@ function PiecesContent() {
                         {isSelected(p.id) && <div className="w-2 h-2 bg-white rounded-sm" />}
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-sm">{p.name}</td>
+                    <td className="px-4 py-3 font-semibold text-sm" onClick={e => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
+                      const res = await fetch(`/api/pieces/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
+                      if (!res.ok) throw new Error()
+                      setPieces(prev => prev.map(x => x.id === p.id ? { ...x, name: newName } : x))
+                    }} /></td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.format}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.width}×{p.height}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.dpi}</td>
