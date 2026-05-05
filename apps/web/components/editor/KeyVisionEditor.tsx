@@ -638,6 +638,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     const fc = fabricRef.current
     if (!fc) return
     isApplyingHistory.current = true
+    // Limpa o snapshot pre-mouse-down pra nao confundir
+    beforeModifySnapRef.current = null
     try {
       // Parse o snapshot pra ter acesso aos dados originais (precisaremos pra restaurar
       // styles per-char e props customizadas que loadFromJSON pode perder)
@@ -1137,7 +1139,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         <button
           onClick={undo}
           title="Desfazer (Cmd+Z)"
-          disabled={undoStack.current.length < 2}
+          disabled={undoStack.current.length === 0}
           style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: undoStack.current.length < 2 ? "not-allowed" : "pointer", color: undoStack.current.length < 2 ? "#444" : "#aaa", opacity: undoStack.current.length < 2 ? 0.5 : 1 }}
         >↶</button>
         <button
