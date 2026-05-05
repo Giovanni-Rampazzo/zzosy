@@ -3,7 +3,6 @@ import { useEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
-import { EditableText } from "@/components/EditableText"
 import dynamic from "next/dynamic"
 
 const PsdImporter = dynamic(
@@ -134,17 +133,13 @@ export default function CampaignAssetsPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, gap: 16 }}>
           <div>
             <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display: "flex", gap: 6, alignItems: "center" }}>
-              <EditableText value={campaign.client.name} variant="inline" onSave={async (newName) => {
-                const res = await fetch(`/api/clients/${campaign.client.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
-                if (!res.ok) throw new Error()
-                setCampaign(c => c ? { ...c, client: { ...c.client, name: newName } } : c)
-              }} />
+              <span style={{ cursor: "pointer", color: "#888" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
+                {campaign.client.name}
+              </span>
               <span>/</span>
-              <EditableText value={campaign.name} variant="inline" onSave={async (newName) => {
-                const res = await fetch(`/api/campaigns/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
-                if (!res.ok) throw new Error()
-                setCampaign(c => c ? { ...c, name: newName } : c)
-              }} />
+              <span style={{ cursor: "pointer", color: "#888" }} onClick={() => router.push(`/campaigns/${id}`)}>
+                {campaign.name}
+              </span>
               <span>/</span>
               <span>Assets</span>
             </div>
@@ -183,12 +178,8 @@ export default function CampaignAssetsPage() {
                     <div style={{ fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
                       {asset.type === "TEXT" ? "Texto" : "Imagem"}
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>
-                      <EditableText value={asset.label} variant="inline" onSave={async (newLabel) => {
-                        const res = await fetch(`/api/campaigns/${id}/assets/${asset.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: newLabel }) })
-                        if (!res.ok) throw new Error()
-                        setCampaign(c => c ? { ...c, assets: c.assets.map(a => a.id === asset.id ? { ...a, label: newLabel } : a) } : c)
-                      }} />
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#333", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {asset.label}
                     </div>
                   </div>
 
