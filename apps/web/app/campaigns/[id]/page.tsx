@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
+import { StatusBadge } from "@/components/pieces/StatusBadge"
+import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -30,6 +32,7 @@ export default function CampaignOverviewPage() {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
   const [loadTs, setLoadTs] = useState(Date.now())
+  const [deliveryOpen, setDeliveryOpen] = useState(false)
 
   async function loadAll() {
     const [c, p] = await Promise.all([
@@ -138,6 +141,13 @@ export default function CampaignOverviewPage() {
             >
               Abrir no Editor
             </button>
+            <button
+              onClick={() => setDeliveryOpen(true)}
+              disabled={pieces.length === 0}
+              style={{ background: pieces.length === 0 ? "#f5f5f5" : "#111", border: "none", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: pieces.length === 0 ? "default" : "pointer", color: pieces.length === 0 ? "#aaa" : "white" }}
+            >
+              ↗ Nova entrega
+            </button>
           </div>
         </div>
 
@@ -174,7 +184,8 @@ export default function CampaignOverviewPage() {
                   <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "#222", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: "#888" }}>{p.width} × {p.height}</div>
+                      <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>{p.width} × {p.height}</div>
+                      <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                     </div>
                     <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
                       <button
@@ -198,6 +209,15 @@ export default function CampaignOverviewPage() {
           )}
         </div>
       </div>
+
+      {deliveryOpen && (
+        <DeliveryDialog
+          campaignId={id}
+          campaignName={campaign.name}
+          onClose={() => setDeliveryOpen(false)}
+          onCreated={() => loadAll()}
+        />
+      )}
     </div>
   )
 }
