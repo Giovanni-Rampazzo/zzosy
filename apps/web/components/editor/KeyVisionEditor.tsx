@@ -679,56 +679,81 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     const fc = fabricRef.current
     if (!fc) return
     isApplyingHistory.current = true
-    // Limpa o snapshot pre-mouse-down pra nao confundir
     beforeModifySnapRef.current = null
+    pendingSnapshot.current = null
+
     try {
-      // Parse o snapshot pra ter acesso aos dados originais (precisaremos pra restaurar
-      // styles per-char e props customizadas que loadFromJSON pode perder)
       const snapData = JSON.parse(snap)
       const snapObjects: any[] = Array.isArray(snapData?.objects) ? snapData.objects : []
 
-      await new Promise<void>((resolve) => {
-        const r = fc.loadFromJSON(snapData, () => resolve())
-        if (r && typeof r.then === "function") r.then(() => resolve())
-      })
+      // Estratégia robusta: limpar canvas manualmente + reconstruir cada objeto via
+      // util.enlivenObjects (que retorna Promise<Object[]> totalmente carregados, incluindo imagens).
+      // Mais previsível que loadFromJSON em Fabric v7.
 
-      // CRITICO 1: Fabric Textbox ignora `styles` no construtor. Apos loadFromJSON,
-      // os textboxes restaurados perdem styles per-char. Reaplica manualmente do snapshot.
-      // CRITICO 2: __assetId / __assetLabel podem se perder na reconstrucao - garante.
-      const restored = fc.getObjects().filter((o: any) => !o.__isBg)
-      for (let i = 0; i < restored.length; i++) {
-        const obj: any = restored[i]
-        const src = snapObjects[i]
-        if (!src) continue
-        // Restaurar props customizadas
-        if (src.__assetId !== undefined) obj.__assetId = src.__assetId
-        if (src.__assetLabel !== undefined) obj.__assetLabel = src.__assetLabel
-        if (src.__isImage !== undefined) obj.__isImage = src.__isImage
-        // Restaurar styles per-char em textboxes
-        if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
-          obj.set("styles", src.styles)
-          if (obj.initDimensions) obj.initDimensions()
-        }
+      // 1. Limpar tudo do canvas (sem disparar saves no servidor)
+      const objs = fc.getObjects().slice() // copia para nao mutar durante remove
+      for (const o of objs) {
+        try { fc.remove(o) } catch {}
       }
 
-      // CRITICO 3: bg tem excludeFromExport=true, fica fora do snapshot. Re-adiciona no fundo.
-      const { Rect } = await import("fabric")
-      const newBg = new Rect({
-        left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-        fill: bgColorRef.current,
+      // 2. Reconstruir os objetos do snapshot via enlivenObjects (aguarda imagens)
+      const fabric = await import("fabric")
+      let enlivened: any[] = []
+      try {
+        if ((fabric as any).util?.enlivenObjects) {
+          enlivened = await (fabric as any).util.enlivenObjects(snapObjects)
+        } else {
+          // Fallback: carregar via loadFromJSON e ler depois
+          await new Promise<void>((resolve) => {
+            const r = fc.loadFromJSON({ ...snapData, background: undefined }, () => resolve())
+            if (r && typeof r.then === "function") r.then(() => resolve())
+          })
+          enlivened = fc.getObjects().slice()
+          // Limpa de novo, pois loadFromJSON ja adicionou
+          for (const o of enlivened) {
+            try { fc.remove(o) } catch {}
+          }
+        }
+      } catch (e) {
+        console.warn("[applySnapshot] enliven failed:", e)
+      }
+
+      // 3. Adicionar bg PRIMEIRO (sempre vai ser o objeto mais ao fundo)
+      const bgFill = bgColorRef.current || "#ffffff"
+      const newBg = new fabric.Rect({
+        left: 0, top: 0,
+        width: canvasWRef.current, height: canvasHRef.current,
+        fill: bgFill,
         selectable: false, evented: false, excludeFromExport: true,
       })
       ;(newBg as any).__isBg = true
       bgRef.current = newBg
       fc.add(newBg)
-      fc.sendObjectToBack(newBg)
-      fc.renderAll()
+
+      // 4. Adicionar os objetos do snapshot (preservando props customizadas e styles per-char)
+      for (let i = 0; i < enlivened.length; i++) {
+        const obj: any = enlivened[i]
+        const src = snapObjects[i]
+        if (!obj || !src) continue
+        if (src.__assetId !== undefined) obj.__assetId = src.__assetId
+        if (src.__assetLabel !== undefined) obj.__assetLabel = src.__assetLabel
+        if (src.__isImage !== undefined) obj.__isImage = src.__isImage
+        if (src.__isBg) continue // nunca readicionar bg do snapshot
+        if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
+          obj.set("styles", src.styles)
+          if (obj.initDimensions) obj.initDimensions()
+        }
+        fc.add(obj)
+      }
+
+      fc.requestRenderAll()
       refreshLayers(fc)
-    } catch (e) { console.warn("applySnapshot fail:", e) }
-    // Aguarda microtask + 1 tick: garante que todos object:added/removed que
-    // o loadFromJSON disparou foram processados antes de liberar a flag.
-    // Sem isso, eventos chegam DEPOIS de isApplyingHistory=false e poluem a stack.
-    await Promise.resolve()
+    } catch (e) {
+      console.warn("[applySnapshot] fail:", e)
+    }
+
+    // Aguarda 2 ticks para garantir que todos os events pendentes foram processados
+    await new Promise(r => setTimeout(r, 0))
     await new Promise(r => setTimeout(r, 0))
     isApplyingHistory.current = false
   }
