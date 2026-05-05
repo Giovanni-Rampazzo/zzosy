@@ -5,6 +5,7 @@ import TopNav from "@/components/TopNav"
 import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
 import { ClientEditModal } from "@/components/clients/ClientEditModal"
+import { CampaignEditModal } from "@/components/campaigns/CampaignEditModal"
 
 interface Campaign {
   id: string; name: string; createdAt: string; _count: { pieces: number }
@@ -23,6 +24,7 @@ export default function ClientPage() {
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false)
   const [activeTab, setActiveTab] = useState("campaigns")
   const [showEditModal, setShowEditModal] = useState(false)
+  const [editingCampaign, setEditingCampaign] = useState<{id:string;name:string;description?:string|null} | null>(null)
 
   async function load() {
     const res = await fetch(`/api/clients/${id}`)
@@ -61,23 +63,21 @@ export default function ClientPage() {
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
             <div>
-              <div style={{fontSize:20,fontWeight:700, display:"flex", alignItems:"center", gap: 10}}>
-                <span>{client.name}</span>
-                <button
-                  onClick={() => setShowEditModal(true)}
-                  style={{ padding: "5px 12px", fontSize: 11, fontWeight: 600, background: "#f0f0f0", color: "#555", border: "none", borderRadius: 6, cursor: "pointer" }}
-                >
-                  Editar
-                </button>
-              </div>
+              <div style={{fontSize:20,fontWeight:700}}>{client.name}</div>
               {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
             </div>
             <div style={{display:"flex",gap:10}}>
               <button
+                onClick={() => setShowEditModal(true)}
+                style={{padding:"6px 14px",background:"#f0f0f0",border:"none",borderRadius:6,color:"#555",fontWeight:600,fontSize:12,cursor:"pointer"}}
+              >
+                Editar cliente
+              </button>
+              <button
                 onClick={() => setConfirmDeleteClient(true)}
                 style={{padding:"6px 14px",background:"#f0f0f0",border:"none",borderRadius:6,color:"#555",fontWeight:600,fontSize:12,cursor:"pointer"}}
               >
-                🗑 Apagar cliente
+                Apagar cliente
               </button>
               <button
                 onClick={() => setShowModal(true)}
@@ -133,6 +133,7 @@ export default function ClientPage() {
                     <td style={{padding:"12px 16px",textAlign:"right"}}>
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                         <button onClick={() => router.push(`/campaigns/${c.id}`)} style={{fontSize:11,fontWeight:600,border:"1px solid #E0E0E0",padding:"5px 12px",borderRadius:6,background:"white",cursor:"pointer"}}>Abrir</button>
+                        <button onClick={() => setEditingCampaign({ id: c.id, name: c.name })} style={{fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,background:"#f0f0f0",color:"#555",border:"none",cursor:"pointer"}}>Editar</button>
                         {confirmDelete === c.id ? (
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
                             <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
@@ -175,6 +176,16 @@ export default function ClientPage() {
           client={client}
           onClose={() => setShowEditModal(false)}
           onSaved={(u) => setClient(prev => prev ? { ...prev, ...u } : prev)}
+        />
+      )}
+
+      {editingCampaign && (
+        <CampaignEditModal
+          campaign={editingCampaign}
+          onClose={() => setEditingCampaign(null)}
+          onSaved={(u) => {
+            setClient(prev => prev ? { ...prev, campaigns: prev.campaigns.map(x => x.id === u.id ? { ...x, name: u.name } : x) } : prev)
+          }}
         />
       )}
 
