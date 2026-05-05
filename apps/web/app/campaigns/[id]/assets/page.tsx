@@ -47,7 +47,56 @@ export default function CampaignAssetsPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({})
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const newImageInputRef = useRef<HTMLInputElement>(null)
   const saveTimers = useRef<Record<string, any>>({})
+
+  async function addTextAsset() {
+    setShowAddMenu(false)
+    const defaultText = "Novo texto"
+    const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: "Arial" } }
+    const res = await fetch(`/api/campaigns/${id}/assets`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "TEXT",
+        label: "Novo texto",
+        value: defaultText,
+        content: [span],
+      })
+    })
+    if (res.ok) {
+      await load()
+      regenerateKVThumb(id).catch(() => {})
+    } else {
+      alert("Falha ao criar asset de texto")
+    }
+  }
+
+  async function addImageAsset(file: File) {
+    setShowAddMenu(false)
+    const fd = new FormData()
+    fd.append("image", file)
+    fd.append("label", file.name.replace(/\.[^.]+$/, ""))
+    const res = await fetch(`/api/campaigns/${id}/assets`, { method: "POST", body: fd })
+    if (res.ok) {
+      await load()
+      regenerateKVThumb(id).catch(() => {})
+    } else {
+      alert("Falha ao criar asset de imagem")
+    }
+  }
+
+  async function deleteAsset(assetId: string, label: string) {
+    if (!confirm(`Apagar "${label}"? Será removido também das peças e da matriz.`)) return
+    const res = await fetch(`/api/campaigns/${id}/assets/${assetId}`, { method: "DELETE" })
+    if (res.ok) {
+      await load()
+      regenerateKVThumb(id).catch(() => {})
+      regeneratePieceThumbsForAsset(id, assetId).catch(() => {})
+    } else {
+      alert("Falha ao apagar")
+    }
+  }
 
   async function load() {
     const res = await fetch(`/api/campaigns/${id}`)
@@ -56,6 +105,13 @@ export default function CampaignAssetsPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  useEffect(() => {
+    if (!showAddMenu) return
+    function close() { setShowAddMenu(false) }
+    setTimeout(() => document.addEventListener("click", close), 0)
+    return () => document.removeEventListener("click", close)
+  }, [showAddMenu])
 
   function updateAssetText(assetId: string, newText: string) {
     if (!campaign) return
@@ -150,7 +206,29 @@ export default function CampaignAssetsPage() {
               </p>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
+            <button
+              onClick={() => setShowAddMenu(s => !s)}
+              style={{ padding: "8px 14px", background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: "pointer", color: "#111" }}
+            >
+              + Adicionar asset
+            </button>
+            {showAddMenu && (
+              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 160 }}>
+                <button onClick={addTextAsset} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                  📝 Texto
+                </button>
+                <button onClick={() => { setShowAddMenu(false); newImageInputRef.current?.click() }} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                  🖼 Imagem
+                </button>
+              </div>
+            )}
+            <input ref={newImageInputRef} type="file" accept="image/*" style={{ display: "none" }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
             <PsdImporter campaignId={id} onImported={load} />
             {campaign.assets.length > 0 && (
               <button
@@ -211,8 +289,16 @@ export default function CampaignAssetsPage() {
                     )}
                   </div>
 
-                  <div style={{ fontSize: 10, color: savingMap[asset.id] ? "#F5C400" : "#bbb", textAlign: "right" }}>
-                    {savingMap[asset.id] ? "Salvando..." : "Salvo"}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <div style={{ fontSize: 10, color: savingMap[asset.id] ? "#F5C400" : "#bbb" }}>
+                      {savingMap[asset.id] ? "Salvando..." : "Salvo"}
+                    </div>
+                    <button
+                      onClick={() => deleteAsset(asset.id, asset.label)}
+                      style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, background: "#f0f0f0", color: "#dc2626", border: "none", borderRadius: 4, cursor: "pointer" }}
+                    >
+                      Apagar
+                    </button>
                   </div>
                 </div>
               ))}
