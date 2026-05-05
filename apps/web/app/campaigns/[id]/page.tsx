@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
+import { EditableText } from "@/components/EditableText"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -94,11 +95,33 @@ export default function CampaignOverviewPage() {
         {/* Breadcrumb + título */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
-            <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
-              {campaign.client.name}
-            </span> /
+            <EditableText
+              value={campaign.client.name}
+              variant="inline"
+              onSave={async (newName) => {
+                const res = await fetch(`/api/clients/${campaign.client.id}`, {
+                  method: "PATCH", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: newName }),
+                })
+                if (!res.ok) throw new Error()
+                setCampaign(c => c ? { ...c, client: { ...c.client, name: newName } } : c)
+              }}
+            /> /
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>{campaign.name}</h1>
+          <h1 style={{ margin: 0 }}>
+            <EditableText
+              value={campaign.name}
+              variant="h1"
+              onSave={async (newName) => {
+                const res = await fetch(`/api/campaigns/${id}`, {
+                  method: "PATCH", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: newName }),
+                })
+                if (!res.ok) throw new Error()
+                setCampaign(c => c ? { ...c, name: newName } : c)
+              }}
+            />
+          </h1>
           {campaign.psdName && (
             <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
               PSD: <strong>{campaign.psdName}</strong> · {campaign.assets?.length ?? 0} assets · {pieces.length} peça{pieces.length !== 1 ? "s" : ""}
