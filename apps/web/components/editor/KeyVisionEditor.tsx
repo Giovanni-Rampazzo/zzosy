@@ -337,12 +337,17 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         if (!obj) return
         const oldText = (obj as any).__editStartText ?? ""
         const oldStyles = (obj as any).__editStartStyles ?? {}
+        const editStartSnap = (obj as any).__editStartSnap as string | null | undefined
         const newText = obj.text ?? ""
         const textChanged = oldText !== newText
+
+        // Empilha snapshot pre-edicao no historico (sessao inteira de edicao = 1 undo)
+        if (editStartSnap) pushSnapshot(editStartSnap)
 
         // Sempre limpar refs de edicao
         delete (obj as any).__editStartText
         delete (obj as any).__editStartStyles
+        delete (obj as any).__editStartSnap
 
         if (!textChanged) {
           // Sem mudança de texto: descarta snapshot pendente (nao sera undo)
