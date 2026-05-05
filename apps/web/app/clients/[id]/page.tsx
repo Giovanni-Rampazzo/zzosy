@@ -25,6 +25,7 @@ export default function ClientPage() {
   const [activeTab, setActiveTab] = useState("campaigns")
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<{id:string;name:string;description?:string|null} | null>(null)
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
 
   async function load() {
     const res = await fetch(`/api/clients/${id}`)
@@ -38,6 +39,22 @@ export default function ClientPage() {
     await fetch(`/api/campaigns/${campaignId}`, { method: "DELETE" })
     setClient(prev => prev ? { ...prev, campaigns: prev.campaigns.filter(c => c.id !== campaignId) } : prev)
     setConfirmDelete(null)
+  }
+
+  async function duplicateCampaign(campaignId: string) {
+    setDuplicatingId(campaignId)
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/duplicate`, { method: "POST" })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert("Falha ao duplicar campanha: " + (err.detail ?? err.error ?? "?"))
+        return
+      }
+      // Recarregar lista pra mostrar a duplicada
+      await load()
+    } finally {
+      setDuplicatingId(null)
+    }
   }
 
   async function deleteClient() {
@@ -134,6 +151,7 @@ export default function ClientPage() {
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                         <button onClick={() => router.push(`/campaigns/${c.id}`)} style={{fontSize:11,fontWeight:600,border:"1px solid #E0E0E0",padding:"5px 12px",borderRadius:6,background:"white",cursor:"pointer"}}>Abrir</button>
                         <button onClick={() => setEditingCampaign({ id: c.id, name: c.name })} style={{fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,background:"#f0f0f0",color:"#555",border:"none",cursor:"pointer"}}>Editar</button>
+                        <button onClick={() => duplicateCampaign(c.id)} disabled={duplicatingId === c.id} style={{fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,background:"#f0f0f0",color:"#555",border:"none",cursor:duplicatingId === c.id ? "default" : "pointer",opacity:duplicatingId === c.id ? 0.5 : 1}}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</button>
                         {confirmDelete === c.id ? (
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
                             <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
