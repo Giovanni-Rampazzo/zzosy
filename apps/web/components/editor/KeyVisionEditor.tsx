@@ -261,11 +261,9 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   // Inicializar Fabric
   useEffect(() => {
     if (!campaign || !canvasRef.current) return
-    // Se ja existe um canvas Fabric, mas ele aponta para um DOM element diferente
-    // do canvasRef.current atual (Strict Mode re-mount, hot reload, etc), descarta o velho
+    // Sempre dispose do canvas anterior antes de re-iniciar, mesmo que seja o mesmo DOM.
+    // Isso evita estado stale quando voltamos pro editor depois de sair e voltar.
     if (fabricRef.current) {
-      const existingEl = (fabricRef.current as any).lowerCanvasEl ?? (fabricRef.current as any).getElement?.()
-      if (existingEl === canvasRef.current) return  // mesmo DOM, ja inicializado
       try { fabricRef.current.dispose() } catch {}
       fabricRef.current = null
     }
@@ -582,7 +580,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         fabricRef.current = null
       }
     }
-  }, [campaign])
+  }, [campaign?.id, pieceId])
 
   function spansToFabricProps(spans: TextSpan[]) {
     const first = spans[0]?.style ?? {}
