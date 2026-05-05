@@ -1,5 +1,4 @@
 "use client"
-import { EditableText } from "@/components/EditableText"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
@@ -72,13 +71,7 @@ export default function DashboardPage() {
               {!loading && clients.length === 0 && <tr><td colSpan={5} style={{textAlign:"center",padding:48,color:"#888",fontSize:13}}>Nenhum cliente ainda. Crie o primeiro!</td></tr>}
               {clients.map(c => (
                 <tr key={c.id} style={{borderBottom:"1px solid #f0f0f0"}}>
-                  <td style={{padding:"12px 16px",fontWeight:600,fontSize:13}}>
-                  <EditableText value={c.name} variant="inline" onSave={async (newName) => {
-                    const res = await fetch(`/api/clients/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
-                    if (!res.ok) throw new Error()
-                    setClients(prev => prev.map(x => x.id === c.id ? { ...x, name: newName } : x))
-                  }} />
-                </td>
+                  <td style={{padding:"12px 16px",fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={() => router.push(`/clients/${c.id}`)}>{c.name}</td>
                   <td style={{padding:"12px 16px",fontSize:13,color:"#555"}}>{c.contact ?? "—"}</td>
                   <td style={{padding:"12px 16px",fontSize:13,color:"#555"}}>{c.email ?? "—"}</td>
                   <td style={{padding:"12px 16px",fontSize:13}}>{c._count.campaigns}</td>
