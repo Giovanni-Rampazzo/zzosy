@@ -30,6 +30,7 @@ model User {
   tenant    Tenant    @relation(fields: [tenantId], references: [id])
   accounts  Account[]
   sessions  Session[]
+  deliveries    Delivery[]
 }
 
 model Account {
@@ -145,16 +146,21 @@ model Piece {
 }
 
 model Delivery {
-  id         String          @id @default(cuid())
-  campaignId String
-  name       String?
-  status     String          @default("PENDING")
-  notes      String?         @db.Text
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  campaign   Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  files      DeliveryFile[]
-  pieces     DeliveryPiece[]
+  id            String          @id @default(cuid())
+  campaignId    String
+  name          String?
+  status        String          @default("PENDING")
+  notes         String?         @db.Text
+  zipUrl        String?         @db.Text
+  zipSize       Int?
+  deliveredById String?
+  formats       String?         @db.Text
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  campaign      Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  deliveredBy   User?           @relation(fields: [deliveredById], references: [id])
+  files         DeliveryFile[]
+  pieces        DeliveryPiece[]
 }
 
 model DeliveryFile {
