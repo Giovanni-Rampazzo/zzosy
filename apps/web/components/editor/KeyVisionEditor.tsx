@@ -614,6 +614,29 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     } catch { /* ignora */ }
   }
 
+  // Captura snapshot do estado ATUAL do canvas (retorna a string).
+  function captureSnapshot(): string | null {
+    if (isApplyingHistory.current) return null
+    const fc = fabricRef.current
+    if (!fc) return null
+    try {
+      return JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+    } catch { return null }
+  }
+
+  // Empilha um snapshot direto no undoStack. Limpa o redo.
+  function pushSnapshot(snap: string | null | undefined) {
+    if (isApplyingHistory.current) return
+    if (!snap) return
+    const top = undoStack.current[undoStack.current.length - 1]
+    if (top === snap) return
+    undoStack.current.push(snap)
+    if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
+    redoStack.current = []
+    isDirtyRef.current = true
+    setIsDirty(true)
+  }
+
   // Captura snapshot pendente (chamada em mouse:down).
   // Sera commitado em object:modified subsequente.
   function capturePendingHistory() {
