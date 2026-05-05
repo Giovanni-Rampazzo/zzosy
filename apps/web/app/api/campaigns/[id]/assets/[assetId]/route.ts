@@ -130,7 +130,49 @@ export async function PATCH(req: Request, ctx: Ctx) {
 export async function DELETE(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const { assetId } = await ctx.params
-  await prisma.campaignAsset.delete({ where: { id: assetId } })
-  return NextResponse.json({ ok: true })
+  const { id: campaignId, assetId } = await ctx.params
+
+  // Cascade delete: tira o asset E todas as layers (matriz + peças) que o referenciam.
+  // Tudo numa transação atômica para evitar layers órfãs.
+  const [kv, pieces] = await Promise.all([
+    prisma.keyVision.findUnique({ where: { campaignId } }),
+    prisma.piece.findMany({ where: { campaignId } }),
+  ])
+
+  let kvUpdate: any = null
+  if (kv) {
+    let kvLayersRaw: any = kv.layers
+    let kvLayers: any[] = []
+    if (typeof kvLayersRaw === "string") {
+      try { kvLayers = JSON.parse(kvLayersRaw) } catch { kvLayers = [] }
+    } else if (Array.isArray(kvLayersRaw)) kvLayers = kvLayersRaw
+    const filteredKv = kvLayers.filter((l: any) => l?.assetId !== assetId)
+    if (filteredKv.length !== kvLayers.length) {
+      kvUpdate = { layers: JSON.stringify(filteredKv) }
+    }
+  }
+
+  const pieceUpdates: Array<{ id: string; data: string }> = []
+  for (const p of pieces) {
+    let pdata: any = null
+    try { pdata = typeof p.data === "string" ? JSON.parse(p.data as string) : p.data } catch {}
+    if (!pdata || !Array.isArray(pdata.layers)) continue
+    const filtered = pdata.layers.filter((l: any) => l?.assetId !== assetId)
+    if (filtered.length !== pdata.layers.length) {
+      pieceUpdates.push({ id: p.id, data: JSON.stringify({ ...pdata, layers: filtered }) })
+    }
+  }
+
+  const ops: any[] = []
+  if (kvUpdate) ops.push(prisma.keyVision.update({ where: { campaignId }, data: kvUpdate }))
+  for (const u of pieceUpdates) ops.push(prisma.piece.update({ where: { id: u.id }, data: { data: u.data } }))
+  ops.push(prisma.campaignAsset.delete({ where: { id: assetId } }))
+
+  try {
+    await prisma.$transaction(ops)
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    console.error("[DELETE asset] cascade failed:", e?.message ?? e)
+    return NextResponse.json({ error: "Failed to delete asset", detail: String(e?.message ?? e) }, { status: 500 })
+  }
 }
