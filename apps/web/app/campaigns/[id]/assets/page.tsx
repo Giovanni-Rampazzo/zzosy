@@ -101,13 +101,6 @@ export default function CampaignAssetsPage() {
 
   useEffect(() => { load() }, [id])
 
-  useEffect(() => {
-    if (!showAddMenu) return
-    function close() { setShowAddMenu(false) }
-    setTimeout(() => document.addEventListener("click", close), 0)
-    return () => document.removeEventListener("click", close)
-  }, [showAddMenu])
-
   function updateAssetText(assetId: string, newText: string) {
     if (!campaign) return
     setCampaign({
@@ -201,7 +194,12 @@ export default function CampaignAssetsPage() {
               </p>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }} 
+            onBlur={(e) => {
+              // Fecha quando o foco sai do container inteiro (clique fora)
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setShowAddMenu(false)
+            }}
+            tabIndex={-1}>
             <button
               onClick={() => setShowAddMenu(s => !s)}
               style={{ padding: "8px 14px", background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: "pointer", color: "#111" }}
