@@ -270,7 +270,10 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     let alive = true
     const cleanupFns: Array<() => void> = []
 
+    console.log("[INIT] useEffect dispatched, fabricRef existed?", !!fabricRef.current, "campaign?.id:", campaign?.id, "pieceId:", pieceId)
+
     const init = async () => {
+      console.log("[INIT] init() started")
       const { Canvas, Rect, Textbox, FabricImage } = await import("fabric")
       if (!alive || !canvasRef.current) return
 
@@ -452,6 +455,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         // MODO PEÇA v2: layers + assets (sync automatico com asset)
         const p = pieceRef.current
         const pdata = typeof p.data === "string" ? JSON.parse(p.data) : p.data
+        console.log("[INIT] modo PEÇA, pdata.version:", pdata?.version, "layers:", pdata?.layers?.length)
         const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
 
         if (pdata?.version === 2 && Array.isArray(pdata?.layers)) {
@@ -522,6 +526,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       } else {
         // MODO MATRIZ
         const savedLayers = c.keyVision?.layers
+        console.log("[INIT] modo MATRIZ, savedLayers:", Array.isArray(savedLayers) ? savedLayers.length : "not array", "raw:", savedLayers)
+        console.log("[INIT] c.assets count:", c.assets?.length)
         if (savedLayers && Array.isArray(savedLayers) && savedLayers.length > 0) {
           const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
           const sorted = [...savedLayers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
@@ -551,6 +557,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       }
 
       fc.renderAll()
+      console.log("[INIT] FINAL - canvas tem", fc.getObjects().length, "objetos:", fc.getObjects().map((o: any) => `${o.type}${o.__isBg ? '(bg)' : ''}${o.__assetLabel ? '/'+o.__assetLabel : ''}`))
       if (alive) refreshLayers(fc)
       // Stack comeca VAZIA. So entra estado quando o user faz uma mudanca.
       // Isso evita que Cmd+Z volte pra um estado fantasma de pre-load.
