@@ -169,7 +169,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         <input
           type="file"
           accept=".psd"
-          style={{ display: "none" }}
+          style={ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0, pointerEvents: "none" } tabIndex={-1}
           onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = "" }}
         />
       </label>
