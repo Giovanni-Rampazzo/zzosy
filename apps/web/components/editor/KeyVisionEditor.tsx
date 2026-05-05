@@ -149,6 +149,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
+  const pendingTextPropagation = useRef(false)
   const [confirmExit, setConfirmExit] = useState<null | (() => void)>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [layers, setLayers] = useState<any[]>([])
@@ -310,7 +311,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("object:modified", () => pushHistory())
       fc.on("object:added", () => { if (!isApplyingHistory.current) pushHistory() })
       fc.on("object:removed", () => { if (!isApplyingHistory.current) pushHistory() })
-      fc.on("text:changed", () => pushHistory())
+      // text:changed nao chama pushHistory - text:editing:exited cobre o flush final
 
       // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior)
       fc.on("text:editing:entered", (e: any) => {
@@ -326,27 +327,43 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         const oldText = (obj as any).__editStartText ?? ""
         const oldStyles = (obj as any).__editStartStyles ?? {}
         const newText = obj.text ?? ""
-        // Se texto mudou, migrar styles per-char IGUAL Word/Photoshop:
-        // herda estilo do anterior em inserts, mantem em equal/replace, descarta em delete.
-        if (oldText !== newText) {
-          const migrated = migrateStyles(oldText, newText, oldStyles)
-          obj.set("styles", migrated)
-          if ((obj as any).initDimensions) (obj as any).initDimensions()
-          fc.renderAll()
-        }
+        const textChanged = oldText !== newText
+
+        // Sempre limpar refs de edicao
         delete (obj as any).__editStartText
         delete (obj as any).__editStartStyles
 
+        if (!textChanged) {
+          // Sem mudança de texto: caminho rápido. doSave normal.
+          if (!isApplyingHistory.current) doSave()
+          return
+        }
+
+        // CASO: texto mudou
+        // 1) Migra styles localmente para feedback visual imediato (sem flicker)
+        const migratedLocal = migrateStyles(oldText, newText, oldStyles)
+        obj.set("styles", migratedLocal)
+        if ((obj as any).initDimensions) (obj as any).initDimensions()
+        fc.renderAll()
+
         if (!obj.__assetId) { doSave(); return }
-        // Modelo Opcao A: edicao no editor propaga para o ASSET, nao importa se eh matriz ou peca.
-        // Servidor migra styles automaticamente em todos os escopos (matriz e peças).
-        if (oldText !== newText) {
+
+        // 2) Bloqueia doSave enquanto servidor faz migração canônica em todos os escopos
+        pendingTextPropagation.current = true
+        try {
           const spans = textboxToSpans(obj)
           await fetch(`/api/campaigns/${campaignId}/assets/${obj.__assetId}`, {
             method: "PUT", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: spans, value: obj.text })
-          }).catch(() => {})
+          })
+        } catch (err) {
+          console.warn("[text:editing:exited] PUT asset failed:", err)
+        } finally {
+          pendingTextPropagation.current = false
         }
+
+        // 3) Agora sim: doSave salva os layers locais (com styles migrados que batem
+        // com os que o servidor acabou de gravar nos outros escopos).
         doSave()
       })
 
@@ -840,6 +857,13 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function doSave() {
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
+      // Se há propagação de texto em curso (PUT asset migrando styles em todos escopos),
+      // adia o save: rodar agora salvaria layers com styles em índices errados.
+      if (pendingTextPropagation.current) {
+        // Reagendar daqui a 200ms até liberar
+        saveTimer.current = setTimeout(() => doSave(), 200)
+        return
+      }
       const fc = fabricRef.current
       if (!fc) return
       setSaving(true)
