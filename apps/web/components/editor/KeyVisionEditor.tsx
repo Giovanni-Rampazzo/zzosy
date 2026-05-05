@@ -1140,7 +1140,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           onClick={undo}
           title="Desfazer (Cmd+Z)"
           disabled={undoStack.current.length === 0}
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: undoStack.current.length < 2 ? "not-allowed" : "pointer", color: undoStack.current.length < 2 ? "#444" : "#aaa", opacity: undoStack.current.length < 2 ? 0.5 : 1 }}
+          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: undoStack.current.length === 0 ? "not-allowed" : "pointer", color: undoStack.current.length === 0 ? "#444" : "#aaa", opacity: undoStack.current.length === 0 ? 0.5 : 1 }}
         >↶</button>
         <button
           onClick={redo}
