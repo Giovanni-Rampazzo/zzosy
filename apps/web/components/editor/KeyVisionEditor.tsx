@@ -133,8 +133,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Log de mount/unmount do componente inteiro
   useEffect(() => {
-    console.warn("[ZZOSY-MOUNT] Editor montado")
-    return () => { console.warn("[ZZOSY-UNMOUNT] Editor desmontado") }
   }, [])
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fabricRef = useRef<any>(null)
@@ -275,10 +273,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     let alive = true
     const cleanupFns: Array<() => void> = []
 
-    console.warn("[ZZOSY-INIT] useEffect dispatched, fabricRef existed?", !!fabricRef.current, "campaign?.id:", campaign?.id, "pieceId:", pieceId)
 
     const init = async () => {
-      console.warn("[ZZOSY-INIT] init() started")
       const { Canvas, Rect, Textbox, FabricImage } = await import("fabric")
       if (!alive || !canvasRef.current) return
 
@@ -460,7 +456,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         // MODO PEÇA v2: layers + assets (sync automatico com asset)
         const p = pieceRef.current
         const pdata = typeof p.data === "string" ? JSON.parse(p.data) : p.data
-        console.warn("[ZZOSY-INIT] modo PEÇA, pdata.version:", pdata?.version, "layers:", pdata?.layers?.length)
         const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
 
         if (pdata?.version === 2 && Array.isArray(pdata?.layers)) {
@@ -531,8 +526,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       } else {
         // MODO MATRIZ
         const savedLayers = c.keyVision?.layers
-        console.warn("[ZZOSY-INIT] modo MATRIZ, savedLayers:", Array.isArray(savedLayers) ? savedLayers.length : "not array", "raw:", savedLayers)
-        console.warn("[ZZOSY-INIT] c.assets count:", c.assets?.length)
         if (savedLayers && Array.isArray(savedLayers) && savedLayers.length > 0) {
           const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
           const sorted = [...savedLayers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
@@ -562,7 +555,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       }
 
       fc.renderAll()
-      console.warn("[ZZOSY-INIT] FINAL - canvas tem", fc.getObjects().length, "objetos:", fc.getObjects().map((o: any) => `${o.type}${o.__isBg ? '(bg)' : ''}${o.__assetLabel ? '/'+o.__assetLabel : ''}`))
       if (alive) refreshLayers(fc)
       // Stack comeca VAZIA. So entra estado quando o user faz uma mudanca.
       // Isso evita que Cmd+Z volte pra um estado fantasma de pre-load.
@@ -584,13 +576,19 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         if (fcc.__blockPasteHandler) document.removeEventListener("paste", fcc.__blockPasteHandler, true)
       }
       cleanupFns.forEach(fn => { try { fn() } catch {} })
-      // Dispose o canvas e libera fabricRef para que a próxima execução do useEffect
-      // (em strict mode, hot reload, ou navegação de peça pra peça) possa re-inicializar
-      // num <canvas> DOM novo. Sem isso, fabricRef segura referencia stale.
+      // Dispose o canvas e libera TODAS as refs relacionadas ao Fabric.
+      // Sem isso, refs zumbis (bgRef, pendingSnapshot, undoStack) podem causar
+      // estado inconsistente quando o componente remonta (ex: voltar pro editor).
       if (fabricRef.current) {
         try { fabricRef.current.dispose() } catch {}
         fabricRef.current = null
       }
+      bgRef.current = null
+      pendingSnapshot.current = null
+      beforeModifySnapRef.current = null
+      undoStack.current = []
+      redoStack.current = []
+      isApplyingHistory.current = false
     }
   }, [campaign?.id, pieceId])
 
