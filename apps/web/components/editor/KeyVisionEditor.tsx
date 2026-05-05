@@ -145,6 +145,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
   const [selectedTick, setSelectedTick] = useState(0)
   const undoStack = useRef<string[]>([])
+  const pendingSnapshot = useRef<string | null>(null)
+  const UNDO_LIMIT = 100
   const redoStack = useRef<string[]>([])
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -303,21 +305,30 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("selection:created", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:cleared", () => setSelected(null))
-      fc.on("object:modified", () => { if (alive) doSave() })
       fc.on("text:changed", () => { if (alive) setSelectedTick(t => t + 1) })
       fc.on("object:added", () => { if (alive) refreshLayers(fc) })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
-      // Captura mudancas para historico de undo/redo
-      fc.on("object:modified", () => pushHistory())
-      fc.on("object:added", () => { if (!isApplyingHistory.current) pushHistory() })
-      fc.on("object:removed", () => { if (!isApplyingHistory.current) pushHistory() })
-      // text:changed nao chama pushHistory - text:editing:exited cobre o flush final
+      // Modificacao de objeto (mover/escalar/rotacionar): snapshot ANTES de salvar.
+      // pushHistoryBefore captura o estado anterior (que ja esta no preChangeSnapshot ref).
+      fc.on("object:modified", () => {
+        if (!alive) return
+        commitPendingHistory()
+        doSave()
+      })
+      // Sempre que comeca uma manipulacao (mouse:down em objeto), captura snapshot pra
+      // ser commitado no object:modified seguinte.
+      fc.on("mouse:down", (e: any) => {
+        if (!alive) return
+        if (e.target && !e.target.__isBg) capturePendingHistory()
+      })
 
-      // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior)
+      // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior).
+      // Tambem captura snapshot do canvas inteiro pra undo (commitado se texto mudar no exited).
       fc.on("text:editing:entered", (e: any) => {
         if (!alive || !e?.target) return
         ;(e.target as any).__editStartText = e.target.text ?? ""
         ;(e.target as any).__editStartStyles = JSON.parse(JSON.stringify(e.target.styles ?? {}))
+        capturePendingHistory()
       })
 
       fc.on("text:editing:exited", async (e: any) => {
@@ -334,10 +345,13 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         delete (obj as any).__editStartStyles
 
         if (!textChanged) {
-          // Sem mudança de texto: caminho rápido. doSave normal.
+          // Sem mudança de texto: descarta snapshot pendente (nao sera undo)
+          pendingSnapshot.current = null
           if (!isApplyingHistory.current) doSave()
           return
         }
+        // Texto mudou: commita snapshot pendente como undo step
+        commitPendingHistory()
 
         // CASO: texto mudou
         // 1) Migra styles localmente para feedback visual imediato (sem flicker)
@@ -534,12 +548,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
 
       fc.renderAll()
       if (alive) refreshLayers(fc)
-      // Snapshot inicial (estado limpo, sem dirty)
-      try {
-        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
-        undoStack.current = [snap]
-        redoStack.current = []
-      } catch (e) {}
+      // Stack comeca VAZIA. So entra estado quando o user faz uma mudanca.
+      // Isso evita que Cmd+Z volte pra um estado fantasma de pre-load.
+      undoStack.current = []
+      redoStack.current = []
+      // Aguarda microtask + 1 tick para garantir que todos os object:added do load
+      // ja foram processados antes de liberar a flag (evita race condition).
+      await Promise.resolve()
+      await new Promise(r => setTimeout(r, 0))
       isApplyingHistory.current = false
     }
 
@@ -574,21 +590,48 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     }
   }
 
-  function pushHistory() {
+  // Tira snapshot do estado atual e empilha como "estado-antes-da-proxima-mudanca".
+  // Use ANTES de aplicar uma mudanca (apagar layer, mudar cor, mudar fonte, etc).
+  function pushHistoryBefore() {
     if (isApplyingHistory.current) return
     const fc = fabricRef.current
     if (!fc) return
     try {
       const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
-      // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
       undoStack.current.push(snap)
-      if (undoStack.current.length > 16) undoStack.current.shift() // mantem 15 + estado atual
+      if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
       redoStack.current = []
       isDirtyRef.current = true
       setIsDirty(true)
-    } catch (e) { /* ignora */ }
+    } catch { /* ignora */ }
+  }
+
+  // Captura snapshot pendente (chamada em mouse:down).
+  // Sera commitado em object:modified subsequente.
+  function capturePendingHistory() {
+    if (isApplyingHistory.current) return
+    const fc = fabricRef.current
+    if (!fc) return
+    try {
+      pendingSnapshot.current = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+    } catch { pendingSnapshot.current = null }
+  }
+
+  // Commita o snapshot pendente capturado em mouse:down. Chamado em object:modified.
+  function commitPendingHistory() {
+    if (isApplyingHistory.current) return
+    const snap = pendingSnapshot.current
+    pendingSnapshot.current = null
+    if (!snap) return
+    const top = undoStack.current[undoStack.current.length - 1]
+    if (top === snap) return
+    undoStack.current.push(snap)
+    if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
+    redoStack.current = []
+    isDirtyRef.current = true
+    setIsDirty(true)
   }
 
   async function applySnapshot(snap: string) {
@@ -639,25 +682,40 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.renderAll()
       refreshLayers(fc)
     } catch (e) { console.warn("applySnapshot fail:", e) }
+    // Aguarda microtask + 1 tick: garante que todos object:added/removed que
+    // o loadFromJSON disparou foram processados antes de liberar a flag.
+    // Sem isso, eventos chegam DEPOIS de isApplyingHistory=false e poluem a stack.
+    await Promise.resolve()
+    await new Promise(r => setTimeout(r, 0))
     isApplyingHistory.current = false
   }
 
   async function undo() {
-    if (undoStack.current.length < 2) return
+    if (undoStack.current.length === 0) return
     const fc = fabricRef.current
     if (!fc) return
-    // Topo da pilha eh o estado atual; guarda no redo e aplica o anterior
-    const current = undoStack.current.pop()!
-    redoStack.current.push(current)
-    const previous = undoStack.current[undoStack.current.length - 1]
-    if (previous) await applySnapshot(previous)
+    // Captura estado atual no redo, aplica o topo da undoStack (estado anterior).
+    try {
+      const currentSnap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+      redoStack.current.push(currentSnap)
+      if (redoStack.current.length > UNDO_LIMIT) redoStack.current.shift()
+    } catch {}
+    const previous = undoStack.current.pop()!
+    await applySnapshot(previous)
     setSelected(null)
   }
 
   async function redo() {
     if (redoStack.current.length === 0) return
+    const fc = fabricRef.current
+    if (!fc) return
+    // Captura estado atual no undo, aplica o topo do redo.
+    try {
+      const currentSnap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+      undoStack.current.push(currentSnap)
+      if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
+    } catch {}
     const next = redoStack.current.pop()!
-    undoStack.current.push(next)
     await applySnapshot(next)
     setSelected(null)
   }
@@ -666,6 +724,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     const fc = fabricRef.current
     const obj: any = selected
     if (!fc || !obj) return
+    pushHistoryBefore()
     const cw = canvasWRef.current, ch = canvasHRef.current
     // Tamanho real do objeto (sem escala) - pega bounding box logico do textbox/imagem
     const ow = obj.width ?? 100
@@ -771,6 +830,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function moveLayer(obj: any, direction: "up" | "down") {
     const fc = fabricRef.current
     if (!fc || !obj) return
+    pushHistoryBefore()
     if (direction === "up") fc.bringObjectForward(obj)
     else fc.sendObjectBackwards(obj)
     fc.renderAll()
@@ -984,7 +1044,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function changeBg(c: string) {
     const bg = bgRef.current; const fc = fabricRef.current
     if (!bg || !fc) return
-    bg.set("fill", c); fc.renderAll(); setBgColor(c); bgColorRef.current = c; doSave()
+    pushHistoryBefore(); bg.set("fill", c); fc.renderAll(); setBgColor(c); bgColorRef.current = c; doSave()
   }
 
   // Sincroniza hexInput com a cor do objeto selecionado
@@ -1000,6 +1060,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function applyStyle(key: string, val: any) {
     const fc = fabricRef.current; const obj = selected
     if (!fc || !obj) return
+    pushHistoryBefore()
     const value = key === "fontSize" ? Number(val) : val
     const styleKey = key === "fill" ? "fill" : key
 
@@ -1145,7 +1206,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                   style={{ color: "#666", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, padding: "2px 4px", lineHeight: 1 }}>▲</button>
                 <button title="Mover para baixo" onClick={e => { e.stopPropagation(); moveLayer(layer.obj, "down") }}
                   style={{ color: "#666", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, padding: "2px 4px", lineHeight: 1 }}>▼</button>
-                <button title="Remover" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
+                <button title="Remover" onClick={e => { e.stopPropagation(); pushHistoryBefore(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
                   style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
               </div>
             )
