@@ -149,7 +149,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const beforeModifySnapRef = useRef<string | null>(null)
   const pendingSnapshot = useRef<string | null>(null)
   const UNDO_LIMIT = 100
-  const redoStack = useRef<string[]>([])
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
