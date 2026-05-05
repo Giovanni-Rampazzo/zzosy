@@ -3,12 +3,7 @@ import { useEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
-import dynamic from "next/dynamic"
-
-const PsdImporter = dynamic(
-  () => import("@/components/campaign/PsdImporter").then(m => ({ default: m.PsdImporter })),
-  { ssr: false }
-)
+import { PsdImporter } from "@/components/campaign/PsdImporter"
 
 interface Asset {
   id: string
