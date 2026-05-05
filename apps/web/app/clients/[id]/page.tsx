@@ -52,18 +52,14 @@ export default function ClientPage() {
         <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"#888",marginBottom:20}}>
           <span style={{cursor:"pointer"}} onClick={() => router.push("/dashboard")}>Clientes</span>
           <span style={{color:"#ccc"}}>/</span>
-          <EditableText value={client.name} variant="inline" onSave={async (newName) => {
-            const res = await fetch(`/api/clients/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
-            if (!res.ok) throw new Error()
-            setClient(c => c ? { ...c, name: newName } : c)
-          }} />
+          <span style={{fontWeight:600,color:"#111"}}>{client.name}</span>
         </div>
 
         {/* Header */}
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
             <div>
-              <div style={{fontSize:20,fontWeight:700}}><EditableText value={client.name} variant="h2" onSave={async (newName) => {
+              <div style={{fontSize:20,fontWeight:700, display:"flex", alignItems:"center"}}><EditableText value={client.name} variant="h2" onSave={async (newName) => {
                 const res = await fetch(`/api/clients/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
                 if (!res.ok) throw new Error()
                 setClient(c => c ? { ...c, name: newName } : c)
@@ -125,13 +121,7 @@ export default function ClientPage() {
                   <tr><td colSpan={4} style={{textAlign:"center",padding:"48px",color:"#888",fontSize:13}}>Nenhuma campanha criada</td></tr>
                 ) : client.campaigns.map(c => (
                   <tr key={c.id} style={{borderBottom:"1px solid #f0f0f0"}}>
-                    <td style={{padding:"12px 16px",fontWeight:600,fontSize:13}}>
-                      <EditableText value={c.name} variant="inline" onSave={async (newName) => {
-                        const res = await fetch(`/api/campaigns/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
-                        if (!res.ok) throw new Error()
-                        setClient(prev => prev ? { ...prev, campaigns: prev.campaigns.map(x => x.id === c.id ? { ...x, name: newName } : x) } : prev)
-                      }} />
-                    </td>
+                    <td style={{padding:"12px 16px",fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={() => router.push(`/campaigns/${c.id}`)}>{c.name}</td>
                     <td style={{padding:"12px 16px",color:"#888",fontSize:13}}>{c._count.pieces}</td>
                     <td style={{padding:"12px 16px",color:"#888",fontSize:13}}>{new Date(c.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td style={{padding:"12px 16px",textAlign:"right"}}>
