@@ -165,7 +165,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = "" }} />
       <button
         style={{ background: "#1a1a1a", border: "1px solid #333", color: "#aaa", padding: "8px 16px", borderRadius: 6, fontSize: 13, cursor: loading ? "wait" : "pointer" }}
-        onClick={() => inputRef.current?.click()} disabled={loading}>
+        onClick={() => { console.log("[PsdImporter] click! inputRef:", inputRef.current); try { inputRef.current?.click() } catch(e) { console.error("PsdImporter click error:", e) } }} disabled={loading}>
         {loading ? (progress || "Processando...") : "Importar PSD"}
       </button>
       {error && <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>{error}</div>}
