@@ -481,3 +481,44 @@ export async function exportPiece(
 ) {
   return exportPieces([piece], [format])
 }
+
+
+/**
+ * Monta um ZIP de entrega organizado em pasta por MÍDIA / pasta por FORMATO / arquivos.
+ * Retorna o Blob (não dispara download — quem chama decide o que fazer com ele).
+ *
+ * Estrutura de pasta esperada: ZIP/{Mídia}/{Formato}/{nome-arquivo}.{ext}
+ * - mídia: vem de piece.media (string livre, ex: "Instagram", "Facebook")
+ * - formato: nome do extensao em maiusculo (PSD, PNG, JPG, PDF)
+ */
+export async function buildDeliveryZip(
+  pieces: Array<{ id: string; name: string; data: any; width: number; height: number; media?: string }>,
+  formats: ExportFormat[],
+  campaignName?: string,
+  onProgress?: (msg: string) => void,
+): Promise<Blob> {
+  const JSZip = (await import("jszip")).default
+  const zip = new JSZip()
+  let done = 0
+  const total = pieces.length * formats.length
+
+  for (const piece of pieces) {
+    const mediaFolder = (piece.media || "Outros").trim().replace(/[\\/:*?"<>|]/g, "-")
+    for (const fmt of formats) {
+      done++
+      onProgress?.(`${done}/${total} — ${piece.name} (${fmt})`)
+      try {
+        const blob = await buildBlob(piece, fmt)
+        const buf = await blob.arrayBuffer()
+        const folderPath = `${mediaFolder}/${fmt.toUpperCase()}`
+        const fileName = `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`
+        zip.file(`${folderPath}/${fileName}`, buf)
+      } catch (e) {
+        console.error("Falha exportar", piece.name, fmt, e)
+      }
+    }
+  }
+
+  onProgress?.(`Empacotando zip...`)
+  return await zip.generateAsync({ type: "blob" })
+}
