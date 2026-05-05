@@ -1,5 +1,5 @@
 "use client"
-import { useRef, useState } from "react"
+import { useState } from "react"
 
 interface Props {
   campaignId: string
@@ -30,7 +30,6 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 export function PsdImporter({ campaignId, onImported }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [progress, setProgress] = useState("")
@@ -161,13 +160,24 @@ export function PsdImporter({ campaignId, onImported }: Props) {
 
   return (
     <>
-      <input ref={inputRef} type="file" accept=".psd" style={{ display: "none" }}
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = "" }} />
-      <button
-        style={{ background: "#1a1a1a", border: "1px solid #333", color: "#aaa", padding: "8px 16px", borderRadius: 6, fontSize: 13, cursor: loading ? "wait" : "pointer" }}
-        onClick={() => { console.log("[PsdImporter] click! inputRef:", inputRef.current); try { inputRef.current?.click() } catch(e) { console.error("PsdImporter click error:", e) } }} disabled={loading}>
+      <label
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          background: "#1a1a1a", border: "1px solid #333", color: "#aaa",
+          padding: "8px 16px", borderRadius: 6, fontSize: 13,
+          cursor: loading ? "wait" : "pointer",
+          opacity: loading ? 0.6 : 1,
+          userSelect: "none",
+        }}>
         {loading ? (progress || "Processando...") : "Importar PSD"}
-      </button>
+        <input
+          type="file"
+          accept=".psd"
+          style={{ display: "none" }}
+          disabled={loading}
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = "" }}
+        />
+      </label>
       {error && <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>{error}</div>}
     </>
   )
