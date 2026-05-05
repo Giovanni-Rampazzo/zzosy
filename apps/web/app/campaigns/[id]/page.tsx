@@ -95,18 +95,9 @@ export default function CampaignOverviewPage() {
         {/* Breadcrumb + título */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
-            <EditableText
-              value={campaign.client.name}
-              variant="inline"
-              onSave={async (newName) => {
-                const res = await fetch(`/api/clients/${campaign.client.id}`, {
-                  method: "PATCH", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name: newName }),
-                })
-                if (!res.ok) throw new Error()
-                setCampaign(c => c ? { ...c, client: { ...c.client, name: newName } } : c)
-              }}
-            /> /
+            <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
+              {campaign.client.name}
+            </span> /
           </div>
           <h1 style={{ margin: 0 }}>
             <EditableText
