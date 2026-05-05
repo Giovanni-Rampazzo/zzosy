@@ -131,9 +131,6 @@ function spansToTextboxData(spans: TextSpan[]) {
 export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; pieceId?: string }) {
   const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  // Log de mount/unmount do componente inteiro
-  useEffect(() => {
-  }, [])
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fabricRef = useRef<any>(null)
   const bgRef = useRef<any>(null)
@@ -149,9 +146,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const [selectedTick, setSelectedTick] = useState(0)
   const undoStack = useRef<string[]>([])
   const redoStack = useRef<string[]>([])
-  const beforeModifySnapRef = useRef<string | null>(null)
-  const pendingSnapshot = useRef<string | null>(null)
-  const UNDO_LIMIT = 100
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
@@ -264,15 +258,16 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   // Inicializar Fabric
   useEffect(() => {
     if (!campaign || !canvasRef.current) return
-    // Sempre dispose do canvas anterior antes de re-iniciar, mesmo que seja o mesmo DOM.
-    // Isso evita estado stale quando voltamos pro editor depois de sair e voltar.
+    // Se ja existe um canvas Fabric, mas ele aponta para um DOM element diferente
+    // do canvasRef.current atual (Strict Mode re-mount, hot reload, etc), descarta o velho
     if (fabricRef.current) {
+      const existingEl = (fabricRef.current as any).lowerCanvasEl ?? (fabricRef.current as any).getElement?.()
+      if (existingEl === canvasRef.current) return  // mesmo DOM, ja inicializado
       try { fabricRef.current.dispose() } catch {}
       fabricRef.current = null
     }
     let alive = true
     const cleanupFns: Array<() => void> = []
-
 
     const init = async () => {
       const { Canvas, Rect, Textbox, FabricImage } = await import("fabric")
@@ -308,30 +303,21 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("selection:created", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:cleared", () => setSelected(null))
+      fc.on("object:modified", () => { if (alive) doSave() })
       fc.on("text:changed", () => { if (alive) setSelectedTick(t => t + 1) })
       fc.on("object:added", () => { if (alive) refreshLayers(fc) })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
-      // Modificacao de objeto (mover/escalar/rotacionar): snapshot ANTES de salvar.
-      // pushHistoryBefore captura o estado anterior (que ja esta no preChangeSnapshot ref).
-      fc.on("object:modified", () => {
-        if (!alive) return
-        commitPendingHistory()
-        doSave()
-      })
-      // Sempre que comeca uma manipulacao (mouse:down em objeto), captura snapshot pra
-      // ser commitado no object:modified seguinte.
-      fc.on("mouse:down", (e: any) => {
-        if (!alive) return
-        if (e.target && !e.target.__isBg) capturePendingHistory()
-      })
+      // Captura mudancas para historico de undo/redo
+      fc.on("object:modified", () => pushHistory())
+      fc.on("object:added", () => { if (!isApplyingHistory.current) pushHistory() })
+      fc.on("object:removed", () => { if (!isApplyingHistory.current) pushHistory() })
+      // text:changed nao chama pushHistory - text:editing:exited cobre o flush final
 
-      // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior).
-      // Tambem captura snapshot do canvas inteiro pra undo (commitado se texto mudar no exited).
+      // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior)
       fc.on("text:editing:entered", (e: any) => {
         if (!alive || !e?.target) return
         ;(e.target as any).__editStartText = e.target.text ?? ""
         ;(e.target as any).__editStartStyles = JSON.parse(JSON.stringify(e.target.styles ?? {}))
-        capturePendingHistory()
       })
 
       fc.on("text:editing:exited", async (e: any) => {
@@ -340,26 +326,18 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         if (!obj) return
         const oldText = (obj as any).__editStartText ?? ""
         const oldStyles = (obj as any).__editStartStyles ?? {}
-        const editStartSnap = (obj as any).__editStartSnap as string | null | undefined
         const newText = obj.text ?? ""
         const textChanged = oldText !== newText
-
-        // Empilha snapshot pre-edicao no historico (sessao inteira de edicao = 1 undo)
-        if (editStartSnap) pushSnapshot(editStartSnap)
 
         // Sempre limpar refs de edicao
         delete (obj as any).__editStartText
         delete (obj as any).__editStartStyles
-        delete (obj as any).__editStartSnap
 
         if (!textChanged) {
-          // Sem mudança de texto: descarta snapshot pendente (nao sera undo)
-          pendingSnapshot.current = null
+          // Sem mudança de texto: caminho rápido. doSave normal.
           if (!isApplyingHistory.current) doSave()
           return
         }
-        // Texto mudou: commita snapshot pendente como undo step
-        commitPendingHistory()
 
         // CASO: texto mudou
         // 1) Migra styles localmente para feedback visual imediato (sem flicker)
@@ -556,14 +534,12 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
 
       fc.renderAll()
       if (alive) refreshLayers(fc)
-      // Stack comeca VAZIA. So entra estado quando o user faz uma mudanca.
-      // Isso evita que Cmd+Z volte pra um estado fantasma de pre-load.
-      undoStack.current = []
-      redoStack.current = []
-      // Aguarda microtask + 1 tick para garantir que todos os object:added do load
-      // ja foram processados antes de liberar a flag (evita race condition).
-      await Promise.resolve()
-      await new Promise(r => setTimeout(r, 0))
+      // Snapshot inicial (estado limpo, sem dirty)
+      try {
+        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+        undoStack.current = [snap]
+        redoStack.current = []
+      } catch (e) {}
       isApplyingHistory.current = false
     }
 
@@ -576,21 +552,15 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         if (fcc.__blockPasteHandler) document.removeEventListener("paste", fcc.__blockPasteHandler, true)
       }
       cleanupFns.forEach(fn => { try { fn() } catch {} })
-      // Dispose o canvas e libera TODAS as refs relacionadas ao Fabric.
-      // Sem isso, refs zumbis (bgRef, pendingSnapshot, undoStack) podem causar
-      // estado inconsistente quando o componente remonta (ex: voltar pro editor).
+      // Dispose o canvas e libera fabricRef para que a próxima execução do useEffect
+      // (em strict mode, hot reload, ou navegação de peça pra peça) possa re-inicializar
+      // num <canvas> DOM novo. Sem isso, fabricRef segura referencia stale.
       if (fabricRef.current) {
         try { fabricRef.current.dispose() } catch {}
         fabricRef.current = null
       }
-      bgRef.current = null
-      pendingSnapshot.current = null
-      beforeModifySnapRef.current = null
-      undoStack.current = []
-      redoStack.current = []
-      isApplyingHistory.current = false
     }
-  }, [campaign?.id, pieceId])
+  }, [campaign])
 
   function spansToFabricProps(spans: TextSpan[]) {
     const first = spans[0]?.style ?? {}
@@ -604,182 +574,90 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     }
   }
 
-  // Tira snapshot do estado atual e empilha como "estado-antes-da-proxima-mudanca".
-  // Use ANTES de aplicar uma mudanca (apagar layer, mudar cor, mudar fonte, etc).
-  function pushHistoryBefore() {
+  function pushHistory() {
     if (isApplyingHistory.current) return
     const fc = fabricRef.current
     if (!fc) return
     try {
       const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+      // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
       undoStack.current.push(snap)
-      if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
+      if (undoStack.current.length > 16) undoStack.current.shift() // mantem 15 + estado atual
       redoStack.current = []
       isDirtyRef.current = true
       setIsDirty(true)
-    } catch { /* ignora */ }
-  }
-
-  // Captura snapshot do estado ATUAL do canvas (retorna a string).
-  function captureSnapshot(): string | null {
-    if (isApplyingHistory.current) return null
-    const fc = fabricRef.current
-    if (!fc) return null
-    try {
-      return JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
-    } catch { return null }
-  }
-
-  // Empilha um snapshot direto no undoStack. Limpa o redo.
-  function pushSnapshot(snap: string | null | undefined) {
-    if (isApplyingHistory.current) return
-    if (!snap) return
-    const top = undoStack.current[undoStack.current.length - 1]
-    if (top === snap) return
-    undoStack.current.push(snap)
-    if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
-    redoStack.current = []
-    isDirtyRef.current = true
-    setIsDirty(true)
-  }
-
-  // Captura snapshot pendente (chamada em mouse:down).
-  // Sera commitado em object:modified subsequente.
-  function capturePendingHistory() {
-    if (isApplyingHistory.current) return
-    const fc = fabricRef.current
-    if (!fc) return
-    try {
-      pendingSnapshot.current = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
-    } catch { pendingSnapshot.current = null }
-  }
-
-  // Commita o snapshot pendente capturado em mouse:down. Chamado em object:modified.
-  function commitPendingHistory() {
-    if (isApplyingHistory.current) return
-    const snap = pendingSnapshot.current
-    pendingSnapshot.current = null
-    if (!snap) return
-    const top = undoStack.current[undoStack.current.length - 1]
-    if (top === snap) return
-    undoStack.current.push(snap)
-    if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
-    redoStack.current = []
-    isDirtyRef.current = true
-    setIsDirty(true)
+    } catch (e) { /* ignora */ }
   }
 
   async function applySnapshot(snap: string) {
     const fc = fabricRef.current
     if (!fc) return
     isApplyingHistory.current = true
-    beforeModifySnapRef.current = null
-    pendingSnapshot.current = null
-
     try {
+      // Parse o snapshot pra ter acesso aos dados originais (precisaremos pra restaurar
+      // styles per-char e props customizadas que loadFromJSON pode perder)
       const snapData = JSON.parse(snap)
       const snapObjects: any[] = Array.isArray(snapData?.objects) ? snapData.objects : []
 
-      // Estratégia robusta: limpar canvas manualmente + reconstruir cada objeto via
-      // util.enlivenObjects (que retorna Promise<Object[]> totalmente carregados, incluindo imagens).
-      // Mais previsível que loadFromJSON em Fabric v7.
+      await new Promise<void>((resolve) => {
+        const r = fc.loadFromJSON(snapData, () => resolve())
+        if (r && typeof r.then === "function") r.then(() => resolve())
+      })
 
-      // 1. Limpar tudo do canvas (sem disparar saves no servidor)
-      const objs = fc.getObjects().slice() // copia para nao mutar durante remove
-      for (const o of objs) {
-        try { fc.remove(o) } catch {}
-      }
-
-      // 2. Reconstruir os objetos do snapshot via enlivenObjects (aguarda imagens)
-      const fabric = await import("fabric")
-      let enlivened: any[] = []
-      try {
-        if ((fabric as any).util?.enlivenObjects) {
-          enlivened = await (fabric as any).util.enlivenObjects(snapObjects)
-        } else {
-          // Fallback: carregar via loadFromJSON e ler depois
-          await new Promise<void>((resolve) => {
-            const r = fc.loadFromJSON({ ...snapData, background: undefined }, () => resolve())
-            if (r && typeof r.then === "function") r.then(() => resolve())
-          })
-          enlivened = fc.getObjects().slice()
-          // Limpa de novo, pois loadFromJSON ja adicionou
-          for (const o of enlivened) {
-            try { fc.remove(o) } catch {}
-          }
+      // CRITICO 1: Fabric Textbox ignora `styles` no construtor. Apos loadFromJSON,
+      // os textboxes restaurados perdem styles per-char. Reaplica manualmente do snapshot.
+      // CRITICO 2: __assetId / __assetLabel podem se perder na reconstrucao - garante.
+      const restored = fc.getObjects().filter((o: any) => !o.__isBg)
+      for (let i = 0; i < restored.length; i++) {
+        const obj: any = restored[i]
+        const src = snapObjects[i]
+        if (!src) continue
+        // Restaurar props customizadas
+        if (src.__assetId !== undefined) obj.__assetId = src.__assetId
+        if (src.__assetLabel !== undefined) obj.__assetLabel = src.__assetLabel
+        if (src.__isImage !== undefined) obj.__isImage = src.__isImage
+        // Restaurar styles per-char em textboxes
+        if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
+          obj.set("styles", src.styles)
+          if (obj.initDimensions) obj.initDimensions()
         }
-      } catch (e) {
-        console.warn("[applySnapshot] enliven failed:", e)
       }
 
-      // 3. Adicionar bg PRIMEIRO (sempre vai ser o objeto mais ao fundo)
-      const bgFill = bgColorRef.current || "#ffffff"
-      const newBg = new fabric.Rect({
-        left: 0, top: 0,
-        width: canvasWRef.current, height: canvasHRef.current,
-        fill: bgFill,
+      // CRITICO 3: bg tem excludeFromExport=true, fica fora do snapshot. Re-adiciona no fundo.
+      const { Rect } = await import("fabric")
+      const newBg = new Rect({
+        left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
+        fill: bgColorRef.current,
         selectable: false, evented: false, excludeFromExport: true,
       })
       ;(newBg as any).__isBg = true
       bgRef.current = newBg
       fc.add(newBg)
-
-      // 4. Adicionar os objetos do snapshot (preservando props customizadas e styles per-char)
-      for (let i = 0; i < enlivened.length; i++) {
-        const obj: any = enlivened[i]
-        const src = snapObjects[i]
-        if (!obj || !src) continue
-        if (src.__assetId !== undefined) obj.__assetId = src.__assetId
-        if (src.__assetLabel !== undefined) obj.__assetLabel = src.__assetLabel
-        if (src.__isImage !== undefined) obj.__isImage = src.__isImage
-        if (src.__isBg) continue // nunca readicionar bg do snapshot
-        if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
-          obj.set("styles", src.styles)
-          if (obj.initDimensions) obj.initDimensions()
-        }
-        fc.add(obj)
-      }
-
-      fc.requestRenderAll()
+      fc.sendObjectToBack(newBg)
+      fc.renderAll()
       refreshLayers(fc)
-    } catch (e) {
-      console.warn("[applySnapshot] fail:", e)
-    }
-
-    // Aguarda 2 ticks para garantir que todos os events pendentes foram processados
-    await new Promise(r => setTimeout(r, 0))
-    await new Promise(r => setTimeout(r, 0))
+    } catch (e) { console.warn("applySnapshot fail:", e) }
     isApplyingHistory.current = false
   }
 
   async function undo() {
-    if (undoStack.current.length === 0) return
+    if (undoStack.current.length < 2) return
     const fc = fabricRef.current
     if (!fc) return
-    // Captura estado atual no redo, aplica o topo da undoStack (estado anterior).
-    try {
-      const currentSnap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
-      redoStack.current.push(currentSnap)
-      if (redoStack.current.length > UNDO_LIMIT) redoStack.current.shift()
-    } catch {}
-    const previous = undoStack.current.pop()!
-    await applySnapshot(previous)
+    // Topo da pilha eh o estado atual; guarda no redo e aplica o anterior
+    const current = undoStack.current.pop()!
+    redoStack.current.push(current)
+    const previous = undoStack.current[undoStack.current.length - 1]
+    if (previous) await applySnapshot(previous)
     setSelected(null)
   }
 
   async function redo() {
     if (redoStack.current.length === 0) return
-    const fc = fabricRef.current
-    if (!fc) return
-    // Captura estado atual no undo, aplica o topo do redo.
-    try {
-      const currentSnap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
-      undoStack.current.push(currentSnap)
-      if (undoStack.current.length > UNDO_LIMIT) undoStack.current.shift()
-    } catch {}
     const next = redoStack.current.pop()!
+    undoStack.current.push(next)
     await applySnapshot(next)
     setSelected(null)
   }
@@ -788,7 +666,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     const fc = fabricRef.current
     const obj: any = selected
     if (!fc || !obj) return
-    pushHistoryBefore()
     const cw = canvasWRef.current, ch = canvasHRef.current
     // Tamanho real do objeto (sem escala) - pega bounding box logico do textbox/imagem
     const ow = obj.width ?? 100
@@ -894,7 +771,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function moveLayer(obj: any, direction: "up" | "down") {
     const fc = fabricRef.current
     if (!fc || !obj) return
-    pushHistoryBefore()
     if (direction === "up") fc.bringObjectForward(obj)
     else fc.sendObjectBackwards(obj)
     fc.renderAll()
@@ -1108,7 +984,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function changeBg(c: string) {
     const bg = bgRef.current; const fc = fabricRef.current
     if (!bg || !fc) return
-    pushHistoryBefore(); bg.set("fill", c); fc.renderAll(); setBgColor(c); bgColorRef.current = c; doSave()
+    bg.set("fill", c); fc.renderAll(); setBgColor(c); bgColorRef.current = c; doSave()
   }
 
   // Sincroniza hexInput com a cor do objeto selecionado
@@ -1124,8 +1000,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function applyStyle(key: string, val: any) {
     const fc = fabricRef.current; const obj = selected
     if (!fc || !obj) return
-    // Captura snap ANTES de aplicar o estilo (para entrar no histórico)
-    const before = captureSnapshot()
     const value = key === "fontSize" ? Number(val) : val
     const styleKey = key === "fill" ? "fill" : key
 
@@ -1154,7 +1028,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     // Para forcar re-render do painel, incrementa um contador separado.
     setSelectedTick(t => t + 1)
     doSave()
-    if (before) pushSnapshot(before)
   }
 
   function changeZoom(delta: number) {
@@ -1203,8 +1076,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         <button
           onClick={undo}
           title="Desfazer (Cmd+Z)"
-          disabled={undoStack.current.length === 0}
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: undoStack.current.length === 0 ? "not-allowed" : "pointer", color: undoStack.current.length === 0 ? "#444" : "#aaa", opacity: undoStack.current.length === 0 ? 0.5 : 1 }}
+          disabled={undoStack.current.length < 2}
+          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: undoStack.current.length < 2 ? "not-allowed" : "pointer", color: undoStack.current.length < 2 ? "#444" : "#aaa", opacity: undoStack.current.length < 2 ? 0.5 : 1 }}
         >↶</button>
         <button
           onClick={redo}
@@ -1272,7 +1145,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                   style={{ color: "#666", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, padding: "2px 4px", lineHeight: 1 }}>▲</button>
                 <button title="Mover para baixo" onClick={e => { e.stopPropagation(); moveLayer(layer.obj, "down") }}
                   style={{ color: "#666", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, padding: "2px 4px", lineHeight: 1 }}>▼</button>
-                <button title="Remover" onClick={e => { e.stopPropagation(); pushHistoryBefore(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
+                <button title="Remover" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
                   style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
               </div>
             )
