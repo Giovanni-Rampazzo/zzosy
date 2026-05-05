@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
+import { migrateStyles } from "@/lib/migrateStyles"
 
 interface TextSpan {
   text: string
@@ -311,17 +312,40 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("object:removed", () => { if (!isApplyingHistory.current) pushHistory() })
       fc.on("text:changed", () => pushHistory())
 
+      // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior)
+      fc.on("text:editing:entered", (e: any) => {
+        if (!alive || !e?.target) return
+        ;(e.target as any).__editStartText = e.target.text ?? ""
+        ;(e.target as any).__editStartStyles = JSON.parse(JSON.stringify(e.target.styles ?? {}))
+      })
+
       fc.on("text:editing:exited", async (e: any) => {
         if (!alive) return
         const obj = e.target
-        if (!obj?.__assetId) return
-        // So salva texto no asset quando esta editando a MATRIZ (peca eh visual override)
-        if (!pieceId) {
+        if (!obj) return
+        const oldText = (obj as any).__editStartText ?? ""
+        const oldStyles = (obj as any).__editStartStyles ?? {}
+        const newText = obj.text ?? ""
+        // Se texto mudou, migrar styles per-char IGUAL Word/Photoshop:
+        // herda estilo do anterior em inserts, mantem em equal/replace, descarta em delete.
+        if (oldText !== newText) {
+          const migrated = migrateStyles(oldText, newText, oldStyles)
+          obj.set("styles", migrated)
+          if ((obj as any).initDimensions) (obj as any).initDimensions()
+          fc.renderAll()
+        }
+        delete (obj as any).__editStartText
+        delete (obj as any).__editStartStyles
+
+        if (!obj.__assetId) { doSave(); return }
+        // Modelo Opcao A: edicao no editor propaga para o ASSET, nao importa se eh matriz ou peca.
+        // Servidor migra styles automaticamente em todos os escopos (matriz e peças).
+        if (oldText !== newText) {
           const spans = textboxToSpans(obj)
           await fetch(`/api/campaigns/${campaignId}/assets/${obj.__assetId}`, {
             method: "PUT", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: spans, value: obj.text })
-          })
+          }).catch(() => {})
         }
         doSave()
       })
