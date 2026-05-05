@@ -302,7 +302,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       ;(bg as any).__isBg = true
       bgRef.current = bg
       fc.add(bg)
-      console.log("[INIT-DEBUG] BG adicionado, canvas size:", cw, "x", ch, "fill:", bgColorRef.current)
 
       fc.on("selection:created", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
@@ -455,10 +454,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         // MODO PEÇA v2: layers + assets (sync automatico com asset)
         const p = pieceRef.current
         const pdata = typeof p.data === "string" ? JSON.parse(p.data) : p.data
-        console.log("[INIT-DEBUG] Modo: PEÇA")
-        console.log("[INIT-DEBUG] pdata exists?", !!pdata)
-        console.log("[INIT-DEBUG] pdata.version:", pdata?.version)
-        console.log("[INIT-DEBUG] pdata.layers count:", pdata?.layers?.length)
         const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
 
         if (pdata?.version === 2 && Array.isArray(pdata?.layers)) {
@@ -529,14 +524,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       } else {
         // MODO MATRIZ
         const savedLayers = c.keyVision?.layers
-        console.log("[INIT-DEBUG] Modo: MATRIZ")
-        console.log("[INIT-DEBUG] c.keyVision exists?", !!c.keyVision)
-        console.log("[INIT-DEBUG] keyVision.layers raw:", c.keyVision?.layers)
-        console.log("[INIT-DEBUG] savedLayers isArray?", Array.isArray(savedLayers))
-        console.log("[INIT-DEBUG] savedLayers length:", savedLayers?.length)
-        console.log("[INIT-DEBUG] c.assets count:", c.assets?.length)
         if (savedLayers && Array.isArray(savedLayers) && savedLayers.length > 0) {
-          console.log("[INIT-DEBUG] vai carregar", savedLayers.length, "layers")
           const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
           const sorted = [...savedLayers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
           for (const layer of sorted) {
