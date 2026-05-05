@@ -222,7 +222,7 @@ export default function CampaignAssetsPage() {
                 </button>
               </div>
             )}
-            <input ref={newImageInputRef} type="file" accept="image/*" style={{ display: "none" }}
+            <input ref={newImageInputRef} type="file" accept="image/*" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} tabIndex={-1}
               onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
             <PsdImporter campaignId={id} onImported={load} />
             {campaign.assets.length > 0 && (
@@ -277,7 +277,7 @@ export default function CampaignAssetsPage() {
                         )}
                         <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 10px", background: "#F8F9FA" }}>
                           Trocar imagem
-                          <input type="file" accept="image/*" style={{ display: "none" }}
+                          <input type="file" accept="image/*" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0, pointerEvents: "none" }} tabIndex={-1}
                             onChange={e => { const f = e.target.files?.[0]; if (f) uploadAssetImage(asset.id, f); e.target.value = "" }} />
                         </label>
                       </div>
