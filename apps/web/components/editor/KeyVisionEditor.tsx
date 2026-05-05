@@ -145,6 +145,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
   const [selectedTick, setSelectedTick] = useState(0)
   const undoStack = useRef<string[]>([])
+  const redoStack = useRef<string[]>([])
+  const beforeModifySnapRef = useRef<string | null>(null)
   const pendingSnapshot = useRef<string | null>(null)
   const UNDO_LIMIT = 100
   const redoStack = useRef<string[]>([])
