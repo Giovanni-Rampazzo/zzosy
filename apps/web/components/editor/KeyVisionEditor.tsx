@@ -1062,7 +1062,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function applyStyle(key: string, val: any) {
     const fc = fabricRef.current; const obj = selected
     if (!fc || !obj) return
-    pushHistoryBefore()
+    // Captura snap ANTES de aplicar o estilo (para entrar no histórico)
+    const before = captureSnapshot()
     const value = key === "fontSize" ? Number(val) : val
     const styleKey = key === "fill" ? "fill" : key
 
@@ -1091,6 +1092,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     // Para forcar re-render do painel, incrementa um contador separado.
     setSelectedTick(t => t + 1)
     doSave()
+    if (before) pushSnapshot(before)
   }
 
   function changeZoom(delta: number) {
