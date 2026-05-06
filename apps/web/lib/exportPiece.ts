@@ -391,10 +391,13 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const styleRuns = buildStyleRuns(obj, fullText)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
       const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
+      // PSD usa \r (carriage return) como quebra de linha, nao \n.
+      // Substituicao 1:1 mantem styleRuns alinhados.
+      const psdText = fullText.replace(/\n/g, "\r")
       psdLayers.push({
         name, top, left, bottom, right,
         text: {
-          text: fullText,
+          text: psdText,
           transform: [1, 0, 0, 1, left, top + fontSize],
           style: {
             font: { name: ps.name },
