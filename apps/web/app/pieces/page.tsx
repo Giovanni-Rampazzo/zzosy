@@ -94,10 +94,10 @@ function PiecesContent() {
             {pieces.map((p) => (
               <div
                 key={p.id}
-                className={`bg-white rounded-lg border transition-all overflow-hidden ${isSelected(p.id) ? "border-[#F5C400] shadow-md" : "border-[#E0E0E0] hover:border-[#F5C400]"}`}
+                className={`bg-white rounded-lg border transition-all ${isSelected(p.id) ? "border-[#F5C400] shadow-md" : "border-[#E0E0E0] hover:border-[#F5C400]"}`}
               >
                 <div
-                  className="bg-[#F5F5F0] h-32 flex flex-col items-center justify-center relative overflow-hidden cursor-pointer group"
+                  className="bg-[#F5F5F0] h-32 flex flex-col items-center justify-center relative overflow-hidden cursor-pointer group rounded-t-lg"
                   onClick={() => router.push(`/editor?campaignId=${p.campaignId}&pieceId=${p.id}`)}
                 >
                   {p.imageUrl ? (
