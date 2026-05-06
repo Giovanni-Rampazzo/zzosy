@@ -85,6 +85,39 @@ interface SystemFontData {
   fullName: string
   family: string
   style: string
+  blob?: () => Promise<Blob>
+}
+
+// Cache de fontes ja carregadas no document.fonts (pra nao carregar de novo).
+const _loadedFontFaces = new Set<string>()
+
+// Mapa fullName -> SystemFontData pra carregar quando o usuario aplicar a fonte.
+let _fontDataMap: Map<string, SystemFontData> | null = null
+
+/**
+ * Carrega uma variante de fonte no document.fonts pra que o navegador consiga renderizar.
+ * No macOS, ter uma fonte instalada nao garante que Chrome possa renderizar — algumas
+ * variantes (Bold, Light, etc) so renderizam se forem registradas como FontFace.
+ */
+export async function ensureFontLoaded(fullName: string): Promise<void> {
+  if (typeof document === "undefined") return
+  if (_loadedFontFaces.has(fullName)) return
+  _loadedFontFaces.add(fullName)
+
+  if (!_fontDataMap) return // sem cache do Local Font Access — confia no CSS resolver
+  const data = _fontDataMap.get(fullName)
+  if (!data || !data.blob) return
+
+  try {
+    const blob = await data.blob()
+    const buffer = await blob.arrayBuffer()
+    // FontFace.family precisa ser igual ao que vai ser usado em CSS (fontFamily)
+    const face = new FontFace(fullName, buffer)
+    await face.load()
+    ;(document as any).fonts.add(face)
+  } catch (err) {
+    // Falha silenciosa - fallback do CSS assume
+  }
 }
 
 /**
@@ -97,6 +130,12 @@ async function tryLocalFontAccess(): Promise<FontFamily[] | null> {
   if (!w.queryLocalFonts) return null
   try {
     const fonts: SystemFontData[] = await w.queryLocalFonts()
+    // Popula mapa pra ensureFontLoaded poder achar o blob da fonte depois.
+    _fontDataMap = new Map()
+    for (const f of fonts) {
+      const name = f.fullName || f.family
+      if (!_fontDataMap.has(name)) _fontDataMap.set(name, f)
+    }
     // Agrupa por familia, label = style (Regular/Light/Bold/etc), value = fullName
     const map = new Map<string, Record<string, string>>()
     for (const f of fonts) {

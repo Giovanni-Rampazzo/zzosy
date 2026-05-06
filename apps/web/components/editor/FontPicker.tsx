@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
-import { listFontFamilies, FontFamily, findFamilyAndVariant } from "@/lib/fonts"
+import { listFontFamilies, FontFamily, findFamilyAndVariant, ensureFontLoaded } from "@/lib/fonts"
 
 // Cache + promise compartilhada entre todos os Pickers (FontPicker e WeightPicker).
 // Garante que ambos vejam exatamente a mesma lista de familias/variantes.
@@ -58,15 +58,13 @@ export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
     ? families.filter(f => f.family.toLowerCase().includes(query.toLowerCase().trim()))
     : families
 
-  function pickFamily(fam: FontFamily) {
-    // Tenta manter o variant atual se a nova familia tiver. Senao usa Regular.
-    // Se nao tem nem Regular, pega a primeira variante disponivel (algumas familias
-    // do sistema vem so com 1 variante de nome diferente).
+  async function pickFamily(fam: FontFamily) {
     const variantNames = Object.keys(fam.variants)
     const targetVariant = fam.variants[currentVariant]
       ? currentVariant
       : (fam.variants["Regular"] ? "Regular" : variantNames[0])
     const newValue = fam.variants[targetVariant] ?? fam.family
+    await ensureFontLoaded(newValue)
     onChange(newValue)
     setOpen(false); setQuery("")
   }
@@ -164,11 +162,13 @@ export function WeightPicker({ value, onChange, buttonStyle }: PickerProps) {
   // Se nao achou a familia (raro, mas pode acontecer com fontes muito custom), retorna so Regular
   const variants = familyObj ? Object.keys(familyObj.variants) : ["Regular"]
 
-  function pickVariant(label: string) {
+  async function pickVariant(label: string) {
     if (!familyObj) return
     const newValue = familyObj.variants[label]
-    console.log("[WEIGHT-PICK]", { label, currentValue: value, currentFamily, currentVariant, familyObjFound: !!familyObj, allVariants: familyObj.variants, mappedTo: newValue })
     if (!newValue || newValue === value) { setOpen(false); return }
+    // Garante que a fonte esta registrada no document.fonts antes de aplicar.
+    // Sem isso, navegador faz fallback CSS pra outra fonte aleatoria.
+    await ensureFontLoaded(newValue)
     onChange(newValue)
     setOpen(false)
   }
