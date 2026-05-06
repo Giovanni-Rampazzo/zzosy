@@ -153,6 +153,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const pendingTextPropagation = useRef(false)
   const [confirmExit, setConfirmExit] = useState<null | (() => void)>(null)
   const [exportOpen, setExportOpen] = useState(false)
+  const [exportPieces, setExportPieces] = useState<any[]>([])
   const [layers, setLayers] = useState<any[]>([])
   const [zoom, setZoom] = useState(0.5)
   const zoomRef = useRef(0.5)
@@ -1089,19 +1090,38 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           disabled={redoStack.current.length === 0}
           style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: redoStack.current.length === 0 ? "not-allowed" : "pointer", color: redoStack.current.length === 0 ? "#444" : "#aaa", opacity: redoStack.current.length === 0 ? 0.5 : 1 }}
         >↷</button>
-        {isPieceMode && (
-          <button
-            onClick={async () => {
-              // Salvar antes de exportar para garantir que servidor tem versao atual
-              await saveNow()
+        <button
+          onClick={async () => {
+            // Salvar antes de exportar
+            await saveNow()
+            if (isPieceMode && piece) {
+              setExportPieces([{
+                id: piece.id, name: piece.name, data: piece.data,
+                width: canvasWRef.current, height: canvasHRef.current,
+              }])
               setExportOpen(true)
-            }}
-            style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#aaa" }}
-            title="Exportar esta peça"
-          >
-            ↗ Exportar
-          </button>
-        )}
+              return
+            }
+            // Modo matriz: busca todas as pecas da campanha
+            try {
+              const res = await fetch(`/api/pieces?campaignId=${campaignId}`)
+              if (!res.ok) throw new Error()
+              const list = await res.json()
+              if (!Array.isArray(list) || list.length === 0) {
+                alert("Nenhuma peca gerada ainda. Use ▶ Gerar Pecas primeiro.")
+                return
+              }
+              setExportPieces(list.map((p: any) => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height })))
+              setExportOpen(true)
+            } catch {
+              alert("Falha ao carregar pecas para exportar")
+            }
+          }}
+          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#aaa" }}
+          title={isPieceMode ? "Exportar esta peca" : "Exportar todas as pecas da campanha"}
+        >
+          ↗ Exportar
+        </button>
         <button
           onClick={saveNow}
           disabled={saving}
@@ -1294,17 +1314,11 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         </div>
       )}
 
-      {exportOpen && piece && (
+      {exportOpen && exportPieces.length > 0 && (
         <ExportDialog
-          pieces={[{
-            id: piece.id,
-            name: piece.name,
-            data: piece.data,
-            width: canvasWRef.current,
-            height: canvasHRef.current,
-          }]}
+          pieces={exportPieces}
           campaignName={(campaign as any)?.title ?? (campaign as any)?.name}
-          onClose={() => setExportOpen(false)}
+          onClose={() => { setExportOpen(false); setExportPieces([]) }}
         />
       )}
 
