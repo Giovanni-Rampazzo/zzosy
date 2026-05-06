@@ -82,8 +82,8 @@ export default function CampaignAssetsPage() {
     }
   }
 
-  async function deleteAsset(assetId: string, label: string) {
-    if (!confirm(`Apagar "${label}"? Será removido também das peças e da matriz.`)) return
+  async function deleteAsset(assetId: string, label: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm(`Apagar "${label}"? Será removido também das peças e da matriz.`)) return
     const res = await fetch(`/api/campaigns/${id}/assets/${assetId}`, { method: "DELETE" })
     if (res.ok) {
       await load()
@@ -317,7 +317,8 @@ export default function CampaignAssetsPage() {
                       {savingMap[asset.id] ? "Salvando..." : "Salvo"}
                     </div>
                     <button
-                      onClick={() => deleteAsset(asset.id, asset.label)}
+                      onClick={(e) => deleteAsset(asset.id, asset.label, e.altKey)}
+                      title="Option/Alt+click pra apagar sem confirmação"
                       style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, background: "#f0f0f0", color: "#dc2626", border: "none", borderRadius: 4, cursor: "pointer" }}
                     >
                       Apagar

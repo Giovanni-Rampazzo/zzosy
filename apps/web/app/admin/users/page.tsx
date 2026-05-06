@@ -62,8 +62,8 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function deleteUser(u: User) {
-    if (!confirm(`Apagar usuario "${u.email}"? Esta acao nao pode ser desfeita.`)) return
+  async function deleteUser(u: User, skipConfirm = false) {
+    if (!skipConfirm && !confirm(`Apagar usuario "${u.email}"? Esta acao nao pode ser desfeita.`)) return
     const res = await fetch(`/api/admin/users/${u.id}`, { method: "DELETE" })
     if (res.ok) {
       setUsers(prev => prev.filter(x => x.id !== u.id))
@@ -158,7 +158,8 @@ export default function AdminUsersPage() {
                                 {u.blocked ? "Desbloquear" : "Bloquear"}
                               </button>
                               <button
-                                onClick={() => deleteUser(u)}
+                                onClick={(e) => deleteUser(u, e.altKey)}
+                                title="Option/Alt+click pra apagar sem confirmação"
                                 className="text-xs font-semibold px-3 py-1 border border-red-200 text-red-700 bg-red-50 rounded-md hover:bg-red-100 cursor-pointer"
                               >
                                 Apagar

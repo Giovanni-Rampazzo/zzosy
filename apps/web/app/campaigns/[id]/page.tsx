@@ -70,8 +70,8 @@ export default function CampaignOverviewPage() {
     }
   }, [id])
 
-  async function deletePiece(pieceId: string) {
-    if (!confirm("Apagar esta peça? Esta ação não pode ser desfeita.")) return
+  async function deletePiece(pieceId: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm("Apagar esta peça? Esta ação não pode ser desfeita.")) return
     await fetch(`/api/pieces/${pieceId}`, { method: "DELETE" })
     setPieces(p => p.filter(x => x.id !== pieceId))
   }
@@ -85,9 +85,9 @@ export default function CampaignOverviewPage() {
     else setSelected(pieces.map(p => p.id))
   }
 
-  async function deleteSelected() {
+  async function deleteSelected(skipConfirm = false) {
     if (selected.length === 0) return
-    if (!confirm(`Apagar ${selected.length} peça(s)? Esta ação não pode ser desfeita.`)) return
+    if (!skipConfirm && !confirm(`Apagar ${selected.length} peça(s)? Esta ação não pode ser desfeita.`)) return
     await Promise.all(selected.map(id => fetch(`/api/pieces/${id}`, { method: "DELETE" })))
     setPieces(prev => prev.filter(p => !selected.includes(p.id)))
     setSelected([])
@@ -234,7 +234,8 @@ export default function CampaignOverviewPage() {
                         ↗ Exportar ({selected.length})
                       </button>
                       <button
-                        onClick={deleteSelected}
+                        onClick={(e) => deleteSelected(e.altKey)}
+                        title="Option/Alt+click pra apagar sem confirmação"
                         style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
                       >
                         🗑 Apagar ({selected.length})
@@ -335,9 +336,9 @@ export default function CampaignOverviewPage() {
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "auto" }}>
                       <button
-                        onClick={() => deletePiece(p.id)}
+                        onClick={(e) => deletePiece(p.id, e.altKey)}
                         style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "6px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer" }}
-                        title="Apagar"
+                        title="Option/Alt+click pra apagar sem confirmação"
                       >
                         🗑
                       </button>
@@ -395,9 +396,9 @@ export default function CampaignOverviewPage() {
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
                         <button
-                          onClick={() => deletePiece(p.id)}
+                          onClick={(e) => deletePiece(p.id, e.altKey)}
                           style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "5px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer" }}
-                          title="Apagar"
+                          title="Option/Alt+click pra apagar sem confirmação"
                         >
                           🗑
                         </button>

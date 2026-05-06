@@ -48,8 +48,8 @@ export default function PiecePage() {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  async function deletePiece() {
-    if (!confirm("Apagar esta peça?")) return
+  async function deletePiece(skipConfirm = false) {
+    if (!skipConfirm && !confirm("Apagar esta peça?")) return
     await fetch(`/api/pieces/${id}`, { method: "DELETE" })
     router.push(piece?.campaignId ? `/pieces?campaignId=${piece.campaignId}` : "/pieces")
   }
@@ -75,7 +75,7 @@ export default function PiecePage() {
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Editar Peça</h1>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={deletePiece} style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>
+            <button onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação" style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>
               🗑 Apagar
             </button>
             <button onClick={save} disabled={saving} style={{ background: "#F5C400", border: "none", color: "#111", padding: "8px 20px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
