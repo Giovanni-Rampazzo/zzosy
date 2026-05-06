@@ -100,10 +100,12 @@ function PiecesContent() {
             {pieces.map((p) => (
               <div
                 key={p.id}
-                className={`bg-white rounded-lg border cursor-pointer transition-all ${isSelected(p.id) ? "border-[#F5C400] shadow-md" : "border-[#E0E0E0] hover:border-[#F5C400]"}`}
-                onClick={() => toggleSelect(p.id)}
+                className={`bg-white rounded-lg border transition-all overflow-hidden ${isSelected(p.id) ? "border-[#F5C400] shadow-md" : "border-[#E0E0E0] hover:border-[#F5C400]"}`}
               >
-                <div className="bg-[#F5F5F0] h-32 flex flex-col items-center justify-center relative overflow-hidden">
+                <div
+                  className="bg-[#F5F5F0] h-32 flex flex-col items-center justify-center relative overflow-hidden cursor-pointer group"
+                  onClick={() => router.push(`/editor?campaignId=${p.campaignId}&pieceId=${p.id}`)}
+                >
                   {p.imageUrl ? (
                     <img src={p.imageUrl} alt={p.name} className="w-full h-full object-contain" />
                   ) : (
@@ -112,12 +114,16 @@ function PiecesContent() {
                       <div className="text-xs text-[#aaaaaa]">{p.width}×{p.height}</div>
                     </>
                   )}
-                  <div className="absolute top-2 left-2 w-4 h-4 border-2 border-[#E0E0E0] rounded bg-white flex items-center justify-center">
-                    {isSelected(p.id) && <div className="w-2 h-2 bg-[#F5C400] rounded-sm" />}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors pointer-events-none" />
+                  <div
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(p.id) }}
+                    className={`absolute top-2 left-2 w-4 h-4 border-2 rounded flex items-center justify-center cursor-pointer ${isSelected(p.id) ? "border-[#F5C400] bg-[#F5C400]" : "border-[#E0E0E0] bg-white"}`}
+                  >
+                    {isSelected(p.id) && <div className="w-2 h-2 bg-white rounded-sm" />}
                   </div>
                 </div>
                 <div className="p-3">
-                  <div className="text-xs font-semibold" onClick={(e) => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
+                  <div className="text-xs font-semibold"><EditableText value={p.name} variant="inline" onSave={async (newName) => {
                     const res = await fetch(`/api/pieces/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
                     if (!res.ok) throw new Error()
                     setPieces(prev => prev.map(x => x.id === p.id ? { ...x, name: newName } : x))
@@ -128,12 +134,6 @@ function PiecesContent() {
                       {STATUS_LABELS[p.status]?.label}
                     </span>
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); router.push(`/editor?campaignId=${p.campaignId}&pieceId=${p.id}`) }}
-                    className="mt-2 w-full text-xs py-1 border border-[#E0E0E0] rounded hover:bg-[#F5C400] hover:border-[#F5C400] hover:text-black transition-colors cursor-pointer bg-white text-[#888]"
-                  >
-                    ✏️ Editar
-                  </button>
                 </div>
               </div>
             ))}
