@@ -292,7 +292,7 @@ function toPSFont(family: string, isBold: boolean): { name: string; fauxBold: bo
   return { name: f.regular, fauxBold: false }
 }
 
-function buildStyleRuns(textbox: any, fullText: string): any[] {
+function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[] {
   const runs: any[] = []
   const styles = textbox.styles ?? {}
   const lines = fullText.split("\n")
@@ -306,7 +306,7 @@ function buildStyleRuns(textbox: any, fullText: string): any[] {
     for (let col = 0; col <= line.length; col++) {
       const cs = col < line.length ? lineStyles[col] : null
       const fill = cs?.fill ?? textbox.fill ?? "#000000"
-      const fontSize = cs?.fontSize ?? textbox.fontSize ?? 48
+      const fontSize = (cs?.fontSize ?? textbox.fontSize ?? 48) * scale
       const fontFamily = cs?.fontFamily ?? textbox.fontFamily ?? "Arial"
       const fontWeight = cs?.fontWeight ?? textbox.fontWeight ?? "normal"
       const styleKey = `${fill}|${fontSize}|${fontFamily}|${fontWeight}`
@@ -396,7 +396,11 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       // dialogo "Update text layers" → ao aceitar, recomputa do engineData (texto editavel
       // com formatacao correta). Se cancelar, fica o canvas raster (visual correto, mas
       // nao-editavel).
-      const fontSize = Math.round(obj.fontSize ?? 48)
+      // CRITICO: obj.fontSize do Fabric eh ANTES do scale. O bbox (w/h) JA esta com scale aplicado.
+      // Se nao multiplicar pelo scale aqui, fontSize fica enorme ("DATA" virou 137px no PSD com scaleY=0.12).
+      // Usamos scaleY pra fontSize (consistente com como Fabric escala texto verticalmente).
+      const sY = obj.scaleY ?? 1
+      const fontSize = Math.round((obj.fontSize ?? 48) * sY)
       // CHAVE: usa as LINHAS WRAPPEADAS pelo Fabric (visual real do editor) como texto.
       // obj.text e' o texto cru (so com \n explicitos do usuario).
       // obj._textLines e' o array de linhas REAIS apos o wrap automatico pelo width do Textbox.
@@ -407,7 +411,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const fullText = (Array.isArray(wrappedLines) && wrappedLines.length > 0)
         ? wrappedLines.map(line => Array.isArray(line) ? line.join("") : String(line)).join("\n")
         : (obj.text ?? "")
-      const styleRuns = buildStyleRuns(obj, fullText)
+      const styleRuns = buildStyleRuns(obj, fullText, sY)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
       const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
       const layerCanvas = document.createElement("canvas")
@@ -424,7 +428,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         rawText: JSON.stringify(obj.text),
         wrappedLineCount: wrappedLines?.length,
         finalText: JSON.stringify(fullText),
-        fontFamily: obj.fontFamily, psFontName: ps.name, fauxBold: ps.fauxBold, fontSize,
+        fontFamily: obj.fontFamily, psFontName: ps.name, fauxBold: ps.fauxBold,
+        rawFontSize: obj.fontSize, scaleY: sY, scaledFontSize: fontSize,
         bbox: { left, top, w, h },
         styleRunsCount: styleRuns.length,
       })
