@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
+import { FontPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { migrateStyles } from "@/lib/migrateStyles"
 
@@ -25,7 +26,7 @@ interface Campaign {
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 const LW = 220, PW = 260, TH = 48, BH = 44
-const FONTS = ["Arial","Arial Black","Georgia","Times New Roman","Courier New","Verdana","Impact","Trebuchet MS","Helvetica Neue"]
+const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
 
 function parseContent(raw: any): TextSpan[] {
@@ -1257,9 +1258,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <div style={secS}>Fonte</div>
-              <select value={selected.fontFamily ?? "Arial"} onChange={e => applyStyle("fontFamily", e.target.value)} style={inpS}>
-                {FONTS.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
+              <FontPicker value={selected.fontFamily ?? "Arial"} onChange={(f) => applyStyle("fontFamily", f)} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>

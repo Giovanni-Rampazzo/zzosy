@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { FontPicker } from "./FontPicker"
 
 interface Props {
   selectedObj: any
@@ -8,7 +9,6 @@ interface Props {
   onBgColorChange?: (color: string) => void
 }
 
-const FONTS = ["Arial","Arial Black","Georgia","Times New Roman","Courier New","Verdana","Impact","Trebuchet MS","Palatino","Tahoma"]
 const BG_SWATCHES = ["#ffffff","#111111","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#e9c46a","#2d6a4f","#8338ec","#ff006e"]
 const TEXT_SWATCHES = ["#ffffff","#111111","#F5C400","#e63946","#457b9d","#2a9d8f","#f4a261","#264653","#8338ec","#ff006e"]
 
@@ -110,9 +110,7 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
 
           <div>
             <div style={sec}>Fonte</div>
-            <select value={fontFamily} onChange={e=>applyText("fontFamily",e.target.value)} style={{...inp,fontFamily}}>
-              {FONTS.map(f=><option key={f} value={f} style={{fontFamily:f}}>{f}</option>)}
-            </select>
+            <FontPicker value={fontFamily} onChange={(f) => applyText("fontFamily", f)} />
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
