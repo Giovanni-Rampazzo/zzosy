@@ -321,7 +321,32 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:cleared", () => setSelected(null))
       fc.on("object:modified", () => { if (alive) doSave() })
-      fc.on("text:changed", () => { if (alive) setSelectedTick(t => t + 1) })
+      fc.on("text:changed", (e: any) => {
+        if (!alive) return
+        setSelectedTick(t => t + 1)
+        // AUTO-FIT: ajusta o width do textbox ao conteudo quando o texto muda.
+        // Logica:
+        //   1. Salva o width atual.
+        //   2. Expande o width pra um valor grande (5000px) — Fabric vai re-wrappar
+        //      e como ninguem cabe alem desse limite, o texto ocupa o minimo necessario.
+        //   3. Mede calcTextWidth (a maior linha real apos remover wrap forcado).
+        //   4. Seta o width pro valor medido + uma margem pequena (8px) pra cursor caber.
+        // So roda em textbox (i-text nao tem width restrito), e so quando o conteudo de
+        // texto mudou (text:changed). Width arrastado manualmente nao dispara isso.
+        const obj = e?.target
+        if (!obj || obj.type !== "textbox") return
+        try {
+          const oldWidth = obj.width
+          obj.set("width", 5000)
+          if (obj.initDimensions) obj.initDimensions()
+          const measured = obj.calcTextWidth ? obj.calcTextWidth() : oldWidth
+          const newWidth = Math.max(20, Math.ceil(measured) + 8)
+          obj.set("width", newWidth)
+          if (obj.initDimensions) obj.initDimensions()
+          obj.setCoords()
+          fc.requestRenderAll()
+        } catch (err) { console.warn("auto-fit textbox fail:", err) }
+      })
       fc.on("object:added", () => { if (alive) refreshLayers(fc) })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
       // Captura mudancas para historico de undo/redo
