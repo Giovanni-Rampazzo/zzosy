@@ -351,12 +351,12 @@ export default function CampaignOverviewPage() {
                     title={isSelected(p.id) ? "Desselecionar" : "Selecionar"}
                     style={{
                       position: "absolute", top: 8, left: 8, zIndex: 5,
-                      width: 18, height: 18, borderRadius: 4, cursor: "pointer",
+                      width: 20, height: 20, borderRadius: 4, cursor: "pointer",
                       background: isSelected(p.id) ? "#F5C400" : "rgba(255,255,255,0.9)",
                       border: isSelected(p.id) ? "none" : "1px solid #E0E0E0",
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}>
-                    {isSelected(p.id) && <span style={{ color: "white", fontSize: 12, fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                    {isSelected(p.id) && <span style={{ color: "white", fontSize: 14, fontWeight: 700, lineHeight: 1 }}>✓</span>}
                   </div>
                   <div
                     onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}
@@ -398,12 +398,12 @@ export default function CampaignOverviewPage() {
                     <th style={{ padding: "10px 12px", textAlign: "left", width: 32 }}>
                       <div onClick={toggleSelectAll}
                         style={{
-                          width: 16, height: 16, borderRadius: 3, cursor: "pointer",
+                          width: 18, height: 18, borderRadius: 3, cursor: "pointer",
                           background: allVisibleSelected ? "#F5C400" : "white",
-                          border: "1px solid #E0E0E0",
+                          border: allVisibleSelected ? "none" : "1px solid #E0E0E0",
                           display: "flex", alignItems: "center", justifyContent: "center",
                         }}>
-                        {allVisibleSelected && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                        {allVisibleSelected && <span style={{ color: "white", fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✓</span>}
                       </div>
                     </th>
                     <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Nome</th>
@@ -420,12 +420,12 @@ export default function CampaignOverviewPage() {
                       <td style={{ padding: "10px 12px" }}>
                         <div onClick={() => toggleSelect(p.id)}
                           style={{
-                            width: 16, height: 16, borderRadius: 3, cursor: "pointer",
+                            width: 18, height: 18, borderRadius: 3, cursor: "pointer",
                             background: isSelected(p.id) ? "#F5C400" : "white",
-                            border: "1px solid #E0E0E0",
+                            border: isSelected(p.id) ? "none" : "1px solid #E0E0E0",
                             display: "flex", alignItems: "center", justifyContent: "center",
                           }}>
-                          {isSelected(p.id) && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                          {isSelected(p.id) && <span style={{ color: "white", fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✓</span>}
                         </div>
                       </td>
                       <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}

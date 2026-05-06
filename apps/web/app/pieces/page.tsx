@@ -145,9 +145,9 @@ function PiecesContent() {
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors pointer-events-none" />
                   <div
                     onClick={(e) => { e.stopPropagation(); toggleSelect(p.id) }}
-                    className={`absolute top-2 left-2 w-4 h-4 border-2 rounded flex items-center justify-center cursor-pointer ${isSelected(p.id) ? "border-[#F5C400] bg-[#F5C400]" : "border-[#E0E0E0] bg-white"}`}
+                    className={`absolute top-2 left-2 w-5 h-5 rounded flex items-center justify-center cursor-pointer ${isSelected(p.id) ? "bg-[#F5C400]" : "bg-white border border-[#E0E0E0]"}`}
                   >
-                    {isSelected(p.id) && <div className="w-2 h-2 bg-white rounded-sm" />}
+                    {isSelected(p.id) && <span className="text-white text-sm font-bold leading-none">✓</span>}
                   </div>
                 </div>
                 <div className="p-3">
@@ -183,8 +183,8 @@ function PiecesContent() {
                 {filtered.map((p) => (
                   <tr key={p.id} className="border-b border-[#f0f0f0] last:border-0 hover:bg-[#fafafa]">
                     <td className="px-4 py-3 w-8">
-                      <div onClick={() => toggleSelect(p.id)} className={`w-4 h-4 border-2 rounded cursor-pointer flex items-center justify-center ${isSelected(p.id) ? "border-[#F5C400] bg-[#F5C400]" : "border-[#E0E0E0]"}`}>
-                        {isSelected(p.id) && <div className="w-2 h-2 bg-white rounded-sm" />}
+                      <div onClick={() => toggleSelect(p.id)} className={`w-5 h-5 rounded cursor-pointer flex items-center justify-center ${isSelected(p.id) ? "bg-[#F5C400]" : "bg-white border border-[#E0E0E0]"}`}>
+                        {isSelected(p.id) && <span className="text-white text-sm font-bold leading-none">✓</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3 font-semibold text-sm" onClick={e => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
