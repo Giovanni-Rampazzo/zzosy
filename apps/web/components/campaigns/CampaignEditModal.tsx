@@ -51,9 +51,9 @@ export function CampaignEditModal({ campaign, onClose, onSaved }: Props) {
   }
 
   return (
-    <div onClick={() => !saving && onClose()}
+    <div onMouseDown={(e) => { if (!saving && e.target === e.currentTarget) onClose() }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={e => e.stopPropagation()}
+      <div
         style={{ background: "#fff", borderRadius: 10, width: "100%", maxWidth: 480, display: "flex", flexDirection: "column" }}>
         <div style={{ padding: 20, borderBottom: "1px solid #eee" }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Editar campanha</h2>

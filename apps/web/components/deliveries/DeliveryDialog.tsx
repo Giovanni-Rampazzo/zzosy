@@ -108,8 +108,8 @@ export function DeliveryDialog({ campaignId, campaignName, onClose, onCreated }:
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-      onClick={() => !working && onClose()}>
-      <div onClick={e => e.stopPropagation()}
+      onMouseDown={(e) => { if (!working && e.target === e.currentTarget) onClose() }}>
+      <div
         style={{ background: "#fff", borderRadius: 8, maxWidth: 720, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: 20, borderBottom: "1px solid #eee" }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Nova entrega</h2>
