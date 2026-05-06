@@ -142,6 +142,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const isPieceMode = !!pieceId
   const [selected, setSelected] = useState<any>(null)
   const [hexInput, setHexInput] = useState<string>("#111111")
+  const [bgHexInput, setBgHexInput] = useState<string>("#ffffff")
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
   const [selectedTick, setSelectedTick] = useState(0)
   const undoStack = useRef<string[]>([])
@@ -992,6 +993,9 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     if (selected?.fill) setHexInput(selected.fill)
   }, [selected, selectedTick])
 
+  // Sincroniza bgHexInput com bgColor
+  useEffect(() => { setBgHexInput(bgColor) }, [bgColor])
+
   // Sincroniza fontSizeInput com o tamanho do objeto selecionado
   useEffect(() => {
     if (selected?.fontSize !== undefined) setFontSizeInput(String(Math.round(selected.fontSize)))
@@ -1158,12 +1162,27 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         {!selected ? (
           <div style={{ padding: 16 }}>
             <div style={{ ...secS, color: "#F5C400", marginBottom: 12 }}>Background</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 6, background: bgColor, border: "1px solid #333", flexShrink: 0 }} />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <label style={{ width: 36, height: 36, borderRadius: 6, background: bgColor, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                <input
+                  type="color"
+                  value={/^#[0-9a-fA-F]{6}$/.test(bgColor) ? bgColor : "#ffffff"}
+                  onChange={e => changeBg(e.target.value)}
+                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }}
+                />
+              </label>
               <input
                 type="text"
-                value={bgColor}
-                onChange={e => changeBg(e.target.value)}
+                value={bgHexInput}
+                onChange={e => {
+                  const v = e.target.value
+                  setBgHexInput(v)
+                  if (/^#[0-9a-fA-F]{6}$/.test(v)) changeBg(v)
+                }}
+                onBlur={() => {
+                  if (!/^#[0-9a-fA-F]{6}$/.test(bgHexInput)) setBgHexInput(bgColor)
+                }}
+                placeholder="#RRGGBB"
                 style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
               />
             </div>
