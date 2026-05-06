@@ -190,6 +190,13 @@ export default function CampaignAssetsPage() {
       <TopNav />
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
 
+        <button
+          onClick={() => router.push(`/campaigns/${id}`)}
+          style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
+        >
+          ← Voltar para {campaign.name}
+        </button>
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, gap: 16 }}>
           <div>
             <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display: "flex", gap: 6, alignItems: "center" }}>
@@ -247,12 +254,6 @@ export default function CampaignAssetsPage() {
                 Editar Matriz (KV)
               </button>
             )}
-            <button
-              onClick={() => router.push(`/campaigns/${id}`)}
-              style={{ background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, padding: "10px 20px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#444" }}
-            >
-              ← Voltar
-            </button>
           </div>
         </div>
 

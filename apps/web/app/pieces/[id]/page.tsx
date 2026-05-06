@@ -69,8 +69,8 @@ export default function PiecePage() {
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
           <div>
-            <button onClick={() => router.back()} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 13, marginBottom: 8, padding: 0 }}>
-              ← Voltar
+            <button onClick={() => router.push(piece?.campaignId ? `/pieces?campaignId=${piece.campaignId}` : "/pieces")} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 13, marginBottom: 8, padding: 0 }}>
+              ← Voltar para Peças
             </button>
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Editar Peça</h1>
           </div>
