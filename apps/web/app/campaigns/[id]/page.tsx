@@ -156,6 +156,22 @@ export default function CampaignOverviewPage() {
               Abrir no Editor
             </button>
             <button
+              onClick={async () => {
+                if (!confirm("Duplicar esta campanha? Cria uma cópia com todos os assets e peças (status resetado para Standby).")) return
+                try {
+                  const res = await fetch(`/api/campaigns/${id}/duplicate`, { method: "POST" })
+                  if (!res.ok) throw new Error()
+                  const dup = await res.json()
+                  router.push(`/campaigns/${dup.id}`)
+                } catch {
+                  alert("Falha ao duplicar campanha")
+                }
+              }}
+              style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#333" }}
+            >
+              ⎘ Duplicar
+            </button>
+            <button
               onClick={() => setDeliveryOpen(true)}
               disabled={pieces.length === 0}
               style={{ background: pieces.length === 0 ? "#f5f5f5" : "#111", border: "none", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: pieces.length === 0 ? "default" : "pointer", color: pieces.length === 0 ? "#aaa" : "white" }}
