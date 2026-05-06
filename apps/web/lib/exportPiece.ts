@@ -447,7 +447,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     children: psdLayers,
     imageResources: { thumbnail: thumbCanvas },
   }
-  const buffer = agpsd.writePsd(psd, { generateThumbnail: false, invalidateTextLayers: true })
+  const buffer = agpsd.writePsd(psd, { generateThumbnail: false })
   fc.dispose()
   return new Blob([buffer], { type: "image/vnd.adobe.photoshop" })
 }
