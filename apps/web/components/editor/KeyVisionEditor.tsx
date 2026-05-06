@@ -332,6 +332,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         if (active?.isEditing) setSelectedTick(t => t + 1)
       }
       fc.on("mouse:up", onCanvasInteract)
+      // Escalar via canto/handle do box: dispara em real time pra atualizar painel
+      fc.on("object:scaling" as any, () => { if (alive) setSelectedTick(t => t + 1) })
       // Tambem captura quando teclas (Shift+Arrow etc) mudam a selecao
       const onKeyUp = (e: KeyboardEvent) => {
         const active = fc.getActiveObject() as any
@@ -1055,9 +1057,22 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   // Sincroniza bgHexInput com bgColor
   useEffect(() => { setBgHexInput(bgColor) }, [bgColor])
 
-  // Sincroniza fontSizeInput com o tamanho do objeto selecionado
+  // Sincroniza fontSizeInput com o tamanho efetivo do objeto selecionado.
+  // - Se ha selecao parcial dentro do textbox: usa fontSize do caractere selecionado
+  // - Se nao: usa fontSize raw (sem scale, igual Photoshop mostra)
+  // selectedTick refresca em mouseup/keyup/object:modified, garantindo update apos
+  // qualquer interacao (mover cursor, escalar pelo box, etc).
   useEffect(() => {
-    if (selected?.fontSize !== undefined) setFontSizeInput(String(Math.round(selected.fontSize)))
+    if (!selected) return
+    const obj = selected as any
+    let fs: number = obj.fontSize ?? 80
+    if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+      try {
+        const styles = obj.getSelectionStyles(obj.selectionStart, obj.selectionEnd)
+        if (styles?.length > 0 && styles[0].fontSize) fs = styles[0].fontSize
+      } catch {}
+    }
+    setFontSizeInput(String(Math.round(fs)))
   }, [selected, selectedTick])
 
   function applyStyle(key: string, val: any) {
@@ -1304,11 +1319,13 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               <div>
                 <div style={secS}>Tamanho</div>
                 <input
-                  key={`fs-${(selected as any).__assetId ?? "x"}-${selectedTick}`}
+                  key={`fs-${(selected as any).__assetId ?? "x"}`}
                   type="number"
-                  defaultValue={Math.round(effectiveFontSize)}
-                  onBlur={(e) => {
-                    const n = Number((e.target as HTMLInputElement).value)
+                  value={fontSizeInput}
+                  onChange={e => {
+                    const raw = e.target.value
+                    setFontSizeInput(raw)
+                    const n = Number(raw)
                     if (Number.isFinite(n) && n > 0) applyStyle("fontSize", n)
                   }}
                   onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
