@@ -233,7 +233,41 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     function onKey(e: KeyboardEvent) {
       const fc = fabricRef.current
       const active = fc?.getActiveObject() as any
-      if (active?.isEditing) return // nao interfere com edicao de texto
+      const isTextActive = active && (active.type === "textbox" || active.type === "i-text")
+
+      // Cmd+Shift+L/C/R/J — alinhamento (Photoshop). Funciona inclusive em modo edicao.
+      if (isTextActive && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+        const k = e.key.toLowerCase()
+        const map: Record<string, string> = { l: "left", c: "center", r: "right", j: "justify" }
+        if (map[k]) {
+          e.preventDefault()
+          active.set("textAlign", map[k])
+          if (active.initDimensions) active.initDimensions()
+          active.setCoords()
+          fc?.renderAll()
+          fc?.fire("object:modified", { target: active })
+          setSelectedTick(t => t + 1)
+          return
+        }
+      }
+
+      // Option+↑/↓ — entrelinhas. 1pt sem Shift, 10pt com Shift. Funciona em modo edicao.
+      if (isTextActive && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault()
+        const step = e.shiftKey ? 0.10 : 0.01 // 0.01 = ~1% lineHeight; 0.10 = ~10%
+        const delta = e.key === "ArrowUp" ? step : -step
+        const cur = active.lineHeight ?? 1.16
+        const next = Math.max(0.1, +(cur + delta).toFixed(3))
+        active.set("lineHeight", next)
+        if (active.initDimensions) active.initDimensions()
+        active.setCoords()
+        fc?.renderAll()
+        fc?.fire("object:modified", { target: active })
+        setSelectedTick(t => t + 1)
+        return
+      }
+
+      if (active?.isEditing) return // demais atalhos: nao interfere com edicao de texto
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault()
         if (e.shiftKey) redo()
@@ -1155,6 +1189,23 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     doSave()
   }
 
+  /**
+   * Aplica propriedade no textbox INTEIRO, ignorando selecao parcial.
+   * Usado pra lineHeight e textAlign — Fabric nao suporta esses per-char.
+   */
+  function applyTextboxStyle(key: string, value: any) {
+    const fc = fabricRef.current; const obj = selected
+    if (!fc || !obj) return
+    const isText = (obj as any).type === "textbox" || (obj as any).type === "i-text"
+    if (!isText) return
+    ;(obj as any).set(key, value)
+    if ((obj as any).initDimensions) (obj as any).initDimensions()
+    ;(obj as any).setCoords()
+    fc.renderAll()
+    setSelectedTick(t => t + 1)
+    doSave()
+  }
+
   function changeZoom(delta: number) {
     const fc = fabricRef.current; if (!fc) return
     applyZoom(fc, Math.min(3, Math.max(0.05, zoomRef.current + delta)))
@@ -1346,6 +1397,10 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             let effectiveFontFamily = selected.fontFamily ?? "Arial"
             let effectiveFontSize = selected.fontSize ?? 80
             let effectiveFill = selected.fill ?? "#111111"
+            // lineHeight e textAlign sao propriedades do textbox inteiro (Fabric nao suporta
+            // per-char nelas), entao nao tentam ler de getSelectionStyles.
+            const effectiveLineHeight: number = (selected as any).lineHeight ?? 1.16
+            const effectiveTextAlign: string = (selected as any).textAlign ?? "left"
             if (hasInlineSelection) {
               try {
                 const styles = (selected as any).getSelectionStyles(selStart, selEnd)
@@ -1389,6 +1444,53 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               title="Escala e centraliza o layer dentro da peça">
               ⊞ Encaixar no canvas
             </button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <div style={secS}>Entrelinhas</div>
+                <input
+                  key={`lh-${(selected as any).__assetId ?? "x"}-${selectedTick}`}
+                  type="number"
+                  step="0.1"
+                  defaultValue={effectiveLineHeight.toFixed(2)}
+                  onChange={e => {
+                    const n = Number(e.target.value)
+                    if (Number.isFinite(n) && n > 0) applyTextboxStyle("lineHeight", n)
+                  }}
+                  onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+                  title="Photoshop: Option+↑/↓ pra ajustar (Shift = 10x)"
+                  style={inpS}
+                />
+              </div>
+              <div>
+                <div style={secS}>Alinhamento</div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {[
+                    { v: "left", icon: "⫷", title: "Esquerda (Cmd+Shift+L)" },
+                    { v: "center", icon: "≡", title: "Centro (Cmd+Shift+C)" },
+                    { v: "right", icon: "⫸", title: "Direita (Cmd+Shift+R)" },
+                    { v: "justify", icon: "☰", title: "Justificar (Cmd+Shift+J)" },
+                  ].map(a => {
+                    const active = effectiveTextAlign === a.v
+                    return (
+                      <button key={a.v} type="button"
+                        onClick={() => applyTextboxStyle("textAlign", a.v)}
+                        title={a.title}
+                        style={{
+                          flex: 1, height: 28,
+                          background: active ? "#F5C400" : "#111",
+                          border: active ? "none" : "1px solid #2a2a2a",
+                          color: active ? "#111" : "white",
+                          borderRadius: 4, cursor: "pointer",
+                          fontSize: 14, fontWeight: 700,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                        {a.icon}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
             <div>
               <div style={secS}>Cor</div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
