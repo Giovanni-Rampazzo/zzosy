@@ -84,7 +84,7 @@ model Campaign {
   id         String          @id @default(cuid())
   name       String
   clientId   String
-  status     String          @default("DRAFT")
+  status     String          @default("STANDBY")
   psdUrl     String?         @db.Text
   psdName    String?         @db.Text
   createdAt  DateTime        @default(now())
@@ -136,7 +136,7 @@ model Piece {
   campaignId    String
   mediaFormatId String?
   name          String?
-  status        String         @default("DRAFT")
+  status        String         @default("STANDBY")
   data          String?        @db.LongText
   imageUrl      String?        @db.LongText
   createdAt     DateTime       @default(now())

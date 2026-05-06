@@ -167,7 +167,7 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
           name: `${f.vehicle} — ${f.format}`,
           mediaFormatId: f.id,
           data: pieceData,
-          status: "DRAFT",
+          status: "STANDBY",
         }),
       })
       const piece = await res.json()
