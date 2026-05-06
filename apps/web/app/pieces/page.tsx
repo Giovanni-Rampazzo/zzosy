@@ -51,7 +51,9 @@ function PiecesContent() {
 
   function isSelected(id: string) { return selected.includes(id) }
 
-  async function deleteSelected() {
+  async function deleteSelected(skipConfirm = false) {
+    if (selected.length === 0) return
+    if (!skipConfirm && !confirm(`Apagar ${selected.length} peça(s)? Esta ação não pode ser desfeita.`)) return
     await Promise.all(selected.map(id => fetch(`/api/pieces/${id}`, { method: "DELETE" })))
     setPieces(prev => prev.filter(p => !selected.includes(p.id)))
     setSelected([])
@@ -80,7 +82,7 @@ function PiecesContent() {
           <div className="flex items-center gap-3">
             {selected.length > 0 && (
               <>
-                <Button variant="danger" size="sm" onClick={deleteSelected}>🗑 Apagar ({selected.length})</Button>
+                <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑 Apagar ({selected.length})</Button>
                 <Button size="sm" onClick={() => setExportOpen(true)}>↗ Exportar ({selected.length})</Button>
               </>
             )}
