@@ -51,6 +51,7 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
     if(!selectedObj || !fabricRef.current) return
     const obj = fabricRef.current.getObjects().find((o:any) => o === selectedObj || o.layerId === selectedObj.layerId)
     if(!obj) return
+    if (key === "fontFamily") console.log("[FONT-DEBUG] applyText fontFamily", { val, isEditing: obj.isEditing, selStart: obj.selectionStart, selEnd: obj.selectionEnd })
 
     // Se tem texto selecionado → aplica só na seleção (por caractere)
     if(obj.isEditing && obj.selectionStart !== obj.selectionEnd){
