@@ -389,40 +389,19 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         const txt = ((obj as any).text ?? "").trim().replace(/\s+/g, " ")
         if (txt.length > 0) name = txt.length > 64 ? txt.substring(0, 64) + "…" : txt
       }
-      const fontSize = Math.round(obj.fontSize ?? 48)
-      const fullText = obj.text ?? ""
-      const styleRuns = buildStyleRuns(obj, fullText)
-      const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
-      const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
-      // Rasteriza o texto com transparencia: ag-psd nao gera o cache /Rendered, entao
-      // sem isso o Photoshop renderiza o texto cru e perde fonte/tamanho/quebra de linha.
-      // Com canvas, Photoshop usa essa rasterizacao como visual e a engineData fica
-      // disponivel pra edicao.
-      let textCanvas: HTMLCanvasElement | undefined
+      // Texto = layer raster pura. Mantemos a fidelidade visual exata do editor (Fabric).
+      // ag-psd nao gera o cache /Rendered necessario pro Photoshop renderizar engineData
+      // corretamente, entao em vez de mandar engineData bugado mandamos apenas o pixel.
+      // Trade-off: usuario nao consegue editar o texto no Photoshop (vira layer de imagem).
+      const layerCanvas = document.createElement("canvas")
+      layerCanvas.width = w
+      layerCanvas.height = h
+      const lctx = layerCanvas.getContext("2d")! // alpha:true — fundo transparente
       try {
-        const tc = document.createElement("canvas")
-        tc.width = w; tc.height = h
-        const tctx = tc.getContext("2d")! // alpha:true (default) — fundo transparente
         const rendered = obj.toCanvasElement({ multiplier: 1 })
-        tctx.drawImage(rendered, 0, 0, w, h)
-        textCanvas = tc
+        lctx.drawImage(rendered, 0, 0, w, h)
+        psdLayers.push({ name, top, left, bottom, right, canvas: layerCanvas })
       } catch (e) { console.warn("rasterize text fail:", name, e) }
-      psdLayers.push({
-        name, top, left, bottom, right,
-        ...(textCanvas ? { canvas: textCanvas } : {}),
-        text: {
-          text: fullText,
-          transform: [1, 0, 0, 1, left, top + fontSize],
-          style: {
-            font: { name: ps.name },
-            fontSize,
-            fillColor: parseColor(obj.fill ?? "#000000"),
-            fauxBold: ps.fauxBold,
-          },
-          styleRuns,
-          paragraphStyle: { justification: "left" },
-        },
-      })
     } else {
       const layerCanvas = document.createElement("canvas")
       layerCanvas.width = w
