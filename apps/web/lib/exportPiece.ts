@@ -413,6 +413,13 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
+          // Box text: forca Photoshop a respeitar a largura e quebrar linhas dentro do box.
+          // Sem isso (default = point text), o engineData volta como linha unica e perde
+          // a quebra de linha visual da Textbox do Fabric.
+          // boxBounds eh relativo ao transform [left, top+fontSize], entao o topo do box
+          // fica em -fontSize.
+          shapeType: "box",
+          boxBounds: [0, -fontSize, w, h - fontSize],
           style: {
             font: { name: ps.name },
             fontSize,
