@@ -236,8 +236,11 @@ function UserModal({ mode, user, onClose, onSaved, error, setError }: {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 12, padding: 24, width: 480, maxWidth: "90vw" }}>
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{ background: "white", borderRadius: 12, padding: 24, width: 480, maxWidth: "90vw" }}>
         <h2 style={{ margin: 0, marginBottom: 20, fontSize: 18, fontWeight: 700 }}>
           {mode === "create" ? "Novo usuário" : "Editar usuário"}
         </h2>
