@@ -34,6 +34,18 @@ export default function TopNav() {
           </Link>
         )
       })}
+      {(session?.user as any)?.role === "SUPER_ADMIN" && (
+        <Link href="/admin/users" style={{
+          color: pathname?.startsWith("/admin") ? "#ffffff" : "#bbbbbb",
+          textDecoration:"none",
+          fontSize:14,
+          fontWeight: pathname?.startsWith("/admin") ? 600 : 400,
+          paddingBottom:2,
+          borderBottom: pathname?.startsWith("/admin") ? "2px solid #F5C400" : "2px solid transparent",
+        }}>
+          Admin
+        </Link>
+      )}
       <div style={{flex:1}} />
       <Link href="/account" style={{
         color: pathname?.startsWith("/account") ? "#ffffff" : "#bbbbbb",
