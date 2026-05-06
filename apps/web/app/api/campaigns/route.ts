@@ -24,7 +24,11 @@ export async function GET(req: Request) {
   const tenantId = (session.user as any).tenantId
   const campaigns = await prisma.campaign.findMany({
     where: { client: { tenantId } },
-    include: { client: true, assets: true },
+    include: {
+      client: true,
+      _count: { select: { pieces: true, assets: true } },
+      keyVision: { select: { thumbnailUrl: true, width: true, height: true, bgColor: true } },
+    },
     orderBy: { createdAt: "desc" }
   })
   return NextResponse.json(campaigns)
