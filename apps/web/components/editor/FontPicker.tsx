@@ -39,9 +39,13 @@ export function FontPicker({ value, onChange, buttonStyle }: Props) {
     if (open) setTimeout(() => inputRef.current?.focus(), 50)
   }, [open])
 
-  const filtered = query.trim()
-    ? fonts.filter(f => f.toLowerCase().includes(query.toLowerCase().trim()))
-    : fonts
+  const filtered = (() => {
+    const list = query.trim()
+      ? fonts.filter(f => f.toLowerCase().includes(query.toLowerCase().trim()))
+      : fonts
+    // Dedup defensivo (caso a fonte do sistema retorne duplicatas)
+    return Array.from(new Set(list))
+  })()
 
   return (
     <div ref={wrapperRef} style={{ position: "relative" }}>

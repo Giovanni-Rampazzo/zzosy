@@ -21,7 +21,7 @@ export const FALLBACK_FONTS: string[] = [
   // Serif
   "American Typewriter", "Baskerville", "Big Caslon", "Bodoni 72",
   "Book Antiqua", "Bookman Old Style",
-  "Cambria", "Charter",
+  "Charter",
   "Didot",
   "Garamond", "Georgia",
   "Hoefler Text",
