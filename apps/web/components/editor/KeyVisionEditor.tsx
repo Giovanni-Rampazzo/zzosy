@@ -251,14 +251,21 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         }
       }
 
-      // Option+↑/↓ — entrelinhas. 1pt sem Shift, 10pt com Shift. Funciona em modo edicao.
+      // Option+↑/↓ — entrelinhas em PONTOS (Adobe-style). 1pt sem Shift, 10pt com Shift.
+      // Funciona em modo edicao. Se estava em "Auto", primeira mexida congela no valor
+      // efetivo atual e comeca a editar dali (igual Photoshop).
       if (isTextActive && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault()
-        const step = e.shiftKey ? 0.10 : 0.01 // 0.01 = ~1% lineHeight; 0.10 = ~10%
+        const step = e.shiftKey ? 10 : 1
         const delta = e.key === "ArrowUp" ? step : -step
-        const cur = active.lineHeight ?? 1.16
-        const next = Math.max(0.1, +(cur + delta).toFixed(3))
-        active.set("lineHeight", next)
+        const fs = active.fontSize ?? 48
+        const curPt: number = (active.leadingPt !== undefined && active.leadingPt !== null)
+          ? active.leadingPt
+          : Math.round((active.lineHeight ?? 1.2) * fs) // congela do auto
+        const next = Math.max(1, curPt + delta)
+        active.leadingPt = next
+        // Sincroniza lineHeight do Fabric (detalhe interno do motor)
+        active.set("lineHeight", next / fs)
         if (active.initDimensions) active.initDimensions()
         active.setCoords()
         fc?.renderAll()
@@ -599,6 +606,12 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               if (layer.overrides.charSpacing !== undefined) created.set("charSpacing", layer.overrides.charSpacing)
               if (layer.overrides.lineHeight !== undefined) created.set("lineHeight", layer.overrides.lineHeight)
               if (layer.overrides.textAlign !== undefined) created.set("textAlign", layer.overrides.textAlign)
+              // Adobe-style leading: leadingPt e a fonte da verdade. lineHeight e derivado
+              // (recomputado aqui pra garantir consistencia com o fontSize atual).
+              if (layer.overrides.leadingPt !== undefined && layer.overrides.leadingPt !== null) {
+                ;(created as any).leadingPt = layer.overrides.leadingPt
+                syncLineHeightFromLeading(created)
+              }
               if (layer.overrides.styles !== undefined) {
                 created.set("styles", layer.overrides.styles)
                 if (created.initDimensions) created.initDimensions()
@@ -663,6 +676,11 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               if (ov.charSpacing !== undefined) created.set("charSpacing", ov.charSpacing)
               if (ov.lineHeight !== undefined) created.set("lineHeight", ov.lineHeight)
               if (ov.textAlign !== undefined) created.set("textAlign", ov.textAlign)
+              // Adobe-style leading (ver comentario no outro load)
+              if (ov.leadingPt !== undefined && ov.leadingPt !== null) {
+                ;(created as any).leadingPt = ov.leadingPt
+                syncLineHeightFromLeading(created)
+              }
               if (ov.styles !== undefined) {
                 created.set("styles", ov.styles)
                 if (created.initDimensions) created.initDimensions()
@@ -959,6 +977,11 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
             if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
             if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
+            // Adobe-style leading: salva leadingPt (fonte da verdade). lineHeight tambem
+            // e salvo (back-compat com pecas antigas), mas leadingPt manda no load.
+            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
+              layer.overrides.leadingPt = (o as any).leadingPt
+            }
             if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
           }
           return layer
@@ -1037,6 +1060,9 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
               if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
               if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
+              if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
+                layer.overrides.leadingPt = (o as any).leadingPt
+              }
               if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
             }
             return layer
@@ -1084,6 +1110,9 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
               if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
               if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
+              if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
+                layer.overrides.leadingPt = (o as any).leadingPt
+              }
               if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
             }
             return layer
@@ -1176,6 +1205,10 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       // Aplica como default do textbox. Caracteres com override per-char MANTEM seu estilo
       // (igual Photoshop: mudar a cor padrao nao apaga as cores das letras especificas).
       obj.set(styleKey, value)
+      // Adobe-style: leading e fontSize sao independentes. Quando muda fontSize, o leadingPt
+      // (em pontos absolutos) fica congelado, mas o lineHeight do Fabric (multiplicador)
+      // precisa recalcular pra renderizar com o leading correto.
+      if (styleKey === "fontSize") syncLineHeightFromLeading(obj)
       if (styleKey !== "fill" && (obj as any).initDimensions) (obj as any).initDimensions()
     } else {
       obj.set(styleKey, value)
@@ -1191,7 +1224,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
 
   /**
    * Aplica propriedade no textbox INTEIRO, ignorando selecao parcial.
-   * Usado pra lineHeight e textAlign — Fabric nao suporta esses per-char.
+   * Usado pra textAlign — Fabric nao suporta esses per-char.
    */
   function applyTextboxStyle(key: string, value: any) {
     const fc = fabricRef.current; const obj = selected
@@ -1201,6 +1234,45 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     ;(obj as any).set(key, value)
     if ((obj as any).initDimensions) (obj as any).initDimensions()
     ;(obj as any).setCoords()
+    fc.renderAll()
+    setSelectedTick(t => t + 1)
+    doSave()
+  }
+
+  /**
+   * Sincroniza Fabric.lineHeight a partir do modelo de tipografia (Adobe-style):
+   *   - Se leadingPt definido: lineHeight = leadingPt / fontSize
+   *   - Se Auto (leadingPt undefined/null): lineHeight = 1.2 (~120%)
+   *
+   * Detalhe interno do motor — chamado quando muda leadingPt OU quando muda fontSize.
+   * Usuario nao "sente" isso, ele soh pensa em pontos absolutos ou Auto.
+   */
+  function syncLineHeightFromLeading(obj: any) {
+    if (!obj) return
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+    if (!isText) return
+    const fs = obj.fontSize ?? 48
+    const leadingPt = obj.leadingPt
+    const lh = (leadingPt === undefined || leadingPt === null)
+      ? 1.2
+      : leadingPt / fs
+    obj.set("lineHeight", lh)
+  }
+
+  /**
+   * Define leading em pontos (Adobe-style). Pass null pra resetar pra "Auto".
+   * Leading e fontSize sao independentes — mudar um nao mexe no outro.
+   */
+  function setLeading(pt: number | null) {
+    const fc = fabricRef.current; const obj = selected as any
+    if (!fc || !obj) return
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+    if (!isText) return
+    if (pt === null) delete obj.leadingPt
+    else obj.leadingPt = pt
+    syncLineHeightFromLeading(obj)
+    if (obj.initDimensions) obj.initDimensions()
+    obj.setCoords()
     fc.renderAll()
     setSelectedTick(t => t + 1)
     doSave()
@@ -1401,6 +1473,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             // per-char nelas), entao nao tentam ler de getSelectionStyles.
             const effectiveLineHeight: number = (selected as any).lineHeight ?? 1.16
             const effectiveTextAlign: string = (selected as any).textAlign ?? "left"
+            // Photoshop-style leading em pt:
+            // - Se leadingPt foi definido: usa direto
+            // - Senao: "Auto" = lineHeight × fontSize (calculo, mostrado em cinza)
+            const leadingPtRaw: number | undefined = (selected as any).leadingPt
+            const isLeadingAuto = leadingPtRaw === undefined || leadingPtRaw === null
+            const effectiveLeadingPt: number = isLeadingAuto
+              ? Math.round(effectiveLineHeight * effectiveFontSize)
+              : leadingPtRaw
             if (hasInlineSelection) {
               try {
                 const styles = (selected as any).getSelectionStyles(selStart, selEnd)
@@ -1447,19 +1527,34 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <div style={secS}>Entrelinhas</div>
-                <input
-                  key={`lh-${(selected as any).__assetId ?? "x"}-${selectedTick}`}
-                  type="number"
-                  step="0.1"
-                  defaultValue={effectiveLineHeight.toFixed(2)}
-                  onChange={e => {
-                    const n = Number(e.target.value)
-                    if (Number.isFinite(n) && n > 0) applyTextboxStyle("lineHeight", n)
-                  }}
-                  onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
-                  title="Photoshop: Option+↑/↓ pra ajustar (Shift = 10x)"
-                  style={inpS}
-                />
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <input
+                    key={`lh-${(selected as any).__assetId ?? "x"}-${selectedTick}`}
+                    type="number"
+                    step="1"
+                    defaultValue={Math.round(effectiveLeadingPt)}
+                    onChange={e => {
+                      const n = Number(e.target.value)
+                      if (Number.isFinite(n) && n > 0) setLeading(n)
+                    }}
+                    onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+                    title={isLeadingAuto ? `Auto (${Math.round(effectiveLeadingPt)}pt) — Option+↑/↓ ajusta` : "Option+↑/↓ ajusta (Shift = 10pt)"}
+                    style={{ ...inpS, color: isLeadingAuto ? "#888" : "white" }}
+                  />
+                  <button type="button"
+                    onClick={() => setLeading(null)}
+                    disabled={isLeadingAuto}
+                    title="Resetar pra Auto"
+                    style={{
+                      width: 28, height: 28, fontSize: 11,
+                      background: isLeadingAuto ? "#1a1a1a" : "#111",
+                      border: "1px solid #2a2a2a", color: isLeadingAuto ? "#444" : "#888",
+                      borderRadius: 4, cursor: isLeadingAuto ? "default" : "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                    A
+                  </button>
+                </div>
               </div>
               <div>
                 <div style={secS}>Alinhamento</div>
