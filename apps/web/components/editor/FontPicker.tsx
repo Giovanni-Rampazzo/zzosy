@@ -161,7 +161,6 @@ export function WeightPicker({ value, onChange, buttonStyle }: PickerProps) {
   const familyObj = families.find(f => f.family === currentFamily)
   // Se nao achou a familia (raro, mas pode acontecer com fontes muito custom), retorna so Regular
   const variants = familyObj ? Object.keys(familyObj.variants) : ["Regular"]
-  console.log("[WP-RENDER]", { value, currentFamily, currentVariant, familyObjFound: !!familyObj, variantsCount: variants.length, familiesLoaded: families.length })
 
   async function pickVariant(label: string) {
     if (!familyObj) return

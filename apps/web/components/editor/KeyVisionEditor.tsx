@@ -322,6 +322,23 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:cleared", () => setSelected(null))
       fc.on("object:modified", () => { if (alive) doSave() })
+      // Quando o usuario muda a selecao DENTRO de um textbox em modo edicao (cursor moveu,
+      // selecao expandida, palavra selecionada), forca re-render do painel pra ler estilos
+      // do caractere onde o cursor esta agora. Sem isso, painel mostra estado obsoleto
+      // quando texto tem estilos per-char.
+      // Fabric dispara mouseup/keyup nesses casos. Usamos uma checagem leve no proprio canvas.
+      const onCanvasInteract = () => {
+        const active = fc.getActiveObject() as any
+        if (active?.isEditing) setSelectedTick(t => t + 1)
+      }
+      fc.on("mouse:up", onCanvasInteract)
+      // Tambem captura quando teclas (Shift+Arrow etc) mudam a selecao
+      const onKeyUp = (e: KeyboardEvent) => {
+        const active = fc.getActiveObject() as any
+        if (active?.isEditing) setSelectedTick(t => t + 1)
+      }
+      window.addEventListener("keyup", onKeyUp)
+      cleanupFns.push(() => window.removeEventListener("keyup", onKeyUp))
       fc.on("text:changed", (e: any) => {
         if (!alive) return
         setSelectedTick(t => t + 1)
@@ -1255,10 +1272,33 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             </div>
           </div>
         ) : isText ? (
+          (() => {
+            // Quando ha selecao parcial dentro do textbox em modo edicao, le os estilos
+            // do caractere onde o cursor esta — nao do objeto inteiro. Garante que o
+            // painel reflete a fonte aplicada na selecao quando o texto tem partes em
+            // pesos/fontes diferentes (ex: parte Helvetica Bold, parte Helvetica Regular).
+            const isEditingText = (selected as any).isEditing
+            const selStart = (selected as any).selectionStart ?? 0
+            const selEnd = (selected as any).selectionEnd ?? 0
+            const hasInlineSelection = isEditingText && selStart !== selEnd
+            let effectiveFontFamily = selected.fontFamily ?? "Arial"
+            let effectiveFontSize = selected.fontSize ?? 80
+            let effectiveFill = selected.fill ?? "#111111"
+            if (hasInlineSelection) {
+              try {
+                const styles = (selected as any).getSelectionStyles(selStart, selEnd)
+                if (styles?.length > 0) {
+                  effectiveFontFamily = styles[0].fontFamily ?? effectiveFontFamily
+                  effectiveFontSize = styles[0].fontSize ?? effectiveFontSize
+                  effectiveFill = styles[0].fill ?? effectiveFill
+                }
+              } catch { /* getSelectionStyles falhou — usa do obj inteiro */ }
+            }
+            return (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <div style={secS}>Fonte</div>
-              <FontPicker value={selected.fontFamily ?? "Arial"} onChange={(f) => applyStyle("fontFamily", f)} />
+              <FontPicker value={effectiveFontFamily} onChange={(f) => applyStyle("fontFamily", f)} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
@@ -1266,7 +1306,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                 <input
                   key={`fs-${(selected as any).__assetId ?? "x"}-${selectedTick}`}
                   type="number"
-                  defaultValue={Math.round(selected.fontSize ?? 80)}
+                  defaultValue={Math.round(effectiveFontSize)}
                   onBlur={(e) => {
                     const n = Number((e.target as HTMLInputElement).value)
                     if (Number.isFinite(n) && n > 0) applyStyle("fontSize", n)
@@ -1277,7 +1317,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               </div>
               <div>
                 <div style={secS}>Peso</div>
-                <WeightPicker value={selected.fontFamily ?? "Arial"} onChange={(f) => applyStyle("fontFamily", f)} />
+                <WeightPicker value={effectiveFontFamily} onChange={(f) => applyStyle("fontFamily", f)} />
               </div>
             </div>
             <button onClick={fitLayerToCanvas}
@@ -1288,10 +1328,10 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             <div>
               <div style={secS}>Cor</div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                <label style={{ width: 36, height: 36, borderRadius: 6, background: selected.fill ?? "#111111", border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                <label style={{ width: 36, height: 36, borderRadius: 6, background: effectiveFill, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
                   <input
                     type="color"
-                    value={(selected.fill ?? "#111111").length === 7 ? selected.fill : "#111111"}
+                    value={effectiveFill.length === 7 ? effectiveFill : "#111111"}
                     onChange={e => applyStyle("fill", e.target.value)}
                     style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }}
                   />
@@ -1320,6 +1360,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               </div>
             </div>
           </div>
+            )
+          })()
         ) : (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{selected.__assetLabel ?? "Elemento"}</div>
