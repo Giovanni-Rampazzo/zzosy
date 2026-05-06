@@ -40,7 +40,7 @@ async function renderPieceThumb(
     const matrixBgObj = matrixCanvas.getObjects().find((o: any) => o.__isBg)
     const realBgColor = matrixBgObj?.fill ?? matrixCanvas.backgroundColor ?? "#fff"
 
-    const fc = new StaticCanvas(el, { width: pieceW, height: pieceH, enableRetinaScaling: false, backgroundColor: realBgColor })
+    const fc = new StaticCanvas(el, { width: pieceW, height: pieceH, enableRetinaScaling: false })
 
     // Escala pelo MENOR lado (uma dimensao cabe, layout preservado)
     const scale = Math.min(pieceW / matrixW, pieceH / matrixH)
@@ -54,6 +54,11 @@ async function renderPieceThumb(
       if (r && typeof r.then === "function") r.then(() => resolve())
     })
     await new Promise(r => setTimeout(r, 200))
+
+    // CRITICO: setar backgroundColor DEPOIS do loadFromJSON (ele sobrescreve com o do JSON
+    // que vem vazio/transparente, fazendo o JPEG export ficar preto). A cor real vem do
+    // OBJETO __isBg do editor, nao da propriedade backgroundColor do Canvas.
+    fc.backgroundColor = realBgColor
 
     // Aplica escala em todos os objetos
     for (const obj of fc.getObjects()) {
