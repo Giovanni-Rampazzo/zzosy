@@ -23,7 +23,7 @@ const STATUS: Record<string, { label: string; bg: string; color: string }> = {
 export default function ApprovalsPage() {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState("REVIEW")
+  const [filter, setFilter] = useState("ALL")
   const [updating, setUpdating] = useState<string | null>(null)
 
   useEffect(() => {
