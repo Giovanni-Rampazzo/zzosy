@@ -10,6 +10,7 @@ interface Props {
 }
 
 export function FontPicker({ value, onChange, buttonStyle }: Props) {
+  console.log("[FONT-PICKER-RENDER] value =", value)
   const [fonts, setFonts] = useState<string[]>(FALLBACK_FONTS)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
