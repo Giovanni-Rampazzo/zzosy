@@ -185,7 +185,10 @@ export default function CampaignOverviewPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
               {pieces.map(p => (
                 <div key={p.id} style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                  <div style={{ height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  <div
+                    onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}
+                    title="Editar peça"
+                    style={{ height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer" }}>
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     ) : (
@@ -201,16 +204,10 @@ export default function CampaignOverviewPage() {
                       <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>{p.width} × {p.height}</div>
                       <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                     </div>
-                    <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
-                      <button
-                        onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}
-                        style={{ flex: 1, background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "6px 8px", fontSize: 11, color: "#444", cursor: "pointer" }}
-                      >
-                        ✏️ Editar
-                      </button>
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "auto" }}>
                       <button
                         onClick={() => deletePiece(p.id)}
-                        style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "6px 8px", fontSize: 11, color: "#dc2626", cursor: "pointer" }}
+                        style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "6px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer" }}
                         title="Apagar"
                       >
                         🗑
