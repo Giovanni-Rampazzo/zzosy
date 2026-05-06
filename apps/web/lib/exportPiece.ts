@@ -370,6 +370,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
 
   for (const obj of objects) {
     if ((obj as any).__isBg) continue
+    // DIAGNOSTICO: tipo de cada objeto que entra no loop
+    console.log("[PSD-LOOP]", { type: obj.type, isBg: (obj as any).__isBg, hasText: !!(obj as any).text, name: (obj as any).__assetLabel })
     const ox = obj.left ?? 0
     const oy = obj.top ?? 0
     const ow = (obj.width ?? 100) * (obj.scaleX ?? 1)
