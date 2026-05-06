@@ -169,20 +169,20 @@ export default function CampaignOverviewPage() {
           <div>
             <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, marginBottom: 12 }}>Key Vision (Matriz)</div>
             <div style={{
-              width: "100%",
-              aspectRatio: `${kvW} / ${kvH}`,
-              background: kvBg,
-              borderRadius: 6,
-              border: "1px solid #E0E0E0",
-              maxHeight: 220,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#aaa", fontSize: 13, position: "relative", overflow: "hidden"
+              maxHeight: 220, display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#aaa", fontSize: 13,
             }}>
               {campaign.keyVision?.thumbnailUrl ? (
                 <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
-                  style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
               ) : (
-                <span>{kvW} × {kvH}</span>
+                <div style={{
+                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 220, width: "auto", maxWidth: "100%",
+                  background: kvBg, borderRadius: 6, border: "1px solid #E0E0E0",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span>{kvW} × {kvH}</span>
+                </div>
               )}
             </div>
           </div>
@@ -191,36 +191,20 @@ export default function CampaignOverviewPage() {
               onClick={() => router.push(`/campaigns/${id}/assets`)}
               style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "12px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
             >
-              Editar Assets
+              Assets
             </button>
             <button
               onClick={() => router.push(`/editor?campaignId=${id}`)}
               style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#333" }}
             >
-              Abrir no Editor
-            </button>
-            <button
-              onClick={async () => {
-                if (!confirm("Duplicar esta campanha? Cria uma cópia com todos os assets e peças (status resetado para Standby).")) return
-                try {
-                  const res = await fetch(`/api/campaigns/${id}/duplicate`, { method: "POST" })
-                  if (!res.ok) throw new Error()
-                  const dup = await res.json()
-                  router.push(`/campaigns/${dup.id}`)
-                } catch {
-                  alert("Falha ao duplicar campanha")
-                }
-              }}
-              style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#333" }}
-            >
-              ⎘ Duplicar
+              Key Vision
             </button>
             <button
               onClick={() => setDeliveryOpen(true)}
               disabled={pieces.length === 0}
               style={{ background: pieces.length === 0 ? "#f5f5f5" : "#111", border: "none", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: pieces.length === 0 ? "default" : "pointer", color: pieces.length === 0 ? "#aaa" : "white" }}
             >
-              ↗ Nova entrega
+              Package
             </button>
           </div>
         </div>
