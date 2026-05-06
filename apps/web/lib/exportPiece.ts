@@ -397,7 +397,16 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       // com formatacao correta). Se cancelar, fica o canvas raster (visual correto, mas
       // nao-editavel).
       const fontSize = Math.round(obj.fontSize ?? 48)
-      const fullText = obj.text ?? ""
+      // CHAVE: usa as LINHAS WRAPPEADAS pelo Fabric (visual real do editor) como texto.
+      // obj.text e' o texto cru (so com \n explicitos do usuario).
+      // obj._textLines e' o array de linhas REAIS apos o wrap automatico pelo width do Textbox.
+      // Se mandassemos obj.text cru, Photoshop tentaria wrappar de novo e poderia diferir
+      // (mesma fonte com metricas ligeiramente diferentes da Fabric => quebra em outro ponto).
+      // Juntando as linhas wrappeadas com \n explicitos, garantimos o mesmo visual.
+      const wrappedLines = (obj as any)._textLines as string[][] | undefined
+      const fullText = (Array.isArray(wrappedLines) && wrappedLines.length > 0)
+        ? wrappedLines.map(line => Array.isArray(line) ? line.join("") : String(line)).join("\n")
+        : (obj.text ?? "")
       const styleRuns = buildStyleRuns(obj, fullText)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
       const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
@@ -409,20 +418,15 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         const rendered = obj.toCanvasElement({ multiplier: 1 })
         lctx.drawImage(rendered, 0, 0, w, h)
       } catch (e) { console.warn("rasterize text fail:", name, e) }
-      // DIAGNOSTICO TEMPORARIO: ver o que estamos enviando ao ag-psd
+      // DIAGNOSTICO TEMPORARIO
       console.log("[PSD-TEXT-EXPORT]", {
         name,
-        fullText: JSON.stringify(fullText),
-        charCodes: [...fullText].map(c => c.charCodeAt(0)),
-        fontFamily: obj.fontFamily,
-        psFontName: ps.name,
-        fauxBold: ps.fauxBold,
-        fontSize,
+        rawText: JSON.stringify(obj.text),
+        wrappedLineCount: wrappedLines?.length,
+        finalText: JSON.stringify(fullText),
+        fontFamily: obj.fontFamily, psFontName: ps.name, fauxBold: ps.fauxBold, fontSize,
         bbox: { left, top, w, h },
-        boxBounds: [0, -fontSize, w, h - fontSize],
         styleRunsCount: styleRuns.length,
-        styleRuns: styleRuns.map((r: any) => ({ length: r.length, fontSize: r.style?.fontSize, font: r.style?.font?.name })),
-        fabricObj: { width: obj.width, height: obj.height, scaleX: obj.scaleX, scaleY: obj.scaleY, fontSize: obj.fontSize, lineHeight: obj.lineHeight, textLines: (obj as any)._textLines?.length },
       })
       psdLayers.push({
         name, top, left, bottom, right,
@@ -430,13 +434,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
-          // Box text: forca Photoshop a respeitar a largura e quebrar linhas dentro do box.
-          // Sem isso (default = point text), o engineData volta como linha unica e perde
-          // a quebra de linha visual da Textbox do Fabric.
-          // boxBounds eh relativo ao transform [left, top+fontSize], entao o topo do box
-          // fica em -fontSize.
-          shapeType: "box",
-          boxBounds: [0, -fontSize, w, h - fontSize],
+          // Point text com quebras explicitas (vindas do wrap do Fabric).
+          // Sem boxBounds: deixa Photoshop respeitar nossas quebras sem tentar re-wrappar.
           style: {
             font: { name: ps.name },
             fontSize,
