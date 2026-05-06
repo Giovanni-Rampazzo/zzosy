@@ -394,8 +394,22 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const styleRuns = buildStyleRuns(obj, fullText)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
       const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
+      // Rasteriza o texto com transparencia: ag-psd nao gera o cache /Rendered, entao
+      // sem isso o Photoshop renderiza o texto cru e perde fonte/tamanho/quebra de linha.
+      // Com canvas, Photoshop usa essa rasterizacao como visual e a engineData fica
+      // disponivel pra edicao.
+      let textCanvas: HTMLCanvasElement | undefined
+      try {
+        const tc = document.createElement("canvas")
+        tc.width = w; tc.height = h
+        const tctx = tc.getContext("2d")! // alpha:true (default) — fundo transparente
+        const rendered = obj.toCanvasElement({ multiplier: 1 })
+        tctx.drawImage(rendered, 0, 0, w, h)
+        textCanvas = tc
+      } catch (e) { console.warn("rasterize text fail:", name, e) }
       psdLayers.push({
         name, top, left, bottom, right,
+        ...(textCanvas ? { canvas: textCanvas } : {}),
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
