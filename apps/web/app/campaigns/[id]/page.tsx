@@ -41,7 +41,7 @@ export default function CampaignOverviewPage() {
   const [selected, setSelected] = useState<string[]>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
-  const [scope, setScope] = useState<"production" | "all">("production")
+  const [statusFilter, setStatusFilter] = useState<string>("ALL")
 
   async function loadAll() {
     const [c, p] = await Promise.all([
@@ -208,10 +208,9 @@ export default function CampaignOverviewPage() {
 
         {/* Lista de peças */}
         {(() => {
-          const visiblePieces = scope === "production"
-            ? pieces.filter(p => p.status !== "ENTREGUE")
-            : pieces
-          const deliveredCount = pieces.filter(p => p.status === "ENTREGUE").length
+          const visiblePieces = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+          const counts: Record<string, number> = { ALL: pieces.length }
+          for (const s of PIECE_STATUS_LIST) counts[s] = pieces.filter(p => p.status === s).length
           // toggleSelectAll opera sobre visiblePieces (so seleciona o que ta visivel)
           const allVisibleSelected = visiblePieces.length > 0 && visiblePieces.every(p => selected.includes(p.id))
           const toggleSelectAll = () => {
@@ -221,22 +220,8 @@ export default function CampaignOverviewPage() {
           return (
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
-                Peças geradas ({visiblePieces.length})
-              </div>
-              {deliveredCount > 0 && (
-                <div style={{ display: "flex", border: "1px solid #E0E0E0", borderRadius: 6, overflow: "hidden" }}>
-                  <button onClick={() => { setScope("production"); setSelected([]) }}
-                    style={{ background: scope === "production" ? "#111" : "white", color: scope === "production" ? "white" : "#888", border: "none", padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                    Em produção ({pieces.length - deliveredCount})
-                  </button>
-                  <button onClick={() => { setScope("all"); setSelected([]) }}
-                    style={{ background: scope === "all" ? "#111" : "white", color: scope === "all" ? "white" : "#888", border: "none", padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                    Todas ({pieces.length})
-                  </button>
-                </div>
-              )}
+            <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
+              Peças geradas ({visiblePieces.length})
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {visiblePieces.length > 0 && (
@@ -313,11 +298,44 @@ export default function CampaignOverviewPage() {
             </div>
           )}
 
+          {/* Abas de filtro por status */}
+          {pieces.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+              <button
+                onClick={() => { setStatusFilter("ALL"); setSelected([]) }}
+                style={{
+                  padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                  border: statusFilter === "ALL" ? "1px solid #111" : "1px solid #E0E0E0",
+                  background: statusFilter === "ALL" ? "#111" : "white",
+                  color: statusFilter === "ALL" ? "white" : "#888", cursor: "pointer",
+                }}>
+                Todas <span style={{ opacity: 0.7 }}>({counts.ALL})</span>
+              </button>
+              {PIECE_STATUS_LIST.map(s => {
+                const meta = statusMeta(s)
+                const active = statusFilter === s
+                return (
+                  <button
+                    key={s}
+                    onClick={() => { setStatusFilter(s); setSelected([]) }}
+                    style={{
+                      padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                      border: active ? `1px solid ${meta.color}` : "1px solid #E0E0E0",
+                      background: active ? meta.bg : "white",
+                      color: active ? meta.color : "#888", cursor: "pointer",
+                    }}>
+                    {meta.label} <span style={{ opacity: 0.7 }}>({counts[s]})</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {visiblePieces.length === 0 ? (
             <div style={{ background: "white", border: "1px dashed #E0E0E0", borderRadius: 10, padding: 40, textAlign: "center", color: "#888", fontSize: 13 }}>
               {pieces.length === 0
                 ? `Nenhuma peça gerada ainda. Abra o editor e clique em "Gerar Peças".`
-                : `Todas as peças desta campanha já foram entregues. Mude pra "Todas" pra ver.`}
+                : `Nenhuma peça com este status.`}
             </div>
           ) : view === "grid" ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
