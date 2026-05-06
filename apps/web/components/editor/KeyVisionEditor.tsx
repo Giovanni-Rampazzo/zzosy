@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
-import { FontPicker } from "./FontPicker"
+import { FontPicker, WeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { migrateStyles } from "@/lib/migrateStyles"
 
@@ -1046,7 +1046,6 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function applyStyle(key: string, val: any) {
     const fc = fabricRef.current; const obj = selected
     if (!fc || !obj) return
-    if (key === "fontFamily") console.log("[KV-APPLY-STYLE] fontFamily ->", val, "obj.fontFamily before:", obj.fontFamily)
     const value = key === "fontSize" ? Number(val) : val
     const styleKey = key === "fill" ? "fill" : key
 
@@ -1278,10 +1277,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               </div>
               <div>
                 <div style={secS}>Peso</div>
-                <select value={selected.fontWeight ?? "normal"} onChange={e => applyStyle("fontWeight", e.target.value)} style={inpS}>
-                  <option value="normal">Regular</option>
-                  <option value="bold">Bold</option>
-                </select>
+                <WeightPicker value={selected.fontFamily ?? "Arial"} onChange={(f) => applyStyle("fontFamily", f)} />
               </div>
             </div>
             <button onClick={fitLayerToCanvas}
