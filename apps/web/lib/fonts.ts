@@ -97,23 +97,23 @@ async function tryLocalFontAccess(): Promise<FontFamily[] | null> {
   if (!w.queryLocalFonts) return null
   try {
     const fonts: SystemFontData[] = await w.queryLocalFonts()
+    // DEBUG TEMPORARIO: ver o formato real das fontes do sistema
+    console.log("[FONT-DEBUG] Local fonts sample (first 10):", fonts.slice(0, 10))
+    const helvetica = fonts.filter(f => f.family.toLowerCase().includes("helvetica"))
+    if (helvetica.length) console.log("[FONT-DEBUG] Helvetica family entries:", helvetica)
     // Agrupa por familia, label = style (Regular/Light/Bold/etc), value = fullName
     const map = new Map<string, Record<string, string>>()
     for (const f of fonts) {
       if (!map.has(f.family)) map.set(f.family, {})
       const variants = map.get(f.family)!
-      // Normaliza style: "Regular" se vazio, primeira letra maiuscula etc.
       const styleLabel = (f.style || "Regular").trim() || "Regular"
-      // Se ja existe uma variante com esse label (improvavel mas seguro), nao sobrescreve
       if (!variants[styleLabel]) {
         variants[styleLabel] = f.fullName || f.family
       }
     }
     const result: FontFamily[] = []
-    for (const [family, variants] of map) {
-      // Garante que Regular esta primeiro se existir
-      result.push({ family, variants })
-    }
+    for (const [family, variants] of map) result.push({ family, variants })
+    console.log("[FONT-DEBUG] Helvetica Neue mapped:", result.find(f => f.family === "Helvetica Neue"))
     return result.sort((a, b) => a.family.localeCompare(b.family))
   } catch {
     return null
