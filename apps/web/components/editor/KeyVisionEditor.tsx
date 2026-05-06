@@ -226,6 +226,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   }, [campaignId])
 
   // Atalhos Cmd/Ctrl+Z (undo) e Cmd/Ctrl+Shift+Z (redo)
+  // Atalho Cmd/Ctrl+Shift+>/< pra aumentar/diminuir 4pt no fontSize do texto selecionado
+  // (igual Photoshop). So funciona quando o textbox esta selecionado mas NAO em edicao inline.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const fc = fabricRef.current
@@ -239,6 +241,19 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
         e.preventDefault()
         redo()
+      }
+      // Cmd+Shift+> / Cmd+Shift+< (Photoshop-style font size)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === ">" || e.key === "." || e.key === "<" || e.key === ",")) {
+        if (!active || (active.type !== "textbox" && active.type !== "i-text")) return
+        e.preventDefault()
+        const delta = (e.key === ">" || e.key === ".") ? 4 : -4
+        const cur = Math.round(active.fontSize ?? 48)
+        const next = Math.max(1, cur + delta)
+        active.set("fontSize", next)
+        if (active.initDimensions) active.initDimensions()
+        fc?.renderAll()
+        // dispara o mesmo evento que o painel escuta pra reflitir a mudanca
+        fc?.fire("object:modified", { target: active })
       }
     }
     window.addEventListener("keydown", onKey)

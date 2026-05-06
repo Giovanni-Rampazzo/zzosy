@@ -118,7 +118,21 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <div>
               <div style={sec}>Tamanho</div>
-              <input type="number" value={fontSize} onChange={e=>applyText("fontSize",e.target.value)} style={inp}/>
+              <div style={{display:"flex",gap:4}}>
+                <button
+                  type="button"
+                  onClick={()=>applyText("fontSize",String(Math.max(1, Math.round(+fontSize) - 4)))}
+                  title="Diminuir 4pt"
+                  style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
+                >−</button>
+                <input type="number" value={fontSize} onChange={e=>applyText("fontSize",e.target.value)} style={{...inp,textAlign:"center"}}/>
+                <button
+                  type="button"
+                  onClick={()=>applyText("fontSize",String(Math.round(+fontSize) + 4))}
+                  title="Aumentar 4pt"
+                  style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
+                >+</button>
+              </div>
             </div>
             <div>
               <div style={sec}>Peso</div>
