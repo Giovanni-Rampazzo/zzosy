@@ -37,8 +37,8 @@ export default function DeliveriesPage() {
   }
   useEffect(() => { load() }, [])
 
-  async function handleDelete(id: string) {
-    if (!confirm("Apagar esta entrega? O ZIP físico e o registro serão removidos.")) return
+  async function handleDelete(id: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm("Apagar esta entrega? O ZIP físico e o registro serão removidos.")) return
     const res = await fetch(`/api/deliveries/${id}`, { method: "DELETE" })
     if (res.ok) load()
     else alert("Falha ao apagar")
@@ -94,7 +94,8 @@ export default function DeliveriesPage() {
                         Download
                       </a>
                     )}
-                    <button onClick={() => handleDelete(d.id)}
+                    <button onClick={(e) => handleDelete(d.id, e.altKey)}
+                      title="Option/Alt+click pra apagar sem confirmação"
                       style={{ padding: "6px 12px", border: "1px solid #fecaca", borderRadius: 4, background: "#fef2f2", cursor: "pointer", fontSize: 12, color: "#dc2626" }}>
                       Apagar
                     </button>
