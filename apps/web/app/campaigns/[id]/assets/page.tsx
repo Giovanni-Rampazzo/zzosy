@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
+import { EditableText } from "@/components/EditableText"
 
 interface Asset {
   id: string
@@ -100,6 +101,21 @@ export default function CampaignAssetsPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  async function updateAssetLabel(assetId: string, newLabel: string) {
+    if (!campaign) return
+    const trimmed = newLabel.trim()
+    if (!trimmed) return
+    setCampaign({ ...campaign, assets: campaign.assets.map(a => a.id === assetId ? { ...a, label: trimmed } : a) })
+    setSavingMap(m => ({ ...m, [assetId]: true }))
+    const res = await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: trimmed })
+    })
+    setSavingMap(m => ({ ...m, [assetId]: false }))
+    if (!res.ok) throw new Error("Falha ao salvar nome")
+  }
 
   function updateAssetText(assetId: string, newText: string) {
     if (!campaign) return
@@ -255,8 +271,8 @@ export default function CampaignAssetsPage() {
                     <div style={{ fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
                       {asset.type === "TEXT" ? "Texto" : "Imagem"}
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#333", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {asset.label}
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>
+                      <EditableText value={asset.label} variant="inline" onSave={(v) => updateAssetLabel(asset.id, v)} />
                     </div>
                   </div>
 

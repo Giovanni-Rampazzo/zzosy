@@ -383,9 +383,12 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     let name = (obj as any).__assetLabel ?? obj.type ?? "Layer"
 
     if (obj.type === "textbox" || obj.type === "i-text" || obj.type === "text") {
-      // Photoshop-style: nome da layer = conteudo do texto (truncado e normalizado)
-      const txt = ((obj as any).text ?? "").trim().replace(/\s+/g, " ")
-      if (txt.length > 0) name = txt.length > 64 ? txt.substring(0, 64) + "…" : txt
+      // Nome da layer = label do asset (editavel na pagina de assets).
+      // Fallback: conteudo do texto se nao tiver label.
+      if (!((obj as any).__assetLabel)) {
+        const txt = ((obj as any).text ?? "").trim().replace(/\s+/g, " ")
+        if (txt.length > 0) name = txt.length > 64 ? txt.substring(0, 64) + "…" : txt
+      }
       const fontSize = Math.round(obj.fontSize ?? 48)
       const fullText = obj.text ?? ""
       const styleRuns = buildStyleRuns(obj, fullText)
