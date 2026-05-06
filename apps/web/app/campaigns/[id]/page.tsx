@@ -4,7 +4,9 @@ import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
+import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
+import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -23,6 +25,7 @@ interface Piece {
   height: number
   status: string
   imageUrl?: string | null
+  data?: any
   createdAt: string
 }
 
@@ -34,6 +37,10 @@ export default function CampaignOverviewPage() {
   const [loading, setLoading] = useState(true)
   const [loadTs, setLoadTs] = useState(Date.now())
   const [deliveryOpen, setDeliveryOpen] = useState(false)
+  const [view, setView] = useState<"grid" | "list">("grid")
+  const [selected, setSelected] = useState<string[]>([])
+  const [exportOpen, setExportOpen] = useState(false)
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
 
   async function loadAll() {
     const [c, p] = await Promise.all([
@@ -67,6 +74,36 @@ export default function CampaignOverviewPage() {
     if (!confirm("Apagar esta peça? Esta ação não pode ser desfeita.")) return
     await fetch(`/api/pieces/${pieceId}`, { method: "DELETE" })
     setPieces(p => p.filter(x => x.id !== pieceId))
+  }
+
+  function toggleSelect(pieceId: string) {
+    setSelected(s => s.includes(pieceId) ? s.filter(x => x !== pieceId) : [...s, pieceId])
+  }
+  function isSelected(pieceId: string) { return selected.includes(pieceId) }
+  function toggleSelectAll() {
+    if (selected.length === pieces.length) setSelected([])
+    else setSelected(pieces.map(p => p.id))
+  }
+
+  async function deleteSelected() {
+    if (selected.length === 0) return
+    if (!confirm(`Apagar ${selected.length} peça(s)? Esta ação não pode ser desfeita.`)) return
+    await Promise.all(selected.map(id => fetch(`/api/pieces/${id}`, { method: "DELETE" })))
+    setPieces(prev => prev.filter(p => !selected.includes(p.id)))
+    setSelected([])
+  }
+
+  async function bulkSetStatus(status: string) {
+    if (selected.length === 0) return
+    await Promise.all(selected.map(id =>
+      fetch(`/api/pieces/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      })
+    ))
+    setPieces(prev => prev.map(p => selected.includes(p.id) ? { ...p, status } : p))
+    setBulkStatusOpen(false)
   }
 
   if (loading) return (
@@ -190,28 +227,113 @@ export default function CampaignOverviewPage() {
 
         {/* Lista de peças */}
         <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>Peças geradas ({pieces.length})</div>
-            {pieces.length > 0 && (
-              <button onClick={() => router.push(`/pieces?campaignId=${id}`)}
-                style={{ background: "transparent", border: "none", color: "#F5C400", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                Ver todas →
-              </button>
-            )}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
+              Peças geradas ({pieces.length})
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {pieces.length > 0 && (
+                <>
+                  {selected.length > 0 ? (
+                    <>
+                      <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{selected.length} selecionada(s)</span>
+                      <button
+                        onClick={() => setBulkStatusOpen(o => !o)}
+                        style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, color: "#333", cursor: "pointer", position: "relative" }}
+                      >
+                        ◐ Status ▾
+                      </button>
+                      <button
+                        onClick={() => setExportOpen(true)}
+                        style={{ background: "#111", color: "white", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                      >
+                        ↗ Exportar ({selected.length})
+                      </button>
+                      <button
+                        onClick={deleteSelected}
+                        style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                      >
+                        🗑 Apagar ({selected.length})
+                      </button>
+                      <button
+                        onClick={() => setSelected([])}
+                        style={{ background: "transparent", color: "#888", border: "none", padding: "5px 8px", fontSize: 11, cursor: "pointer" }}
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={toggleSelectAll}
+                      style={{ background: "transparent", border: "1px solid #E0E0E0", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, color: "#666", cursor: "pointer" }}
+                    >
+                      Selecionar tudo
+                    </button>
+                  )}
+                  <div style={{ display: "flex", border: "1px solid #E0E0E0", borderRadius: 6, overflow: "hidden" }}>
+                    <button onClick={() => setView("grid")}
+                      style={{ background: view === "grid" ? "#111" : "white", color: view === "grid" ? "white" : "#888", border: "none", padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      Grid
+                    </button>
+                    <button onClick={() => setView("list")}
+                      style={{ background: view === "list" ? "#111" : "white", color: view === "list" ? "white" : "#888", border: "none", padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      Lista
+                    </button>
+                  </div>
+                  <button onClick={() => router.push(`/pieces?campaignId=${id}`)}
+                    style={{ background: "transparent", border: "none", color: "#F5C400", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    Ver todas →
+                  </button>
+                </>
+              )}
+            </div>
           </div>
+
+          {/* Mini menu pro bulk status */}
+          {bulkStatusOpen && (
+            <div style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 8, padding: 8, marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap", boxShadow: "0 2px 6px rgba(0,0,0,0.05)" }}>
+              <span style={{ fontSize: 11, color: "#888", padding: "5px 8px" }}>Marcar como:</span>
+              {PIECE_STATUS_LIST.filter(s => s !== "ENTREGUE").map(s => {
+                const meta = statusMeta(s)
+                return (
+                  <button key={s} onClick={() => bulkSetStatus(s)}
+                    style={{ background: meta.bg, color: meta.color, border: "none", borderRadius: 5, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    {meta.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
 
           {pieces.length === 0 ? (
             <div style={{ background: "white", border: "1px dashed #E0E0E0", borderRadius: 10, padding: 40, textAlign: "center", color: "#888", fontSize: 13 }}>
               Nenhuma peça gerada ainda. Abra o editor e clique em "Gerar Peças".
             </div>
-          ) : (
+          ) : view === "grid" ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
               {pieces.map(p => (
-                <div key={p.id} style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <div key={p.id}
+                  style={{
+                    background: "white", borderRadius: 10,
+                    border: isSelected(p.id) ? "2px solid #F5C400" : "1px solid #E0E0E0",
+                    display: "flex", flexDirection: "column", position: "relative",
+                  }}>
+                  {/* Checkbox */}
+                  <div onClick={(e) => { e.stopPropagation(); toggleSelect(p.id) }}
+                    title={isSelected(p.id) ? "Desselecionar" : "Selecionar"}
+                    style={{
+                      position: "absolute", top: 8, left: 8, zIndex: 5,
+                      width: 18, height: 18, borderRadius: 4, cursor: "pointer",
+                      background: isSelected(p.id) ? "#F5C400" : "rgba(255,255,255,0.9)",
+                      border: isSelected(p.id) ? "none" : "1px solid #E0E0E0",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                    {isSelected(p.id) && <span style={{ color: "white", fontSize: 12, fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                  </div>
                   <div
                     onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}
                     title="Editar peça"
-                    style={{ height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer" }}>
+                    style={{ height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer", borderRadius: "10px 10px 0 0" }}>
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     ) : (
@@ -240,6 +362,67 @@ export default function CampaignOverviewPage() {
                 </div>
               ))}
             </div>
+          ) : (
+            <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead style={{ background: "#fafafa", borderBottom: "1px solid #E0E0E0" }}>
+                  <tr>
+                    <th style={{ padding: "10px 12px", textAlign: "left", width: 32 }}>
+                      <div onClick={toggleSelectAll}
+                        style={{
+                          width: 16, height: 16, borderRadius: 3, cursor: "pointer",
+                          background: selected.length > 0 && selected.length === pieces.length ? "#F5C400" : "white",
+                          border: "1px solid #E0E0E0",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                        {selected.length > 0 && selected.length === pieces.length && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                      </div>
+                    </th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Nome</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Formato</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Tamanho</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Status</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#666" }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pieces.map(p => (
+                    <tr key={p.id}
+                      style={{ borderBottom: "1px solid #f0f0f0", background: isSelected(p.id) ? "#fffaeb" : "transparent" }}>
+                      <td style={{ padding: "10px 12px" }}>
+                        <div onClick={() => toggleSelect(p.id)}
+                          style={{
+                            width: 16, height: 16, borderRadius: 3, cursor: "pointer",
+                            background: isSelected(p.id) ? "#F5C400" : "white",
+                            border: "1px solid #E0E0E0",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                          {isSelected(p.id) && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                        onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
+                        {p.name}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.format}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.width} × {p.height}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
+                      </td>
+                      <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                        <button
+                          onClick={() => deletePiece(p.id)}
+                          style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "5px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer" }}
+                          title="Apagar"
+                        >
+                          🗑
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
@@ -250,6 +433,14 @@ export default function CampaignOverviewPage() {
           campaignName={campaign.name}
           onClose={() => setDeliveryOpen(false)}
           onCreated={() => loadAll()}
+        />
+      )}
+
+      {exportOpen && selected.length > 0 && (
+        <ExportDialog
+          pieces={pieces.filter(p => selected.includes(p.id)).map(p => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height }))}
+          campaignName={campaign.name}
+          onClose={() => setExportOpen(false)}
         />
       )}
     </div>
