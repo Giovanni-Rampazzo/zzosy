@@ -142,8 +142,12 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
         zIndex: l.zIndex ?? 0,
         width: l.width ?? 400,
         height: l.height ?? 100,
-        // overrides vazios inicialmente
-        overrides: {},
+        // Copia overrides da matriz (fill, fontSize, fontFamily, fontWeight, content, styles per-char...)
+        // pra preservar customizacoes que o usuario fez no KV (cores, fonts, etc).
+        // Sem isso, peca aparece com texto/estilo "default" do asset, ignorando o que foi
+        // editado na matriz visual. Thumbnail funciona pq usa o canvas atual mas a peca
+        // serializada nao tinha overrides.
+        overrides: { ...(l.overrides ?? {}) },
       }))
 
       // Cria a peca com NOVO formato: layers + dimensoes + bgColor
