@@ -333,7 +333,51 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       }
       fc.on("mouse:up", onCanvasInteract)
       // Escalar via canto/handle do box: dispara em real time pra atualizar painel
-      fc.on("object:scaling" as any, () => { if (alive) setSelectedTick(t => t + 1) })
+      // Photoshop-style: ao escalar TEXTBOX pelo canto, consolida o scale em fontSize
+      // (em vez de manter scaleX/scaleY do Fabric). Resultado: o numero do tamanho de fonte
+      // no painel reflete o tamanho real renderizado, e os exports/PSD sempre veem fontSize
+      // limpo sem precisar multiplicar por scale.
+      //
+      // Cuidados:
+      // - So aplica em textbox/i-text — outros objetos mantem scale normal
+      // - Multiplica fontSize do obj E todos os styles per-char (overrides)
+      // - Multiplica width pra preservar largura visual
+      // - Reseta scaleX/scaleY pra 1 e re-aplica initDimensions pra wrap correto
+      // - object:modified dispara DEPOIS (ao soltar mouse), com estado ja consolidado,
+      //   resultando em UMA entrada de undo
+      fc.on("object:scaling" as any, (e: any) => {
+        if (!alive) return
+        const obj = e?.target
+        if (!obj) return
+        const isText = obj.type === "textbox" || obj.type === "i-text"
+        if (isText) {
+          const sX = obj.scaleX ?? 1
+          const sY = obj.scaleY ?? 1
+          // Usa scaleY como referencia (consistente com convencao Photoshop pra texto)
+          // Se sX/sY sao quase 1 (drift de ponto flutuante), ignora pra evitar mexer a toa.
+          if (Math.abs(sY - 1) < 0.0001 && Math.abs(sX - 1) < 0.0001) return
+          // Aplica scale no fontSize raw
+          const newFontSize = (obj.fontSize ?? 48) * sY
+          // Mesma coisa pros overrides per-char
+          if (obj.styles && typeof obj.styles === "object") {
+            for (const lineKey of Object.keys(obj.styles)) {
+              const line = obj.styles[lineKey]
+              for (const colKey of Object.keys(line)) {
+                const cs = line[colKey]
+                if (cs && typeof cs.fontSize === "number") {
+                  cs.fontSize = cs.fontSize * sY
+                }
+              }
+            }
+          }
+          // Largura tambem pra preservar wrap visual — usa scaleX (largura escala diferente)
+          const newWidth = (obj.width ?? 100) * sX
+          obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
+          if ((obj as any).initDimensions) (obj as any).initDimensions()
+          obj.setCoords()
+        }
+        setSelectedTick(t => t + 1)
+      })
       // Tambem captura quando teclas (Shift+Arrow etc) mudam a selecao
       const onKeyUp = (e: KeyboardEvent) => {
         const active = fc.getActiveObject() as any
