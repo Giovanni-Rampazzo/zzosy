@@ -1134,12 +1134,15 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     if (isText && hasSelection) {
       // Photoshop: aplica so nos caracteres selecionados
       obj.setSelectionStyles({ [styleKey]: value }, selStart, selEnd)
-      if ((obj as any).initDimensions) (obj as any).initDimensions()
+      // initDimensions so eh necessario quando mudanca afeta layout (fontSize, fontFamily).
+      // Mudar cor (fill) nao muda layout — chamar initDimensions a toa pode trigger bugs
+      // (ex: ate observado que pode "comer" espacos em algumas situacoes de styles per-char).
+      if (styleKey !== "fill" && (obj as any).initDimensions) (obj as any).initDimensions()
     } else if (isText) {
       // Aplica como default do textbox. Caracteres com override per-char MANTEM seu estilo
       // (igual Photoshop: mudar a cor padrao nao apaga as cores das letras especificas).
       obj.set(styleKey, value)
-      if ((obj as any).initDimensions) (obj as any).initDimensions()
+      if (styleKey !== "fill" && (obj as any).initDimensions) (obj as any).initDimensions()
     } else {
       obj.set(styleKey, value)
     }
