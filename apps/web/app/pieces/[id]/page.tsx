@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
+import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 
 interface Piece {
   id: string
@@ -14,19 +15,15 @@ interface Piece {
   createdAt: string
 }
 
-const STATUS_OPTIONS = [
-  { value: "DRAFT", label: "Rascunho" },
-  { value: "REVIEW", label: "Em revisão" },
-  { value: "APPROVED", label: "Aprovada" },
-  { value: "EXPORTED", label: "Exportada" },
-]
+// ENTREGUE eh marcador automatico (set apenas pelo backend ao criar entrega).
+const STATUS_OPTIONS = PIECE_STATUS_LIST.filter(s => s !== "ENTREGUE").map(s => ({ value: s, label: statusMeta(s).label }))
 
 export default function PiecePage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [piece, setPiece] = useState<Piece | null>(null)
   const [name, setName] = useState("")
-  const [status, setStatus] = useState("DRAFT")
+  const [status, setStatus] = useState("STANDBY")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -35,7 +32,7 @@ export default function PiecePage() {
       if (d.error) return
       setPiece(d)
       setName(d.name ?? "")
-      setStatus(d.status ?? "DRAFT")
+      setStatus(d.status ?? "STANDBY")
     })
   }, [id])
 

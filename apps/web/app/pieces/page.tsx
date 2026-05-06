@@ -6,6 +6,7 @@ import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
+import { statusMeta } from "@/lib/pieceStatus"
 
 interface Piece {
   id: string
@@ -19,13 +20,6 @@ interface Piece {
   campaignId: string
   imageUrl?: string | null
   data?: any
-}
-
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  DRAFT: { label: "Rascunho", color: "bg-gray-100 text-gray-600" },
-  REVIEW: { label: "Em revisão", color: "bg-blue-100 text-blue-700" },
-  APPROVED: { label: "Aprovada", color: "bg-green-100 text-green-700" },
-  EXPORTED: { label: "Exportada", color: "bg-yellow-100 text-yellow-700" },
 }
 
 function PiecesContent() {
@@ -130,8 +124,8 @@ function PiecesContent() {
                   }} /></div>
                   <div className="flex items-center justify-between mt-1">
                     <div className="text-xs text-[#888888]">{p.width}×{p.height} px</div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[p.status]?.color}`}>
-                      {STATUS_LABELS[p.status]?.label}
+                    <span style={{ background: statusMeta(p.status).bg, color: statusMeta(p.status).color }} className="text-xs px-2 py-0.5 rounded-full font-medium">
+                      {statusMeta(p.status).label}
                     </span>
                   </div>
                 </div>
@@ -164,7 +158,7 @@ function PiecesContent() {
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.format}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.width}×{p.height}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.dpi}</td>
-                    <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_LABELS[p.status]?.color}`}>{STATUS_LABELS[p.status]?.label}</span></td>
+                    <td className="px-4 py-3"><span style={{ background: statusMeta(p.status).bg, color: statusMeta(p.status).color }} className="text-xs px-2 py-0.5 rounded-full font-medium">{statusMeta(p.status).label}</span></td>
                     <td className="px-4 py-3 text-right"><Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button></td>
                   </tr>
                 ))}
