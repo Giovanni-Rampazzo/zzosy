@@ -6,7 +6,7 @@ import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
-import { statusMeta } from "@/lib/pieceStatus"
+import { StatusBadge } from "@/components/pieces/StatusBadge"
 
 interface Piece {
   id: string
@@ -124,9 +124,12 @@ function PiecesContent() {
                   }} /></div>
                   <div className="flex items-center justify-between mt-1">
                     <div className="text-xs text-[#888888]">{p.width}×{p.height} px</div>
-                    <span style={{ background: statusMeta(p.status).bg, color: statusMeta(p.status).color }} className="text-xs px-2 py-0.5 rounded-full font-medium">
-                      {statusMeta(p.status).label}
-                    </span>
+                    <StatusBadge
+                      pieceId={p.id}
+                      status={p.status ?? "STANDBY"}
+                      size="sm"
+                      onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))}
+                    />
                   </div>
                 </div>
               </div>
@@ -158,7 +161,7 @@ function PiecesContent() {
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.format}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.width}×{p.height}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.dpi}</td>
-                    <td className="px-4 py-3"><span style={{ background: statusMeta(p.status).bg, color: statusMeta(p.status).color }} className="text-xs px-2 py-0.5 rounded-full font-medium">{statusMeta(p.status).label}</span></td>
+                    <td className="px-4 py-3"><StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} /></td>
                     <td className="px-4 py-3 text-right"><Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button></td>
                   </tr>
                 ))}
