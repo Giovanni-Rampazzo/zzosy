@@ -35,7 +35,12 @@ async function renderPieceThumb(
     const el = document.createElement("canvas")
     el.width = pieceW; el.height = pieceH
 
-    const fc = new StaticCanvas(el, { width: pieceW, height: pieceH, enableRetinaScaling: false, backgroundColor: matrixCanvas.backgroundColor ?? "#fff" })
+    // Pega cor real do BG do editor: hoje BG eh um OBJETO com fill (nao a propriedade
+    // backgroundColor do Fabric Canvas, que fica preto por default no JPEG export).
+    const matrixBgObj = matrixCanvas.getObjects().find((o: any) => o.__isBg)
+    const realBgColor = matrixBgObj?.fill ?? matrixCanvas.backgroundColor ?? "#fff"
+
+    const fc = new StaticCanvas(el, { width: pieceW, height: pieceH, enableRetinaScaling: false, backgroundColor: realBgColor })
 
     // Escala pelo MENOR lado (uma dimensao cabe, layout preservado)
     const scale = Math.min(pieceW / matrixW, pieceH / matrixH)
