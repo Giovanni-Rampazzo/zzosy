@@ -151,6 +151,7 @@ export function WeightPicker({ value, onChange, buttonStyle }: PickerProps) {
 
   function pickVariant(label: string) {
     const newValue = familyObj?.variants[label] ?? value
+    console.log("[WEIGHT-PICKER]", { clickedLabel: label, currentValue: value, currentFamily, currentVariant, familyObjFound: !!familyObj, variants: familyObj?.variants, newValue })
     onChange(newValue)
     setOpen(false)
   }
