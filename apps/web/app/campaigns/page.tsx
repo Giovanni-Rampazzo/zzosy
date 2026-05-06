@@ -28,6 +28,11 @@ export default function CampaignsPage() {
     fetch("/api/campaigns").then(r => r.json()).then(d => {
       setCampaigns(Array.isArray(d) ? d : [])
       setLoading(false)
+      // DEBUG: lista os status unicos que vieram do banco
+      if (Array.isArray(d)) {
+        const uniqueStatuses = [...new Set(d.map((c: any) => c.status))]
+        console.log("[CAMPAIGNS-STATUS] Status no banco:", uniqueStatuses, "Total:", d.length)
+      }
     })
   }, [])
 
