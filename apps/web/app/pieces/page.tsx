@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
+import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 
 interface Piece {
   id: string
@@ -30,6 +31,7 @@ function PiecesContent() {
   const [selected, setSelected] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<"grid" | "list">("grid")
+  const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [exportOpen, setExportOpen] = useState(false)
   const [campaignName, setCampaignName] = useState<string | undefined>(undefined)
 
@@ -54,6 +56,10 @@ function PiecesContent() {
     setPieces(prev => prev.filter(p => !selected.includes(p.id)))
     setSelected([])
   }
+
+  const filtered = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+  const counts: Record<string, number> = { ALL: pieces.length }
+  for (const s of PIECE_STATUS_LIST) counts[s] = pieces.filter(p => p.status === s).length
 
   return (
     <PageShell>
@@ -85,13 +91,39 @@ function PiecesContent() {
           </div>
         </div>
 
+        {/* Filtro por status */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          <button
+            onClick={() => setStatusFilter("ALL")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors ${statusFilter === "ALL" ? "bg-[#111] text-white border-[#111]" : "bg-white text-[#888] border-[#E0E0E0] hover:border-[#888]"}`}
+          >
+            Todas <span className="opacity-70">({counts.ALL})</span>
+          </button>
+          {PIECE_STATUS_LIST.map(s => {
+            const meta = statusMeta(s)
+            const active = statusFilter === s
+            return (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                style={active ? { background: meta.bg, color: meta.color, borderColor: meta.color } : {}}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors ${active ? "" : "bg-white text-[#888] border-[#E0E0E0] hover:border-[#888]"}`}
+              >
+                {meta.label} <span className="opacity-70">({counts[s]})</span>
+              </button>
+            )
+          })}
+        </div>
+
         {loading ? (
           <div className="text-center py-16 text-[#888888]">Carregando...</div>
         ) : pieces.length === 0 ? (
           <div className="text-center py-16 text-[#888888]">Nenhuma peça encontrada</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-[#888888]">Nenhuma peça com esse status</div>
         ) : view === "grid" ? (
           <div className="grid grid-cols-4 gap-4">
-            {pieces.map((p) => (
+            {filtered.map((p) => (
               <div
                 key={p.id}
                 className={`bg-white rounded-lg border transition-all ${isSelected(p.id) ? "border-[#F5C400] shadow-md" : "border-[#E0E0E0] hover:border-[#F5C400]"}`}
@@ -146,7 +178,7 @@ function PiecesContent() {
                 </tr>
               </thead>
               <tbody>
-                {pieces.map((p) => (
+                {filtered.map((p) => (
                   <tr key={p.id} className="border-b border-[#f0f0f0] last:border-0 hover:bg-[#fafafa]">
                     <td className="px-4 py-3 w-8">
                       <div onClick={() => toggleSelect(p.id)} className={`w-4 h-4 border-2 rounded cursor-pointer flex items-center justify-center ${isSelected(p.id) ? "border-[#F5C400] bg-[#F5C400]" : "border-[#E0E0E0]"}`}>
