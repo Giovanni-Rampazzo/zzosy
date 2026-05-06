@@ -92,6 +92,13 @@ export default function CampaignOverviewPage() {
       <TopNav />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
 
+        <button
+          onClick={() => router.push(`/clients/${campaign.client.id}`)}
+          style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
+        >
+          ← Voltar para {campaign.client.name}
+        </button>
+
         {/* Breadcrumb + título */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
