@@ -391,13 +391,12 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const styleRuns = buildStyleRuns(obj, fullText)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
       const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
-      // PSD usa \r (carriage return) como quebra de linha, nao \n.
-      // Substituicao 1:1 mantem styleRuns alinhados.
-      const psdText = fullText.replace(/\n/g, "\r")
+      // ag-psd converte \n → \r internamente (text.ts:549).
+      // Passar \r aqui faz dupla conversao e quebra o engineData.
       psdLayers.push({
         name, top, left, bottom, right,
         text: {
-          text: psdText,
+          text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
           style: {
             font: { name: ps.name },
@@ -448,7 +447,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     children: psdLayers,
     imageResources: { thumbnail: thumbCanvas },
   }
-  const buffer = agpsd.writePsd(psd, { generateThumbnail: false })
+  const buffer = agpsd.writePsd(psd, { generateThumbnail: false, invalidateTextLayers: true })
   fc.dispose()
   return new Blob([buffer], { type: "image/vnd.adobe.photoshop" })
 }
