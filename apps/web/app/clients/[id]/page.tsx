@@ -5,7 +5,7 @@ import TopNav from "@/components/TopNav"
 import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
 import { ClientEditModal } from "@/components/clients/ClientEditModal"
-import { CampaignEditModal } from "@/components/campaigns/CampaignEditModal"
+
 
 interface Campaign {
   id: string; name: string; createdAt: string; _count: { pieces: number }
@@ -24,7 +24,6 @@ export default function ClientPage() {
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false)
   const [activeTab, setActiveTab] = useState("campaigns")
   const [showEditModal, setShowEditModal] = useState(false)
-  const [editingCampaign, setEditingCampaign] = useState<{id:string;name:string;description?:string|null} | null>(null)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
 
   async function load() {
@@ -69,6 +68,12 @@ export default function ClientPage() {
     <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
       <TopNav />
       <div style={{flex:1,overflowY:"auto",padding:32,background:"#F5F5F0"}}>
+        <button
+          onClick={() => router.push("/dashboard")}
+          style={{background:"transparent",border:"none",color:"#888",fontSize:12,cursor:"pointer",padding:0,marginBottom:12}}
+        >
+          ← Voltar para Clientes
+        </button>
         {/* Breadcrumb */}
         <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"#888",marginBottom:20}}>
           <span style={{cursor:"pointer"}} onClick={() => router.push("/dashboard")}>Clientes</span>
@@ -144,13 +149,18 @@ export default function ClientPage() {
                   <tr><td colSpan={4} style={{textAlign:"center",padding:"48px",color:"#888",fontSize:13}}>Nenhuma campanha criada</td></tr>
                 ) : client.campaigns.map(c => (
                   <tr key={c.id} style={{borderBottom:"1px solid #f0f0f0"}}>
-                    <td style={{padding:"12px 16px",fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={() => router.push(`/campaigns/${c.id}`)}>{c.name}</td>
+                    <td style={{padding:"12px 16px",fontWeight:600,fontSize:13}}>
+                      <EditableText value={c.name} variant="inline" onSave={async (newName) => {
+                        const res = await fetch(`/api/campaigns/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
+                        if (!res.ok) throw new Error()
+                        setClient(prev => prev ? { ...prev, campaigns: prev.campaigns.map(x => x.id === c.id ? { ...x, name: newName } : x) } : prev)
+                      }} />
+                    </td>
                     <td style={{padding:"12px 16px",color:"#888",fontSize:13}}>{c._count.pieces}</td>
                     <td style={{padding:"12px 16px",color:"#888",fontSize:13}}>{new Date(c.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td style={{padding:"12px 16px",textAlign:"right"}}>
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                         <button onClick={() => router.push(`/campaigns/${c.id}`)} style={{fontSize:11,fontWeight:600,border:"1px solid #E0E0E0",padding:"5px 12px",borderRadius:6,background:"white",cursor:"pointer"}}>Abrir</button>
-                        <button onClick={() => setEditingCampaign({ id: c.id, name: c.name })} style={{fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,background:"#f0f0f0",color:"#555",border:"none",cursor:"pointer"}}>Editar</button>
                         <button onClick={() => duplicateCampaign(c.id)} disabled={duplicatingId === c.id} style={{fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,background:"#f0f0f0",color:"#555",border:"none",cursor:duplicatingId === c.id ? "default" : "pointer",opacity:duplicatingId === c.id ? 0.5 : 1}}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</button>
                         {confirmDelete === c.id ? (
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -194,16 +204,6 @@ export default function ClientPage() {
           client={client}
           onClose={() => setShowEditModal(false)}
           onSaved={(u) => setClient(prev => prev ? { ...prev, ...u } : prev)}
-        />
-      )}
-
-      {editingCampaign && (
-        <CampaignEditModal
-          campaign={editingCampaign}
-          onClose={() => setEditingCampaign(null)}
-          onSaved={(u) => {
-            setClient(prev => prev ? { ...prev, campaigns: prev.campaigns.map(x => x.id === u.id ? { ...x, name: u.name } : x) } : prev)
-          }}
         />
       )}
 
