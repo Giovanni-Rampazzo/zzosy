@@ -41,6 +41,7 @@ export default function CampaignOverviewPage() {
   const [selected, setSelected] = useState<string[]>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
+  const [scope, setScope] = useState<"production" | "all">("production")
 
   async function loadAll() {
     const [c, p] = await Promise.all([
@@ -80,10 +81,6 @@ export default function CampaignOverviewPage() {
     setSelected(s => s.includes(pieceId) ? s.filter(x => x !== pieceId) : [...s, pieceId])
   }
   function isSelected(pieceId: string) { return selected.includes(pieceId) }
-  function toggleSelectAll() {
-    if (selected.length === pieces.length) setSelected([])
-    else setSelected(pieces.map(p => p.id))
-  }
 
   async function deleteSelected(skipConfirm = false) {
     if (selected.length === 0) return
@@ -210,13 +207,39 @@ export default function CampaignOverviewPage() {
         </div>
 
         {/* Lista de peças */}
+        {(() => {
+          const visiblePieces = scope === "production"
+            ? pieces.filter(p => p.status !== "ENTREGUE")
+            : pieces
+          const deliveredCount = pieces.filter(p => p.status === "ENTREGUE").length
+          // toggleSelectAll opera sobre visiblePieces (so seleciona o que ta visivel)
+          const allVisibleSelected = visiblePieces.length > 0 && visiblePieces.every(p => selected.includes(p.id))
+          const toggleSelectAll = () => {
+            if (allVisibleSelected) setSelected(s => s.filter(id => !visiblePieces.some(p => p.id === id)))
+            else setSelected(s => Array.from(new Set([...s, ...visiblePieces.map(p => p.id)])))
+          }
+          return (
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
-              Peças geradas ({pieces.length})
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
+                Peças geradas ({visiblePieces.length})
+              </div>
+              {deliveredCount > 0 && (
+                <div style={{ display: "flex", border: "1px solid #E0E0E0", borderRadius: 6, overflow: "hidden" }}>
+                  <button onClick={() => { setScope("production"); setSelected([]) }}
+                    style={{ background: scope === "production" ? "#111" : "white", color: scope === "production" ? "white" : "#888", border: "none", padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    Em produção ({pieces.length - deliveredCount})
+                  </button>
+                  <button onClick={() => { setScope("all"); setSelected([]) }}
+                    style={{ background: scope === "all" ? "#111" : "white", color: scope === "all" ? "white" : "#888", border: "none", padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    Todas ({pieces.length})
+                  </button>
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {pieces.length > 0 && (
+              {visiblePieces.length > 0 && (
                 <>
                   {selected.length > 0 ? (
                     <>
@@ -290,13 +313,15 @@ export default function CampaignOverviewPage() {
             </div>
           )}
 
-          {pieces.length === 0 ? (
+          {visiblePieces.length === 0 ? (
             <div style={{ background: "white", border: "1px dashed #E0E0E0", borderRadius: 10, padding: 40, textAlign: "center", color: "#888", fontSize: 13 }}>
-              Nenhuma peça gerada ainda. Abra o editor e clique em "Gerar Peças".
+              {pieces.length === 0
+                ? `Nenhuma peça gerada ainda. Abra o editor e clique em "Gerar Peças".`
+                : `Todas as peças desta campanha já foram entregues. Mude pra "Todas" pra ver.`}
             </div>
           ) : view === "grid" ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
-              {pieces.map(p => (
+              {visiblePieces.map(p => (
                 <div key={p.id}
                   style={{
                     background: "white", borderRadius: 10,
@@ -356,11 +381,11 @@ export default function CampaignOverviewPage() {
                       <div onClick={toggleSelectAll}
                         style={{
                           width: 16, height: 16, borderRadius: 3, cursor: "pointer",
-                          background: selected.length > 0 && selected.length === pieces.length ? "#F5C400" : "white",
+                          background: allVisibleSelected ? "#F5C400" : "white",
                           border: "1px solid #E0E0E0",
                           display: "flex", alignItems: "center", justifyContent: "center",
                         }}>
-                        {selected.length > 0 && selected.length === pieces.length && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                        {allVisibleSelected && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
                       </div>
                     </th>
                     <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Nome</th>
@@ -371,7 +396,7 @@ export default function CampaignOverviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pieces.map(p => (
+                  {visiblePieces.map(p => (
                     <tr key={p.id}
                       style={{ borderBottom: "1px solid #f0f0f0", background: isSelected(p.id) ? "#fffaeb" : "transparent" }}>
                       <td style={{ padding: "10px 12px" }}>
@@ -410,6 +435,8 @@ export default function CampaignOverviewPage() {
             </div>
           )}
         </div>
+          )
+        })()}
       </div>
 
       {deliveryOpen && (
