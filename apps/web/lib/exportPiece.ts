@@ -407,6 +407,21 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         const rendered = obj.toCanvasElement({ multiplier: 1 })
         lctx.drawImage(rendered, 0, 0, w, h)
       } catch (e) { console.warn("rasterize text fail:", name, e) }
+      // DIAGNOSTICO TEMPORARIO: ver o que estamos enviando ao ag-psd
+      console.log("[PSD-TEXT-EXPORT]", {
+        name,
+        fullText: JSON.stringify(fullText),
+        charCodes: [...fullText].map(c => c.charCodeAt(0)),
+        fontFamily: obj.fontFamily,
+        psFontName: ps.name,
+        fauxBold: ps.fauxBold,
+        fontSize,
+        bbox: { left, top, w, h },
+        boxBounds: [0, -fontSize, w, h - fontSize],
+        styleRunsCount: styleRuns.length,
+        styleRuns: styleRuns.map((r: any) => ({ length: r.length, fontSize: r.style?.fontSize, font: r.style?.font?.name })),
+        fabricObj: { width: obj.width, height: obj.height, scaleX: obj.scaleX, scaleY: obj.scaleY, fontSize: obj.fontSize, lineHeight: obj.lineHeight, textLines: (obj as any)._textLines?.length },
+      })
       psdLayers.push({
         name, top, left, bottom, right,
         canvas: layerCanvas,
