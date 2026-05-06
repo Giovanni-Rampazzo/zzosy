@@ -2,7 +2,24 @@
 import { useEffect, useRef, useState } from "react"
 import { listFontFamilies, FontFamily, findFamilyAndVariant } from "@/lib/fonts"
 
+// Cache + promise compartilhada entre todos os Pickers (FontPicker e WeightPicker).
+// Garante que ambos vejam exatamente a mesma lista de familias/variantes.
 let _familiesCache: FontFamily[] | null = null
+let _loadPromise: Promise<FontFamily[]> | null = null
+
+function loadFamilies(triggerPermission: boolean): Promise<FontFamily[]> {
+  if (_familiesCache) return Promise.resolve(_familiesCache)
+  if (_loadPromise) return _loadPromise
+  _loadPromise = listFontFamilies(triggerPermission).then(f => {
+    _familiesCache = f
+    _loadPromise = null
+    return f
+  }).catch(() => {
+    _loadPromise = null
+    return []
+  })
+  return _loadPromise
+}
 
 interface PickerProps {
   /** fontFamily APLICADO ao texto (pode ser "Helvetica Neue" ou "Helvetica Neue Bold") */
@@ -11,11 +28,7 @@ interface PickerProps {
   buttonStyle?: React.CSSProperties
 }
 
-/**
- * Picker de FAMILIA. Mostra apenas o nome canonico (ex: "Helvetica Neue").
- * Ao escolher, aplica a variante "Regular" da familia.
- * Se ja houver variante (ex: Bold), preserva o variant atual quando troca de familia.
- */
+/** Picker de FAMILIA. */
 export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
   const [families, setFamilies] = useState<FontFamily[]>(_familiesCache ?? [])
   const [open, setOpen] = useState(false)
@@ -23,9 +36,8 @@ export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    listFontFamilies(true).then(f => { _familiesCache = f; setFamilies(f) }).catch(() => {})
-  }, [])
+  // Carrega na primeira vez COM permissao (acao do usuario).
+  useEffect(() => { loadFamilies(true).then(setFamilies) }, [])
 
   useEffect(() => {
     if (!open) return
@@ -47,8 +59,14 @@ export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
     : families
 
   function pickFamily(fam: FontFamily) {
-    const targetVariant = fam.variants[currentVariant] ? currentVariant : "Regular"
-    const newValue = fam.variants[targetVariant] ?? fam.variants["Regular"] ?? fam.family
+    // Tenta manter o variant atual se a nova familia tiver. Senao usa Regular.
+    // Se nao tem nem Regular, pega a primeira variante disponivel (algumas familias
+    // do sistema vem so com 1 variante de nome diferente).
+    const variantNames = Object.keys(fam.variants)
+    const targetVariant = fam.variants[currentVariant]
+      ? currentVariant
+      : (fam.variants["Regular"] ? "Regular" : variantNames[0])
+    const newValue = fam.variants[targetVariant] ?? fam.family
     onChange(newValue)
     setOpen(false); setQuery("")
   }
@@ -122,19 +140,15 @@ export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
   )
 }
 
-/**
- * Picker de PESO/VARIANTE da familia atualmente aplicada.
- * Ex: pra "Helvetica Neue Bold", mostra Regular/Light/Bold/etc da familia "Helvetica Neue".
- */
+/** Picker de PESO/VARIANTE da familia atualmente aplicada. */
 export function WeightPicker({ value, onChange, buttonStyle }: PickerProps) {
   const [families, setFamilies] = useState<FontFamily[]>(_familiesCache ?? [])
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (_familiesCache) { setFamilies(_familiesCache); return }
-    listFontFamilies(false).then(f => { _familiesCache = f; setFamilies(f) }).catch(() => {})
-  }, [])
+  // Compartilha o mesmo cache do FontPicker. Se ainda nao carregou, espera.
+  // Nao chama com triggerPermission=true aqui (o FontPicker ja faz isso).
+  useEffect(() => { loadFamilies(false).then(setFamilies) }, [])
 
   useEffect(() => {
     if (!open) return
@@ -147,11 +161,13 @@ export function WeightPicker({ value, onChange, buttonStyle }: PickerProps) {
 
   const { family: currentFamily, variant: currentVariant } = findFamilyAndVariant(value, families)
   const familyObj = families.find(f => f.family === currentFamily)
+  // Se nao achou a familia (raro, mas pode acontecer com fontes muito custom), retorna so Regular
   const variants = familyObj ? Object.keys(familyObj.variants) : ["Regular"]
 
   function pickVariant(label: string) {
-    const newValue = familyObj?.variants[label] ?? value
-    console.log("[WEIGHT-PICKER]", { clickedLabel: label, currentValue: value, currentFamily, currentVariant, familyObjFound: !!familyObj, variants: familyObj?.variants, newValue })
+    if (!familyObj) return
+    const newValue = familyObj.variants[label]
+    if (!newValue || newValue === value) { setOpen(false); return }
     onChange(newValue)
     setOpen(false)
   }

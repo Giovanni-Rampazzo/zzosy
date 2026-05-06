@@ -97,10 +97,6 @@ async function tryLocalFontAccess(): Promise<FontFamily[] | null> {
   if (!w.queryLocalFonts) return null
   try {
     const fonts: SystemFontData[] = await w.queryLocalFonts()
-    // DEBUG TEMPORARIO: ver o formato real das fontes do sistema
-    console.log("[FONT-DEBUG] Local fonts sample (first 10):", fonts.slice(0, 10))
-    const helvetica = fonts.filter(f => f.family.toLowerCase().includes("helvetica"))
-    if (helvetica.length) console.log("[FONT-DEBUG] Helvetica family entries:", helvetica)
     // Agrupa por familia, label = style (Regular/Light/Bold/etc), value = fullName
     const map = new Map<string, Record<string, string>>()
     for (const f of fonts) {
@@ -113,7 +109,6 @@ async function tryLocalFontAccess(): Promise<FontFamily[] | null> {
     }
     const result: FontFamily[] = []
     for (const [family, variants] of map) result.push({ family, variants })
-    console.log("[FONT-DEBUG] Helvetica Neue mapped:", result.find(f => f.family === "Helvetica Neue"))
     return result.sort((a, b) => a.family.localeCompare(b.family))
   } catch {
     return null
@@ -123,6 +118,12 @@ async function tryLocalFontAccess(): Promise<FontFamily[] | null> {
 /**
  * Retorna a lista de familias (com variantes). Tenta Local Font Access uma vez (cacheado).
  * Se a API nao existir ou usuario negar, retorna FALLBACK_FONT_FAMILIES.
+ *
+ * IMPORTANTE: nao mesclamos local + fallback. O fallback contem variantes assumidas
+ * (ex: "Helvetica Neue Bold") que podem nao existir no formato exato no sistema do
+ * usuario (pode ser "HelveticaNeue-Bold" sem espaco etc). Misturar gera fontes fantasma
+ * que o navegador nao acha — texto vira fallback CSS aleatorio. Por isso, ou usamos as
+ * fontes reais do sistema, ou as do fallback inteiramente.
  */
 export async function listFontFamilies(triggerPermissionRequest = false): Promise<FontFamily[]> {
   if (cache) return cache
@@ -131,12 +132,8 @@ export async function listFontFamilies(triggerPermissionRequest = false): Promis
 
   const local = await tryLocalFontAccess()
   if (local && local.length > 0) {
-    // Mistura local + fallback (algumas fontes nao aparecem em local). Mesma familia: local ganha.
-    const map = new Map<string, FontFamily>()
-    for (const f of FALLBACK_FONT_FAMILIES) map.set(f.family, f)
-    for (const f of local) map.set(f.family, f) // local sobrescreve
-    cache = Array.from(map.values()).sort((a, b) => a.family.localeCompare(b.family))
-    return cache
+    cache = local
+    return local
   }
   cache = FALLBACK_FONT_FAMILIES
   return FALLBACK_FONT_FAMILIES
