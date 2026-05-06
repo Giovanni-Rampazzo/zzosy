@@ -67,25 +67,28 @@ export function EditableText({ value, onSave, variant = "h1", placeholder = "Sem
           }}
         />
       ) : (
-        <>
-          <span style={style}>{value || <span style={{ color: "#aaa" }}>{placeholder}</span>}</span>
-          <button
-            onClick={() => setEditing(true)}
-            style={{
-              padding: "5px 12px",
-              fontSize: 11,
-              fontWeight: 600,
-              background: "#f0f0f0",
-              color: "#555",
-              border: "none",
-              borderRadius: 6,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Editar
-          </button>
-        </>
+        <span
+          onClick={() => setEditing(true)}
+          title="Clique para editar"
+          style={{
+            ...style,
+            cursor: "text",
+            padding: "2px 6px",
+            borderRadius: 4,
+            border: "1px dashed transparent",
+            transition: "border-color 0.15s, background 0.15s",
+          }}
+          onMouseEnter={e => {
+            ;(e.currentTarget as HTMLSpanElement).style.borderColor = "#E0E0E0"
+            ;(e.currentTarget as HTMLSpanElement).style.background = "#FAFAFA"
+          }}
+          onMouseLeave={e => {
+            ;(e.currentTarget as HTMLSpanElement).style.borderColor = "transparent"
+            ;(e.currentTarget as HTMLSpanElement).style.background = "transparent"
+          }}
+        >
+          {value || <span style={{ color: "#aaa" }}>{placeholder}</span>}
+        </span>
       )}
     </span>
   )

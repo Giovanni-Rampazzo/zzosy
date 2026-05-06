@@ -119,6 +119,13 @@ export default function CampaignAssetsPage() {
 
   function updateAssetText(assetId: string, newText: string) {
     if (!campaign) return
+    // Photoshop-style: nome da layer = conteudo do texto (truncado/normalizado).
+    // Sincroniza sempre que o texto muda.
+    const newLabel = (() => {
+      const t = newText.trim().replace(/\s+/g, " ")
+      if (!t) return "Novo texto"
+      return t.length > 64 ? t.substring(0, 64) + "…" : t
+    })()
     setCampaign({
       ...campaign,
       assets: campaign.assets.map(a => {
@@ -127,7 +134,7 @@ export default function CampaignAssetsPage() {
         const newSpans = spans.length
           ? [{ ...spans[0], text: newText }, ...spans.slice(1)]
           : [{ text: newText, style: { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" } }]
-        return { ...a, content: newSpans, value: newText }
+        return { ...a, content: newSpans, value: newText, label: newLabel }
       })
     })
 
@@ -142,7 +149,7 @@ export default function CampaignAssetsPage() {
       await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: newSpans, value: newText })
+        body: JSON.stringify({ content: newSpans, value: newText, label: newLabel })
       })
       setSavingMap(m => ({ ...m, [assetId]: false }))
       // Regerar thumbs das peças afetadas em segundo plano
