@@ -268,6 +268,30 @@ function parseColor(c: string): { r: number; g: number; b: number } {
   return { r: 0, g: 0, b: 0 }
 }
 
+// Photoshop espera PostScript name no campo `font.name`, nao display name.
+// Sem isso, abrir o PSD reclama "missing font" mesmo com a fonte instalada.
+const PS_FONTS: Record<string, { regular: string; bold?: string }> = {
+  "Arial":           { regular: "ArialMT",           bold: "Arial-BoldMT" },
+  "Arial Black":     { regular: "Arial-Black" },
+  "Georgia":         { regular: "Georgia",           bold: "Georgia-Bold" },
+  "Times New Roman": { regular: "TimesNewRomanPSMT", bold: "TimesNewRomanPS-BoldMT" },
+  "Courier New":     { regular: "CourierNewPSMT",    bold: "CourierNewPS-BoldMT" },
+  "Verdana":         { regular: "Verdana",           bold: "Verdana-Bold" },
+  "Impact":          { regular: "Impact" },
+  "Trebuchet MS":    { regular: "TrebuchetMS",       bold: "TrebuchetMS-Bold" },
+  "Palatino":        { regular: "Palatino-Roman",    bold: "Palatino-Bold" },
+  "Tahoma":          { regular: "Tahoma",            bold: "Tahoma-Bold" },
+  "Helvetica Neue":  { regular: "HelveticaNeue",     bold: "HelveticaNeue-Bold" },
+}
+
+function toPSFont(family: string, isBold: boolean): { name: string; fauxBold: boolean } {
+  const f = PS_FONTS[family]
+  if (!f) return { name: family, fauxBold: isBold }       // fonte desconhecida: passa direto
+  if (isBold && f.bold) return { name: f.bold, fauxBold: false }
+  if (isBold && !f.bold) return { name: f.regular, fauxBold: true } // sem variante bold: faux
+  return { name: f.regular, fauxBold: false }
+}
+
 function buildStyleRuns(textbox: any, fullText: string): any[] {
   const runs: any[] = []
   const styles = textbox.styles ?? {}
@@ -291,11 +315,13 @@ function buildStyleRuns(textbox: any, fullText: string): any[] {
         runStart = charIdx + col
       }
       if (styleKey !== prevStyleKey) {
+        const isBold = (fontWeight === "bold" || fontWeight === 700)
+        const ps = toPSFont(fontFamily, isBold)
         runStyle = {
-          font: { name: fontFamily },
+          font: { name: ps.name },
           fontSize: Math.round(fontSize),
           fillColor: parseColor(fill),
-          fauxBold: (fontWeight === "bold" || fontWeight === 700),
+          fauxBold: ps.fauxBold,
         }
         prevStyleKey = styleKey
       }
@@ -363,16 +389,18 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const fontSize = Math.round(obj.fontSize ?? 48)
       const fullText = obj.text ?? ""
       const styleRuns = buildStyleRuns(obj, fullText)
+      const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
+      const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
       psdLayers.push({
         name, top, left, bottom, right,
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
           style: {
-            font: { name: obj.fontFamily ?? "Arial" },
+            font: { name: ps.name },
             fontSize,
             fillColor: parseColor(obj.fill ?? "#000000"),
-            fauxBold: (obj.fontWeight === "bold" || obj.fontWeight === 700),
+            fauxBold: ps.fauxBold,
           },
           styleRuns,
           paragraphStyle: { justification: "left" },
