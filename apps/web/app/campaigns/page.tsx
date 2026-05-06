@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { StatusBadge } from "@/components/pieces/StatusBadge"
 
 interface Campaign {
   id: string
@@ -28,11 +29,6 @@ export default function CampaignsPage() {
     fetch("/api/campaigns").then(r => r.json()).then(d => {
       setCampaigns(Array.isArray(d) ? d : [])
       setLoading(false)
-      // DEBUG: lista os status unicos que vieram do banco
-      if (Array.isArray(d)) {
-        const uniqueStatuses = [...new Set(d.map((c: any) => c.status))]
-        console.log("[CAMPAIGNS-STATUS] Status no banco:", uniqueStatuses, "Total:", d.length)
-      }
     })
   }, [])
 
@@ -120,7 +116,13 @@ export default function CampaignsPage() {
                   <div className="p-4">
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div className="font-semibold text-sm leading-tight">{c.name}</div>
-                      <span style={{ background: meta.bg, color: meta.color }} className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">{meta.label}</span>
+                      <StatusBadge
+                        pieceId={c.id}
+                        entityType="campaign"
+                        status={c.status ?? "STANDBY"}
+                        size="sm"
+                        onChange={(s) => setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, status: s } : x))}
+                      />
                     </div>
                     <div className="text-xs text-[#888] mb-3">{c.client.name}</div>
                     <div className="flex justify-between text-xs text-[#888] pt-2 border-t border-[#f0f0f0]">
@@ -157,7 +159,13 @@ export default function CampaignsPage() {
                       <td className="px-4 py-3 font-semibold text-sm">{c.name}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{c.client.name}</td>
                       <td className="px-4 py-3">
-                        <span style={{ background: meta.bg, color: meta.color }} className="text-[10px] font-semibold px-2 py-0.5 rounded-full">{meta.label}</span>
+                        <StatusBadge
+                          pieceId={c.id}
+                          entityType="campaign"
+                          status={c.status ?? "STANDBY"}
+                          size="sm"
+                          onChange={(s) => setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, status: s } : x))}
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm text-[#666]">{c._count.pieces}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{c._count.assets}</td>

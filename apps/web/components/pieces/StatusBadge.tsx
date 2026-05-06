@@ -3,14 +3,17 @@ import { useState } from "react"
 import { PIECE_STATUS_LIST, statusMeta, type PieceStatus } from "@/lib/pieceStatus"
 
 interface Props {
+  /** ID da entidade (piece ou campaign) */
   pieceId: string
+  /** Tipo da entidade — define qual endpoint chamar. Default: piece (back-compat). */
+  entityType?: "piece" | "campaign"
   status: string
   size?: "sm" | "md"
   onChange?: (newStatus: PieceStatus) => void
   disabled?: boolean
 }
 
-export function StatusBadge({ pieceId, status, size = "md", onChange, disabled }: Props) {
+export function StatusBadge({ pieceId, entityType = "piece", status, size = "md", onChange, disabled }: Props) {
   const [current, setCurrent] = useState<string>(status || "STANDBY")
   const [open, setOpen] = useState(false)
   const [updating, setUpdating] = useState(false)
@@ -21,6 +24,7 @@ export function StatusBadge({ pieceId, status, size = "md", onChange, disabled }
   // ENTREGUE eh marcador automatico (set apenas pelo backend ao criar entrega).
   // Nao deixar usuario escolher manualmente.
   const choices = PIECE_STATUS_LIST.filter(s => s !== "ENTREGUE")
+  const endpoint = entityType === "campaign" ? `/api/campaigns/${pieceId}` : `/api/pieces/${pieceId}`
 
   async function pick(s: PieceStatus) {
     setOpen(false)
@@ -29,7 +33,7 @@ export function StatusBadge({ pieceId, status, size = "md", onChange, disabled }
     const prev = current
     setCurrent(s)
     try {
-      const res = await fetch(`/api/pieces/${pieceId}`, {
+      const res = await fetch(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: s }),
