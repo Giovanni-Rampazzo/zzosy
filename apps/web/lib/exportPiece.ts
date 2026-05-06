@@ -391,8 +391,6 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const styleRuns = buildStyleRuns(obj, fullText)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
       const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
-      // ag-psd converte \n → \r internamente (text.ts:549).
-      // Passar \r aqui faz dupla conversao e quebra o engineData.
       psdLayers.push({
         name, top, left, bottom, right,
         text: {
