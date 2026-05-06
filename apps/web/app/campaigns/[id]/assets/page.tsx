@@ -231,6 +231,12 @@ export default function CampaignAssetsPage() {
                 Editar Matriz (KV)
               </button>
             )}
+            <button
+              onClick={() => router.push(`/campaigns/${id}`)}
+              style={{ background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, padding: "10px 20px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#444" }}
+            >
+              ← Voltar
+            </button>
           </div>
         </div>
 
