@@ -389,19 +389,40 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         const txt = ((obj as any).text ?? "").trim().replace(/\s+/g, " ")
         if (txt.length > 0) name = txt.length > 64 ? txt.substring(0, 64) + "…" : txt
       }
-      // Texto = layer raster pura. Mantemos a fidelidade visual exata do editor (Fabric).
-      // ag-psd nao gera o cache /Rendered necessario pro Photoshop renderizar engineData
-      // corretamente, entao em vez de mandar engineData bugado mandamos apenas o pixel.
-      // Trade-off: usuario nao consegue editar o texto no Photoshop (vira layer de imagem).
+      // Texto: rasteriza COMO FALLBACK VISUAL + engineData pra Photoshop oferecer edicao.
+      // Combinado com invalidateTextLayers:true no writePsd, Photoshop ao abrir mostra
+      // dialogo "Update text layers" → ao aceitar, recomputa do engineData (texto editavel
+      // com formatacao correta). Se cancelar, fica o canvas raster (visual correto, mas
+      // nao-editavel).
+      const fontSize = Math.round(obj.fontSize ?? 48)
+      const fullText = obj.text ?? ""
+      const styleRuns = buildStyleRuns(obj, fullText)
+      const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
+      const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
       const layerCanvas = document.createElement("canvas")
       layerCanvas.width = w
       layerCanvas.height = h
-      const lctx = layerCanvas.getContext("2d")! // alpha:true — fundo transparente
+      const lctx = layerCanvas.getContext("2d")! // alpha:true (transparente)
       try {
         const rendered = obj.toCanvasElement({ multiplier: 1 })
         lctx.drawImage(rendered, 0, 0, w, h)
-        psdLayers.push({ name, top, left, bottom, right, canvas: layerCanvas })
       } catch (e) { console.warn("rasterize text fail:", name, e) }
+      psdLayers.push({
+        name, top, left, bottom, right,
+        canvas: layerCanvas,
+        text: {
+          text: fullText,
+          transform: [1, 0, 0, 1, left, top + fontSize],
+          style: {
+            font: { name: ps.name },
+            fontSize,
+            fillColor: parseColor(obj.fill ?? "#000000"),
+            fauxBold: ps.fauxBold,
+          },
+          styleRuns,
+          paragraphStyle: { justification: "left" },
+        },
+      })
     } else {
       const layerCanvas = document.createElement("canvas")
       layerCanvas.width = w
@@ -441,7 +462,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     children: psdLayers,
     imageResources: { thumbnail: thumbCanvas },
   }
-  const buffer = agpsd.writePsd(psd, { generateThumbnail: false })
+  const buffer = agpsd.writePsd(psd, { generateThumbnail: false, invalidateTextLayers: true })
   fc.dispose()
   return new Blob([buffer], { type: "image/vnd.adobe.photoshop" })
 }
