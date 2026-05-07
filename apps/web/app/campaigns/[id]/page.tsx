@@ -9,6 +9,7 @@ import { EditableText } from "@/components/EditableText"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
+import { PsdImporter } from "@/components/campaign/PsdImporter"
 import { Button } from "@/components/ui/Button"
 
 interface Asset { id: string; type: string; label: string }
@@ -216,6 +217,7 @@ export default function CampaignOverviewPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Button variant="primary" size="lg" onClick={() => router.push(`/editor?campaignId=${id}`)}>Key Vision</Button>
             <Button variant="secondary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
+            <PsdImporter campaignId={id} onImported={loadAll} />
             <Button variant="dark" size="lg" onClick={() => setDeliveryOpen(true)} disabled={pieces.length === 0}>Package</Button>
           </div>
         </div>
