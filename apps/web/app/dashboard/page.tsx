@@ -36,7 +36,18 @@ export default function DashboardPage() {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form)
     })
     if (res.ok) { setShowModal(false); setForm({ name:"",contact:"",email:"",phone:"",address:"" }); fetchClients() }
-    else { const d = await res.json(); setError(d.error ?? "Erro ao criar cliente") }
+    else {
+      let msg = `Erro ao criar cliente (HTTP ${res.status})`
+      try {
+        const txt = await res.text()
+        if (txt) {
+          const d = JSON.parse(txt)
+          if (d?.error) msg = d.error
+        }
+      } catch { /* body nao eh JSON */ }
+      setError(msg)
+      console.error("[createClient] falhou. status:", res.status)
+    }
     setSaving(false)
   }
 
