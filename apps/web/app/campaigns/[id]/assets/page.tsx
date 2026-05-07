@@ -287,7 +287,7 @@ export default function CampaignAssetsPage() {
                         }}
                       />
                     ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "flex-end" }}>
                         {asset.imageUrl ? (
                           <img src={asset.imageUrl} alt={asset.label}
                             style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 4, border: "1px solid #E0E0E0" }} />
