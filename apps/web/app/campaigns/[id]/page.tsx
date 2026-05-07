@@ -64,12 +64,13 @@ export default function CampaignOverviewPage() {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
 
   async function loadAll() {
-    console.log("[LOAD-ALL] disparou em", new Date().toISOString().slice(11, 19))
-    const [c, p] = await Promise.all([
-      fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
-      fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
-    ])
+    console.log("[LOAD-ALL] disparou em", new Date().toISOString().slice(11, 19), "id=", id)
+    const url = `/api/campaigns/${id}`
+    const cRes = await fetch(url, { cache: "no-store" })
+    console.log("[LOAD-ALL] fetch status:", cRes.status, "url:", url)
+    const c = await cRes.json()
     console.log("[LOAD-ALL] campaign response:", c)
+    const p = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json())
     // Guard: se API retornou erro ({error: "..."}), nao seta no state pra evitar crash
     if (c && !c.error && c.client) {
       setCampaign(c)
