@@ -8,6 +8,7 @@ import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 
 interface Piece {
   id: string
@@ -32,6 +33,7 @@ function PiecesContent() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<"grid" | "list">("grid")
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [campaignName, setCampaignName] = useState<string | undefined>(undefined)
 
@@ -59,7 +61,8 @@ function PiecesContent() {
     setSelected([])
   }
 
-  const filtered = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+  const filteredRaw = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+  const filtered = sort ? sortPieces(filteredRaw, sort.col, sort.dir) : filteredRaw
   const counts: Record<string, number> = { ALL: pieces.length }
   for (const s of PIECE_STATUS_LIST) counts[s] = pieces.filter(p => p.status === s).length
 
@@ -174,9 +177,29 @@ function PiecesContent() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  {["", "Nome", "Formato", "Dimensões", "DPI", "Status", ""].map((h, i) => (
-                    <th key={i} className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]">{h}</th>
-                  ))}
+                  {(() => {
+                    const SortHeader = ({ col, label }: { col: SortCol; label: string }) => {
+                      const active = sort?.col === col
+                      const arrow = !active ? "" : sort.dir === "asc" ? " ↑" : " ↓"
+                      return (
+                        <th onClick={() => setSort(toggleSort(sort, col))}
+                          className={`text-left text-xs font-semibold uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0] cursor-pointer select-none ${active ? "text-[#111]" : "text-[#888888]"}`}>
+                          {label}{arrow}
+                        </th>
+                      )
+                    }
+                    return (
+                      <>
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]"></th>
+                        <SortHeader col="name" label="Nome" />
+                        <SortHeader col="format" label="Formato" />
+                        <SortHeader col="size" label="Dimensões" />
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]">DPI</th>
+                        <SortHeader col="status" label="Status" />
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]"></th>
+                      </>
+                    )
+                  })()}
                 </tr>
               </thead>
               <tbody>

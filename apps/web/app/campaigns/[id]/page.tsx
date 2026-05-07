@@ -7,6 +7,7 @@ import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -42,6 +43,7 @@ export default function CampaignOverviewPage() {
   const [exportOpen, setExportOpen] = useState(false)
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
 
   async function loadAll() {
     const [c, p] = await Promise.all([
@@ -208,7 +210,8 @@ export default function CampaignOverviewPage() {
 
         {/* Lista de peças */}
         {(() => {
-          const visiblePieces = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+          const filteredPieces = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+          const visiblePieces = sort ? sortPieces(filteredPieces, sort.col, sort.dir) : filteredPieces
           const counts: Record<string, number> = { ALL: pieces.length }
           for (const s of PIECE_STATUS_LIST) counts[s] = pieces.filter(p => p.status === s).length
           // toggleSelectAll opera sobre visiblePieces (so seleciona o que ta visivel)
@@ -406,11 +409,27 @@ export default function CampaignOverviewPage() {
                         {allVisibleSelected && <span style={{ color: "white", fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✓</span>}
                       </div>
                     </th>
-                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Nome</th>
-                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Formato</th>
-                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Tamanho</th>
-                    <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#666" }}>Status</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#666" }}>Ações</th>
+                    {(() => {
+                      const SortHeader = ({ col, label, align = "left" }: { col: SortCol; label: string; align?: "left" | "right" }) => {
+                        const active = sort?.col === col
+                        const arrow = !active ? "" : sort.dir === "asc" ? " ↑" : " ↓"
+                        return (
+                          <th style={{ padding: "10px 12px", textAlign: align, fontSize: 11, fontWeight: 600, color: active ? "#111" : "#666", cursor: "pointer", userSelect: "none" }}
+                            onClick={() => setSort(toggleSort(sort, col))}>
+                            {label}{arrow}
+                          </th>
+                        )
+                      }
+                      return (
+                        <>
+                          <SortHeader col="name" label="Nome" />
+                          <SortHeader col="format" label="Formato" />
+                          <SortHeader col="size" label="Tamanho" />
+                          <SortHeader col="status" label="Status" />
+                          <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#666" }}>Ações</th>
+                        </>
+                      )
+                    })()}
                   </tr>
                 </thead>
                 <tbody>
