@@ -2,6 +2,8 @@
 // Exportacao de pecas: PSD editavel + PNG + JPG + PDF
 // Suporta peca v2 (layers + assets) e v1 (canvasData legacy)
 
+import { getPostScriptName } from "@/lib/fonts"
+
 export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -337,6 +339,17 @@ const PS_FONTS: Record<string, { regular: string; bold?: string }> = {
 }
 
 function toPSFont(family: string, isBold: boolean): { name: string; fauxBold: boolean } {
+  // 1. Tenta buscar postscriptName real via Local Font Access API (carregado quando
+  //    a fonte foi aplicada no editor). Funciona pra QUALQUER fonte instalada no
+  //    sistema do usuario — Exo 2, Sicredi Sans, etc — sem precisar mapa hardcoded.
+  try {
+    const ps = getPostScriptName(family)
+    if (ps) return { name: ps, fauxBold: false }
+  } catch { /* ignore */ }
+
+  // 2. Fallback: mapa de fontes do sistema (Arial, Times etc) — usado quando
+  //    Local Font Access nao foi inicializado ou a fonte foi salva apenas com
+  //    nome generico ("Arial", "Times New Roman").
   const f = PS_FONTS[family]
   if (!f) return { name: family, fauxBold: isBold }       // fonte desconhecida: passa direto
   if (isBold && f.bold) return { name: f.bold, fauxBold: false }

@@ -121,6 +121,23 @@ export async function ensureFontLoaded(fullName: string): Promise<void> {
 }
 
 /**
+ * Retorna o postscriptName de uma fonte conhecida (fullName / family). Usado pra exportar
+ * pra Photoshop, que exige PostScript name no campo font.name pra reconhecer a fonte.
+ * Retorna null se a Local Font Access API nao foi consultada ou a fonte nao foi mapeada.
+ */
+export function getPostScriptName(fullName: string): string | null {
+  if (!_fontDataMap) return null
+  const direct = _fontDataMap.get(fullName)
+  if (direct?.postscriptName) return direct.postscriptName
+  // tenta achar por busca case-insensitive
+  const lower = fullName.toLowerCase()
+  for (const [k, v] of _fontDataMap.entries()) {
+    if (k.toLowerCase() === lower) return v.postscriptName ?? null
+  }
+  return null
+}
+
+/**
  * Tenta obter familias com variantes via Local Font Access API.
  * Retorna null se a API nao existir ou o usuario negar permissao.
  */
