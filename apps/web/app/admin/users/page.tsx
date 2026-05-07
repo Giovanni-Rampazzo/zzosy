@@ -94,12 +94,7 @@ export default function AdminUsersPage() {
               placeholder="Buscar por nome ou email..."
               className="px-3 py-1.5 text-xs border border-[#E0E0E0] rounded-md w-64 outline-none focus:border-[#888]"
             />
-            <button
-              onClick={() => { setError(null); setShowCreate(true) }}
-              className="px-4 py-1.5 text-xs font-semibold rounded-md bg-[#F5C400] text-black hover:bg-[#E5B400] cursor-pointer"
-            >
-              + Novo usuário
-            </button>
+            <Button size="sm" onClick={() => { setError(null); setShowCreate(true) }}>+ Novo usuário</Button>
           </div>
         </div>
 

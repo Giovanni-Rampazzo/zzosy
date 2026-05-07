@@ -49,7 +49,7 @@ export default function DeliveryDetailPage() {
     <PageShell>
       <div style={{ padding: 32 }}>
         <button onClick={() => router.push("/deliveries")}
-          style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111", marginBottom: 16 }}>
+          style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}>
           ← Entregas
         </button>
 

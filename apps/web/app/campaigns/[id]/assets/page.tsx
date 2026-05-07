@@ -5,6 +5,7 @@ import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenera
 import TopNav from "@/components/TopNav"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
+import { Button } from "@/components/ui/Button"
 
 interface Asset {
   id: string
@@ -230,12 +231,7 @@ export default function CampaignAssetsPage() {
               if (!e.currentTarget.contains(e.relatedTarget as Node)) setShowAddMenu(false)
             }}
             tabIndex={-1}>
-            <button
-              onClick={() => setShowAddMenu(s => !s)}
-              style={{ padding: "8px 14px", background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: "pointer", color: "#111" }}
-            >
-              + Adicionar asset
-            </button>
+            <Button variant="secondary" size="sm" onClick={() => setShowAddMenu(s => !s)}>+ Adicionar asset</Button>
             {showAddMenu && (
               <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 160 }}>
                 <button onClick={addTextAsset} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
@@ -254,12 +250,7 @@ export default function CampaignAssetsPage() {
               onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
             <PsdImporter campaignId={id} onImported={load} />
             {campaign.assets.length > 0 && (
-              <button
-                onClick={() => router.push(`/editor?campaignId=${id}`)}
-                style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "10px 24px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
-              >
-                Editar Matriz (KV)
-              </button>
+              <Button onClick={() => router.push(`/editor?campaignId=${id}`)}>Editar Matriz (KV)</Button>
             )}
           </div>
         </div>
@@ -316,13 +307,7 @@ export default function CampaignAssetsPage() {
                     <div style={{ fontSize: 10, color: savingMap[asset.id] ? "#F5C400" : "#bbb" }}>
                       {savingMap[asset.id] ? "Salvando..." : "Salvo"}
                     </div>
-                    <button
-                      onClick={(e) => deleteAsset(asset.id, asset.label, e.altKey)}
-                      title="Option/Alt+click pra apagar sem confirmação"
-                      style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, background: "#f0f0f0", color: "#dc2626", border: "none", borderRadius: 4, cursor: "pointer" }}
-                    >
-                      Apagar
-                    </button>
+                    <Button variant="ghost" size="sm" onClick={(e) => deleteAsset(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                   </div>
                 </div>
               ))}

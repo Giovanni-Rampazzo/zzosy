@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { Button } from "@/components/ui/Button"
 
 interface Piece {
   id: string
@@ -75,12 +76,8 @@ export default function PiecePage() {
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Editar Peça</h1>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação" style={{ background: "transparent", border: "1px solid #f87171", color: "#f87171", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>
-              🗑 Apagar
-            </button>
-            <button onClick={save} disabled={saving} style={{ background: "#F5C400", border: "none", color: "#111", padding: "8px 20px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
-              {saving ? "Salvando..." : saved ? "✓ Salvo" : "Salvar"}
-            </button>
+            <Button variant="danger" onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑 Apagar</Button>
+            <Button onClick={save} loading={saving}>{saving ? "Salvando..." : saved ? "✓ Salvo" : "Salvar"}</Button>
           </div>
         </div>
 
@@ -121,12 +118,7 @@ export default function PiecePage() {
 
         {/* Abrir editor */}
         <div style={{ marginTop: 16 }}>
-          <button
-            onClick={() => router.push(`/editor?campaignId=${piece.campaignId}&pieceId=${piece.id}`)}
-            style={{ width: "100%", padding: "12px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
-          >
-            ✏️ Abrir no Editor
-          </button>
+          <Button variant="dark" size="lg" className="w-full" onClick={() => router.push(`/editor?campaignId=${piece.campaignId}&pieceId=${piece.id}`)}>✏️ Abrir no Editor</Button>
         </div>
       </div>
     </div>
