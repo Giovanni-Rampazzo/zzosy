@@ -155,7 +155,7 @@ export default function CampaignOverviewPage() {
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
 
         <button
-          onClick={() => router.push(`/clients/${campaign.client.id}`)}
+          onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}
           style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
         >
           ← Voltar para Cliente
@@ -164,8 +164,8 @@ export default function CampaignOverviewPage() {
         {/* Breadcrumb + título */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
-            <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
-              {campaign.client.name}
+            <span style={{ cursor: "pointer" }} onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}>
+              {campaign.client?.name ?? "—"}
             </span> /
           </div>
           <h1 style={{ margin: 0 }}>
