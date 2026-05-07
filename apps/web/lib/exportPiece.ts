@@ -374,30 +374,52 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     })
   }
 
-  // Carrega o SVG bruto do servidor e cria entrada em linkedFiles, retornando o GUID.
+  // Carrega o SVG bruto do servidor e cria entrada em linkedFiles, retornando o GUID
+  // e as dimensoes intrinsecas (necessarias pelo ag-psd no placedLayer).
   // Usa cache pra nao baixar varias vezes o mesmo asset.
-  async function ensureLinkedSvg(asset: Asset): Promise<string | null> {
+  const linkedDimsByAssetId = new Map<string, { w: number; h: number }>()
+  async function ensureLinkedSvg(asset: Asset): Promise<{ guid: string; w: number; h: number } | null> {
     if (!asset.imageUrl) return null
     const cached = linkedByAssetId.get(asset.id)
-    if (cached) return cached
+    if (cached) {
+      const dims = linkedDimsByAssetId.get(asset.id)
+      if (dims) return { guid: cached, w: dims.w, h: dims.h }
+    }
     try {
       const res = await fetch(asset.imageUrl)
       if (!res.ok) return null
       const svgText = await res.text()
+      // Extrai dimensoes do SVG: viewBox tem prioridade (sempre presente em SVGs do Illustrator),
+      // fallback pra atributos width/height.
+      let w = 0, h = 0
+      const viewBox = svgText.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+      if (viewBox) {
+        const parts = viewBox.split(/[\s,]+/).map(Number)
+        if (parts.length === 4 && parts.every(Number.isFinite)) {
+          w = parts[2]; h = parts[3]
+        }
+      }
+      if (!w || !h) {
+        const wAttr = parseFloat(svgText.match(/<svg[^>]*\swidth\s*=\s*["']([^"']+)["']/i)?.[1] ?? "")
+        const hAttr = parseFloat(svgText.match(/<svg[^>]*\sheight\s*=\s*["']([^"']+)["']/i)?.[1] ?? "")
+        if (Number.isFinite(wAttr) && wAttr > 0) w = wAttr
+        if (Number.isFinite(hAttr) && hAttr > 0) h = hAttr
+      }
+      if (!w || !h) {
+        console.warn("[PSD] SVG sem dimensoes detectaveis, fallback 512x512:", asset.id)
+        w = 512; h = 512
+      }
       const svgBytes = new TextEncoder().encode(svgText)
       const guid = makeGuid()
-      // Nome de arquivo limpo + extensao .svg
       const fname = `${(asset.label || "asset").replace(/[^\w.-]+/g, "_")}.svg`
       linkedFiles.push({
         id: guid,
         name: fname,
-        // ag-psd aceita ArrayBuffer ou Uint8Array em data
         data: svgBytes,
-        // Type indica formato. ag-psd usa 4-char codes; pra SVG nao ha code oficial,
-        // mas Photoshop respeita "scvg" ou ignora. Deixamos undefined pra usar default.
       })
       linkedByAssetId.set(asset.id, guid)
-      return guid
+      linkedDimsByAssetId.set(asset.id, { w, h })
+      return { guid, w, h }
     } catch (e) {
       console.warn("[PSD] falha embeddando SVG do asset:", asset.id, e)
       return null
@@ -519,30 +541,28 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
 
       if (isSvg && asset) {
         // SMART OBJECT EMBEDDED: SVG vai como vetor real no PSD.
-        // - linkedFiles[guid] = bytes do SVG
-        // - placedLayer aponta pro guid + transformacao (4 cantos do bbox em tela)
-        // - smartObject metadata pra Photoshop reconhecer como SO
-        const guid = await ensureLinkedSvg(asset)
-        if (guid) {
+        const linked = await ensureLinkedSvg(asset)
+        if (linked) {
           // Os 4 cantos do retangulo onde a imagem esta posicionada (em pixels do PSD).
-          // Photoshop usa pra calcular a transformacao do SO.
           const transform = [
-            left, top,        // top-left
-            right, top,       // top-right
-            right, bottom,    // bottom-right
-            left, bottom,     // bottom-left
+            left, top,
+            right, top,
+            right, bottom,
+            left, bottom,
           ]
           psdLayers.push({
             name,
             top, left, bottom, right,
-            canvas: layerCanvas, // preview composto
+            canvas: layerCanvas,
             placedLayer: {
-              id: guid,
+              id: linked.guid,
               type: "raster",
+              width: linked.w,   // ag-psd exige
+              height: linked.h,  // ag-psd exige
               transform,
             },
           })
-          console.log("[PSD-SMART]", { name, guid, fileBytes: linkedFiles.find((l: any) => l.id === guid)?.data?.length })
+          console.log("[PSD-SMART]", { name, guid: linked.guid, w: linked.w, h: linked.h })
           continue
         }
       }
