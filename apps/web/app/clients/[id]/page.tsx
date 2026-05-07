@@ -25,7 +25,6 @@ export default function ClientPage() {
   const [showModal, setShowModal] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null) // campanha id
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false)
-  const [activeTab, setActiveTab] = useState("campaigns")
   const [showEditModal, setShowEditModal] = useState(false)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
 
@@ -107,23 +106,8 @@ export default function ClientPage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div style={{display:"flex",borderBottom:"1px solid #E0E0E0",marginBottom:24}}>
-          {["campaigns","pieces","deliveries","medias"].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} style={{
-              padding:"10px 20px",fontSize:13,fontWeight:500,cursor:"pointer",
-              background:"transparent",border:"none",
-              color: activeTab===tab ? "#111" : "#888",
-              borderBottom: activeTab===tab ? "2px solid #F5C400" : "2px solid transparent",
-              marginBottom:-1,
-            }}>
-              {tab==="campaigns"?"Campanhas":tab==="pieces"?"Peças":tab==="deliveries"?"Entregas":"Mídias"}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === "campaigns" && (
-          <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
+        {/* Lista de campanhas */}
+        <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
                 <tr>
@@ -170,11 +154,6 @@ export default function ClientPage() {
               </tbody>
             </table>
           </div>
-        )}
-
-        {activeTab !== "campaigns" && (
-          <div style={{textAlign:"center",padding:"64px 0",color:"#888"}}>Em breve</div>
-        )}
       </div>
 
       {/* Modal apagar cliente */}
