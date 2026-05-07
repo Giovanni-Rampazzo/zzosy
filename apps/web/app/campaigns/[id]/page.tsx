@@ -70,9 +70,21 @@ export default function CampaignOverviewPage() {
     const url = `/api/campaigns/${id}`
     const cRes = await fetch(url, { cache: "no-store" })
     console.log("[LOAD-ALL] fetch status:", cRes.status, "url:", url)
-    const c = await cRes.json()
+    let c: any = null
+    try {
+      const text = await cRes.text()
+      if (text) c = JSON.parse(text)
+      else console.error("[LOAD-ALL] body vazio. status:", cRes.status)
+    } catch (e) {
+      console.error("[LOAD-ALL] JSON parse falhou. status:", cRes.status, e)
+    }
     console.log("[LOAD-ALL] campaign response:", c)
-    const p = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json())
+    let p: any = []
+    try {
+      const pRes = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" })
+      const ptxt = await pRes.text()
+      p = ptxt ? JSON.parse(ptxt) : []
+    } catch (e) { console.error("[LOAD-ALL] pieces fetch falhou:", e) }
     // Guard: se API retornou erro ({error: "..."}), nao seta no state pra evitar crash
     if (c && !c.error && c.client) {
       setCampaign(c)
