@@ -810,9 +810,18 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         if (savedLayers && Array.isArray(savedLayers) && savedLayers.length > 0) {
           const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
           const sorted = [...savedLayers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+          let skippedCount = 0
           for (const layer of sorted) {
             const asset = assetMap[layer.assetId] as Asset
-            if (!asset) continue
+            if (!asset) {
+              skippedCount++
+              if (!layer.assetId) {
+                console.warn("[LOAD-MATRIX] layer com assetId vazio (campanha pode ter dados corrompidos antigos):", layer)
+              } else {
+                console.warn("[LOAD-MATRIX] layer aponta pra asset inexistente:", layer.assetId)
+              }
+              continue
+            }
             await addAssetToCanvas(fc, asset, layer)
             // Aplicar overrides depois (igual modo peça)
             const objs = fc.getObjects()
@@ -1143,9 +1152,19 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       setIsDirty(false)
     } else {
       const layersToSave: Layer[] = fc.getObjects()
-        .filter((o: any) => !o.__isBg)
+        .filter((o: any) => {
+          if (o.__isBg) return false
+          // Bloqueia save de objetos sem __assetId — antes salvava com "" e o load
+          // descartava silenciosamente, fazendo o canvas voltar vazio (bug grave de
+          // perda de conteudo). Se acontecer, logamos pra detectar a causa-raiz.
+          if (!o.__assetId) {
+            console.warn("[SAVE-MATRIX] objeto sem __assetId ignorado no save:", o.type, { left: o.left, top: o.top, text: (o as any).text })
+            return false
+          }
+          return true
+        })
         .map((o: any, i: number) => ({
-          assetId: o.__assetId ?? "",
+          assetId: o.__assetId,
           posX: Math.round(o.left ?? 0), posY: Math.round(o.top ?? 0),
           scaleX: o.scaleX ?? 1, scaleY: o.scaleY ?? 1,
           rotation: o.angle ?? 0, zIndex: i,
@@ -1236,10 +1255,17 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       } else {
         // MODO MATRIZ
         const layersToSave: any[] = fc.getObjects()
-          .filter((o: any) => !o.__isBg)
+          .filter((o: any) => {
+            if (o.__isBg) return false
+            if (!o.__assetId) {
+              console.warn("[SAVE-MATRIX-2] objeto sem __assetId ignorado:", o.type, { left: o.left, top: o.top })
+              return false
+            }
+            return true
+          })
           .map((o: any, i: number) => {
             const layer: any = {
-              assetId: o.__assetId ?? "",
+              assetId: o.__assetId,
               posX: Math.round(o.left ?? 0),
               posY: Math.round(o.top ?? 0),
               scaleX: o.scaleX ?? 1,
