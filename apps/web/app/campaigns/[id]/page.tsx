@@ -132,7 +132,7 @@ export default function CampaignOverviewPage() {
           onClick={() => router.push(`/clients/${campaign.client.id}`)}
           style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
         >
-          ← Voltar para {campaign.client.name}
+          ← Voltar para Cliente
         </button>
 
         {/* Breadcrumb + título */}

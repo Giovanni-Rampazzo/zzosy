@@ -201,7 +201,7 @@ export default function CampaignAssetsPage() {
           onClick={() => router.push(`/campaigns/${id}`)}
           style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
         >
-          ← Voltar para {campaign.name}
+          ← Voltar para Campanha
         </button>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, gap: 16 }}>
