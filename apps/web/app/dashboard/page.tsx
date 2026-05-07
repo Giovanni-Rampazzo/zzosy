@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { RowThumb, colorFromString } from "@/components/ui/RowThumb"
+import { Button } from "@/components/ui/Button"
 
 interface Client {
   id: string; name: string; email: string | null; contact: string | null
@@ -53,9 +54,7 @@ export default function DashboardPage() {
             <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Clientes</h1>
             <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Gerencie todos os clientes da sua agência</p>
           </div>
-          <button onClick={() => setShowModal(true)} style={{background:"#F5C400",border:"none",borderRadius:6,padding:"8px 16px",fontWeight:600,fontSize:12,cursor:"pointer"}}>
-            + Novo Cliente
-          </button>
+          <Button onClick={() => setShowModal(true)}>+ Novo Cliente</Button>
         </div>
 
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
@@ -82,15 +81,15 @@ export default function DashboardPage() {
                   <td style={{padding:"12px 16px",fontSize:13}}>{c._count.campaigns}</td>
                   <td style={{padding:"12px 16px",textAlign:"right"}}>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      <button onClick={() => router.push(`/clients/${c.id}`)} style={{fontSize:11,fontWeight:600,border:"1px solid #E0E0E0",padding:"5px 10px",borderRadius:5,background:"white",cursor:"pointer"}}>Ver</button>
+                      <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
                       {confirmDelete === c.id ? (
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
                           <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
-                          <button onClick={() => deleteClient(c.id)} style={{fontSize:11,border:"none",padding:"5px 10px",borderRadius:5,background:"#555",color:"white",cursor:"pointer",fontWeight:600}}>Sim</button>
-                          <button onClick={() => setConfirmDelete(null)} style={{fontSize:11,border:"1px solid #E0E0E0",padding:"5px 10px",borderRadius:5,background:"white",cursor:"pointer",fontWeight:600}}>Não</button>
+                          <Button variant="danger" size="sm" onClick={() => deleteClient(c.id)}>Sim</Button>
+                          <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
                         </div>
                       ) : (
-                        <button onClick={() => setConfirmDelete(c.id)} style={{fontSize:11,border:"none",padding:"5px 10px",borderRadius:5,background:"#f0f0f0",color:"#666",cursor:"pointer",fontWeight:600}}>🗑</button>
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(c.id)}>🗑</Button>
                       )}
                     </div>
                   </td>
@@ -124,10 +123,8 @@ export default function DashboardPage() {
               ))}
               {error && <p style={{color:"#666",fontSize:12,margin:0}}>{error}</p>}
               <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:4}}>
-                <button type="button" onClick={() => setShowModal(false)} style={{padding:"8px 16px",border:"1px solid #E0E0E0",borderRadius:6,background:"white",cursor:"pointer",fontSize:12,fontWeight:600}}>Cancelar</button>
-                <button type="submit" disabled={saving} style={{padding:"8px 16px",border:"none",borderRadius:6,background:"#F5C400",cursor:"pointer",fontSize:12,fontWeight:600,opacity:saving?0.7:1}}>
-                  {saving ? "Criando..." : "Criar cliente"}
-                </button>
+                <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Button>
+                <Button type="submit" loading={saving}>{saving ? "Criando..." : "Criar cliente"}</Button>
               </div>
             </form>
           </div>

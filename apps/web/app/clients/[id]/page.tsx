@@ -6,6 +6,7 @@ import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
 import { ClientEditModal } from "@/components/clients/ClientEditModal"
 import { RowThumb } from "@/components/ui/RowThumb"
+import { Button } from "@/components/ui/Button"
 
 
 interface Campaign {
@@ -91,24 +92,9 @@ export default function ClientPage() {
               {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
             </div>
             <div style={{display:"flex",gap:10}}>
-              <button
-                onClick={() => setShowEditModal(true)}
-                style={{padding:"6px 14px",background:"#f0f0f0",border:"none",borderRadius:6,color:"#555",fontWeight:600,fontSize:12,cursor:"pointer"}}
-              >
-                Editar cliente
-              </button>
-              <button
-                onClick={() => setConfirmDeleteClient(true)}
-                style={{padding:"6px 14px",background:"#f0f0f0",border:"none",borderRadius:6,color:"#555",fontWeight:600,fontSize:12,cursor:"pointer"}}
-              >
-                Apagar cliente
-              </button>
-              <button
-                onClick={() => setShowModal(true)}
-                style={{background:"#F5C400",border:"none",borderRadius:6,padding:"8px 16px",fontWeight:600,fontSize:12,cursor:"pointer"}}
-              >
-                + Nova Campanha
-              </button>
+              <Button variant="ghost" size="sm" onClick={() => setShowEditModal(true)}>Editar cliente</Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteClient(true)}>Apagar cliente</Button>
+              <Button onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
@@ -166,16 +152,16 @@ export default function ClientPage() {
                     <td style={{padding:"12px 16px",color:"#888",fontSize:13}}>{new Date(c.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td style={{padding:"12px 16px",textAlign:"right"}}>
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                        <button onClick={() => router.push(`/campaigns/${c.id}`)} style={{fontSize:11,fontWeight:600,border:"1px solid #E0E0E0",padding:"5px 12px",borderRadius:6,background:"white",cursor:"pointer"}}>Abrir</button>
-                        <button onClick={() => duplicateCampaign(c.id)} disabled={duplicatingId === c.id} style={{fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,background:"#f0f0f0",color:"#555",border:"none",cursor:duplicatingId === c.id ? "default" : "pointer",opacity:duplicatingId === c.id ? 0.5 : 1}}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</button>
+                        <Button variant="secondary" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)}>Abrir</Button>
+                        <Button variant="ghost" size="sm" onClick={() => duplicateCampaign(c.id)} loading={duplicatingId === c.id}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</Button>
                         {confirmDelete === c.id ? (
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
                             <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
-                            <button onClick={() => deleteCampaign(c.id)} style={{fontSize:11,fontWeight:600,border:"none",padding:"5px 10px",borderRadius:6,background:"#555",color:"white",cursor:"pointer"}}>Sim</button>
-                            <button onClick={() => setConfirmDelete(null)} style={{fontSize:11,fontWeight:600,border:"1px solid #E0E0E0",padding:"5px 10px",borderRadius:6,background:"white",cursor:"pointer"}}>Não</button>
+                            <Button variant="danger" size="sm" onClick={() => deleteCampaign(c.id)}>Sim</Button>
+                            <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
                           </div>
                         ) : (
-                          <button onClick={() => setConfirmDelete(c.id)} style={{fontSize:11,fontWeight:600,border:"none",padding:"5px 10px",borderRadius:6,background:"#f0f0f0",color:"#555",cursor:"pointer"}}>🗑</button>
+                          <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(c.id)}>🗑</Button>
                         )}
                       </div>
                     </td>
@@ -198,8 +184,8 @@ export default function ClientPage() {
             <div style={{fontSize:18,fontWeight:700,marginBottom:12}}>Apagar cliente?</div>
             <div style={{fontSize:13,color:"#888",marginBottom:24}}>Esta ação é irreversível e apagará todas as campanhas do cliente.</div>
             <div style={{display:"flex",gap:12,justifyContent:"center"}}>
-              <button onClick={() => setConfirmDeleteClient(false)} style={{padding:"8px 20px",border:"1px solid #E0E0E0",borderRadius:6,background:"white",cursor:"pointer",fontSize:13,fontWeight:600}}>Cancelar</button>
-              <button onClick={deleteClient} style={{padding:"8px 20px",border:"none",borderRadius:6,background:"#555",color:"white",cursor:"pointer",fontSize:13,fontWeight:600}}>Apagar</button>
+              <Button variant="secondary" onClick={() => setConfirmDeleteClient(false)}>Cancelar</Button>
+              <Button variant="danger" onClick={deleteClient}>Apagar</Button>
             </div>
           </div>
         </div>
