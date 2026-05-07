@@ -1033,19 +1033,17 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       if (asset.imageUrl) {
         try {
           const isSvg = /\.svg(\?|$)/i.test(asset.imageUrl)
-          console.log("[IMG-LOAD] start:", { isSvg, url: asset.imageUrl, label: asset.label })
-          // SVGs sem width/height explicitos carregam com naturalWidth=0 no <img>,
-          // resultando em FabricImage invisivel. Pre-extrai dimensoes do viewBox
-          // e injeta no atributo width/height do <img> antes do load.
-          let svgDims: { w: number; h: number } | null = null
+          // SVGs sem width/height EXPLICITOS no markup carregam com naturalWidth=150 (default
+          // do user-agent), e Fabric usa naturalWidth como tamanho. Solucao robusta:
+          // baixa o SVG, injeta width/height extraidos do viewBox no proprio markup,
+          // e cria um Blob URL pro <img>. Assim naturalWidth bate com o tamanho real.
+          let imgSrc = asset.imageUrl
           if (isSvg) {
             try {
               const txt = await fetch(asset.imageUrl).then(r => r.text())
-              console.log("[IMG-LOAD] svg fetched, length:", txt.length, "preview:", txt.slice(0, 200))
               const widthAttr = txt.match(/<svg[^>]*\swidth\s*=\s*["']([^"']+)["']/i)?.[1]
               const heightAttr = txt.match(/<svg[^>]*\sheight\s*=\s*["']([^"']+)["']/i)?.[1]
               const viewBox = txt.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
-              console.log("[IMG-LOAD] svg attrs:", { widthAttr, heightAttr, viewBox })
               const numFromAttr = (s?: string) => {
                 if (!s) return undefined
                 const n = parseFloat(s)
@@ -1060,26 +1058,31 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                   h = h ?? parts[3]
                 }
               }
-              if (w && h) svgDims = { w, h }
-              console.log("[IMG-LOAD] svg dims resolved:", svgDims)
+              if (w && h && (!widthAttr || !heightAttr)) {
+                // Injeta width/height na primeira tag <svg ...> do markup
+                const patched = txt.replace(/<svg\b([^>]*)>/i, (_, attrs) => {
+                  let a = attrs
+                  if (!/\swidth\s*=/i.test(a)) a += ` width="${w}"`
+                  if (!/\sheight\s*=/i.test(a)) a += ` height="${h}"`
+                  return `<svg${a}>`
+                })
+                const blob = new Blob([patched], { type: "image/svg+xml" })
+                imgSrc = URL.createObjectURL(blob)
+              }
             } catch (e) { console.warn("[SVG] falha lendo dimensoes:", e) }
           }
 
           const img = await new Promise<any>((resolve, reject) => {
             const el = new window.Image()
             el.crossOrigin = "anonymous"
-            if (svgDims) {
-              el.width = svgDims.w
-              el.height = svgDims.h
-            }
-            el.onload = () => {
-              console.log("[IMG-LOAD] <img> loaded:", { naturalW: el.naturalWidth, naturalH: el.naturalHeight, w: el.width, h: el.height })
-              resolve(new FabricImage(el, { left: posX, top: posY, scaleX, scaleY, angle }))
-            }
-            el.onerror = (err) => { console.error("[IMG-LOAD] <img> error", err); reject(err) }
-            el.src = asset.imageUrl!
+            el.onload = () => resolve(new FabricImage(el, { left: posX, top: posY, scaleX, scaleY, angle }))
+            el.onerror = reject
+            el.src = imgSrc
           })
-          console.log("[IMG-LOAD] FabricImage created:", { w: img.width, h: img.height, scaleX: img.scaleX, scaleY: img.scaleY })
+          // Libera o Blob URL apos uso (Fabric ja copiou pra textura interna)
+          if (imgSrc !== asset.imageUrl && imgSrc.startsWith("blob:")) {
+            URL.revokeObjectURL(imgSrc)
+          }
           ;(img as any).__assetId = asset.id
           ;(img as any).__assetLabel = asset.label
           fc.add(img)
