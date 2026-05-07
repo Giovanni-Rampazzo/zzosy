@@ -74,7 +74,7 @@ export default function ClientPage() {
           onClick={() => router.push("/dashboard")}
           style={{background:"transparent",border:"none",color:"#888",fontSize:12,cursor:"pointer",padding:0,marginBottom:12}}
         >
-          ← Voltar para Clientes
+          ← Clientes
         </button>
         {/* Breadcrumb */}
         <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"#888",marginBottom:20}}>

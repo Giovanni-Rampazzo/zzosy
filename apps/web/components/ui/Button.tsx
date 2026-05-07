@@ -3,17 +3,18 @@ import { ButtonHTMLAttributes } from "react"
 import { clsx } from "clsx"
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "danger" | "ghost"
+  variant?: "primary" | "secondary" | "dark" | "danger" | "ghost"
   size?: "sm" | "md" | "lg"
   loading?: boolean
 }
 
 export function Button({ variant = "primary", size = "md", loading, className, children, disabled, ...props }: ButtonProps) {
-  const base = "inline-flex items-center justify-content gap-2 font-semibold rounded-md transition-all cursor-pointer border-0 font-['DM_Sans',sans-serif]"
+  const base = "inline-flex items-center justify-center gap-2 font-semibold rounded-md transition-all cursor-pointer border-0 font-['DM_Sans',sans-serif] whitespace-nowrap"
   const variants = {
     primary: "bg-[#F5C400] text-[#111111] hover:bg-[#e0b000]",
-    secondary: "bg-white text-[#111111] border border-[#E0E0E0] hover:bg-[#F5F5F0]",
-    danger: "bg-[#fee2e2] text-[#dc2626] hover:bg-[#fecaca]",
+    secondary: "bg-white text-[#333] border border-[#E0E0E0] hover:bg-[#F5F5F0]",
+    dark: "bg-[#111] text-white hover:bg-[#000]",
+    danger: "bg-[#fee2e2] text-[#dc2626] border border-[#fecaca] hover:bg-[#fecaca]",
     ghost: "bg-transparent text-[#888888] hover:text-[#111111] hover:bg-[#F5F5F0]",
   }
   const sizes = {

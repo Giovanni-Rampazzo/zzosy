@@ -9,6 +9,7 @@ import { EditableText } from "@/components/EditableText"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
+import { Button } from "@/components/ui/Button"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -159,7 +160,7 @@ export default function CampaignOverviewPage() {
           onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}
           style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
         >
-          ← Voltar para Cliente
+          ← Clientes
         </button>
 
         {/* Breadcrumb + título */}
@@ -213,25 +214,9 @@ export default function CampaignOverviewPage() {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <button
-              onClick={() => router.push(`/campaigns/${id}/assets`)}
-              style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "12px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
-            >
-              Assets
-            </button>
-            <button
-              onClick={() => router.push(`/editor?campaignId=${id}`)}
-              style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#333" }}
-            >
-              Key Vision
-            </button>
-            <button
-              onClick={() => setDeliveryOpen(true)}
-              disabled={pieces.length === 0}
-              style={{ background: pieces.length === 0 ? "#f5f5f5" : "#111", border: "none", borderRadius: 6, padding: "12px 18px", fontWeight: 600, fontSize: 13, cursor: pieces.length === 0 ? "default" : "pointer", color: pieces.length === 0 ? "#aaa" : "white" }}
-            >
-              Package
-            </button>
+            <Button variant="primary" size="lg" onClick={() => router.push(`/editor?campaignId=${id}`)}>Key Vision</Button>
+            <Button variant="secondary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
+            <Button variant="dark" size="lg" onClick={() => setDeliveryOpen(true)} disabled={pieces.length === 0}>Package</Button>
           </div>
         </div>
 

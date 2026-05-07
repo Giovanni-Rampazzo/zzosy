@@ -75,7 +75,7 @@ function PiecesContent() {
             onClick={() => router.push(`/campaigns/${campaignId}`)}
             className="text-xs text-[#888888] hover:text-[#111] mb-3 bg-transparent border-0 cursor-pointer p-0"
           >
-            ← Voltar para a campanha
+            ← Campanha
           </button>
         )}
         <div className="flex items-center justify-between mb-6">
