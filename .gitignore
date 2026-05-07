@@ -13,3 +13,7 @@ apps/web/env
 
 # User uploads (PSD files, layer images)
 apps/web/public/uploads/campaigns/
+
+# Backups (sao locais, nao versionados)
+backup-system/*.log
+**/zzosy-backups/

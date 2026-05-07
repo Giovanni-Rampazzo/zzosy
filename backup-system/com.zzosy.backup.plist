@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zzosy.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>BACKUP_SCRIPT_PATH</string>
+    </array>
+
+    <!-- Roda 1x/dia as 3h da manha. Se Mac estiver desligado, roda assim que ligar. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Se perder o horario (Mac desligado), roda assim que voltar -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>BACKUP_DIR_PATH/launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>BACKUP_DIR_PATH/launchd.log</string>
+</dict>
+</plist>
