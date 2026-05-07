@@ -69,7 +69,14 @@ export default function CampaignOverviewPage() {
       fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
       fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
     ])
-    setCampaign(c)
+    console.log("[LOAD-ALL] campaign response:", c)
+    // Guard: se API retornou erro ({error: "..."}), nao seta no state pra evitar crash
+    if (c && !c.error && c.client) {
+      setCampaign(c)
+    } else {
+      console.error("[LOAD-ALL] campaign response invalida ou sem client:", c)
+      setCampaign(null)
+    }
     setPieces(Array.isArray(p) ? p : [])
     setLoadTs(Date.now())
     setLoading(false)
