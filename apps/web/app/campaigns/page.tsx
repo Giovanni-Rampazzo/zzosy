@@ -5,6 +5,7 @@ import { PageShell } from "@/components/layout/PageShell"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { RowThumb } from "@/components/ui/RowThumb"
+import { Button } from "@/components/ui/Button"
 
 interface Campaign {
   id: string
@@ -25,6 +26,23 @@ export default function CampaignsPage() {
   const [view, setView] = useState<"grid" | "list">("grid")
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [q, setQ] = useState("")
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  async function deleteCampaign(id: string, skipConfirm = false) {
+    if (!skipConfirm && confirmDelete !== id) { setConfirmDelete(id); return }
+    setDeletingId(id)
+    try {
+      const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error()
+      setCampaigns(prev => prev.filter(c => c.id !== id))
+      setConfirmDelete(null)
+    } catch {
+      alert("Falha ao apagar campanha")
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   useEffect(() => {
     fetch("/api/campaigns").then(r => r.json()).then(d => {
@@ -130,6 +148,17 @@ export default function CampaignsPage() {
                       <span>{c._count.pieces} peças · {c._count.assets} assets</span>
                       <span>{new Date(c.updatedAt).toLocaleDateString("pt-BR")}</span>
                     </div>
+                    <div className="flex justify-end mt-2" onClick={e => e.stopPropagation()}>
+                      {confirmDelete === c.id ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-[#666]">Confirmar?</span>
+                          <Button variant="danger" size="sm" loading={deletingId === c.id} onClick={() => deleteCampaign(c.id, true)}>Sim</Button>
+                          <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
+                        </div>
+                      ) : (
+                        <Button variant="ghost" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>🗑</Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -147,6 +176,7 @@ export default function CampaignsPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Peças</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Assets</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Atualizada</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#666]">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -173,6 +203,19 @@ export default function CampaignsPage() {
                       <td className="px-4 py-3 text-sm text-[#666]">{c._count.pieces}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{c._count.assets}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{new Date(c.updatedAt).toLocaleDateString("pt-BR")}</td>
+                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                        <div className="flex gap-2 justify-end">
+                          {confirmDelete === c.id ? (
+                            <>
+                              <span className="text-[11px] text-[#666] self-center">Confirmar?</span>
+                              <Button variant="danger" size="sm" loading={deletingId === c.id} onClick={() => deleteCampaign(c.id, true)}>Sim</Button>
+                              <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
+                            </>
+                          ) : (
+                            <Button variant="ghost" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>🗑</Button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}
