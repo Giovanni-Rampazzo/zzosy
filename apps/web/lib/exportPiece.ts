@@ -586,6 +586,9 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         rawFontSize: obj.fontSize, scaleY: sY, scaledFontSize: fontSize,
         bbox: { left, top, w, h },
         styleRunsCount: styleRuns.length,
+        objStyles: obj.styles,
+        styleRuns,
+        boxFill: obj.fill,
       })
       psdLayers.push({
         name, top, left, bottom, right,
