@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { RowThumb, colorFromString } from "@/components/ui/RowThumb"
+import { Button } from "@/components/ui/Button"
 
 interface User {
   id: string
@@ -143,27 +144,11 @@ export default function AdminUsersPage() {
                       <td className="px-4 py-3 text-sm text-[#666]">{new Date(u.createdAt).toLocaleDateString("pt-BR")}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => { setError(null); setEditing(u) }}
-                            className="text-xs font-semibold px-3 py-1 border border-[#E0E0E0] rounded-md bg-white hover:bg-[#fafafa] cursor-pointer"
-                          >
-                            Editar
-                          </button>
+                          <Button variant="secondary" size="sm" onClick={() => { setError(null); setEditing(u) }}>Editar</Button>
                           {!isMe && (
                             <>
-                              <button
-                                onClick={() => toggleBlocked(u)}
-                                className={`text-xs font-semibold px-3 py-1 rounded-md cursor-pointer ${u.blocked ? "bg-green-50 text-green-700 border border-green-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}
-                              >
-                                {u.blocked ? "Desbloquear" : "Bloquear"}
-                              </button>
-                              <button
-                                onClick={(e) => deleteUser(u, e.altKey)}
-                                title="Option/Alt+click pra apagar sem confirmação"
-                                className="text-xs font-semibold px-3 py-1 border border-red-200 text-red-700 bg-red-50 rounded-md hover:bg-red-100 cursor-pointer"
-                              >
-                                Apagar
-                              </button>
+                              <Button variant="secondary" size="sm" onClick={() => toggleBlocked(u)}>{u.blocked ? "Desbloquear" : "Bloquear"}</Button>
+                              <Button variant="danger" size="sm" onClick={(e) => deleteUser(u, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                             </>
                           )}
                         </div>
@@ -281,12 +266,8 @@ function UserModal({ mode, user, onClose, onSaved, error, setError }: {
           {error && <div style={{ background: "#fee2e2", color: "#dc2626", padding: 10, borderRadius: 6, fontSize: 12 }}>{error}</div>}
         </div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 24 }}>
-          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-xs font-semibold border border-[#E0E0E0] rounded-md bg-white hover:bg-[#fafafa] cursor-pointer">
-            Cancelar
-          </button>
-          <button onClick={save} disabled={saving} className="px-4 py-2 text-xs font-semibold rounded-md bg-[#F5C400] text-black hover:bg-[#E5B400] cursor-pointer disabled:opacity-50">
-            {saving ? "Salvando..." : "Salvar"}
-          </button>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={save} loading={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
         </div>
       </div>
     </div>

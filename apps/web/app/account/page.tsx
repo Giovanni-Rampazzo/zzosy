@@ -2,6 +2,7 @@
 import { useSession, signOut } from "next-auth/react"
 import { useState } from "react"
 import { PageShell } from "@/components/layout/PageShell"
+import { Button } from "@/components/ui/Button"
 
 export default function AccountPage() {
   const { data: session } = useSession()
@@ -37,16 +38,11 @@ export default function AccountPage() {
               <input value={session?.user?.email ?? ""} disabled style={{...inp,background:"#F5F5F0",color:"#888"}} />
             </div>
           </div>
-          <button style={{padding:"8px 16px",background:"#F5C400",border:"none",borderRadius:6,fontWeight:600,fontSize:12,cursor:"pointer"}}>Salvar alterações</button>
+          <Button>Salvar alterações</Button>
         </div>
 
         <div style={{textAlign:"right"}}>
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            style={{padding:"8px 16px",background:"#fee2e2",border:"none",borderRadius:6,color:"#dc2626",fontWeight:600,fontSize:12,cursor:"pointer"}}
-          >
-            Sair da conta
-          </button>
+          <Button variant="danger" onClick={() => signOut({ callbackUrl: "/login" })}>Sair da conta</Button>
         </div>
       </div>
     </PageShell>

@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { PageShell } from "@/components/layout/PageShell"
+import { Button } from "@/components/ui/Button"
 
 interface MediaFormat {
   id: string; vehicle: string; media: string; format: string
@@ -47,7 +48,7 @@ export default function MediasPage() {
             <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Mídias e Formatos</h1>
             <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Formatos disponíveis para geração de peças</p>
           </div>
-          <button onClick={() => setShowModal(true)} style={{background:"#F5C400",border:"none",borderRadius:6,padding:"8px 16px",fontWeight:600,fontSize:12,cursor:"pointer"}}>+ Novo formato</button>
+          <Button onClick={() => setShowModal(true)}>+ Novo formato</Button>
         </div>
 
         {loading ? <div style={{textAlign:"center",padding:"64px 0",color:"#888"}}>Carregando...</div> : (
@@ -66,7 +67,7 @@ export default function MediasPage() {
                     <div style={{width:70,fontSize:12,color:"#888"}}>{f.dpi}dpi</div>
                     <div>
                       {!f.isDefault ? (
-                        <button onClick={() => handleDelete(f.id)} style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:5,background:"#fee2e2",color:"#dc2626",border:"none",cursor:"pointer"}}>Remover</button>
+                        <Button variant="danger" size="sm" onClick={() => handleDelete(f.id)}>Remover</Button>
                       ) : (
                         <span style={{fontSize:11,color:"#aaa",padding:"0 8px"}}>padrão</span>
                       )}
@@ -111,8 +112,8 @@ export default function MediasPage() {
                 ))}
               </div>
               <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>
-                <button type="button" onClick={() => setShowModal(false)} style={{padding:"8px 16px",border:"1px solid #E0E0E0",borderRadius:6,background:"white",cursor:"pointer",fontSize:12,fontWeight:600}}>Cancelar</button>
-                <button type="submit" style={{padding:"8px 16px",background:"#F5C400",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:600}}>Salvar</button>
+                <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Button>
+                <Button type="submit">Salvar</Button>
               </div>
             </form>
           </div>

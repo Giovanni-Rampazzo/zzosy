@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { exportPieces, ExportFormat } from "@/lib/exportPiece"
+import { Button } from "@/components/ui/Button"
 
 interface PieceLite {
   id: string
@@ -75,12 +76,8 @@ export function ExportDialog({ pieces, onClose, campaignName }: Props) {
         <div style={{ padding: "14px 24px", borderTop: "1px solid #333", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ color: "#888", fontSize: 12 }}>{exporting ? progress : `${selectedFormats.length} formato(s)`}</span>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={onClose} disabled={exporting}
-              style={{ padding: "8px 16px", background: "transparent", border: "1px solid #333", color: "#888", borderRadius: 6, cursor: exporting ? "not-allowed" : "pointer", fontSize: 13 }}>Cancelar</button>
-            <button onClick={doExport} disabled={exporting || !selectedFormats.length}
-              style={{ padding: "8px 20px", background: "#F5C400", border: "none", color: "#111", borderRadius: 6, cursor: (exporting || !selectedFormats.length) ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 13, opacity: (exporting || !selectedFormats.length) ? 0.5 : 1 }}>
-              {exporting ? "Exportando..." : "Exportar"}
-            </button>
+            <Button variant="ghost" onClick={onClose} disabled={exporting}>Cancelar</Button>
+            <Button onClick={doExport} loading={exporting} disabled={!selectedFormats.length}>{exporting ? "Exportando..." : "Exportar"}</Button>
           </div>
         </div>
       </div>

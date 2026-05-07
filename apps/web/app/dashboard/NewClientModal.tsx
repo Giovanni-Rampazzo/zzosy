@@ -78,10 +78,8 @@ export function NewClientModal({ onClose, onCreated }: Props) {
           </div>
           {error && <p style={{color:"#dc2626",fontSize:12,margin:0}}>{error}</p>}
           <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>
-            <button type="button" onClick={onClose} style={{padding:"8px 16px",border:"1px solid #E0E0E0",borderRadius:6,background:"white",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>Cancelar</button>
-            <button type="submit" disabled={loading} style={{padding:"8px 16px",border:"none",borderRadius:6,background:"#F5C400",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",opacity:loading?0.7:1}}>
-              {loading ? "Criando..." : "Criar cliente"}
-            </button>
+            <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+            <Button type="submit" loading={loading}>{loading ? "Criando..." : "Criar cliente"}</Button>
           </div>
         </form>
       </div>

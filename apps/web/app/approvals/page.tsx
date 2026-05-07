@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { PageShell } from "@/components/layout/PageShell"
 import { statusMeta, PIECE_STATUSES } from "@/lib/pieceStatus"
+import { Button } from "@/components/ui/Button"
 
 interface Piece {
   id: string
@@ -110,40 +111,16 @@ export default function ApprovalsPage() {
                 {/* Actions */}
                 <div style={{display:"flex",gap:8,padding:"10px 14px",borderTop:"1px solid #f5f5f5",background:"#fafafa"}}>
                   {(piece.status === "STANDBY" || piece.status === "CRIACAO") && (
-                    <button
-                      onClick={() => updateStatus(piece.id, "CLIENTE")}
-                      disabled={updating === piece.id}
-                      style={{flex:1,padding:"6px 0",background:"#F5C400",border:"none",borderRadius:6,fontWeight:600,fontSize:12,cursor:"pointer"}}
-                    >
-                      Enviar para cliente
-                    </button>
+                    <Button size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "CLIENTE")} className="flex-1">Enviar para cliente</Button>
                   )}
                   {piece.status === "CLIENTE" && (
                     <>
-                      <button
-                        onClick={() => updateStatus(piece.id, "APROVADO")}
-                        disabled={updating === piece.id}
-                        style={{flex:1,padding:"6px 0",background:"#16a34a",color:"white",border:"none",borderRadius:6,fontWeight:600,fontSize:12,cursor:"pointer"}}
-                      >
-                        ✓ Aprovar
-                      </button>
-                      <button
-                        onClick={() => updateStatus(piece.id, "REPROVADO")}
-                        disabled={updating === piece.id}
-                        style={{padding:"6px 12px",border:"1px solid #fee2e2",color:"#dc2626",background:"white",borderRadius:6,fontSize:12,cursor:"pointer"}}
-                      >
-                        ✗ Reprovar
-                      </button>
+                      <Button variant="success" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "APROVADO")} className="flex-1">✓ Aprovar</Button>
+                      <Button variant="danger" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "REPROVADO")}>✗ Reprovar</Button>
                     </>
                   )}
                   {(piece.status === "APROVADO" || piece.status === "REPROVADO") && (
-                    <button
-                      onClick={() => updateStatus(piece.id, "CLIENTE")}
-                      disabled={updating === piece.id}
-                      style={{padding:"6px 12px",border:"1px solid #E0E0E0",borderRadius:6,background:"white",fontSize:12,cursor:"pointer",color:"#888"}}
-                    >
-                      Reabrir
-                    </button>
+                    <Button variant="secondary" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "CLIENTE")}>Reabrir</Button>
                   )}
                 </div>
               </div>

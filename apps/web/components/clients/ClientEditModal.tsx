@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { Button } from "@/components/ui/Button"
 
 interface ClientData {
   id: string
@@ -102,14 +103,8 @@ export function ClientEditModal({ client, onClose, onSaved }: Props) {
         </div>
 
         <div style={{ padding: 16, borderTop: "1px solid #eee", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button onClick={onClose} disabled={saving}
-            style={{ padding: "8px 16px", border: "1px solid #ddd", borderRadius: 6, background: "#fff", cursor: saving ? "default" : "pointer", fontSize: 13 }}>
-            Cancelar
-          </button>
-          <button onClick={save} disabled={saving}
-            style={{ padding: "8px 20px", border: "none", borderRadius: 6, background: "#F5C400", color: "#111", cursor: saving ? "default" : "pointer", fontSize: 13, fontWeight: 700, opacity: saving ? 0.5 : 1 }}>
-            {saving ? "Salvando..." : "Salvar"}
-          </button>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={save} loading={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
         </div>
       </div>
     </div>

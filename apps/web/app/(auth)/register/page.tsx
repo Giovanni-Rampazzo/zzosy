@@ -2,6 +2,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { Button } from "@/components/ui/Button"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -60,13 +61,7 @@ export default function RegisterPage() {
               <input type="password" className={inp} value={form.password} onChange={e => set("password", e.target.value)} required />
             </div>
             {error && <p className="text-red-400 text-[12px]">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#F5C400] text-black font-bold rounded-md py-2.5 text-[13px] mt-2 hover:bg-[#e0b000] transition-colors disabled:opacity-60"
-            >
-              {loading ? "Criando conta..." : "Criar conta"}
-            </button>
+            <Button type="submit" loading={loading} className="w-full mt-2">{loading ? "Criando conta..." : "Criar conta"}</Button>
           </form>
           <p className="text-center text-[12px] text-[#444] mt-4">
             Já tem conta?{" "}

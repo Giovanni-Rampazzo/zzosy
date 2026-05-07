@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { buildDeliveryZip, type ExportFormat } from "@/lib/exportPiece"
+import { Button } from "@/components/ui/Button"
 
 interface PieceLite {
   id: string
@@ -182,14 +183,8 @@ export function DeliveryDialog({ campaignId, campaignName, onClose, onCreated }:
         </div>
 
         <div style={{ padding: 20, borderTop: "1px solid #eee", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button onClick={onClose} disabled={working}
-            style={{ padding: "8px 16px", border: "1px solid #ddd", borderRadius: 6, background: "#fff", cursor: working ? "default" : "pointer", fontSize: 13 }}>
-            Cancelar
-          </button>
-          <button onClick={handleExport} disabled={working || selected.size === 0}
-            style={{ padding: "8px 20px", border: "none", borderRadius: 6, background: "#F5C400", color: "#111", cursor: (working || selected.size === 0) ? "default" : "pointer", fontSize: 13, fontWeight: 700, opacity: (working || selected.size === 0) ? 0.5 : 1 }}>
-            {working ? "Exportando..." : `Exportar (${selected.size})`}
-          </button>
+          <Button variant="secondary" onClick={onClose} disabled={working}>Cancelar</Button>
+          <Button onClick={handleExport} loading={working} disabled={selected.size === 0}>{working ? "Exportando..." : `Exportar (${selected.size})`}</Button>
         </div>
       </div>
     </div>

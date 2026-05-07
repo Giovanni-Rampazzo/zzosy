@@ -3,6 +3,7 @@ import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { Button } from "@/components/ui/Button"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -55,13 +56,7 @@ export default function LoginPage() {
               />
             </div>
             {error && <p className="text-red-400 text-[12px]">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#F5C400] text-black font-bold rounded-md py-2.5 text-[13px] mt-2 hover:bg-[#e0b000] transition-colors disabled:opacity-60"
-            >
-              {loading ? "Entrando..." : "Entrar"}
-            </button>
+            <Button type="submit" loading={loading} className="w-full mt-2">{loading ? "Entrando..." : "Entrar"}</Button>
           </form>
           <p className="text-center text-[12px] text-[#444] mt-4">
             Não tem conta?{" "}
