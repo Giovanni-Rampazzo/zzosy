@@ -1378,9 +1378,37 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     bg.set("fill", c); fc.renderAll(); setBgColor(c); bgColorRef.current = c; doSave()
   }
 
-  // Sincroniza hexInput com a cor do objeto selecionado
+  // Sincroniza hexInput com a cor efetiva (do caractere ou do textbox)
   useEffect(() => {
-    if (selected?.fill) setHexInput(selected.fill)
+    const obj = selected as any
+    if (!obj) return
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+    let fill: string | undefined = obj.fill
+    if (isText && obj.getSelectionStyles) {
+      try {
+        if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+          const styles = obj.getSelectionStyles(obj.selectionStart, obj.selectionEnd)
+          if (styles?.length > 0 && styles[0].fill) fill = styles[0].fill
+        } else if (obj.isEditing) {
+          const idx = (obj.selectionStart ?? 1) > 0 ? obj.selectionStart - 1 : 0
+          const text: string = obj.text ?? ""
+          if (idx < text.length) {
+            const styles = obj.getSelectionStyles(idx, idx + 1)
+            if (styles?.length > 0 && styles[0].fill) fill = styles[0].fill
+          }
+        } else {
+          const text: string = obj.text ?? ""
+          if (text.length > 0) {
+            const styles = obj.getSelectionStyles(0, text.length)
+            if (styles?.length > 0) {
+              const fills = new Set(styles.map((s: any) => s.fill ?? obj.fill))
+              if (fills.size === 1) fill = [...fills][0] as string
+            }
+          }
+        }
+      } catch {}
+    }
+    if (fill) setHexInput(fill)
   }, [selected, selectedTick])
 
   // Sincroniza bgHexInput com bgColor
@@ -1394,11 +1422,33 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   useEffect(() => {
     if (!selected) return
     const obj = selected as any
+    const isText = obj.type === "textbox" || obj.type === "i-text"
     let fs: number = obj.fontSize ?? 80
-    if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+    if (isText && obj.getSelectionStyles) {
       try {
-        const styles = obj.getSelectionStyles(obj.selectionStart, obj.selectionEnd)
-        if (styles?.length > 0 && styles[0].fontSize) fs = styles[0].fontSize
+        if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+          // edit mode + range: tamanho do range
+          const styles = obj.getSelectionStyles(obj.selectionStart, obj.selectionEnd)
+          if (styles?.length > 0 && styles[0].fontSize) fs = styles[0].fontSize
+        } else if (obj.isEditing) {
+          // edit mode + cursor: tamanho do caractere atual
+          const idx = (obj.selectionStart ?? 1) > 0 ? obj.selectionStart - 1 : 0
+          const text: string = obj.text ?? ""
+          if (idx < text.length) {
+            const styles = obj.getSelectionStyles(idx, idx + 1)
+            if (styles?.length > 0 && styles[0].fontSize) fs = styles[0].fontSize
+          }
+        } else {
+          // caixa selecionada: tamanho do TEXTO INTEIRO se uniforme; senao default
+          const text: string = obj.text ?? ""
+          if (text.length > 0) {
+            const styles = obj.getSelectionStyles(0, text.length)
+            if (styles?.length > 0) {
+              const sizes = new Set(styles.map((s: any) => s.fontSize ?? obj.fontSize))
+              if (sizes.size === 1) fs = [...sizes][0] as number
+            }
+          }
+        }
       } catch {}
     }
     setFontSizeInput(String(Math.round(fs)))
@@ -1738,9 +1788,15 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             const selStart = (selected as any).selectionStart ?? 0
             const selEnd = (selected as any).selectionEnd ?? 0
             const hasInlineSelection = isEditingText && selStart !== selEnd
+            const isText = selected.type === "textbox" || selected.type === "i-text"
             let effectiveFontFamily = selected.fontFamily ?? "Arial"
             let effectiveFontSize = selected.fontSize ?? 80
             let effectiveFill = selected.fill ?? "#111111"
+            // Detector de "valor misto" — quando o texto tem partes com fontes/tamanhos/cores
+            // diferentes, painel mostra placeholder em vez de um valor incorreto.
+            let mixedFontFamily = false
+            let mixedFontSize = false
+            let mixedFill = false
             // lineHeight e textAlign sao propriedades do textbox inteiro (Fabric nao suporta
             // per-char nelas), entao nao tentam ler de getSelectionStyles.
             const effectiveLineHeight: number = (selected as any).lineHeight ?? 1.16
@@ -1753,29 +1809,94 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             const effectiveLeadingPt: number = isLeadingAuto
               ? Math.round(effectiveLineHeight * effectiveFontSize)
               : leadingPtRaw
-            if (hasInlineSelection) {
+
+            // Helper: le estilo "efetivo" de uma faixa de caracteres respeitando overrides
+            // per-char. Retorna { fontFamily, fontSize, fill } e flags de mistura.
+            // Adobe/Photoshop-style: estilo do caractere = override per-char OU default do box.
+            function readRange(start: number, end: number) {
+              if (!isText || !(selected as any).getSelectionStyles) return null
               try {
-                const styles = (selected as any).getSelectionStyles(selStart, selEnd)
-                if (styles?.length > 0) {
-                  effectiveFontFamily = styles[0].fontFamily ?? effectiveFontFamily
-                  effectiveFontSize = styles[0].fontSize ?? effectiveFontSize
-                  effectiveFill = styles[0].fill ?? effectiveFill
+                const styles = (selected as any).getSelectionStyles(start, end) || []
+                if (styles.length === 0) return null
+                const boxFont = (selected as any).fontFamily
+                const boxSize = (selected as any).fontSize
+                const boxFill = (selected as any).fill
+                const fams = new Set<string>()
+                const sizes = new Set<number>()
+                const fills = new Set<string>()
+                for (const s of styles) {
+                  fams.add(s.fontFamily ?? boxFont)
+                  sizes.add(s.fontSize ?? boxSize)
+                  fills.add(s.fill ?? boxFill)
                 }
-              } catch { /* getSelectionStyles falhou — usa do obj inteiro */ }
+                return {
+                  fontFamily: fams.size === 1 ? [...fams][0] : null,
+                  fontSize: sizes.size === 1 ? [...sizes][0] : null,
+                  fill: fills.size === 1 ? [...fills][0] : null,
+                  mixedFamily: fams.size > 1,
+                  mixedSize: sizes.size > 1,
+                  mixedFill: fills.size > 1,
+                }
+              } catch { return null }
+            }
+
+            if (hasInlineSelection) {
+              // Edit mode + range: le estilo do range (pode ser misto)
+              const r = readRange(selStart, selEnd)
+              if (r) {
+                if (r.fontFamily !== null) effectiveFontFamily = r.fontFamily
+                else mixedFontFamily = true
+                if (r.fontSize !== null) effectiveFontSize = r.fontSize
+                else mixedFontSize = true
+                if (r.fill !== null) effectiveFill = r.fill
+                else mixedFill = true
+              }
+            } else if (isEditingText && isText) {
+              // Edit mode + cursor (sem range): le do caractere atual (do anterior se cursor no fim)
+              const text: string = (selected as any).text ?? ""
+              const charIdx = selStart > 0 ? selStart - 1 : 0
+              if (charIdx < text.length) {
+                const r = readRange(charIdx, charIdx + 1)
+                if (r) {
+                  if (r.fontFamily !== null) effectiveFontFamily = r.fontFamily
+                  if (r.fontSize !== null) effectiveFontSize = r.fontSize
+                  if (r.fill !== null) effectiveFill = r.fill
+                }
+              }
+            } else if (isText) {
+              // Caixa selecionada (sem edit mode): mostra estilo dominante do TEXTO INTEIRO,
+              // nao o default do textbox. Adobe-style: se tem caracteres em "Exo 2", mostra
+              // "Exo 2", nao "Arial" (default fictício do box).
+              const text: string = (selected as any).text ?? ""
+              if (text.length > 0) {
+                const r = readRange(0, text.length)
+                if (r) {
+                  if (r.fontFamily !== null) effectiveFontFamily = r.fontFamily
+                  else mixedFontFamily = true
+                  if (r.fontSize !== null) effectiveFontSize = r.fontSize
+                  else mixedFontSize = true
+                  if (r.fill !== null) effectiveFill = r.fill
+                  else mixedFill = true
+                }
+              }
             }
             return (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
-              <div style={secS}>Fonte</div>
-              <FontPicker value={effectiveFontFamily} onChange={(f) => applyStyle("fontFamily", f)} />
+              <div style={secS}>Fonte {mixedFontFamily && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múltiplas)</span>}</div>
+              <FontPicker
+                value={mixedFontFamily ? "" : effectiveFontFamily}
+                onChange={(f) => applyStyle("fontFamily", f)}
+              />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <div style={secS}>Tamanho</div>
+                <div style={secS}>Tamanho {mixedFontSize && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múlt.)</span>}</div>
                 <input
                   key={`fs-${(selected as any).__assetId ?? "x"}`}
                   type="number"
-                  value={fontSizeInput}
+                  value={mixedFontSize ? "" : fontSizeInput}
+                  placeholder={mixedFontSize ? "—" : ""}
                   onChange={e => {
                     const raw = e.target.value
                     setFontSizeInput(raw)
@@ -1859,9 +1980,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               </div>
             </div>
             <div>
-              <div style={secS}>Cor</div>
+              <div style={secS}>Cor {mixedFill && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múltiplas)</span>}</div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                <label style={{ width: 36, height: 36, borderRadius: 6, background: effectiveFill, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                <label style={{
+                  width: 36, height: 36, borderRadius: 6,
+                  background: mixedFill ? "linear-gradient(135deg, #aaa 25%, #ccc 25%, #ccc 50%, #aaa 50%, #aaa 75%, #ccc 75%)" : effectiveFill,
+                  backgroundSize: mixedFill ? "8px 8px" : undefined,
+                  border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden",
+                }}>
                   <input
                     type="color"
                     value={effectiveFill.length === 7 ? effectiveFill : "#111111"}
@@ -1871,17 +1997,16 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                 </label>
                 <input
                   type="text"
-                  value={hexInput}
+                  value={mixedFill ? "" : hexInput}
+                  placeholder={mixedFill ? "—" : "#RRGGBB"}
                   onChange={e => {
                     const v = e.target.value
                     setHexInput(v)
-                    // So aplica quando o hex for valido (#RRGGBB)
                     if (/^#[0-9a-fA-F]{6}$/.test(v)) applyStyle("fill", v)
                   }}
                   onBlur={() => {
                     if (!/^#[0-9a-fA-F]{6}$/.test(hexInput)) setHexInput(selected.fill ?? "#111111")
                   }}
-                  placeholder="#RRGGBB"
                   style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
                 />
               </div>
