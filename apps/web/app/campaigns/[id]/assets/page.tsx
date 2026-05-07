@@ -280,10 +280,10 @@ export default function CampaignAssetsPage() {
                       <textarea
                         defaultValue={getText(asset)}
                         onChange={e => updateAssetText(asset.id, e.target.value)}
-                        rows={Math.min(4, Math.max(1, getText(asset).split("\n").length))}
                         style={{
                           width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #E0E0E0",
-                          fontSize: 13, color: "#111", fontFamily: "inherit", resize: "vertical", outline: "none"
+                          fontSize: 13, color: "#111", fontFamily: "inherit", resize: "vertical", outline: "none",
+                          minHeight: 64, maxHeight: 200,
                         }}
                       />
                     ) : (
