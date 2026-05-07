@@ -82,40 +82,66 @@ model Client {
 }
 
 model Campaign {
-  id         String          @id @default(cuid())
-  name       String
-  clientId   String
-  status     String          @default("STANDBY")
-  psdUrl     String?         @db.Text
-  psdName    String?         @db.Text
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  client     Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  assets     CampaignAsset[]
-  keyVision  KeyVision?
-  pieces     Piece[]
-  deliveries Delivery[]
+  id              String             @id @default(cuid())
+  name            String
+  clientId        String
+  status          String             @default("STANDBY")
+  psdUrl          String?            @db.Text
+  psdName         String?            @db.Text
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  client          Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assets          CampaignAsset[]
+  keyVision       KeyVision?
+  pieces          Piece[]
+  deliveries      Delivery[]
+  smartObjects    SmartObjectFile[]
 }
 
 model CampaignAsset {
-  id         String   @id @default(cuid())
-  campaignId String
-  type       String   @default("TEXT")
-  label      String
-  content    String?  @db.LongText
-  value      String?  @db.Text
-  imageUrl   String?  @db.LongText
-  order      Int      @default(0)
-  posX       Float    @default(100)
-  posY       Float    @default(100)
-  scaleX     Float    @default(1)
-  scaleY     Float    @default(1)
-  rotation   Float    @default(0)
-  width      Int      @default(600)
-  visible    Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id              String           @id @default(cuid())
+  campaignId      String
+  type            String           @default("TEXT")
+  label           String
+  content         String?          @db.LongText
+  value           String?          @db.Text
+  imageUrl        String?          @db.LongText
+  order           Int              @default(0)
+  posX            Float            @default(100)
+  posY            Float            @default(100)
+  scaleX          Float            @default(1)
+  scaleY          Float            @default(1)
+  rotation        Float            @default(0)
+  width           Int              @default(600)
+  visible         Boolean          @default(true)
+  smartObjectId   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  campaign        Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  smartObject     SmartObjectFile? @relation(fields: [smartObjectId], references: [id], onDelete: SetNull)
+
+  @@index([smartObjectId])
+}
+
+// Smart Object embeddado em PSD (linkedFile). Preserva os bytes originais
+// pra round-trip ZZOSY → Photoshop → ZZOSY sem perda. 1 SO pode ser reusado
+// por varios CampaignAsset (mesmo logo em multiplos layers, por exemplo).
+model SmartObjectFile {
+  id            String          @id @default(cuid())
+  campaignId    String
+  guid          String          @db.VarChar(64)
+  filePath      String          @db.LongText
+  mime          String          @db.VarChar(100)
+  originalName  String          @db.VarChar(500)
+  sizeBytes     Int
+  width         Int?
+  height        Int?
+  createdAt     DateTime        @default(now())
+  campaign      Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  assets        CampaignAsset[]
+
+  @@index([campaignId])
+  @@index([guid])
 }
 
 model KeyVision {
