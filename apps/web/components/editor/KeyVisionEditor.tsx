@@ -1032,9 +1032,42 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     if (asset.type === "IMAGE") {
       if (asset.imageUrl) {
         try {
+          const isSvg = /\.svg(\?|$)/i.test(asset.imageUrl)
+          // SVGs sem width/height explicitos carregam com naturalWidth=0 no <img>,
+          // resultando em FabricImage invisivel. Pre-extrai dimensoes do viewBox
+          // e injeta no atributo width/height do <img> antes do load.
+          let svgDims: { w: number; h: number } | null = null
+          if (isSvg) {
+            try {
+              const txt = await fetch(asset.imageUrl).then(r => r.text())
+              const widthAttr = txt.match(/<svg[^>]*\swidth\s*=\s*["']([^"']+)["']/i)?.[1]
+              const heightAttr = txt.match(/<svg[^>]*\sheight\s*=\s*["']([^"']+)["']/i)?.[1]
+              const viewBox = txt.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+              const numFromAttr = (s?: string) => {
+                if (!s) return undefined
+                const n = parseFloat(s)
+                return Number.isFinite(n) && n > 0 ? n : undefined
+              }
+              let w = numFromAttr(widthAttr)
+              let h = numFromAttr(heightAttr)
+              if ((!w || !h) && viewBox) {
+                const parts = viewBox.split(/[\s,]+/).map(Number)
+                if (parts.length === 4 && parts.every(Number.isFinite)) {
+                  w = w ?? parts[2]
+                  h = h ?? parts[3]
+                }
+              }
+              if (w && h) svgDims = { w, h }
+            } catch (e) { console.warn("[SVG] falha lendo dimensoes:", e) }
+          }
+
           const img = await new Promise<any>((resolve, reject) => {
             const el = new window.Image()
             el.crossOrigin = "anonymous"
+            if (svgDims) {
+              el.width = svgDims.w
+              el.height = svgDims.h
+            }
             el.onload = () => resolve(new FabricImage(el, { left: posX, top: posY, scaleX, scaleY, angle }))
             el.onerror = reject
             el.src = asset.imageUrl!
