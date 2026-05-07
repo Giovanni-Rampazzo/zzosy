@@ -358,48 +358,67 @@ function toPSFont(family: string, isBold: boolean): { name: string; fauxBold: bo
 }
 
 function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[] {
-  const runs: any[] = []
+  // IMPORTANTE: textbox.styles eh keyed pelo TEXTO CRU (obj.text), nao pelo
+  // texto wrappeado pelo Fabric. Mas fullText aqui pode ser wrapped (com \n
+  // adicionais inseridos pelo wrap). Iterando fullText com (lineNum, col) leria
+  // styles[lineNumWrapped][colWrapped] que nao existem — fallback pro default
+  // do textbox e cor/fonte per-char some.
+  // Solucao: pra cada char nao-\n do fullText, pegamos o estilo do char
+  // CORRESPONDENTE no rawText (mantendo um cursor rawIdx). \n adicionais do
+  // wrap simplesmente repetem o estilo anterior (nao avancam rawIdx).
+  const rawText: string = textbox.text ?? ""
   const styles = textbox.styles ?? {}
-  const lines = fullText.split("\n")
-  let charIdx = 0
-  for (let lineNum = 0; lineNum < lines.length; lineNum++) {
-    const line = lines[lineNum]
-    const lineStyles = styles[lineNum] ?? {}
-    let prevStyleKey = ""
-    let runStart = charIdx
-    let runStyle: any = null
-    for (let col = 0; col <= line.length; col++) {
-      const cs = col < line.length ? lineStyles[col] : null
-      const fill = cs?.fill ?? textbox.fill ?? "#000000"
-      const fontSize = (cs?.fontSize ?? textbox.fontSize ?? 48) * scale
-      const fontFamily = cs?.fontFamily ?? textbox.fontFamily ?? "Arial"
-      const fontWeight = cs?.fontWeight ?? textbox.fontWeight ?? "normal"
-      const styleKey = `${fill}|${fontSize}|${fontFamily}|${fontWeight}`
-      if (styleKey !== prevStyleKey && col > 0) {
-        runs.push({ length: charIdx + col - 1 - runStart + 1, style: runStyle })
-        runStart = charIdx + col
-      }
-      if (styleKey !== prevStyleKey) {
-        const isBold = (fontWeight === "bold" || fontWeight === 700)
-        const ps = toPSFont(fontFamily, isBold)
-        runStyle = {
-          font: { name: ps.name },
-          fontSize: Math.round(fontSize),
-          fillColor: parseColor(fill),
-          fauxBold: ps.fauxBold,
-        }
-        prevStyleKey = styleKey
-      }
+
+  function styleAtRawIndex(globalIdx: number): any {
+    let line = 0, col = 0
+    for (let i = 0; i < globalIdx && i < rawText.length; i++) {
+      if (rawText[i] === "\n") { line++; col = 0 } else col++
     }
-    runs.push({ length: charIdx + line.length - runStart, style: runStyle })
-    charIdx += line.length
-    if (lineNum < lines.length - 1) {
-      const last = runs[runs.length - 1]
-      if (last) last.length += 1
-      charIdx += 1
+    return styles[line]?.[col] ?? null
+  }
+
+  const runs: any[] = []
+  let prevStyleKey = ""
+  let runStyle: any = null
+  let runLength = 0
+  let rawIdx = 0
+
+  for (let i = 0; i < fullText.length; i++) {
+    const ch = fullText[i]
+    let cs: any = null
+    // Avanca rawIdx apenas se o char eh real (nao um \n adicional do wrap).
+    // Identificacao: se eh \n, so avanca se rawText[rawIdx] tambem for \n.
+    if (ch !== "\n") {
+      cs = styleAtRawIndex(rawIdx)
+      rawIdx++
+    } else if (rawText[rawIdx] === "\n") {
+      cs = styleAtRawIndex(rawIdx)
+      rawIdx++
+    }
+    // Se cs ainda eh null (= \n adicional do wrap), mantem estilo anterior.
+    const fill = cs?.fill ?? textbox.fill ?? "#000000"
+    const fontSize = (cs?.fontSize ?? textbox.fontSize ?? 48) * scale
+    const fontFamily = cs?.fontFamily ?? textbox.fontFamily ?? "Arial"
+    const fontWeight = cs?.fontWeight ?? textbox.fontWeight ?? "normal"
+    const styleKey = `${fill}|${fontSize}|${fontFamily}|${fontWeight}`
+    if (styleKey !== prevStyleKey) {
+      if (runLength > 0 && runStyle) runs.push({ length: runLength, style: runStyle })
+      const isBold = (fontWeight === "bold" || fontWeight === 700)
+      const ps = toPSFont(fontFamily, isBold)
+      runStyle = {
+        font: { name: ps.name },
+        fontSize: Math.round(fontSize),
+        fillColor: parseColor(fill),
+        fauxBold: ps.fauxBold,
+      }
+      prevStyleKey = styleKey
+      runLength = 1
+    } else {
+      runLength++
     }
   }
-  return runs.filter(r => r.length > 0)
+  if (runLength > 0 && runStyle) runs.push({ length: runLength, style: runStyle })
+  return runs
 }
 
 export async function exportPSDBlob(pieceLite: { id?: string; name: string; data: any; width: number; height: number }): Promise<Blob> {
