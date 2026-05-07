@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
+import { RowThumb } from "@/components/ui/RowThumb"
 
 interface Campaign {
   id: string
@@ -139,6 +140,7 @@ export default function CampaignsPage() {
             <table className="w-full border-collapse">
               <thead className="bg-[#fafafa] border-b border-[#E0E0E0]">
                 <tr>
+                  <th className="px-2 py-3 text-left" style={{ width: 72 }}></th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Nome</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Cliente</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Status</th>
@@ -156,6 +158,7 @@ export default function CampaignsPage() {
                       onClick={() => router.push(`/campaigns/${c.id}`)}
                       className="border-b border-[#f0f0f0] last:border-0 hover:bg-[#fafafa] cursor-pointer"
                     >
+                      <td className="px-2 py-2"><RowThumb src={c.keyVision?.thumbnailUrl} alt={c.name} fallbackText={c.name} /></td>
                       <td className="px-4 py-3 font-semibold text-sm">{c.name}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{c.client.name}</td>
                       <td className="px-4 py-3">

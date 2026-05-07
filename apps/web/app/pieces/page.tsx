@@ -9,6 +9,7 @@ import { EditableText } from "@/components/EditableText"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
+import { RowThumb } from "@/components/ui/RowThumb"
 
 interface Piece {
   id: string
@@ -191,6 +192,7 @@ function PiecesContent() {
                     return (
                       <>
                         <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]"></th>
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-2 py-3 border-b border-[#E0E0E0]"></th>
                         <SortHeader col="name" label="Nome" />
                         <SortHeader col="format" label="Formato" />
                         <SortHeader col="size" label="Dimensões" />
@@ -209,6 +211,9 @@ function PiecesContent() {
                       <div onClick={() => toggleSelect(p.id)} className={`w-5 h-5 rounded cursor-pointer flex items-center justify-center ${isSelected(p.id) ? "bg-[#F5C400]" : "bg-white border border-[#E0E0E0]"}`}>
                         {isSelected(p.id) && <span className="text-white text-sm font-bold leading-none">✓</span>}
                       </div>
+                    </td>
+                    <td className="px-2 py-2 w-16 cursor-pointer" onClick={() => router.push(`/pieces/${p.id}`)}>
+                      <RowThumb src={p.imageUrl} alt={p.name} fallbackText={p.format} />
                     </td>
                     <td className="px-4 py-3 font-semibold text-sm" onClick={e => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
                       const res = await fetch(`/api/pieces/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })

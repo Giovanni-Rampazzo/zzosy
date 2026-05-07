@@ -8,6 +8,7 @@ import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
+import { RowThumb } from "@/components/ui/RowThumb"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -422,6 +423,7 @@ export default function CampaignOverviewPage() {
                       }
                       return (
                         <>
+                          <th style={{ padding: "10px 8px", textAlign: "left", width: 72 }}></th>
                           <SortHeader col="name" label="Nome" />
                           <SortHeader col="format" label="Formato" />
                           <SortHeader col="size" label="Tamanho" />
@@ -446,6 +448,10 @@ export default function CampaignOverviewPage() {
                           }}>
                           {isSelected(p.id) && <span style={{ color: "white", fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✓</span>}
                         </div>
+                      </td>
+                      <td style={{ padding: "8px 8px", cursor: "pointer" }}
+                        onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
+                        <RowThumb src={p.imageUrl} alt={p.name} fallbackText={p.format} />
                       </td>
                       <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>

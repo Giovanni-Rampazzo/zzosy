@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const deliveries = await prisma.delivery.findMany({
     where: campaignId ? { campaignId } : undefined,
     include: {
-      campaign: { include: { client: true } },
+      campaign: { include: { client: true, keyVision: { select: { thumbnailUrl: true } } } },
       deliveredBy: { select: { id: true, name: true, email: true } },
       pieces: { include: { piece: { select: { id: true, name: true, imageUrl: true } } } },
       _count: { select: { pieces: true } },

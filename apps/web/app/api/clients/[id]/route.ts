@@ -14,7 +14,10 @@ export async function GET(req: Request, ctx: Ctx) {
     where: { id, tenantId },
     include: {
       campaigns: {
-        include: { _count: { select: { pieces: true } } },
+        include: {
+          _count: { select: { pieces: true } },
+          keyVision: { select: { thumbnailUrl: true } },
+        },
         orderBy: { createdAt: "desc" },
       },
     },

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
+import { RowThumb, colorFromString } from "@/components/ui/RowThumb"
 
 interface User {
   id: string
@@ -111,6 +112,7 @@ export default function AdminUsersPage() {
             <table className="w-full border-collapse">
               <thead className="bg-[#fafafa] border-b border-[#E0E0E0]">
                 <tr>
+                  <th className="px-2 py-3" style={{ width: 72 }}></th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Nome</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Email</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Tenant</th>
@@ -125,6 +127,9 @@ export default function AdminUsersPage() {
                   const isMe = (session?.user as any)?.id === u.id
                   return (
                     <tr key={u.id} className="border-b border-[#f0f0f0] last:border-0 hover:bg-[#fafafa]">
+                      <td className="px-2 py-2">
+                        <RowThumb fallbackText={u.name || u.email} fallbackBg={colorFromString(u.email)} rounded={28} />
+                      </td>
                       <td className="px-4 py-3 text-sm font-semibold">{u.name || <span className="text-[#aaa]">(sem nome)</span>}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{u.email} {isMe && <span className="text-[10px] text-[#F5C400] font-semibold">(você)</span>}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{u.tenant.name}</td>

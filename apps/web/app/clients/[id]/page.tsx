@@ -5,10 +5,12 @@ import TopNav from "@/components/TopNav"
 import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
 import { ClientEditModal } from "@/components/clients/ClientEditModal"
+import { RowThumb } from "@/components/ui/RowThumb"
 
 
 interface Campaign {
   id: string; name: string; createdAt: string; _count: { pieces: number }
+  keyVision?: { thumbnailUrl?: string | null } | null
 }
 interface Client {
   id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; campaigns: Campaign[]
@@ -139,6 +141,7 @@ export default function ClientPage() {
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
                 <tr>
+                  <th style={{textAlign:"left",padding:"8px 8px",borderBottom:"1px solid #E0E0E0",width:72}}></th>
                   {["Campanha","Peças","Criada em",""].map(h => (
                     <th key={h} style={{textAlign:"left",fontSize:11,fontWeight:600,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",padding:"8px 16px",borderBottom:"1px solid #E0E0E0"}}>{h}</th>
                   ))}
@@ -146,9 +149,12 @@ export default function ClientPage() {
               </thead>
               <tbody>
                 {client.campaigns.length === 0 ? (
-                  <tr><td colSpan={4} style={{textAlign:"center",padding:"48px",color:"#888",fontSize:13}}>Nenhuma campanha criada</td></tr>
+                  <tr><td colSpan={5} style={{textAlign:"center",padding:"48px",color:"#888",fontSize:13}}>Nenhuma campanha criada</td></tr>
                 ) : client.campaigns.map(c => (
                   <tr key={c.id} style={{borderBottom:"1px solid #f0f0f0"}}>
+                    <td style={{padding:"8px 8px",cursor:"pointer"}} onClick={() => router.push(`/campaigns/${c.id}`)}>
+                      <RowThumb src={c.keyVision?.thumbnailUrl} alt={c.name} fallbackText={c.name} />
+                    </td>
                     <td style={{padding:"12px 16px",fontWeight:600,fontSize:13}}>
                       <EditableText value={c.name} variant="inline" onSave={async (newName) => {
                         const res = await fetch(`/api/campaigns/${c.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })

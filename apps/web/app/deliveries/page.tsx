@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
+import { RowThumb } from "@/components/ui/RowThumb"
 
 interface Delivery {
   id: string
@@ -11,7 +12,7 @@ interface Delivery {
   zipSize: number | null
   createdAt: string
   formats: string | null
-  campaign: { id: string; name: string; client?: { name: string } | null }
+  campaign: { id: string; name: string; client?: { name: string } | null; keyVision?: { thumbnailUrl?: string | null } | null }
   deliveredBy?: { id: string; name: string | null; email: string } | null
   _count: { pieces: number }
 }
@@ -64,6 +65,7 @@ export default function DeliveriesPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", border: "1px solid #eee", borderRadius: 6 }}>
             <thead>
               <tr style={{ background: "#fafafa", textAlign: "left", fontSize: 12, color: "#666" }}>
+                <th style={{ padding: 8, width: 72 }}></th>
                 <th style={{ padding: 10 }}>Data</th>
                 <th style={{ padding: 10 }}>Campanha</th>
                 <th style={{ padding: 10 }}>Entregue por</th>
@@ -75,6 +77,9 @@ export default function DeliveriesPage() {
             <tbody>
               {deliveries.map(d => (
                 <tr key={d.id} style={{ borderTop: "1px solid #f0f0f0", fontSize: 13 }}>
+                  <td style={{ padding: 8, cursor: "pointer" }} onClick={() => router.push(`/deliveries/${d.id}`)}>
+                    <RowThumb src={d.campaign?.keyVision?.thumbnailUrl} alt={d.campaign?.name} fallbackText={d.campaign?.name} />
+                  </td>
                   <td style={{ padding: 10 }}>{fmtDate(d.createdAt)}</td>
                   <td style={{ padding: 10 }}>
                     <div style={{ fontWeight: 600 }}>{d.campaign?.name ?? "—"}</div>
