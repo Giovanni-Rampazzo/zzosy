@@ -1033,6 +1033,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       if (asset.imageUrl) {
         try {
           const isSvg = /\.svg(\?|$)/i.test(asset.imageUrl)
+          console.log("[IMG-LOAD] start:", { isSvg, url: asset.imageUrl, label: asset.label })
           // SVGs sem width/height explicitos carregam com naturalWidth=0 no <img>,
           // resultando em FabricImage invisivel. Pre-extrai dimensoes do viewBox
           // e injeta no atributo width/height do <img> antes do load.
@@ -1040,9 +1041,11 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           if (isSvg) {
             try {
               const txt = await fetch(asset.imageUrl).then(r => r.text())
+              console.log("[IMG-LOAD] svg fetched, length:", txt.length, "preview:", txt.slice(0, 200))
               const widthAttr = txt.match(/<svg[^>]*\swidth\s*=\s*["']([^"']+)["']/i)?.[1]
               const heightAttr = txt.match(/<svg[^>]*\sheight\s*=\s*["']([^"']+)["']/i)?.[1]
               const viewBox = txt.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+              console.log("[IMG-LOAD] svg attrs:", { widthAttr, heightAttr, viewBox })
               const numFromAttr = (s?: string) => {
                 if (!s) return undefined
                 const n = parseFloat(s)
@@ -1058,6 +1061,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                 }
               }
               if (w && h) svgDims = { w, h }
+              console.log("[IMG-LOAD] svg dims resolved:", svgDims)
             } catch (e) { console.warn("[SVG] falha lendo dimensoes:", e) }
           }
 
@@ -1068,10 +1072,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               el.width = svgDims.w
               el.height = svgDims.h
             }
-            el.onload = () => resolve(new FabricImage(el, { left: posX, top: posY, scaleX, scaleY, angle }))
-            el.onerror = reject
+            el.onload = () => {
+              console.log("[IMG-LOAD] <img> loaded:", { naturalW: el.naturalWidth, naturalH: el.naturalHeight, w: el.width, h: el.height })
+              resolve(new FabricImage(el, { left: posX, top: posY, scaleX, scaleY, angle }))
+            }
+            el.onerror = (err) => { console.error("[IMG-LOAD] <img> error", err); reject(err) }
             el.src = asset.imageUrl!
           })
+          console.log("[IMG-LOAD] FabricImage created:", { w: img.width, h: img.height, scaleX: img.scaleX, scaleY: img.scaleY })
           ;(img as any).__assetId = asset.id
           ;(img as any).__assetLabel = asset.label
           fc.add(img)
