@@ -8,32 +8,98 @@ interface MediaFormat {
   width: number; height: number; dpi: number; category: "DIGITAL"|"OFFLINE"; isDefault: boolean
 }
 
+type FormState = {
+  vehicle: string; media: string; format: string;
+  width: string; height: string; dpi: string; category: string;
+}
+
+const emptyForm: FormState = {vehicle:"",media:"",format:"",width:"",height:"",dpi:"72",category:"DIGITAL"}
+
 export default function MediasPage() {
   const [formats, setFormats] = useState<MediaFormat[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({vehicle:"",media:"",format:"",width:"",height:"",dpi:"72",category:"DIGITAL"})
+  const [form, setForm] = useState<FormState>(emptyForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const isEditing = editingId !== null
 
   useEffect(() => {
     fetch("/api/medias").then(r => r.json()).then(d => { setFormats(Array.isArray(d)?d:[]); setLoading(false) })
   }, [])
 
-  async function handleAdd(e: React.FormEvent) {
+  function openCreate() {
+    setForm(emptyForm)
+    setEditingId(null)
+    setShowModal(true)
+  }
+
+  function openEdit(f: MediaFormat) {
+    setForm({
+      vehicle: f.vehicle ?? "",
+      media: f.media ?? "",
+      format: f.format ?? "",
+      width: String(f.width),
+      height: String(f.height),
+      dpi: String(f.dpi),
+      category: f.category,
+    })
+    setEditingId(f.id)
+    setShowModal(true)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const payload = { ...form, width: +form.width, height: +form.height, dpi: +form.dpi }
+    if (isEditing) {
+      const res = await fetch(`/api/medias/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const updated = await res.json()
+      setFormats(prev => prev.map(f => f.id === editingId ? updated : f))
+    } else {
+      const res = await fetch("/api/medias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const created = await res.json()
+      setFormats(prev => [...prev, created])
+    }
+    setShowModal(false)
+    setForm(emptyForm)
+    setEditingId(null)
+  }
+
+  async function handleDuplicate(f: MediaFormat) {
+    const payload = {
+      vehicle: f.vehicle,
+      media: f.media,
+      format: `${f.format} (cópia)`,
+      width: f.width,
+      height: f.height,
+      dpi: f.dpi,
+      category: f.category,
+    }
     const res = await fetch("/api/medias", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, width:+form.width, height:+form.height, dpi:+form.dpi }),
+      body: JSON.stringify(payload),
     })
-    const mf = await res.json()
-    setFormats(prev => [...prev, mf])
-    setShowModal(false)
-    setForm({vehicle:"",media:"",format:"",width:"",height:"",dpi:"72",category:"DIGITAL"})
+    const created = await res.json()
+    setFormats(prev => [...prev, created])
   }
 
   async function handleDelete(id: string) {
+    if (!confirm("Remover este formato?")) return
     await fetch(`/api/medias/${id}`, { method: "DELETE" })
     setFormats(prev => prev.filter(f => f.id !== id))
+  }
+
+  function closeModal() {
+    setShowModal(false)
+    setEditingId(null)
   }
 
   const digital = formats.filter(f => f.category === "DIGITAL")
@@ -48,7 +114,7 @@ export default function MediasPage() {
             <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Mídias e Formatos</h1>
             <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Formatos disponíveis para geração de peças</p>
           </div>
-          <Button onClick={() => setShowModal(true)}>+ Novo formato</Button>
+          <Button onClick={openCreate}>+ Novo formato</Button>
         </div>
 
         {loading ? <div style={{textAlign:"center",padding:"64px 0",color:"#888"}}>Carregando...</div> : (
@@ -65,9 +131,13 @@ export default function MediasPage() {
                     <div style={{width:150,fontSize:12,color:"#888"}}>{f.format}</div>
                     <div style={{width:110,fontSize:12,color:"#888"}}>{f.width}×{f.height}</div>
                     <div style={{width:70,fontSize:12,color:"#888"}}>{f.dpi}dpi</div>
-                    <div>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <Button variant="secondary" size="sm" onClick={() => handleDuplicate(f)}>Duplicar</Button>
                       {!f.isDefault ? (
-                        <Button variant="danger" size="sm" onClick={() => handleDelete(f.id)}>Remover</Button>
+                        <>
+                          <Button variant="secondary" size="sm" onClick={() => openEdit(f)}>Editar</Button>
+                          <Button variant="danger" size="sm" onClick={() => handleDelete(f.id)}>Remover</Button>
+                        </>
                       ) : (
                         <span style={{fontSize:11,color:"#aaa",padding:"0 8px"}}>padrão</span>
                       )}
@@ -81,13 +151,16 @@ export default function MediasPage() {
       </div>
 
       {showModal && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div
+          onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}
+        >
           <div style={{background:"white",borderRadius:12,width:500,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
-              <span style={{fontWeight:700,fontSize:16}}>Novo Formato</span>
-              <button onClick={() => setShowModal(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
+              <span style={{fontWeight:700,fontSize:16}}>{isEditing ? "Editar Formato" : "Novo Formato"}</span>
+              <button onClick={closeModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
             </div>
-            <form onSubmit={handleAdd} style={{padding:24,display:"flex",flexDirection:"column",gap:12}}>
+            <form onSubmit={handleSubmit} style={{padding:24,display:"flex",flexDirection:"column",gap:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                 {([["vehicle","Veículo","Ex: Instagram"],["media","Mídia","Ex: Feed"],["format","Formato","Ex: Post Quadrado"]] as [string,string,string][]).map(([k,l,p]) => (
                   <div key={k} style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -112,8 +185,8 @@ export default function MediasPage() {
                 ))}
               </div>
               <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>
-                <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Button>
-                <Button type="submit">Salvar</Button>
+                <Button type="button" variant="secondary" onClick={closeModal}>Cancelar</Button>
+                <Button type="submit">{isEditing ? "Salvar alterações" : "Criar"}</Button>
               </div>
             </form>
           </div>
