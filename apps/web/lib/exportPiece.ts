@@ -123,6 +123,43 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
       } else if (asset.type === "IMAGE") {
         if (asset.imageUrl) {
           try {
+            // Mesmo fix do KeyVisionEditor: SVGs sem width/height intrinsecos carregam
+            // com naturalWidth=150 (default do user-agent). Injeta dimensoes do viewBox
+            // no markup via Blob URL pra Fabric pegar tamanho real.
+            const isSvg = /\.svg(\?|$)/i.test(asset.imageUrl)
+            let imgSrc = asset.imageUrl
+            if (isSvg) {
+              try {
+                const txt = await fetch(asset.imageUrl).then(r => r.text())
+                const widthAttr = txt.match(/<svg[^>]*\swidth\s*=\s*["']([^"']+)["']/i)?.[1]
+                const heightAttr = txt.match(/<svg[^>]*\sheight\s*=\s*["']([^"']+)["']/i)?.[1]
+                const viewBox = txt.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+                const numFromAttr = (s?: string) => {
+                  if (!s) return undefined
+                  const n = parseFloat(s)
+                  return Number.isFinite(n) && n > 0 ? n : undefined
+                }
+                let w = numFromAttr(widthAttr)
+                let h = numFromAttr(heightAttr)
+                if ((!w || !h) && viewBox) {
+                  const parts = viewBox.split(/[\s,]+/).map(Number)
+                  if (parts.length === 4 && parts.every(Number.isFinite)) {
+                    w = w ?? parts[2]
+                    h = h ?? parts[3]
+                  }
+                }
+                if (w && h && (!widthAttr || !heightAttr)) {
+                  const patched = txt.replace(/<svg\b([^>]*)>/i, (_, attrs) => {
+                    let a = attrs
+                    if (!/\swidth\s*=/i.test(a)) a += ` width="${w}"`
+                    if (!/\sheight\s*=/i.test(a)) a += ` height="${h}"`
+                    return `<svg${a}>`
+                  })
+                  const blob = new Blob([patched], { type: "image/svg+xml" })
+                  imgSrc = URL.createObjectURL(blob)
+                }
+              } catch (e) { console.warn("[SVG-EXPORT] falha lendo dimensoes:", e) }
+            }
             const img = await new Promise<any>((resolve, reject) => {
               const ie = new window.Image()
               ie.crossOrigin = "anonymous"
@@ -132,7 +169,7 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
                 angle: layer.rotation ?? 0,
               }))
               ie.onerror = reject
-              ie.src = asset.imageUrl!
+              ie.src = imgSrc
             })
             ;(img as any).__assetId = asset.id
             ;(img as any).__assetLabel = asset.label
