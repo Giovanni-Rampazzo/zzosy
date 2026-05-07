@@ -244,39 +244,13 @@ export default function CampaignOverviewPage() {
                   {selected.length > 0 ? (
                     <>
                       <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{selected.length} selecionada(s)</span>
-                      <button
-                        onClick={() => setBulkStatusOpen(o => !o)}
-                        style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, color: "#333", cursor: "pointer", position: "relative" }}
-                      >
-                        ◐ Status ▾
-                      </button>
-                      <button
-                        onClick={() => setExportOpen(true)}
-                        style={{ background: "#111", color: "white", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
-                      >
-                        ↗ Exportar ({selected.length})
-                      </button>
-                      <button
-                        onClick={(e) => deleteSelected(e.altKey)}
-                        title="Option/Alt+click pra apagar sem confirmação"
-                        style={{ background: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
-                      >
-                        🗑 Apagar ({selected.length})
-                      </button>
-                      <button
-                        onClick={() => setSelected([])}
-                        style={{ background: "transparent", color: "#888", border: "none", padding: "5px 8px", fontSize: 11, cursor: "pointer" }}
-                      >
-                        Cancelar
-                      </button>
+                      <Button variant="secondary" size="sm" onClick={() => setBulkStatusOpen(o => !o)}>◐ Status ▾</Button>
+                      <Button variant="dark" size="sm" onClick={() => setExportOpen(true)}>↗ Exportar ({selected.length})</Button>
+                      <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑 Apagar ({selected.length})</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Cancelar</Button>
                     </>
                   ) : (
-                    <button
-                      onClick={toggleSelectAll}
-                      style={{ background: "transparent", border: "1px solid #E0E0E0", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 600, color: "#666", cursor: "pointer" }}
-                    >
-                      Selecionar tudo
-                    </button>
+                    <Button variant="secondary" size="sm" onClick={toggleSelectAll}>Selecionar tudo</Button>
                   )}
                   <div style={{ display: "flex", border: "1px solid #E0E0E0", borderRadius: 6, overflow: "hidden" }}>
                     <button onClick={() => setView("grid")}
@@ -288,10 +262,7 @@ export default function CampaignOverviewPage() {
                       Lista
                     </button>
                   </div>
-                  <button onClick={() => router.push(`/pieces?campaignId=${id}`)}
-                    style={{ background: "transparent", border: "none", color: "#F5C400", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                    Ver todas →
-                  </button>
+                  <Button variant="link" size="sm" onClick={() => router.push(`/pieces?campaignId=${id}`)}>Ver todas →</Button>
                 </>
               )}
             </div>
@@ -393,13 +364,7 @@ export default function CampaignOverviewPage() {
                       <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "auto" }}>
-                      <button
-                        onClick={(e) => deletePiece(p.id, e.altKey)}
-                        style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "6px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer" }}
-                        title="Option/Alt+click pra apagar sem confirmação"
-                      >
-                        🗑
-                      </button>
+                      <Button variant="ghost" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑</Button>
                     </div>
                   </div>
                 </div>
@@ -474,13 +439,7 @@ export default function CampaignOverviewPage() {
                         <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                        <button
-                          onClick={(e) => deletePiece(p.id, e.altKey)}
-                          style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 5, padding: "5px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer" }}
-                          title="Option/Alt+click pra apagar sem confirmação"
-                        >
-                          🗑
-                        </button>
+                        <Button variant="ghost" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑</Button>
                       </td>
                     </tr>
                   ))}
