@@ -386,14 +386,23 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
   for (let i = 0; i < fullText.length; i++) {
     const ch = fullText[i]
     let cs: any = null
-    // Avanca rawIdx apenas se o char eh real (nao um \n adicional do wrap).
-    // Identificacao: se eh \n, so avanca se rawText[rawIdx] tambem for \n.
     if (ch !== "\n") {
+      // Char comum: avanca rawIdx e usa estilo do char correspondente
       cs = styleAtRawIndex(rawIdx)
       rawIdx++
     } else if (rawText[rawIdx] === "\n") {
+      // \n real do rawText: avanca e usa estilo do \n
       cs = styleAtRawIndex(rawIdx)
       rawIdx++
+    } else {
+      // \n adicional inserido pelo auto-wrap do Fabric. Esse \n SUBSTITUI um
+      // espaco no rawText (Fabric quebra entre palavras). Pra manter sincronia,
+      // consumimos o espaco correspondente do rawText e usamos o estilo dele.
+      // Se rawText[rawIdx] nao for um espaco (raro), so mantem estilo anterior.
+      if (rawText[rawIdx] === " ") {
+        cs = styleAtRawIndex(rawIdx)
+        rawIdx++
+      }
     }
     // Se cs ainda eh null (= \n adicional do wrap), mantem estilo anterior.
     const fill = cs?.fill ?? textbox.fill ?? "#000000"
