@@ -302,6 +302,156 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
+  // Hand tool (Photoshop-style): segura Space pra ativar pan do canvas.
+  // - So ativa fora de inputs, fora de edicao inline de texto e fora de overlays/menus
+  // - Cursor vira grab/grabbing, selecao/edit do canvas desabilitada enquanto ativa
+  // - Pan via mouse:down/move/up modificando viewportTransform direto (Photoshop-style)
+  // - Soltar Space restaura tudo. O viewport fica onde foi pannado (nao reseta)
+  useEffect(() => {
+    let isSpaceDown = false
+    let isPanning = false
+    let lastX = 0, lastY = 0
+    // Snapshots de estado pra restaurar ao soltar Space
+    let savedSelection: boolean | null = null
+    let savedCursors: { default: string; hover: string; move: string } | null = null
+    let savedObjectSelectability: Map<any, boolean> | null = null
+
+    function isTypingTarget(t: EventTarget | null): boolean {
+      if (!t) return false
+      const el = t as HTMLElement
+      const tag = (el.tagName || "").toUpperCase()
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
+      if (el.isContentEditable) return true
+      return false
+    }
+
+    function activate() {
+      const fc = fabricRef.current
+      if (!fc || isSpaceDown) return
+      const active = fc.getActiveObject() as any
+      if (active?.isEditing) return // nao interfere com edicao inline de texto
+      isSpaceDown = true
+      // Salva estado anterior
+      savedSelection = fc.selection ?? true
+      savedCursors = {
+        default: fc.defaultCursor ?? "default",
+        hover: fc.hoverCursor ?? "move",
+        move: fc.moveCursor ?? "move",
+      }
+      savedObjectSelectability = new Map()
+      for (const o of fc.getObjects()) {
+        savedObjectSelectability.set(o, (o as any).selectable !== false)
+        ;(o as any).selectable = false
+        ;(o as any).evented = false
+      }
+      fc.selection = false
+      fc.defaultCursor = "grab"
+      fc.hoverCursor = "grab"
+      fc.moveCursor = "grab"
+      fc.discardActiveObject()
+      fc.requestRenderAll()
+    }
+
+    function deactivate() {
+      const fc = fabricRef.current
+      if (!fc || !isSpaceDown) return
+      isSpaceDown = false
+      isPanning = false
+      // Restaura estado
+      if (savedCursors) {
+        fc.defaultCursor = savedCursors.default
+        fc.hoverCursor = savedCursors.hover
+        fc.moveCursor = savedCursors.move
+      }
+      if (savedSelection !== null) fc.selection = savedSelection
+      if (savedObjectSelectability) {
+        for (const o of fc.getObjects()) {
+          const wasSelectable = savedObjectSelectability.get(o) ?? true
+          ;(o as any).selectable = wasSelectable
+          ;(o as any).evented = wasSelectable
+        }
+      }
+      savedSelection = null
+      savedCursors = null
+      savedObjectSelectability = null
+      fc.requestRenderAll()
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code !== "Space") return
+      if (isTypingTarget(e.target)) return // permite Space normal em inputs
+      // Importante: prevent default pra Space nao scrollar pagina nem inserir em outros lugares
+      e.preventDefault()
+      activate()
+    }
+
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code !== "Space") return
+      deactivate()
+    }
+
+    // Pan via mouse handlers do Fabric, ativos so quando isSpaceDown
+    function onMouseDown(opt: any) {
+      if (!isSpaceDown) return
+      const fc = fabricRef.current; if (!fc) return
+      isPanning = true
+      const ev = opt.e as MouseEvent
+      lastX = ev.clientX
+      lastY = ev.clientY
+      fc.defaultCursor = "grabbing"
+    }
+    function onMouseMove(opt: any) {
+      if (!isPanning) return
+      const fc = fabricRef.current; if (!fc) return
+      const ev = opt.e as MouseEvent
+      const dx = ev.clientX - lastX
+      const dy = ev.clientY - lastY
+      lastX = ev.clientX
+      lastY = ev.clientY
+      const vt = fc.viewportTransform
+      if (!vt) return
+      vt[4] += dx
+      vt[5] += dy
+      fc.setViewportTransform(vt)
+      fc.requestRenderAll()
+    }
+    function onMouseUp() {
+      if (!isPanning) return
+      isPanning = false
+      const fc = fabricRef.current; if (!fc) return
+      fc.defaultCursor = "grab"
+      fc.requestRenderAll()
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("keyup", onKeyUp)
+    // Se a janela perde foco (tab change), desativa pra nao ficar travado
+    window.addEventListener("blur", deactivate)
+
+    // Liga handlers do Fabric quando o canvas existir
+    let attachedFc: any = null
+    const attachInterval = setInterval(() => {
+      const fc = fabricRef.current
+      if (!fc || attachedFc === fc) return
+      attachedFc = fc
+      fc.on("mouse:down", onMouseDown)
+      fc.on("mouse:move", onMouseMove)
+      fc.on("mouse:up", onMouseUp)
+    }, 100)
+
+    return () => {
+      clearInterval(attachInterval)
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener("blur", deactivate)
+      if (attachedFc) {
+        attachedFc.off("mouse:down", onMouseDown)
+        attachedFc.off("mouse:move", onMouseMove)
+        attachedFc.off("mouse:up", onMouseUp)
+      }
+    }
+  }, [])
+
   // beforeunload: avisa se ha mudancas nao salvas
   useEffect(() => {
     function onBefore(e: BeforeUnloadEvent) {
