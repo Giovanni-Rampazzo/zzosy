@@ -233,7 +233,7 @@ export default function CampaignAssetsPage() {
             tabIndex={-1}>
             <Button variant="secondary" size="sm" onClick={() => setShowAddMenu(s => !s)}>+ Adicionar asset</Button>
             {showAddMenu && (
-              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 160 }}>
+              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 240 }}>
                 <button onClick={addTextAsset} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
                   onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
@@ -244,6 +244,10 @@ export default function CampaignAssetsPage() {
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
                   🖼 Imagem <span style={{ fontSize: 11, color: "#aaa" }}>(PNG, JPG, SVG…)</span>
                 </button>
+                <div style={{ borderTop: "1px solid #f0f0f0", padding: "8px 14px", fontSize: 11, color: "#888", lineHeight: 1.5, background: "#fafafa", borderRadius: "0 0 6px 6px" }}>
+                  Para vetor: exporte como <strong>SVG</strong> do Illustrator<br/>
+                  <span style={{ color: "#aaa" }}>(File → Export → SVG)</span>
+                </div>
               </div>
             )}
             <input ref={newImageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
