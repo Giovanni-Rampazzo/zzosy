@@ -6,6 +6,7 @@ import { writeFile, mkdir } from "fs/promises"
 import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
+import { maybeSanitizeImage } from "@/lib/svgSanitize"
 
 type Params = { id: string }
 export const maxDuration = 30
@@ -41,8 +42,10 @@ export async function POST(req: Request, context: { params: Promise<Params> }) {
     const label = String(fd.get("label") ?? "Nova imagem")
     if (!file) return NextResponse.json({ error: "Imagem nao enviada" }, { status: 400 })
 
-    const buf = Buffer.from(await file.arrayBuffer())
+    let buf = Buffer.from(await file.arrayBuffer())
     const ext = (file.name.split(".").pop() || "png").toLowerCase()
+    buf = maybeSanitizeImage(buf, ext)
+
     const filename = `asset-${randomUUID()}.${ext}`
     const dir = path.join(process.cwd(), "public", "uploads", "campaigns", id)
     if (!existsSync(dir)) await mkdir(dir, { recursive: true })

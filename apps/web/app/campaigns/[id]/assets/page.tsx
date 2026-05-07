@@ -242,11 +242,11 @@ export default function CampaignAssetsPage() {
                 <button onClick={() => { setShowAddMenu(false); newImageInputRef.current?.click() }} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
                   onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                  🖼 Imagem
+                  🖼 Imagem <span style={{ fontSize: 11, color: "#aaa" }}>(PNG, JPG, SVG…)</span>
                 </button>
               </div>
             )}
-            <input ref={newImageInputRef} type="file" accept="image/*" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
+            <input ref={newImageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
               onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
             <PsdImporter campaignId={id} onImported={load} />
             {campaign.assets.length > 0 && (
@@ -296,7 +296,7 @@ export default function CampaignAssetsPage() {
                         )}
                         <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 10px", background: "#F8F9FA" }}>
                           Trocar imagem
-                          <input type="file" accept="image/*" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
+                          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
                             onChange={e => { const f = e.target.files?.[0]; if (f) uploadAssetImage(asset.id, f); e.target.value = "" }} />
                         </label>
                       </div>
