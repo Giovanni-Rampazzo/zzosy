@@ -1539,6 +1539,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           title="Voltar para a campanha">
           ← Voltar para campanha
         </button>
+        <button onClick={() => {
+          const go = () => router.push(`/campaigns/${campaignId}/assets`)
+          if (isDirtyRef.current) setConfirmExit(() => go)
+          else go()
+        }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
+          title="Ir para a pagina de assets desta campanha">
+          📁 Assets
+        </button>
         <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
         <div style={{ flex: 1 }} />
         {saving && <span style={{ fontSize: 11, color: "#555" }}>Salvando...</span>}
@@ -1567,23 +1575,65 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               setExportOpen(true)
               return
             }
-            // Modo matriz: busca todas as pecas da campanha
+            // Modo matriz (KV): exporta SO O KV, nao todas as pecas geradas.
+            // Constroi pseudo-piece a partir do estado atual do canvas (layers + bg).
             try {
-              const res = await fetch(`/api/pieces?campaignId=${campaignId}`)
-              if (!res.ok) throw new Error()
-              const list = await res.json()
-              if (!Array.isArray(list) || list.length === 0) {
-                alert("Nenhuma peca gerada ainda. Use ▶ Gerar Pecas primeiro.")
-                return
+              const fc = fabricRef.current
+              if (!fc) { alert("Canvas indisponivel"); return }
+              const W = canvasWRef.current
+              const H = canvasHRef.current
+              const layers = fc.getObjects()
+                .filter((o: any) => !o.__isBg && o.__assetId)
+                .map((o: any, i: number) => {
+                  const isText = o.type === "textbox" || o.type === "i-text"
+                  const overrides: any = {}
+                  if (isText) {
+                    overrides.content = o.text
+                    if (o.fill) overrides.fill = o.fill
+                    if (o.fontSize) overrides.fontSize = o.fontSize
+                    if (o.fontFamily) overrides.fontFamily = o.fontFamily
+                    if (o.fontWeight) overrides.fontWeight = o.fontWeight
+                    if (o.fontStyle) overrides.fontStyle = o.fontStyle
+                    if (o.textAlign) overrides.textAlign = o.textAlign
+                    if (o.lineHeight !== undefined) overrides.lineHeight = o.lineHeight
+                    if (o.styles && Object.keys(o.styles).length) overrides.styles = o.styles
+                    if ((o as any).leadingPt !== undefined) overrides.leadingPt = (o as any).leadingPt
+                  }
+                  return {
+                    assetId: o.__assetId,
+                    posX: Math.round(o.left ?? 0),
+                    posY: Math.round(o.top ?? 0),
+                    scaleX: o.scaleX ?? 1,
+                    scaleY: o.scaleY ?? 1,
+                    rotation: o.angle ?? 0,
+                    zIndex: i,
+                    width: Math.round(o.width ?? 400),
+                    height: Math.round(o.height ?? 100),
+                    overrides,
+                  }
+                })
+              const pseudoData = {
+                version: 2,
+                width: W, height: H,
+                bgColor: bgColorRef.current,
+                layers,
+                sourceWidth: W,
+                sourceHeight: H,
               }
-              setExportPieces(list.map((p: any) => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height })))
+              setExportPieces([{
+                id: `kv-${campaignId}`,
+                name: `${campaign.name} (Key Vision)`,
+                data: pseudoData,
+                width: W, height: H,
+              }])
               setExportOpen(true)
-            } catch {
-              alert("Falha ao carregar pecas para exportar")
+            } catch (e) {
+              console.error("[KV-EXPORT] falha", e)
+              alert("Falha ao preparar exportacao do Key Vision")
             }
           }}
           style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#aaa" }}
-          title={isPieceMode ? "Exportar esta peca" : "Exportar todas as pecas da campanha"}
+          title={isPieceMode ? "Exportar esta peca" : "Exportar Key Vision (matriz)"}
         >
           ↗ Exportar
         </button>
