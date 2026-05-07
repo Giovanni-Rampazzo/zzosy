@@ -562,7 +562,14 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
               transform,
             },
           })
-          console.log("[PSD-SMART]", { name, guid: linked.guid, w: linked.w, h: linked.h })
+          console.log("[PSD-SMART]", {
+            name,
+            guid: linked.guid,
+            svgW: linked.w, svgH: linked.h,
+            psdBbox: { left, top, right, bottom, w, h },
+            transform,
+            objFabric: { left: obj.left, top: obj.top, scaleX: obj.scaleX, scaleY: obj.scaleY, w: obj.width, h: obj.height },
+          })
           continue
         }
       }
