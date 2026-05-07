@@ -40,13 +40,31 @@ export default function CampaignOverviewPage() {
   const [loadTs, setLoadTs] = useState(Date.now())
   const [deliveryOpen, setDeliveryOpen] = useState(false)
   const [view, setView] = useState<"grid" | "list">("grid")
-  const [selected, setSelected] = useState<string[]>([])
+  const [selected, setSelectedRaw] = useState<string[]>([])
+  // Wrapper de debug temporario pra rastrear quem zera selected
+  const setSelected = (next: any) => {
+    if (typeof next === "function") {
+      setSelectedRaw(prev => {
+        const result = next(prev)
+        if (Array.isArray(result) && result.length === 0 && prev.length > 0) {
+          console.log("[SEL-CLEAR] (function form)", { prev, stack: new Error().stack?.split("\n").slice(1, 5).join("\n") })
+        }
+        return result
+      })
+    } else {
+      if (Array.isArray(next) && next.length === 0) {
+        console.log("[SEL-CLEAR] (direct)", { stack: new Error().stack?.split("\n").slice(1, 5).join("\n") })
+      }
+      setSelectedRaw(next)
+    }
+  }
   const [exportOpen, setExportOpen] = useState(false)
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
 
   async function loadAll() {
+    console.log("[LOAD-ALL] disparou em", new Date().toISOString().slice(11, 19))
     const [c, p] = await Promise.all([
       fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
       fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
