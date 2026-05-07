@@ -217,9 +217,24 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
   let piece: any = pieceLite
   let assets: Asset[] = []
   if (pieceLite.id) {
-    const fetched = await fetchPieceWithAssets(pieceLite.id)
-    piece = fetched.piece
-    assets = fetched.assets
+    if (pieceLite.id.startsWith("kv-")) {
+      const campaignId = pieceLite.id.slice(3)
+      const r = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+      if (r.ok) {
+        const camp = await r.json()
+        if (Array.isArray(camp.assets)) {
+          assets = camp.assets.map((a: any) => ({
+            id: a.id, type: a.type, label: a.label,
+            value: a.value ?? null, imageUrl: a.imageUrl ?? null,
+            content: a.content ?? null,
+          }))
+        }
+      }
+    } else {
+      const fetched = await fetchPieceWithAssets(pieceLite.id)
+      piece = fetched.piece
+      assets = fetched.assets
+    }
   }
   const fc = await buildPieceCanvas(piece, assets)
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
@@ -378,9 +393,27 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   let piece: any = pieceLite
   let assets: Asset[] = []
   if (pieceLite.id) {
-    const fetched = await fetchPieceWithAssets(pieceLite.id)
-    piece = fetched.piece
-    assets = fetched.assets
+    // Pseudo-piece "kv-{campaignId}" eh exportacao do Key Vision direto do editor
+    // (nao corresponde a uma piece no banco). Busca apenas os assets da campanha.
+    if (pieceLite.id.startsWith("kv-")) {
+      const campaignId = pieceLite.id.slice(3)
+      const r = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+      if (r.ok) {
+        const camp = await r.json()
+        if (Array.isArray(camp.assets)) {
+          assets = camp.assets.map((a: any) => ({
+            id: a.id, type: a.type, label: a.label,
+            value: a.value ?? null, imageUrl: a.imageUrl ?? null,
+            content: a.content ?? null,
+          }))
+        }
+      }
+      // piece ja eh o pieceLite com data preenchido (vem do editor)
+    } else {
+      const fetched = await fetchPieceWithAssets(pieceLite.id)
+      piece = fetched.piece
+      assets = fetched.assets
+    }
   }
   const fc = await buildPieceCanvas(piece, assets)
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
