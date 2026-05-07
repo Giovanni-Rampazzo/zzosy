@@ -53,7 +53,7 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
       // Em chamadas seguintes, revalida que o user/tenant ainda existem.
-      // Se o banco foi resetado, a sessao antiga eh invalidada (token vira nulo).
+      // Se o banco foi resetado, marca o token como invalido (mas nao retorna null - quebra NextAuth).
       if (token.id) {
         try {
           const stillExists = await prisma.user.findUnique({
@@ -61,8 +61,9 @@ export const authOptions: NextAuthOptions = {
             select: { id: true, tenantId: true, role: true },
           });
           if (!stillExists) {
-            // User deletado/banco resetado — invalida o token forcando logout
-            return null as any;
+            // User deletado/banco resetado — limpa o token
+            // Endpoints que checam tenant retornarao 401 STALE_SESSION
+            return { ...token, id: undefined, tenantId: undefined, role: undefined } as any;
           }
           // Sincroniza tenantId e role caso tenham mudado no banco
           token.tenantId = stillExists.tenantId;
