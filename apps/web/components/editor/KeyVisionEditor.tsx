@@ -1984,7 +1984,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                 <label style={{
                   width: 36, height: 36, borderRadius: 6,
-                  background: mixedFill ? "linear-gradient(135deg, #aaa 25%, #ccc 25%, #ccc 50%, #aaa 50%, #aaa 75%, #ccc 75%)" : effectiveFill,
+                  backgroundImage: mixedFill ? "linear-gradient(135deg, #aaa 25%, #ccc 25%, #ccc 50%, #aaa 50%, #aaa 75%, #ccc 75%)" : "none",
+                  backgroundColor: mixedFill ? undefined : effectiveFill,
                   backgroundSize: mixedFill ? "8px 8px" : undefined,
                   border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden",
                 }}>
