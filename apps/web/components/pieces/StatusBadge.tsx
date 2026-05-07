@@ -19,6 +19,7 @@ export function StatusBadge({ pieceId, entityType = "piece", status, size = "md"
   const [updating, setUpdating] = useState(false)
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const meta = statusMeta(current)
   const padding = size === "sm" ? "2px 8px" : "4px 12px"
   const fontSize = size === "sm" ? 11 : 12
@@ -42,15 +43,23 @@ export function StatusBadge({ pieceId, entityType = "piece", status, size = "md"
     })
   }, [open])
 
-  // Fecha ao clicar fora ou ao rolar a pagina
+  // Fecha ao clicar fora (verifica por ref) ou ao rolar a janela.
+  // - mousedown checa se o click foi dentro do botao ou do menu — se sim, ignora.
+  // - scroll soh ouve a window (sem capture), nao scrolls internos da pagina.
   useEffect(() => {
     if (!open) return
-    function close() { setOpen(false) }
-    document.addEventListener("scroll", close, true)
-    document.addEventListener("mousedown", close)
+    function onMouseDown(ev: MouseEvent) {
+      const target = ev.target as Node
+      if (btnRef.current?.contains(target)) return // click no proprio botao — onClick cuida
+      if (menuRef.current?.contains(target)) return // click numa opcao — onClick cuida
+      setOpen(false)
+    }
+    function onScroll() { setOpen(false) }
+    document.addEventListener("mousedown", onMouseDown)
+    window.addEventListener("scroll", onScroll)
     return () => {
-      document.removeEventListener("scroll", close, true)
-      document.removeEventListener("mousedown", close)
+      document.removeEventListener("mousedown", onMouseDown)
+      window.removeEventListener("scroll", onScroll)
     }
   }, [open])
 
@@ -94,7 +103,7 @@ export function StatusBadge({ pieceId, entityType = "piece", status, size = "md"
       </button>
       {open && menuPos && (
         <div
-          onMouseDown={e => e.stopPropagation()}
+          ref={menuRef}
           style={{
             position: "fixed", top: menuPos.top, left: menuPos.left,
             background: "#fff", border: "1px solid #e5e5e5", borderRadius: 6,
