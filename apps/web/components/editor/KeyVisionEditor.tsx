@@ -1079,10 +1079,8 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             el.onerror = reject
             el.src = imgSrc
           })
-          // Libera o Blob URL apos uso (Fabric ja copiou pra textura interna)
-          if (imgSrc !== asset.imageUrl && imgSrc.startsWith("blob:")) {
-            URL.revokeObjectURL(imgSrc)
-          }
+          // Nota: nao revogamos o Blob URL aqui porque Fabric pode reler a fonte
+          // em re-renders/exports. Browser libera o blob no GC quando nada mais usa.
           ;(img as any).__assetId = asset.id
           ;(img as any).__assetLabel = asset.label
           fc.add(img)

@@ -455,9 +455,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const layerCanvas = document.createElement("canvas")
       layerCanvas.width = w
       layerCanvas.height = h
-      const lctx = layerCanvas.getContext("2d", { alpha: false } as any)!
-      lctx.fillStyle = "#ffffff"
-      lctx.fillRect(0, 0, w, h)
+      const lctx = layerCanvas.getContext("2d")! // alpha:true (transparente) — antes forcava branco e quebrava qualquer asset com transparencia ou cor branca
       try {
         const img = obj.toCanvasElement({ multiplier: 1 })
         lctx.drawImage(img, 0, 0, w, h)
