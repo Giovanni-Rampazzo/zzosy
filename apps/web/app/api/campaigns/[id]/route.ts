@@ -28,7 +28,7 @@ export async function GET(req: Request, ctx: Ctx) {
     where: { id, client: { tenantId } },
     include: {
       client: true,
-      assets: { orderBy: { order: "asc" } },
+      assets: { orderBy: { order: "asc" }, include: { smartObject: true } },
       keyVision: true,
     },
   })

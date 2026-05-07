@@ -58,6 +58,51 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       const imageBlobs: Blob[] = []
       let zIndex = 0
 
+      // Smart Objects: extrai linkedFiles do PSD (bytes originais embeddados)
+      // e mapeia GUID -> indice. Layers com placedLayer apontam pro GUID, e
+      // ai linkamos o asset ao SO correspondente.
+      const linkedFiles = (psd as any).linkedFiles ?? []
+      const linkedBlobs: Blob[] = []
+      const linkedMeta: Array<{ guid: string; mime: string; originalName: string; sizeBytes: number; width?: number; height?: number }> = []
+      const guidToIndex = new Map<string, number>()
+      for (const lf of linkedFiles) {
+        const guid = lf.id
+        if (!guid) continue
+        const data: Uint8Array | undefined = lf.data
+        if (!data) continue
+        const name: string = lf.name ?? `linked-${guid}`
+        // Deduz mime pela extensao do nome (ag-psd nao expoe mime diretamente)
+        const ext = (name.split(".").pop() ?? "").toLowerCase()
+        const mime =
+          ext === "svg" ? "image/svg+xml" :
+          ext === "ai"  ? "application/postscript" :
+          ext === "pdf" ? "application/pdf" :
+          ext === "psd" ? "image/vnd.adobe.photoshop" :
+          ext === "png" ? "image/png" :
+          ext === "jpg" || ext === "jpeg" ? "image/jpeg" :
+          "application/octet-stream"
+        // Pra SVG da pra extrair viewBox; pros outros formatos deixa undefined
+        let width: number | undefined, height: number | undefined
+        if (mime === "image/svg+xml") {
+          try {
+            const txt = new TextDecoder().decode(data)
+            const vb = txt.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+            if (vb) {
+              const parts = vb.split(/[\s,]+/).map(Number)
+              if (parts.length === 4 && parts.every(Number.isFinite)) {
+                width = parts[2]; height = parts[3]
+              }
+            }
+          } catch { /* ignora */ }
+        }
+        const idx = linkedBlobs.length
+        // Constroi Blob a partir dos bytes — Buffer pra blob
+        // OBS: Uint8Array satisfaz BlobPart, mas TS as vezes reclama em modos strict
+        linkedBlobs.push(new Blob([data as any], { type: mime }))
+        linkedMeta.push({ guid, mime, originalName: name, sizeBytes: data.byteLength, width, height })
+        guidToIndex.set(guid, idx)
+      }
+
       for (const layer of allLayers) {
         const name = (layer.name ?? "").trim()
         if (!name || name === "Background") { zIndex++; continue }
@@ -113,7 +158,17 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             const blob = await canvasToBlob(layer.canvas as HTMLCanvasElement)
             const imageIndex = imageBlobs.length
             imageBlobs.push(blob)
-            assets.push({ label: name, type: "IMAGE", imageIndex, posX: left, posY: top, width, height, zIndex })
+            // Smart Object: se layer tem placedLayer.id, linkamos ao linkedFile
+            // correspondente pra preservar o original. O preview raster (canvas)
+            // continua usado como imageUrl pro editor renderizar.
+            const placed: any = (layer as any).placedLayer
+            const linkedIndex = placed?.id ? guidToIndex.get(placed.id) : undefined
+            assets.push({
+              label: name, type: "IMAGE",
+              imageIndex,
+              linkedIndex,           // index no linkedBlobs (se for smart object)
+              posX: left, posY: top, width, height, zIndex,
+            })
           } catch (e) {
             console.warn("Falha ao extrair imagem do layer", name, e)
           }
@@ -126,7 +181,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         return
       }
 
-      setProgress(`Enviando ${assets.length} assets e ${imageBlobs.length} imagens...`)
+      setProgress(`Enviando ${assets.length} assets, ${imageBlobs.length} imagens, ${linkedBlobs.length} smart objects...`)
 
       const fd = new FormData()
       fd.append("psd", file)
@@ -135,6 +190,12 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       fd.append("canvasHeight", String(psd.height))
       fd.append("bgColor", "#ffffff")
       imageBlobs.forEach((b, i) => fd.append("images", b, `layer-${i}.png`))
+      // Smart objects: bytes + metadados (mesmo index na lista do backend)
+      fd.append("linkedMeta", JSON.stringify(linkedMeta))
+      linkedBlobs.forEach((b, i) => {
+        const meta = linkedMeta[i]
+        fd.append("linked", b, meta.originalName ?? `linked-${i}`)
+      })
 
       const res = await fetch(`/api/campaigns/${campaignId}/import-psd`, { method: "POST", body: fd })
       const data = await res.json()

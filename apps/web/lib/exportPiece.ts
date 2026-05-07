@@ -35,6 +35,37 @@ function buildFileName(campaignName: string | undefined, piece: { name: string; 
 
 interface Asset {
   id: string; type: string; label: string; value: string | null; imageUrl: string | null; content: any
+  smartObject?: {
+    id: string
+    guid: string
+    filePath: string
+    mime: string
+    originalName: string
+    width: number | null
+    height: number | null
+  } | null
+}
+
+// Normaliza um asset vindo da API (CampaignAsset com include smartObject) pro
+// formato local Asset usado pelos export pipelines.
+function normalizeAsset(a: any): Asset {
+  return {
+    id: a.id,
+    type: a.type,
+    label: a.label,
+    value: a.value ?? null,
+    imageUrl: a.imageUrl ?? null,
+    content: a.content ?? null,
+    smartObject: a.smartObject ? {
+      id: a.smartObject.id,
+      guid: a.smartObject.guid,
+      filePath: a.smartObject.filePath,
+      mime: a.smartObject.mime,
+      originalName: a.smartObject.originalName,
+      width: a.smartObject.width ?? null,
+      height: a.smartObject.height ?? null,
+    } : null,
+  }
 }
 
 function parseContent(raw: any): any[] {
@@ -211,7 +242,7 @@ async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; asse
   const piece = await pres.json()
   const cres = await fetch(`/api/campaigns/${piece.campaignId}`)
   const camp = await cres.json()
-  return { piece, assets: camp.assets ?? [] }
+  return { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
 }
 
 async function renderToCanvas(pieceLite: { id?: string; name: string; data: any; width: number; height: number }): Promise<HTMLCanvasElement> {
@@ -225,11 +256,7 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
       if (r.ok) {
         const camp = await r.json()
         if (Array.isArray(camp.assets)) {
-          assets = camp.assets.map((a: any) => ({
-            id: a.id, type: a.type, label: a.label,
-            value: a.value ?? null, imageUrl: a.imageUrl ?? null,
-            content: a.content ?? null,
-          }))
+          assets = camp.assets.map(normalizeAsset)
         }
       }
     } else {
@@ -442,11 +469,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       if (r.ok) {
         const camp = await r.json()
         if (Array.isArray(camp.assets)) {
-          assets = camp.assets.map((a: any) => ({
-            id: a.id, type: a.type, label: a.label,
-            value: a.value ?? null, imageUrl: a.imageUrl ?? null,
-            content: a.content ?? null,
-          }))
+          assets = camp.assets.map(normalizeAsset)
         }
       }
       // piece ja eh o pieceLite com data preenchido (vem do editor)
@@ -485,23 +508,66 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     })
   }
 
-  // Carrega o SVG bruto do servidor e cria entrada em linkedFiles, retornando o GUID
-  // e as dimensoes intrinsecas (necessarias pelo ag-psd no placedLayer).
-  // Usa cache pra nao baixar varias vezes o mesmo asset.
+  // Embedda um arquivo "linkado" (Smart Object) no PSD, retornando GUID + dimensoes.
+  // Prioridades:
+  // 1. Se o asset tem smartObject (preservado de um import), usa os bytes ORIGINAIS
+  //    e o GUID ORIGINAL — round-trip sem perda. Photoshop reconhece como o mesmo SO.
+  // 2. Se nao tem mas tem imageUrl com .svg, baixa o SVG do servidor e cria SO novo
+  //    com GUID v4 gerado.
+  // 3. Caso contrario retorna null (asset rasteriza normal, sem virar SO).
   const linkedDimsByAssetId = new Map<string, { w: number; h: number }>()
-  async function ensureLinkedSvg(asset: Asset): Promise<{ guid: string; w: number; h: number } | null> {
-    if (!asset.imageUrl) return null
+  async function ensureLinkedSmartObject(asset: Asset): Promise<{ guid: string; w: number; h: number } | null> {
     const cached = linkedByAssetId.get(asset.id)
     if (cached) {
       const dims = linkedDimsByAssetId.get(asset.id)
       if (dims) return { guid: cached, w: dims.w, h: dims.h }
     }
+
+    // CAMINHO 1: smart object preservado de import — usa bytes originais
+    if (asset.smartObject) {
+      try {
+        const so = asset.smartObject
+        const res = await fetch(so.filePath)
+        if (!res.ok) throw new Error(`fetch smart object falhou: ${res.status}`)
+        const bytes = new Uint8Array(await res.arrayBuffer())
+        // Dimensoes: prioridade ao que foi salvo no DB; senao tenta extrair de SVG
+        let w = so.width ?? 0
+        let h = so.height ?? 0
+        if ((!w || !h) && so.mime === "image/svg+xml") {
+          try {
+            const txt = new TextDecoder().decode(bytes)
+            const vb = txt.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+            if (vb) {
+              const parts = vb.split(/[\s,]+/).map(Number)
+              if (parts.length === 4 && parts.every(Number.isFinite)) {
+                w = w || parts[2]; h = h || parts[3]
+              }
+            }
+          } catch { /* ignora */ }
+        }
+        if (!w || !h) { w = 512; h = 512 } // fallback safe
+        linkedFiles.push({
+          id: so.guid, // GUID ORIGINAL — preserva identidade do SO
+          name: so.originalName,
+          data: bytes,
+        })
+        linkedByAssetId.set(asset.id, so.guid)
+        linkedDimsByAssetId.set(asset.id, { w, h })
+        console.log("[PSD-SMART:preserved]", { asset: asset.label, guid: so.guid, mime: so.mime, w, h })
+        return { guid: so.guid, w, h }
+      } catch (e) {
+        console.warn("[PSD] falha lendo smart object preservado, caira no fallback SVG:", asset.id, e)
+        // cai no caminho 2 abaixo
+      }
+    }
+
+    // CAMINHO 2: SVG comum via imageUrl
+    if (!asset.imageUrl) return null
+    if (!/\.svg(\?|$)/i.test(asset.imageUrl)) return null
     try {
       const res = await fetch(asset.imageUrl)
       if (!res.ok) return null
       const svgText = await res.text()
-      // Extrai dimensoes do SVG: viewBox tem prioridade (sempre presente em SVGs do Illustrator),
-      // fallback pra atributos width/height.
       let w = 0, h = 0
       const viewBox = svgText.match(/<svg[^>]*\sviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
       if (viewBox) {
@@ -523,11 +589,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const svgBytes = new TextEncoder().encode(svgText)
       const guid = makeGuid()
       const fname = `${(asset.label || "asset").replace(/[^\w.-]+/g, "_")}.svg`
-      linkedFiles.push({
-        id: guid,
-        name: fname,
-        data: svgBytes,
-      })
+      linkedFiles.push({ id: guid, name: fname, data: svgBytes })
       linkedByAssetId.set(asset.id, guid)
       linkedDimsByAssetId.set(asset.id, { w, h })
       return { guid, w, h }
@@ -637,10 +699,14 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         },
       })
     } else {
-      // === Imagem: detecta se eh SVG embeddavel como Smart Object ===
+      // === Imagem: detecta se eh Smart Object embeddavel ===
+      // Eh SO se: (a) asset preserva smart object de import, OU (b) eh SVG via imageUrl.
       const assetId = (obj as any).__assetId as string | undefined
       const asset = assetId ? assetById.get(assetId) : undefined
-      const isSvg = !!asset?.imageUrl && /\.svg(\?|$)/i.test(asset.imageUrl)
+      const isSmartObjectCandidate = !!asset && (
+        !!asset.smartObject ||
+        (!!asset.imageUrl && /\.svg(\?|$)/i.test(asset.imageUrl))
+      )
 
       // Sempre rasteriza pra usar como preview (Photoshop precisa do canvas mesmo
       // pra smart objects — eh o que ele mostra antes do double-click "abrir conteudo").
@@ -653,9 +719,9 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         lctx.drawImage(img, 0, 0, w, h)
       } catch (e) { console.warn("rasterize fail:", name, e) }
 
-      if (isSvg && asset) {
-        // SMART OBJECT EMBEDDED: SVG vai como vetor real no PSD.
-        const linked = await ensureLinkedSvg(asset)
+      if (isSmartObjectCandidate && asset) {
+        // SMART OBJECT EMBEDDED: vai como Smart Object no PSD.
+        const linked = await ensureLinkedSmartObject(asset)
         if (linked) {
           // Os 4 cantos do retangulo onde a imagem esta posicionada (em pixels do PSD).
           const transform = [

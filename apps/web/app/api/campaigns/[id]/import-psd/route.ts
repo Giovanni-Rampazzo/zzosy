@@ -25,6 +25,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const canvasHeight = Number(formData.get("canvasHeight"))
     const bgColor = (formData.get("bgColor") as string) ?? "#ffffff"
     const images = formData.getAll("images") as File[]
+    // Smart objects: arquivos linkados originais + metadados (mesmo index)
+    const linkedFilesUploaded = formData.getAll("linked") as File[]
+    const linkedMetaJson = formData.get("linkedMeta") as string | null
 
     if (!psdFile || !assetsJson) {
       return NextResponse.json({ error: "PSD e assets sao obrigatorios" }, { status: 400 })
@@ -35,12 +38,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       type: "TEXT" | "IMAGE"
       content?: any
       imageIndex?: number
+      linkedIndex?: number
       posX: number
       posY: number
       width: number
       height: number
       zIndex: number
     }>
+
+    const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
+      guid: string; mime: string; originalName: string; sizeBytes: number; width?: number; height?: number
+    }> : []
 
     // Pasta de uploads desta campanha
     const uploadDir = path.join(process.cwd(), "public", "uploads", "campaigns", id)
@@ -66,8 +74,56 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       imageUrls.push(`/uploads/campaigns/${id}/${imgFilename}`)
     }
 
-    // Apagar assets antigos
+    // Apagar assets antigos. SmartObjectFiles NAO sao apagados em cascata aqui
+    // (FK eh SetNull). Vamos limpar manualmente as antigas pra nao acumular orfaos
+    // ao reimportar PSD na mesma campanha.
     await prisma.campaignAsset.deleteMany({ where: { campaignId: id } })
+    await prisma.smartObjectFile.deleteMany({ where: { campaignId: id } })
+
+    // Salvar smart objects (linkedFiles do PSD) — preserva bytes originais
+    // pra round-trip ZZOSY -> Photoshop -> ZZOSY sem perda. Subdir /smart pra
+    // separar dos previews PNG e do PSD master.
+    const smartDir = path.join(uploadDir, "smart")
+    if (!existsSync(smartDir)) await mkdir(smartDir, { recursive: true })
+    // index do FormData -> id do SmartObjectFile criado
+    const smartObjectIds: (string | null)[] = []
+    for (let i = 0; i < linkedFilesUploaded.length; i++) {
+      const f = linkedFilesUploaded[i]
+      const meta = linkedMeta[i]
+      if (!meta) { smartObjectIds.push(null); continue }
+      try {
+        const buf = Buffer.from(await f.arrayBuffer())
+        // Extensao a partir do mime
+        const ext =
+          meta.mime === "image/svg+xml" ? "svg" :
+          meta.mime === "application/pdf" ? "pdf" :
+          meta.mime === "application/postscript" ? "ai" :
+          meta.mime === "image/vnd.adobe.photoshop" ? "psd" :
+          meta.mime === "image/png" ? "png" :
+          meta.mime === "image/jpeg" ? "jpg" :
+          "bin"
+        const filename = `${meta.guid}.${ext}`
+        const fullPath = path.join(smartDir, filename)
+        await writeFile(fullPath, buf)
+        const filePath = `/uploads/campaigns/${id}/smart/${filename}`
+        const so = await prisma.smartObjectFile.create({
+          data: {
+            campaignId: id,
+            guid: meta.guid,
+            filePath,
+            mime: meta.mime,
+            originalName: meta.originalName,
+            sizeBytes: meta.sizeBytes,
+            width: meta.width ?? null,
+            height: meta.height ?? null,
+          }
+        })
+        smartObjectIds.push(so.id)
+      } catch (e) {
+        console.warn("[import-psd] falha salvando smart object", meta.guid, e)
+        smartObjectIds.push(null)
+      }
+    }
 
     // Criar assets
     const created = []
@@ -75,6 +131,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const asset = assets[i]
       const imageUrl = asset.type === "IMAGE" && asset.imageIndex !== undefined
         ? imageUrls[asset.imageIndex] ?? null
+        : null
+      const smartObjectId = asset.type === "IMAGE" && asset.linkedIndex !== undefined
+        ? smartObjectIds[asset.linkedIndex] ?? null
         : null
 
       const record = await prisma.campaignAsset.create({
@@ -84,6 +143,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           type: asset.type,
           content: asset.content ? JSON.stringify(asset.content) : null,
           imageUrl,
+          smartObjectId,
           order: i,
           posX: asset.posX,
           posY: asset.posY,
@@ -133,7 +193,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       data: { psdUrl, psdName: psdFile.name },
     })
 
-    return NextResponse.json({ ok: true, assetsCreated: created.length, psdUrl })
+    return NextResponse.json({
+      ok: true,
+      assetsCreated: created.length,
+      smartObjectsCreated: smartObjectIds.filter(Boolean).length,
+      psdUrl,
+    })
   } catch (err: any) {
     console.error("import-psd error:", err)
     return NextResponse.json({ error: err?.message ?? "Erro interno" }, { status: 500 })

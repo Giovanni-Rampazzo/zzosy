@@ -21,6 +21,7 @@ export async function GET(_: Request, context: { params: Promise<Params> }) {
   const assets = await prisma.campaignAsset.findMany({
     where: { campaignId: id },
     orderBy: { order: "asc" },
+    include: { smartObject: true },
   })
   return NextResponse.json(assets)
 }
