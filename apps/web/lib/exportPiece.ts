@@ -355,6 +355,55 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
 
   const psdLayers: any[] = []
 
+  // === SMART OBJECT INFRA ===
+  // Mapa pra lookup rapido do asset original pelo __assetId do Fabric object
+  const assetById = new Map<string, Asset>()
+  for (const a of assets) assetById.set(a.id, a)
+
+  // linkedFiles vai pro psd.linkedFiles. Cada SVG embeddado aparece aqui uma vez (cache por assetId)
+  // pra que o mesmo SVG usado em multiplas pecas/layers nao duplique conteudo.
+  const linkedFiles: any[] = []
+  const linkedByAssetId = new Map<string, string>() // assetId -> linkedFile.id (GUID)
+
+  // GUID v4 simples (suficiente pro PSD; nao precisa ser cripto-forte)
+  function makeGuid(): string {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+      const r = (Math.random() * 16) | 0
+      const v = c === "x" ? r : (r & 0x3) | 0x8
+      return v.toString(16)
+    })
+  }
+
+  // Carrega o SVG bruto do servidor e cria entrada em linkedFiles, retornando o GUID.
+  // Usa cache pra nao baixar varias vezes o mesmo asset.
+  async function ensureLinkedSvg(asset: Asset): Promise<string | null> {
+    if (!asset.imageUrl) return null
+    const cached = linkedByAssetId.get(asset.id)
+    if (cached) return cached
+    try {
+      const res = await fetch(asset.imageUrl)
+      if (!res.ok) return null
+      const svgText = await res.text()
+      const svgBytes = new TextEncoder().encode(svgText)
+      const guid = makeGuid()
+      // Nome de arquivo limpo + extensao .svg
+      const fname = `${(asset.label || "asset").replace(/[^\w.-]+/g, "_")}.svg`
+      linkedFiles.push({
+        id: guid,
+        name: fname,
+        // ag-psd aceita ArrayBuffer ou Uint8Array em data
+        data: svgBytes,
+        // Type indica formato. ag-psd usa 4-char codes; pra SVG nao ha code oficial,
+        // mas Photoshop respeita "scvg" ou ignora. Deixamos undefined pra usar default.
+      })
+      linkedByAssetId.set(asset.id, guid)
+      return guid
+    } catch (e) {
+      console.warn("[PSD] falha embeddando SVG do asset:", asset.id, e)
+      return null
+    }
+  }
+
   // BACKGROUND: adiciona como primeira layer (vai pro fundo no Photoshop) com a cor de fundo do canvas
   const bgColor = data?.bgColor ?? "#ffffff"
   const bgCanvas = document.createElement("canvas")
@@ -452,15 +501,54 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         },
       })
     } else {
+      // === Imagem: detecta se eh SVG embeddavel como Smart Object ===
+      const assetId = (obj as any).__assetId as string | undefined
+      const asset = assetId ? assetById.get(assetId) : undefined
+      const isSvg = !!asset?.imageUrl && /\.svg(\?|$)/i.test(asset.imageUrl)
+
+      // Sempre rasteriza pra usar como preview (Photoshop precisa do canvas mesmo
+      // pra smart objects — eh o que ele mostra antes do double-click "abrir conteudo").
       const layerCanvas = document.createElement("canvas")
       layerCanvas.width = w
       layerCanvas.height = h
-      const lctx = layerCanvas.getContext("2d")! // alpha:true (transparente) — antes forcava branco e quebrava qualquer asset com transparencia ou cor branca
+      const lctx = layerCanvas.getContext("2d")! // alpha:true (transparente)
       try {
         const img = obj.toCanvasElement({ multiplier: 1 })
         lctx.drawImage(img, 0, 0, w, h)
-        psdLayers.push({ name, top, left, bottom, right, canvas: layerCanvas })
       } catch (e) { console.warn("rasterize fail:", name, e) }
+
+      if (isSvg && asset) {
+        // SMART OBJECT EMBEDDED: SVG vai como vetor real no PSD.
+        // - linkedFiles[guid] = bytes do SVG
+        // - placedLayer aponta pro guid + transformacao (4 cantos do bbox em tela)
+        // - smartObject metadata pra Photoshop reconhecer como SO
+        const guid = await ensureLinkedSvg(asset)
+        if (guid) {
+          // Os 4 cantos do retangulo onde a imagem esta posicionada (em pixels do PSD).
+          // Photoshop usa pra calcular a transformacao do SO.
+          const transform = [
+            left, top,        // top-left
+            right, top,       // top-right
+            right, bottom,    // bottom-right
+            left, bottom,     // bottom-left
+          ]
+          psdLayers.push({
+            name,
+            top, left, bottom, right,
+            canvas: layerCanvas, // preview composto
+            placedLayer: {
+              id: guid,
+              type: "raster",
+              transform,
+            },
+          })
+          console.log("[PSD-SMART]", { name, guid, fileBytes: linkedFiles.find((l: any) => l.id === guid)?.data?.length })
+          continue
+        }
+      }
+
+      // Fallback: imagem raster comum (PNG/JPG ou SVG que nao deu pra embeddar)
+      psdLayers.push({ name, top, left, bottom, right, canvas: layerCanvas })
     }
   }
 
@@ -487,6 +575,9 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     canvas: compositeCanvas,
     children: psdLayers,
     imageResources: { thumbnail: thumbCanvas },
+    // Smart objects embeddados: cada SVG vira um linkedFile referenciado pelos placedLayers.
+    // ag-psd serializa esses bytes dentro do PSD; Photoshop reconhece como SO.
+    linkedFiles: linkedFiles.length > 0 ? linkedFiles : undefined,
   }
   const buffer = agpsd.writePsd(psd, { generateThumbnail: false, invalidateTextLayers: true })
   fc.dispose()
