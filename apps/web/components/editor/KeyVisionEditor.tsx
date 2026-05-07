@@ -926,14 +926,18 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       // CRITICO 1: Fabric Textbox ignora `styles` no construtor. Apos loadFromJSON,
       // os textboxes restaurados perdem styles per-char. Reaplica manualmente do snapshot.
       // CRITICO 2: __assetId / __assetLabel podem se perder na reconstrucao - garante.
+      // CRITICO 3 (bug fix): filtramos BG dos restored, MAS snapObjects pode incluir o BG.
+      // Isso desalinha os indices (restored[0] eh o 1o nao-BG, mas snapObjects[0] pode ser BG).
+      // Solucao: filtra BG dos snapObjects tambem antes de iterar.
       const restored = fc.getObjects().filter((o: any) => !o.__isBg)
+      const snapObjectsNoBg = snapObjects.filter((s: any) => !s?.__isBg)
       for (let i = 0; i < restored.length; i++) {
         const obj: any = restored[i]
-        const src = snapObjects[i]
+        const src = snapObjectsNoBg[i]
         if (!src) continue
-        // Restaurar props customizadas
-        if (src.__assetId !== undefined) obj.__assetId = src.__assetId
-        if (src.__assetLabel !== undefined) obj.__assetLabel = src.__assetLabel
+        // Restaurar props customizadas (sempre que existirem no snapshot, mesmo undefined no obj)
+        if (src.__assetId) obj.__assetId = src.__assetId
+        if (src.__assetLabel) obj.__assetLabel = src.__assetLabel
         if (src.__isImage !== undefined) obj.__isImage = src.__isImage
         // Restaurar styles per-char em textboxes
         if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
