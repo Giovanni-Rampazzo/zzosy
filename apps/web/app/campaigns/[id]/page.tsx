@@ -133,6 +133,26 @@ export default function CampaignOverviewPage() {
     setSelected([])
   }
 
+  async function duplicateSelected() {
+    if (selected.length === 0) return
+    try {
+      const r = await fetch(`/api/pieces/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selected }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        alert(`Erro ao duplicar: ${err?.error ?? r.statusText}`)
+        return
+      }
+      setSelected([])
+      await loadAll()
+    } catch (e: any) {
+      alert(`Erro ao duplicar: ${e?.message ?? e}`)
+    }
+  }
+
   async function bulkSetStatus(status: string) {
     if (selected.length === 0) return
     await Promise.all(selected.map(id =>
@@ -259,6 +279,7 @@ export default function CampaignOverviewPage() {
                     <>
                       <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{selected.length} selecionada(s)</span>
                       <Button variant="secondary" size="sm" onClick={() => setBulkStatusOpen(o => !o)}>◐ Status ▾</Button>
+                      <Button variant="secondary" size="sm" onClick={duplicateSelected} title="Duplica as peças selecionadas (status volta para Standby)">⎘ Duplicar ({selected.length})</Button>
                       <Button variant="dark" size="sm" onClick={() => setExportOpen(true)}>↗ Exportar ({selected.length})</Button>
                       <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑 Apagar ({selected.length})</Button>
                       <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Cancelar</Button>
