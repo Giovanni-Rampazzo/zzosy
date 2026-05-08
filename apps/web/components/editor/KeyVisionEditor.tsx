@@ -953,6 +953,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         if (r && typeof r.then === "function") r.then(() => resolve())
       })
 
+      // CRITICO 0 (bug fix "tudo preto"): loadFromJSON restaura canvas.backgroundColor
+      // do snapshot. Se snap nao tinha (snap inicial), backgroundColor vira null/undefined,
+      // canvas fica transparente, e mostra o fundo escuro do editor (#1a1a1a) como se fosse
+      // preto. Forca a cor logo apos load. Tambem zera backgroundImage/overlay por seguranca.
+      ;(fc as any).backgroundColor = bgColorRef.current
+      ;(fc as any).backgroundImage = null
+      ;(fc as any).overlayImage = null
+
       // CRITICO 1: Fabric Textbox ignora `styles` no construtor. Apos loadFromJSON,
       // os textboxes restaurados perdem styles per-char. Reaplica manualmente do snapshot.
       // CRITICO 2: __assetId / __assetLabel podem se perder na reconstrucao - garante.
