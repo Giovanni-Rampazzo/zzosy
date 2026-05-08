@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { RowThumb, colorFromString } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
+import { ClientEditModal } from "@/components/clients/ClientEditModal"
 
 interface Client {
   id: string; name: string; email: string | null; contact: string | null
+  phone?: string | null; address?: string | null
   _count: { campaigns: number }; createdAt: string
 }
 
@@ -19,6 +21,7 @@ export default function DashboardPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
 
   useEffect(() => { fetchClients() }, [])
 
@@ -93,6 +96,7 @@ export default function DashboardPage() {
                   <td style={{padding:"12px 16px",textAlign:"right"}}>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                       <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
+                      <Button variant="secondary" size="sm" onClick={() => setEditingClient(c)}>Editar</Button>
                       {confirmDelete === c.id ? (
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
                           <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
@@ -140,6 +144,13 @@ export default function DashboardPage() {
             </form>
           </div>
         </div>
+      )}
+      {editingClient && (
+        <ClientEditModal
+          client={editingClient}
+          onClose={() => setEditingClient(null)}
+          onSaved={(u) => setClients(prev => prev.map(c => c.id === u.id ? { ...c, ...u } : c))}
+        />
       )}
     </PageShell>
   )

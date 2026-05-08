@@ -4,7 +4,6 @@ import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
-import { ClientEditModal } from "@/components/clients/ClientEditModal"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
 
@@ -25,7 +24,6 @@ export default function ClientPage() {
   const [showModal, setShowModal] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null) // campanha id
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
 
   async function load() {
@@ -91,7 +89,6 @@ export default function ClientPage() {
               {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
             </div>
             <div style={{display:"flex",gap:10}}>
-              <Button variant="ghost" size="sm" onClick={() => setShowEditModal(true)}>Editar cliente</Button>
               <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteClient(true)}>Apagar cliente</Button>
               <Button onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
             </div>
@@ -168,14 +165,6 @@ export default function ClientPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {showEditModal && client && (
-        <ClientEditModal
-          client={client}
-          onClose={() => setShowEditModal(false)}
-          onSaved={(u) => setClient(prev => prev ? { ...prev, ...u } : prev)}
-        />
       )}
 
       {showModal && (
