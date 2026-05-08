@@ -219,13 +219,16 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       <label
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          background: "#1a1a1a", border: "1px solid #333", color: "#aaa",
-          padding: "8px 16px", borderRadius: 6, fontSize: 13,
+          background: "#F5C400", border: "none", color: "#111111",
+          padding: "10px 24px", borderRadius: 6, fontSize: 16, fontWeight: 600,
           cursor: loading ? "wait" : "pointer",
           opacity: loading ? 0.6 : 1,
           userSelect: "none",
           height: "fit-content",
-        }}>
+          transition: "background 0.15s",
+        }}
+        onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLLabelElement).style.background = "#e0b000" }}
+        onMouseLeave={e => { (e.currentTarget as HTMLLabelElement).style.background = "#F5C400" }}>
         {loading ? (progress || "Processando...") : "Importar PSD"}
         <input
           type="file"
