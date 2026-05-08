@@ -590,8 +590,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             }
           }
         }
+        // Photoshop-style: entrelinhas (leadingPt) escala JUNTO com fontSize. Sem isso, ao
+        // aumentar o texto pelo canto, o espacamento ficaria desproporcionalmente apertado
+        // (e o painel direito mostraria leading antigo enquanto fonte aumenta).
+        const curLeadingPt: number | undefined | null = (obj as any).leadingPt
+        if (curLeadingPt !== undefined && curLeadingPt !== null) {
+          ;(obj as any).leadingPt = curLeadingPt * sY
+        }
         const newWidth = (obj.width ?? 100) * sX
         obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
+        // Recalcula lineHeight se leadingPt explicito (mantem visual sincronizado)
+        if (curLeadingPt !== undefined && curLeadingPt !== null) {
+          obj.set({ lineHeight: ((obj as any).leadingPt) / newFontSize })
+        }
         if ((obj as any).initDimensions) (obj as any).initDimensions()
         obj.setCoords()
         setSelectedTick(t => t + 1)
