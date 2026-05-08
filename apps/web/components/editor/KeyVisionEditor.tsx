@@ -558,33 +558,65 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         const obj = e?.target
         if (!obj) return
         const isText = obj.type === "textbox" || obj.type === "i-text"
-        if (isText) {
-          const sX = obj.scaleX ?? 1
-          const sY = obj.scaleY ?? 1
-          // Usa scaleY como referencia (consistente com convencao Photoshop pra texto)
-          // Se sX/sY sao quase 1 (drift de ponto flutuante), ignora pra evitar mexer a toa.
-          if (Math.abs(sY - 1) < 0.0001 && Math.abs(sX - 1) < 0.0001) return
-          // Aplica scale no fontSize raw
-          const newFontSize = (obj.fontSize ?? 48) * sY
-          // Mesma coisa pros overrides per-char
-          if (obj.styles && typeof obj.styles === "object") {
-            for (const lineKey of Object.keys(obj.styles)) {
-              const line = obj.styles[lineKey]
-              for (const colKey of Object.keys(line)) {
-                const cs = line[colKey]
-                if (cs && typeof cs.fontSize === "number") {
-                  cs.fontSize = cs.fontSize * sY
-                }
+        if (!isText) return
+
+        const corner: string = e?.transform?.corner ?? ""
+        const isSide = corner === "ml" || corner === "mr" || corner === "mt" || corner === "mb"
+
+        if (isSide) {
+          // LATERAIS (esq/dir/topo/baixo): comportamento Photoshop wrap. Soh muda width
+          // e deixa Fabric quebrar texto naturalmente. NUNCA mexer em fontSize aqui — o
+          // user esta ajustando a CAIXA, nao o tamanho do texto. Tambem nao reseta scaleX
+          // durante o drag (Fabric perde referencia do delta e wrap quebra). object:modified
+          // (no soltar mouse) consolida sX/sY em width/height final via re-set.
+          return
+        }
+
+        // CANTOS (escala uniforme): Photoshop-style — consolida scaleX/scaleY em fontSize
+        // e width raw. Resultado: numero do tamanho de fonte no painel reflete o real
+        // renderizado; exports/PSD veem fontSize limpo sem multiplicar por scale.
+        const sX = obj.scaleX ?? 1
+        const sY = obj.scaleY ?? 1
+        if (Math.abs(sY - 1) < 0.0001 && Math.abs(sX - 1) < 0.0001) return
+        const newFontSize = (obj.fontSize ?? 48) * sY
+        if (obj.styles && typeof obj.styles === "object") {
+          for (const lineKey of Object.keys(obj.styles)) {
+            const line = obj.styles[lineKey]
+            for (const colKey of Object.keys(line)) {
+              const cs = line[colKey]
+              if (cs && typeof cs.fontSize === "number") {
+                cs.fontSize = cs.fontSize * sY
               }
             }
           }
-          // Largura tambem pra preservar wrap visual — usa scaleX (largura escala diferente)
-          const newWidth = (obj.width ?? 100) * sX
-          obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
-          if ((obj as any).initDimensions) (obj as any).initDimensions()
-          obj.setCoords()
         }
+        const newWidth = (obj.width ?? 100) * sX
+        obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
+        if ((obj as any).initDimensions) (obj as any).initDimensions()
+        obj.setCoords()
         setSelectedTick(t => t + 1)
+      })
+
+      // Ao SOLTAR o mouse apos arrastar lateral, consolida scaleX em width pra que o save
+      // grave o estado limpo (scaleX=1, width final). Sem isso, scaleX!=1 ficaria salvo e
+      // ao recarregar o textbox apareceria com scale ainda aplicado.
+      fc.on("object:modified" as any, (e: any) => {
+        if (!alive) return
+        const obj = e?.target
+        if (!obj) return
+        const isText = obj.type === "textbox" || obj.type === "i-text"
+        if (!isText) return
+        const sX = obj.scaleX ?? 1
+        const sY = obj.scaleY ?? 1
+        // So consolida se scale ainda nao foi resetado (cantos ja consolidaram em scaling)
+        if (Math.abs(sX - 1) < 0.0001 && Math.abs(sY - 1) < 0.0001) return
+        // Lateral arrastada: consolida sX em width (mantem fontSize intocado, deixa wrap fluir)
+        const newWidth = (obj.width ?? 100) * sX
+        const newHeight = (obj.height ?? 100) * sY
+        obj.set({ width: newWidth, height: newHeight, scaleX: 1, scaleY: 1 })
+        if ((obj as any).initDimensions) (obj as any).initDimensions()
+        obj.setCoords()
+        fc.requestRenderAll()
       })
       // Tambem captura quando teclas (Shift+Arrow etc) mudam a selecao
       const onKeyUp = (e: KeyboardEvent) => {
