@@ -158,6 +158,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPieces, setExportPieces] = useState<any[]>([])
   const [layers, setLayers] = useState<any[]>([])
+  const [editingLayerAssetId, setEditingLayerAssetId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(0.5)
   const zoomRef = useRef(0.5)
   const [bgColor, setBgColor] = useState("#ffffff")
@@ -1035,6 +1036,66 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
     doSave()
   }
 
+  /**
+   * Escala o layer pra ocupar uma porcentagem do canvas (mantendo proporcao).
+   * Usa o mesmo criterio do fit (menor lado limita pra caber inteiro), aplicando
+   * a porcentagem em cima. Centraliza no canvas. percent = 0.2, 0.4, 0.6, 0.8.
+   */
+  function scaleLayerToCanvas(percent: number) {
+    const fc = fabricRef.current
+    const obj: any = selected
+    if (!fc || !obj) return
+    const cw = canvasWRef.current, ch = canvasHRef.current
+    const ow = obj.width ?? 100
+    const oh = obj.height ?? 100
+    if (!ow || !oh) return
+    const scale = Math.min(cw / ow, ch / oh) * percent
+    const newW = ow * scale
+    const newH = oh * scale
+    const left = (cw - newW) / 2
+    const top = (ch - newH) / 2
+    obj.set({ scaleX: scale, scaleY: scale, left, top, angle: 0 })
+    obj.setCoords()
+    fc.renderAll()
+    setSelectedTick(t => t + 1)
+    doSave()
+  }
+
+  /**
+   * Renomeia um layer (nome do asset). Atualiza Fabric obj.__assetLabel e
+   * persiste no banco (PUT no asset). Atualiza o estado da campanha em memoria
+   * pra refletir em todas as instancias do mesmo asset (KV usa o mesmo asset
+   * em multiplas pecas).
+   */
+  async function renameLayer(layerObj: any, newLabel: string) {
+    const fc = fabricRef.current
+    if (!fc || !layerObj) return
+    const trimmed = newLabel.trim()
+    if (!trimmed) return
+    const assetId = layerObj.__assetId
+    if (!assetId) return
+    // Atualiza imediatamente no Fabric (todos os objetos do mesmo asset)
+    fc.getObjects().forEach((o: any) => {
+      if (o.__assetId === assetId) o.__assetLabel = trimmed
+    })
+    refreshLayers(fc)
+    // Persiste no banco
+    try {
+      await fetch(`/api/campaigns/${campaignId}/assets/${assetId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: trimmed }),
+      })
+      // Atualiza state da campanha em memoria
+      setCampaign(prev => prev ? {
+        ...prev,
+        assets: prev.assets.map(a => a.id === assetId ? { ...a, label: trimmed } : a),
+      } : prev)
+    } catch (e) {
+      console.warn("[renameLayer] falha ao persistir:", e)
+    }
+  }
+
   function applyZoom(fc: any, z: number) {
     if (!fc || fc.disposed) return
     // Fabric v7 expoe canvas DOM em diferentes propriedades dependendo do estado
@@ -1793,11 +1854,35 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           {!layers.length && <div style={{ fontSize: 11, color: "#444", textAlign: "center", padding: "24px 12px" }}>Adicione assets ao canvas</div>}
           {layers.map((layer, i) => {
             const isSel = selected === layer.obj
+            const layerAssetId = layer.obj?.__assetId
+            const isEditingThis = editingLayerAssetId && layerAssetId === editingLayerAssetId
             return (
-              <div key={i} onClick={() => { fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
-                style={{ display: "flex", alignItems: "center", gap: 4, padding: "8px 8px 8px 12px", cursor: "pointer", borderLeft: isSel ? "2px solid #F5C400" : "2px solid transparent", background: isSel ? "rgba(245,196,0,0.08)" : "transparent" }}>
+              <div key={i} onClick={() => { if (isEditingThis) return; fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
+                style={{ display: "flex", alignItems: "center", gap: 4, padding: "8px 8px 8px 12px", cursor: isEditingThis ? "default" : "pointer", borderLeft: isSel ? "2px solid #F5C400" : "2px solid transparent", background: isSel ? "rgba(245,196,0,0.08)" : "transparent" }}>
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: layer.type === "textbox" ? "#F5C400" : "#86efac", flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: isSel ? "#fff" : "#888", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{layer.label}</span>
+                {isEditingThis ? (
+                  <input
+                    autoFocus
+                    defaultValue={layer.label}
+                    onClick={e => e.stopPropagation()}
+                    onBlur={async e => {
+                      const v = e.target.value.trim()
+                      if (v && v !== layer.label) await renameLayer(layer.obj, v)
+                      setEditingLayerAssetId(null)
+                    }}
+                    onKeyDown={async e => {
+                      if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+                      else if (e.key === "Escape") { e.preventDefault(); setEditingLayerAssetId(null) }
+                    }}
+                    style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#fff", background: "#0d0d0d", border: "1px solid #F5C400", borderRadius: 3, padding: "2px 6px", outline: "none", fontFamily: "inherit" }}
+                  />
+                ) : (
+                  <span
+                    title="Duplo clique para renomear"
+                    onDoubleClick={e => { e.stopPropagation(); if (layerAssetId) setEditingLayerAssetId(layerAssetId) }}
+                    style={{ fontSize: 12, color: isSel ? "#fff" : "#888", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
+                  >{layer.label}</span>
+                )}
                 <button title="Mover para cima" onClick={e => { e.stopPropagation(); moveLayer(layer.obj, "up") }}
                   style={{ color: "#666", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, padding: "2px 4px", lineHeight: 1 }}>▲</button>
                 <button title="Mover para baixo" onClick={e => { e.stopPropagation(); moveLayer(layer.obj, "down") }}
@@ -1980,11 +2065,28 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                 <WeightPicker value={effectiveFontFamily} onChange={(f) => applyStyle("fontFamily", f)} />
               </div>
             </div>
-            <button onClick={fitLayerToCanvas}
-              style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
-              title="Escala e centraliza o layer dentro da peça">
-              ⊞ Encaixar no canvas
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+                {[0.2, 0.4, 0.6, 0.8].map(pct => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => scaleLayerToCanvas(pct)}
+                    title={`Escala o layer pra ${Math.round(pct * 100)}% do canvas (centralizado)`}
+                    style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 0", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                  >
+                    {Math.round(pct * 100)}%
+                  </button>
+                ))}
+              </div>
+              <button onClick={fitLayerToCanvas}
+                style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
+                title="Escala e centraliza o layer dentro da peça (100%)">
+                ⊞ Encaixar no canvas
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <div style={secS}>Entrelinhas</div>
@@ -2095,9 +2197,24 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{selected.__assetLabel ?? "Elemento"}</div>
             <div style={{ color: "#444", fontSize: 11 }}>Mova e redimensione no canvas.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+              {[0.2, 0.4, 0.6, 0.8].map(pct => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => scaleLayerToCanvas(pct)}
+                  title={`Escala o layer pra ${Math.round(pct * 100)}% do canvas (centralizado)`}
+                  style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 0", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                >
+                  {Math.round(pct * 100)}%
+                </button>
+              ))}
+            </div>
             <button onClick={fitLayerToCanvas}
               style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
-              title="Escala e centraliza o layer dentro da peça">
+              title="Escala e centraliza o layer dentro da peça (100%)">
               ⊞ Encaixar no canvas
             </button>
           </div>
