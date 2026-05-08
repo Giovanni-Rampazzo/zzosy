@@ -130,13 +130,13 @@ export default function PresentationPage() {
 
       {/* Lista de slides */}
       <div style={{
-        background: "#F5F5F5",
+        background: "#1F1F1F",
         minHeight: "calc(100vh - 60px)",
         padding: "32px 24px 80px",
       }}>
         <div style={{
           display: "flex", flexDirection: "column", gap: 24,
-          maxWidth: 1100, margin: "0 auto",
+          maxWidth: 935, margin: "0 auto",
         }}>
           <SlideRow num={1} total={totalSlides} label="Capa">
             <SlideCover />
@@ -178,9 +178,9 @@ function SlideRow({ num, total, label, children }: { num: number; total: number;
         display: "flex", alignItems: "baseline", gap: 8,
         fontSize: 12, color: "#888",
       }}>
-        <span style={{ fontWeight: 700, color: "#111" }}>Slide {num}</span>
+        <span style={{ fontWeight: 700, color: "#E5E5E5" }}>Slide {num}</span>
         <span>·</span>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#999" }}>{label}</span>
       </div>
       {children}
     </div>
