@@ -266,58 +266,180 @@ export default function CampaignAssetsPage() {
             <div style={{ fontSize: 14 }}>Importe um PSD para extrair os layers automaticamente</div>
           </div>
         ) : (
-          <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-              {sortedAssets.map(asset => (
-                <div key={asset.id} style={{ display: "grid", gridTemplateColumns: "180px 1fr 80px", gap: 12, alignItems: "center", paddingBottom: 14, borderBottom: "1px solid #F0F0F0" }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
-                      {asset.type === "TEXT" ? "Texto" : "Imagem"}
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>
-                      <EditableText value={asset.label} variant="inline" onSave={(v) => updateAssetLabel(asset.id, v)} />
-                    </div>
-                  </div>
+          (() => {
+            // Agrupa por tipo: textos primeiro, imagens depois (mantendo order interno)
+            const texts = sortedAssets.filter(a => a.type === "TEXT")
+            const images = sortedAssets.filter(a => a.type !== "TEXT")
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                {texts.length > 0 && (
+                  <AssetSection
+                    title="Textos"
+                    count={texts.length}
+                    assets={texts}
+                    savingMap={savingMap}
+                    onTextChange={updateAssetText}
+                    onLabelChange={updateAssetLabel}
+                    onImageUpload={uploadAssetImage}
+                    onDelete={deleteAsset}
+                  />
+                )}
+                {images.length > 0 && (
+                  <AssetSection
+                    title="Imagens"
+                    count={images.length}
+                    assets={images}
+                    savingMap={savingMap}
+                    onTextChange={updateAssetText}
+                    onLabelChange={updateAssetLabel}
+                    onImageUpload={uploadAssetImage}
+                    onDelete={deleteAsset}
+                  />
+                )}
+              </div>
+            )
+          })()
+        )}
+      </div>
+    </div>
+  )
+}
 
-                  <div>
-                    {asset.type === "TEXT" ? (
-                      <textarea
-                        defaultValue={getText(asset)}
-                        onChange={e => updateAssetText(asset.id, e.target.value)}
-                        style={{
-                          width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #E0E0E0",
-                          fontSize: 13, color: "#111", fontFamily: "inherit", resize: "vertical", outline: "none",
-                          minHeight: 64, maxHeight: 200,
-                        }}
-                      />
-                    ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "flex-end" }}>
-                        {asset.imageUrl ? (
-                          <img src={asset.imageUrl} alt={asset.label}
-                            style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 4, border: "1px solid #E0E0E0" }} />
-                        ) : (
-                          <div style={{ width: 80, height: 60, background: "#F0F0F0", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", color: "#ccc", fontSize: 18 }}>🖼</div>
-                        )}
-                        <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 10px", background: "#F8F9FA" }}>
-                          Trocar imagem
-                          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
-                            onChange={e => { const f = e.target.files?.[0]; if (f) uploadAssetImage(asset.id, f); e.target.value = "" }} />
-                        </label>
-                      </div>
-                    )}
-                  </div>
+/* ============== Section component ============== */
+interface SectionProps {
+  title: string
+  count: number
+  assets: Asset[]
+  savingMap: Record<string, boolean>
+  onTextChange: (assetId: string, newText: string) => void
+  onLabelChange: (assetId: string, newLabel: string) => Promise<void>
+  onImageUpload: (assetId: string, file: File) => Promise<void>
+  onDelete: (assetId: string, label: string, skipConfirm?: boolean) => Promise<void>
+}
 
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                    <div style={{ fontSize: 10, color: savingMap[asset.id] ? "#F5C400" : "#bbb" }}>
-                      {savingMap[asset.id] ? "Salvando..." : "Salvo"}
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={(e) => deleteAsset(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+function AssetSection({ title, count, assets, savingMap, onTextChange, onLabelChange, onImageUpload, onDelete }: SectionProps) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10, paddingLeft: 4 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 700, margin: 0, color: "#111", textTransform: "uppercase", letterSpacing: 0.6 }}>{title}</h2>
+        <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>({count})</span>
+      </div>
+      <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>
+        {assets.map((asset, i) => (
+          <AssetRow
+            key={asset.id}
+            asset={asset}
+            isLast={i === assets.length - 1}
+            saving={!!savingMap[asset.id]}
+            onTextChange={onTextChange}
+            onLabelChange={onLabelChange}
+            onImageUpload={onImageUpload}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ============== Row component (preview-left layout) ============== */
+interface RowProps {
+  asset: Asset
+  isLast: boolean
+  saving: boolean
+  onTextChange: (assetId: string, newText: string) => void
+  onLabelChange: (assetId: string, newLabel: string) => Promise<void>
+  onImageUpload: (assetId: string, file: File) => Promise<void>
+  onDelete: (assetId: string, label: string, skipConfirm?: boolean) => Promise<void>
+}
+
+function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onDelete }: RowProps) {
+  const isText = asset.type === "TEXT"
+  const text = isText ? getText(asset) : ""
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "180px 1fr auto",
+      gap: 16,
+      alignItems: "stretch",
+      padding: 16,
+      borderBottom: isLast ? "none" : "1px solid #F0F0F0",
+    }}>
+      {/* Preview a esquerda */}
+      <div style={{
+        width: 180, height: 120,
+        background: "#F8F9FA",
+        borderRadius: 6,
+        border: "1px solid #E5E5E5",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        overflow: "hidden",
+        flexShrink: 0,
+      }}>
+        {isText ? (
+          <div style={{
+            padding: "8px 10px",
+            fontSize: 13,
+            color: "#333",
+            textAlign: "center",
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 4,
+            WebkitBoxOrient: "vertical" as any,
+            lineHeight: 1.3,
+            wordBreak: "break-word",
+          }}>
+            {text || <span style={{ color: "#bbb" }}>(vazio)</span>}
+          </div>
+        ) : asset.imageUrl ? (
+          <img src={asset.imageUrl} alt={asset.label}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+        ) : (
+          <div style={{ color: "#ccc", fontSize: 28 }}>🖼</div>
+        )}
+      </div>
+
+      {/* Conteudo */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{
+            fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700,
+            padding: "2px 8px", borderRadius: 4,
+            background: isText ? "#FFF7D6" : "#E8F5E9",
+            color: isText ? "#A88600" : "#2E7D32",
+          }}>
+            {isText ? "Texto" : "Imagem"}
+          </span>
+          <span style={{ fontSize: 11, color: saving ? "#F5C400" : "#bbb", fontWeight: 500 }}>
+            {saving ? "Salvando..." : "Salvo"}
+          </span>
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
+          <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
+        </div>
+        {isText ? (
+          <textarea
+            defaultValue={text}
+            onChange={e => onTextChange(asset.id, e.target.value)}
+            style={{
+              width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #E0E0E0",
+              fontSize: 13, color: "#111", fontFamily: "inherit", resize: "vertical", outline: "none",
+              minHeight: 64, maxHeight: 200,
+            }}
+          />
+        ) : (
+          <div>
+            <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }}>
+              Trocar imagem
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
+                onChange={e => { const f = e.target.files?.[0]; if (f) onImageUpload(asset.id, f); e.target.value = "" }} />
+            </label>
           </div>
         )}
+      </div>
+
+      {/* Acoes */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>
+        <Button variant="ghost" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     </div>
   )
