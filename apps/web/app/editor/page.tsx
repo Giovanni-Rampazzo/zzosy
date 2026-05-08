@@ -19,12 +19,13 @@ function EditorContent() {
   const searchParams = useSearchParams()
   const campaignId = searchParams.get("campaignId") ?? ""
   const pieceId = searchParams.get("pieceId") ?? undefined
+  const from = searchParams.get("from") ?? undefined
   if (!campaignId) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#111",color:"white"}}>
       Campaign ID não encontrado
     </div>
   )
-  return <KeyVisionEditor campaignId={campaignId} pieceId={pieceId} />
+  return <KeyVisionEditor campaignId={campaignId} pieceId={pieceId} from={from} />
 }
 
 export default function EditorPage() {

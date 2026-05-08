@@ -130,7 +130,7 @@ function spansToTextboxData(spans: TextSpan[]) {
 }
 
 
-export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; pieceId?: string }) {
+export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: string; pieceId?: string; from?: string }) {
   const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -1793,12 +1793,17 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
 
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: TH, background: "rgba(17,17,17,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 12, zIndex: 200 }}>
         <button onClick={() => {
-          const go = () => router.push(`/campaigns/${campaignId}`)
+          // Quando o editor foi aberto a partir da apresentacao (?from=presentation),
+          // o botao volta pra apresentacao em vez da pagina geral da campanha.
+          const dest = from === "presentation"
+            ? `/campaigns/${campaignId}/presentation`
+            : `/campaigns/${campaignId}`
+          const go = () => router.push(dest)
           if (isDirtyRef.current) setConfirmExit(() => go)
           else go()
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
-          title="Voltar para a campanha">
-          ← Voltar para campanha
+          title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
+          {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
         </button>
         <button onClick={() => {
           const go = () => router.push(`/campaigns/${campaignId}/assets`)

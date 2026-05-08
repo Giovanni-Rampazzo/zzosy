@@ -157,7 +157,7 @@ export default function PresentationPage() {
                 width={p.width}
                 height={p.height}
                 imageUrl={p.imageUrl ?? null}
-                onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}
+                onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
               />
             </SlideRow>
           ))}
