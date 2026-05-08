@@ -137,12 +137,33 @@ interface PieceSlideProps {
   width: number
   height: number
   imageUrl: string | null
+  onClick?: () => void
 }
 
-export function SlidePiece({ name, width, height, imageUrl }: PieceSlideProps) {
+export function SlidePiece({ name, width, height, imageUrl, onClick }: PieceSlideProps) {
   const dims = (width && height) ? `${width} x ${height} px` : "—"
+  const clickable = !!onClick
   return (
-    <div style={{ ...slideShellBase, background: BG_LIGHT, containerType: "inline-size" }}>
+    <div
+      onClick={onClick}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.() } }) : undefined}
+      style={{
+        ...slideShellBase, background: BG_LIGHT, containerType: "inline-size",
+        cursor: clickable ? "pointer" : "default",
+        transition: "transform 0.15s ease, box-shadow 0.15s ease",
+      }}
+      onMouseEnter={clickable ? (e => {
+        e.currentTarget.style.transform = "translateY(-2px)"
+        e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.12)"
+      }) : undefined}
+      onMouseLeave={clickable ? (e => {
+        e.currentTarget.style.transform = "translateY(0)"
+        e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.08)"
+      }) : undefined}
+      title={clickable ? "Abrir no editor" : undefined}
+    >
       {/* Box amarelo nome */}
       <div style={{
         position: "absolute", top: "4%", left: "3%",
