@@ -14,21 +14,22 @@
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
+    "ag-psd": "^18.0.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.0",
+    "fabric": "^6.0.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.383.0",
     "mysql2": "^3.9.0",
     "next": "^16.1.6",
     "next-auth": "^4.24.0",
+    "pptxgenjs": "^4.0.1",
     "react": "^18",
     "react-dom": "^18",
     "stripe": "^14.25.0",
     "tailwindcss": "^3.4.0",
     "zod": "^3.22.0",
-    "zustand": "^4.5.0",
-    "fabric": "^6.0.0",
-    "ag-psd": "^18.0.0"
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
