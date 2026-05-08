@@ -17,6 +17,7 @@ interface Asset {
 interface Layer {
   assetId: string; posX: number; posY: number
   scaleX: number; scaleY: number; rotation: number; zIndex: number; width: number; height?: number
+  overrides?: any
 }
 interface Campaign {
   id: string; name: string; client: { id: string; name: string }
@@ -1209,14 +1210,37 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           }
           return true
         })
-        .map((o: any, i: number) => ({
-          assetId: o.__assetId,
-          posX: Math.round(o.left ?? 0), posY: Math.round(o.top ?? 0),
-          scaleX: o.scaleX ?? 1, scaleY: o.scaleY ?? 1,
-          rotation: o.angle ?? 0, zIndex: i,
-          width: Math.round(o.width ?? 400),
-          height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
-        }))
+        .map((o: any, i: number) => {
+          const layer: any = {
+            assetId: o.__assetId,
+            posX: Math.round(o.left ?? 0), posY: Math.round(o.top ?? 0),
+            scaleX: o.scaleX ?? 1, scaleY: o.scaleY ?? 1,
+            rotation: o.angle ?? 0, zIndex: i,
+            width: Math.round(o.width ?? 400),
+            height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
+            overrides: {},
+          }
+          // Espelha a logica do modo PECA: salva overrides per-instancia (fill,
+          // fontSize, styles per-char, leadingPt, etc) pra preservar formatacao
+          // ao alternar entre KV/Assets/Campanha. Sem isso, recarregar o KV
+          // perdia mudancas de estilo (estilos sao salvos no asset.content e
+          // sobrescritos por overrides do layer).
+          if (o.type === "textbox" || o.type === "i-text") {
+            layer.overrides.fill = o.fill
+            layer.overrides.fontSize = o.fontSize
+            layer.overrides.fontFamily = o.fontFamily
+            layer.overrides.fontWeight = o.fontWeight
+            if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
+            if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
+            if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
+            // Adobe-style leading: salva leadingPt (fonte da verdade)
+            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
+              layer.overrides.leadingPt = (o as any).leadingPt
+            }
+            if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
+          }
+          return layer
+        })
       await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
         const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
