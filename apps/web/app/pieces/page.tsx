@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { Suspense } from "react"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
+import { FilterPill } from "@/components/ui/FilterPill"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
@@ -90,33 +91,37 @@ function PiecesContent() {
                 <Button size="sm" onClick={() => setExportOpen(true)}>↗ Exportar ({selected.length})</Button>
               </>
             )}
-            <div className="flex border border-[#E0E0E0] rounded-md overflow-hidden">
-              <button onClick={() => setView("grid")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "grid" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Grid</button>
-              <button onClick={() => setView("list")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "list" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Lista</button>
+            <div className="flex gap-1.5">
+              <FilterPill active={view === "grid"} onClick={() => setView("grid")} size="sm">Grid</FilterPill>
+              <FilterPill active={view === "list"} onClick={() => setView("list")} size="sm">Lista</FilterPill>
             </div>
           </div>
         </div>
 
         {/* Filtro por status */}
         <div className="flex flex-wrap gap-2 mb-5">
-          <button
+          <FilterPill
+            active={statusFilter === "ALL"}
             onClick={() => setStatusFilter("ALL")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors ${statusFilter === "ALL" ? "bg-[#111] text-white border-[#111]" : "bg-white text-[#888] border-[#E0E0E0] hover:border-[#888]"}`}
+            accent="#111111"
+            accentBg="#F5F5F5"
+            accentText="#111111"
           >
-            Todas <span className="opacity-70">({counts.ALL})</span>
-          </button>
+            Todas <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts.ALL})</span>
+          </FilterPill>
           {PIECE_STATUS_LIST.map(s => {
             const meta = statusMeta(s)
-            const active = statusFilter === s
             return (
-              <button
+              <FilterPill
                 key={s}
+                active={statusFilter === s}
                 onClick={() => setStatusFilter(s)}
-                style={active ? { background: meta.bg, color: meta.color, borderColor: meta.color } : {}}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors ${active ? "" : "bg-white text-[#888] border-[#E0E0E0] hover:border-[#888]"}`}
+                accent={meta.color}
+                accentBg={meta.bg}
+                accentText={meta.color}
               >
-                {meta.label} <span className="opacity-70">({counts[s]})</span>
-              </button>
+                {meta.label} <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts[s]})</span>
+              </FilterPill>
             )
           })}
         </div>

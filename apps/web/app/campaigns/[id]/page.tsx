@@ -7,6 +7,7 @@ import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { FilterPill } from "@/components/ui/FilterPill"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
@@ -326,15 +327,9 @@ export default function CampaignOverviewPage() {
                   ) : (
                     <Button variant="secondary" size="sm" onClick={toggleSelectAll}>Selecionar tudo</Button>
                   )}
-                  <div style={{ display: "flex", border: "1px solid #E0E0E0", borderRadius: 6, overflow: "hidden" }}>
-                    <button onClick={() => setView("grid")}
-                      style={{ background: view === "grid" ? "#111" : "white", color: view === "grid" ? "white" : "#888", border: "none", padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                      Grid
-                    </button>
-                    <button onClick={() => setView("list")}
-                      style={{ background: view === "list" ? "#111" : "white", color: view === "list" ? "white" : "#888", border: "none", padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                      Lista
-                    </button>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <FilterPill active={view === "grid"} onClick={() => setView("grid")} size="sm">Grid</FilterPill>
+                    <FilterPill active={view === "list"} onClick={() => setView("list")} size="sm">Lista</FilterPill>
                   </div>
                   <Button variant="link" size="sm" onClick={() => router.push(`/pieces?campaignId=${id}`)}>Ver todas →</Button>
                 </>
@@ -361,31 +356,28 @@ export default function CampaignOverviewPage() {
           {/* Abas de filtro por status */}
           {pieces.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-              <button
+              <FilterPill
+                active={statusFilter === "ALL"}
                 onClick={() => { setStatusFilter("ALL"); setSelected([]) }}
-                style={{
-                  padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                  border: statusFilter === "ALL" ? "1px solid #111" : "1px solid #E0E0E0",
-                  background: statusFilter === "ALL" ? "#111" : "white",
-                  color: statusFilter === "ALL" ? "white" : "#888", cursor: "pointer",
-                }}>
-                Todas <span style={{ opacity: 0.7 }}>({counts.ALL})</span>
-              </button>
+                accent="#111111"
+                accentBg="#F5F5F5"
+                accentText="#111111"
+              >
+                Todas <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts.ALL})</span>
+              </FilterPill>
               {PIECE_STATUS_LIST.map(s => {
                 const meta = statusMeta(s)
-                const active = statusFilter === s
                 return (
-                  <button
+                  <FilterPill
                     key={s}
+                    active={statusFilter === s}
                     onClick={() => { setStatusFilter(s); setSelected([]) }}
-                    style={{
-                      padding: "6px 12px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                      border: active ? `1px solid ${meta.color}` : "1px solid #E0E0E0",
-                      background: active ? meta.bg : "white",
-                      color: active ? meta.color : "#888", cursor: "pointer",
-                    }}>
-                    {meta.label} <span style={{ opacity: 0.7 }}>({counts[s]})</span>
-                  </button>
+                    accent={meta.color}
+                    accentBg={meta.bg}
+                    accentText={meta.color}
+                  >
+                    {meta.label} <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts[s]})</span>
+                  </FilterPill>
                 )
               })}
             </div>

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { buildDeliveryZip, type ExportFormat } from "@/lib/exportPiece"
 import { Button } from "@/components/ui/Button"
+import { FilterPill } from "@/components/ui/FilterPill"
 
 interface PieceLite {
   id: string
@@ -158,20 +159,12 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaig
           {/* 2. Formatos */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Formatos a exportar</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {FORMATS.map(f => {
-                const isSel = formats.has(f.v)
-                return (
-                  <button key={f.v} onClick={() => toggleFormat(f.v)}
-                    style={{
-                      padding: "6px 14px", border: isSel ? "2px solid #F5C400" : "1px solid #ddd",
-                      borderRadius: 6, background: isSel ? "#fffbeb" : "#fff",
-                      cursor: "pointer", fontSize: 12, fontWeight: 600,
-                    }}>
-                    {f.label}
-                  </button>
-                )
-              })}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {FORMATS.map(f => (
+                <FilterPill key={f.v} active={formats.has(f.v)} onClick={() => toggleFormat(f.v)}>
+                  {f.label}
+                </FilterPill>
+              ))}
             </div>
           </div>
 

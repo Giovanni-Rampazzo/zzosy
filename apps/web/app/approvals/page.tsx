@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { PageShell } from "@/components/layout/PageShell"
 import { statusMeta, PIECE_STATUSES } from "@/lib/pieceStatus"
 import { Button } from "@/components/ui/Button"
+import { FilterPill } from "@/components/ui/FilterPill"
 
 interface Piece {
   id: string
@@ -47,14 +48,6 @@ export default function ApprovalsPage() {
     REPROVADO: pieces.filter(p=>p.status==="REPROVADO").length,
   }
 
-  const tabStyle = (active: boolean) => ({
-    padding:"6px 16px",fontSize:12,fontWeight:600,cursor:"pointer",
-    background:active?"#111":"transparent",
-    color:active?"white":"#888",
-    border:"1px solid #E0E0E0",
-    borderRadius:6,
-  })
-
   return (
     <PageShell>
       <div style={{padding:32}}>
@@ -65,9 +58,9 @@ export default function ApprovalsPage() {
           </div>
           <div style={{display:"flex",gap:8}}>
             {[["ALL","Todas"],["CLIENTE","Cliente"],["APROVADO","Aprovadas"],["REPROVADO","Reprovadas"]].map(([v,l])=>(
-              <button key={v} onClick={()=>setFilter(v)} style={tabStyle(filter===v)}>
+              <FilterPill key={v} active={filter===v} onClick={()=>setFilter(v)}>
                 {l} ({counts[v as keyof typeof counts] ?? 0})
-              </button>
+              </FilterPill>
             ))}
           </div>
         </div>
