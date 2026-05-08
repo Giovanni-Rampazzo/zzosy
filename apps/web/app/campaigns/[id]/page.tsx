@@ -228,9 +228,9 @@ export default function CampaignOverviewPage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Button variant="primary" size="lg" onClick={() => router.push(`/editor?campaignId=${id}`)}>Key Vision</Button>
-            <Button variant="secondary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
+            <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
             <PsdImporter campaignId={id} onImported={loadAll} />
-            <Button variant="dark" size="lg" onClick={() => setDeliveryOpen(true)} disabled={pieces.length === 0}>Package</Button>
+            <Button variant="primary" size="lg" onClick={() => setDeliveryOpen(true)} disabled={pieces.length === 0}>Package</Button>
           </div>
         </div>
 
