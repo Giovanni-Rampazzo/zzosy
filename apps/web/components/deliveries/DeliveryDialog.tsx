@@ -34,7 +34,7 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaig
   const [allPieces, setAllPieces] = useState<PieceLite[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [formats, setFormats] = useState<Set<ExportFormat>>(new Set(["PSD"]))
-  const [hideDelivered, setHideDelivered] = useState(true)
+  const [hideDelivered, setHideDelivered] = useState(false)
   const [includePresentation, setIncludePresentation] = useState(true)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
