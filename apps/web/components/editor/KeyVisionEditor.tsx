@@ -146,6 +146,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const [hexInput, setHexInput] = useState<string>("#111111")
   const [bgHexInput, setBgHexInput] = useState<string>("#ffffff")
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
+  const [leadingInput, setLeadingInput] = useState<string>("96")
   const [selectedTick, setSelectedTick] = useState(0)
   const undoStack = useRef<string[]>([])
   const redoStack = useRef<string[]>([])
@@ -231,7 +232,20 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   // Atalho Cmd/Ctrl+Shift+>/< pra aumentar/diminuir 4pt no fontSize do texto selecionado
   // (igual Photoshop). So funciona quando o textbox esta selecionado mas NAO em edicao inline.
   useEffect(() => {
+    function isTypingInPanel(t: EventTarget | null): boolean {
+      if (!t) return false
+      const el = t as HTMLElement
+      const tag = (el.tagName || "").toUpperCase()
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
+      if (el.isContentEditable) return true
+      return false
+    }
     function onKey(e: KeyboardEvent) {
+      // Se o usuario esta digitando num input/textarea do painel, nao intercepta atalhos.
+      // Permite digitar valores numericos, buscar fontes, etc, sem que Cmd+Z (undo) ou
+      // Cmd+Shift+>/< (font size) roubem a tecla.
+      if (isTypingInPanel(e.target)) return
+
       const fc = fabricRef.current
       const active = fc?.getActiveObject() as any
       const isTextActive = active && (active.type === "textbox" || active.type === "i-text")
@@ -682,6 +696,13 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       const onKey = (e: KeyboardEvent) => {
         if (!alive || !fabricRef.current) return
         if (e.key !== "Delete" && e.key !== "Backspace") return
+        // Nao remove o objeto quando o user esta digitando num input do painel
+        const t = e.target as HTMLElement | null
+        if (t) {
+          const tag = (t.tagName || "").toUpperCase()
+          if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+          if (t.isContentEditable) return
+        }
         const obj = fabricRef.current.getActiveObject()
         if (obj && !(obj as any).__isBg && !(obj as any).isEditing) {
           fabricRef.current.remove(obj)
@@ -698,6 +719,13 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         const blockKey = (e: KeyboardEvent) => {
           const fcc = fabricRef.current
           if (!fcc) return
+          // Se o usuario esta digitando num input/select do painel, nao bloqueia.
+          const t = e.target as HTMLElement | null
+          if (t) {
+            const tag = (t.tagName || "").toUpperCase()
+            if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+            if (t.isContentEditable) return
+          }
           const active = fcc.getActiveObject() as any
           if (!active || !active.isEditing) return
           // Permitir teclas de navegacao/selecao
@@ -1443,8 +1471,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   // - Se nao: usa fontSize raw (sem scale, igual Photoshop mostra)
   // selectedTick refresca em mouseup/keyup/object:modified, garantindo update apos
   // qualquer interacao (mover cursor, escalar pelo box, etc).
+  // SKIP se o usuario esta digitando num input do painel — evita sobrescrever digitacao
+  // em curso (ex: user tipo "8", reload do useEffect colocaria "5" antigo).
   useEffect(() => {
     if (!selected) return
+    // Se um input numerico do painel esta focado, NAO sincroniza — o user esta digitando
+    const ae = document.activeElement
+    if (ae && ae.tagName === "INPUT" && (ae as HTMLInputElement).type === "number") return
+
     const obj = selected as any
     const isText = obj.type === "textbox" || obj.type === "i-text"
     let fs: number = obj.fontSize ?? 80
@@ -1476,6 +1510,16 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
       } catch {}
     }
     setFontSizeInput(String(Math.round(fs)))
+
+    // Sincroniza leadingInput tambem (Adobe-style: leadingPt explicito ou Auto computado)
+    if (isText) {
+      const lh = obj.lineHeight ?? 1.16
+      const leadingPt = obj.leadingPt
+      const effectiveLeading = (leadingPt === undefined || leadingPt === null)
+        ? Math.round(lh * fs)
+        : leadingPt
+      setLeadingInput(String(Math.round(effectiveLeading)))
+    }
   }, [selected, selectedTick])
 
   function applyStyle(key: string, val: any) {
@@ -1946,12 +1990,14 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
                 <div style={secS}>Entrelinhas</div>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   <input
-                    key={`lh-${(selected as any).__assetId ?? "x"}-${selectedTick}`}
+                    key={`lh-${(selected as any).__assetId ?? "x"}`}
                     type="number"
                     step="1"
-                    defaultValue={Math.round(effectiveLeadingPt)}
+                    value={leadingInput}
                     onChange={e => {
-                      const n = Number(e.target.value)
+                      const raw = e.target.value
+                      setLeadingInput(raw)
+                      const n = Number(raw)
                       if (Number.isFinite(n) && n > 0) setLeading(n)
                     }}
                     onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
