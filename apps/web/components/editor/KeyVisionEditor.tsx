@@ -5,6 +5,7 @@ import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { FontPicker, WeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { migrateStyles } from "@/lib/migrateStyles"
+import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 
 interface TextSpan {
   text: string
@@ -292,6 +293,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       }
 
       if (active?.isEditing) return // demais atalhos: nao interfere com edicao de texto
+
+      // Cmd+C — copia objeto selecionado pro clipboard interno
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && !e.shiftKey && !e.altKey) {
+        if (!active || (active as any).__isBg) return
+        e.preventDefault()
+        // Serializa COM props customizadas que precisamos preservar
+        // (__assetId pra link com CampaignAsset; __assetLabel pra rotulo;
+        //  leadingPt pra entrelinhas em pt; styles pra formatacao per-char).
+        const json = active.toObject([
+          "__assetId", "__assetLabel", "__isBg", "leadingPt",
+        ])
+        setClipboard({ campaignId, json, copiedAt: Date.now() })
+        return
+      }
+
+      // Cmd+V — cola da clipboard interna
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && !e.shiftKey && !e.altKey) {
+        const cb = getClipboard()
+        if (!cb) return
+        if (cb.campaignId !== campaignId) {
+          alert("Asset copiado pertence a outra campanha — copie/cole apenas dentro da mesma campanha por enquanto.")
+          return
+        }
+        e.preventDefault()
+        ;(async () => {
+          const { util } = await import("fabric")
+          // enlivenObjects retorna Promise<FabricObject[]> em v6+
+          const enlivened = await util.enlivenObjects([cb.json]) as any[]
+          const cloned = enlivened?.[0]
+          if (!cloned || !fc) return
+          // Offset visivel pra nao ficar exatamente em cima do original
+          cloned.set({
+            left: (cloned.left ?? 0) + 20,
+            top: (cloned.top ?? 0) + 20,
+          })
+          cloned.setCoords()
+          fc.add(cloned)
+          fc.setActiveObject(cloned)
+          fc.requestRenderAll()
+          // Dispara save (via object:modified que ja escuta)
+          fc.fire("object:modified", { target: cloned })
+        })()
+        return
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault()
         if (e.shiftKey) redo()
@@ -317,7 +363,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [])
+  }, [campaignId])
 
   // Hand tool (Photoshop-style): segura Space pra ativar pan do canvas.
   // - So ativa fora de inputs, fora de edicao inline de texto e fora de overlays/menus
@@ -1777,6 +1823,45 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     applyZoom(fc, Math.min(3, Math.max(0.05, zoomRef.current + delta)))
   }
 
+  /**
+   * Troca o asset associado a um objeto preservando seu transform
+   * (left/top/scale/angle/width). Util pra "Trocar asset" no painel:
+   * usuario reposicionou o layer e quer trocar o conteudo sem perder
+   * o trabalho de layout.
+   *
+   * Apenas swaps entre assets do MESMO tipo (texto<->texto, imagem<->imagem).
+   * Filtragem feita na UI (PropertiesPanel/dropdown).
+   */
+  async function swapAsset(currentObj: any, newAsset: Asset) {
+    const fc = fabricRef.current
+    if (!fc || !currentObj || !newAsset) return
+    if (currentObj.__assetId === newAsset.id) return // no-op
+
+    // Captura transform atual
+    const layerSpec = {
+      posX: currentObj.left ?? 0,
+      posY: currentObj.top ?? 0,
+      width: currentObj.width ?? 400,
+      height: currentObj.height ?? 100,
+      scaleX: currentObj.scaleX ?? 1,
+      scaleY: currentObj.scaleY ?? 1,
+      rotation: currentObj.angle ?? 0,
+    }
+
+    // Remove o atual e adiciona o novo asset com mesmo transform.
+    // addAssetToCanvas faz fc.add(newObj) — nao retorna referencia.
+    // Pego o ultimo objeto adicionado pra selecionar como ativo.
+    const beforeIds = new Set(fc.getObjects())
+    fc.remove(currentObj)
+    await addAssetToCanvas(fc, newAsset, layerSpec)
+    fc.requestRenderAll()
+    const newObj = fc.getObjects().find((o: any) => !beforeIds.has(o))
+    if (newObj) {
+      fc.setActiveObject(newObj)
+      fc.fire("object:modified", { target: newObj })
+    }
+  }
+
   if (!campaign) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a1a", color: "#888", fontSize: 14 }}>
       Carregando...
@@ -2134,6 +2219,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             return (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
+              <div style={secS}>Trocar asset</div>
+              <select
+                value={(selected as any).__assetId ?? ""}
+                onChange={e => {
+                  const newAsset = (campaign?.assets ?? []).find(a => a.id === e.target.value)
+                  if (newAsset) swapAsset(selected, newAsset)
+                }}
+                style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 24 }}
+              >
+                {(campaign?.assets ?? [])
+                  .filter(a => a.type === "TEXT")
+                  .map(a => (
+                    <option key={a.id} value={a.id}>{a.label || a.value || "Sem nome"}</option>
+                  ))
+                }
+              </select>
+            </div>
+            <div>
               <div style={secS}>Fonte {mixedFontFamily && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múltiplas)</span>}</div>
               <FontPicker
                 value={mixedFontFamily ? "" : effectiveFontFamily}
@@ -2294,6 +2397,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         ) : (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{selected.__assetLabel ?? "Elemento"}</div>
+            <div>
+              <div style={secS}>Trocar asset</div>
+              <select
+                value={(selected as any).__assetId ?? ""}
+                onChange={e => {
+                  const newAsset = (campaign?.assets ?? []).find(a => a.id === e.target.value)
+                  if (newAsset) swapAsset(selected, newAsset)
+                }}
+                style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 24 }}
+              >
+                {(campaign?.assets ?? [])
+                  .filter(a => a.type === "IMAGE")
+                  .map(a => (
+                    <option key={a.id} value={a.id}>{a.label || "Sem nome"}</option>
+                  ))
+                }
+              </select>
+            </div>
             <div style={{ color: "#444", fontSize: 11 }}>Mova e redimensione no canvas.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
               {[0.2, 0.4, 0.6, 0.8].map(pct => (
