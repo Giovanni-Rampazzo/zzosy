@@ -237,12 +237,12 @@ export default function CampaignAssetsPage() {
                 <button onClick={addTextAsset} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
                   onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                  📝 Texto
+                  Texto
                 </button>
                 <button onClick={() => { setShowAddMenu(false); newImageInputRef.current?.click() }} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
                   onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                  🖼 Imagem <span style={{ fontSize: 11, color: "#aaa" }}>(PNG, JPG, SVG…)</span>
+                  Imagem <span style={{ fontSize: 11, color: "#aaa" }}>(PNG, JPG, SVG…)</span>
                 </button>
                 <div style={{ borderTop: "1px solid #f0f0f0", padding: "8px 14px", fontSize: 11, color: "#888", lineHeight: 1.5, background: "#fafafa", borderRadius: "0 0 6px 6px" }}>
                   Para vetor: exporte como <strong>SVG</strong> do Illustrator<br/>
@@ -254,7 +254,7 @@ export default function CampaignAssetsPage() {
               onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
             <PsdImporter campaignId={id} onImported={load} />
             {campaign.assets.length > 0 && (
-              <Button onClick={() => router.push(`/editor?campaignId=${id}`)}>Editar Matriz (KV)</Button>
+              <Button variant="primary" onClick={() => router.push(`/editor?campaignId=${id}`)}>Editar Matriz (KV)</Button>
             )}
           </div>
         </div>
@@ -439,7 +439,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
 
       {/* Acoes */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>
-        <Button variant="ghost" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+        <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     </div>
   )

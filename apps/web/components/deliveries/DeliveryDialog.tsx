@@ -11,6 +11,7 @@ interface PieceLite {
   width: number
   height: number
   status?: string
+  segment?: string | null
   media?: string
   imageUrl?: string | null
 }
@@ -19,7 +20,6 @@ interface Props {
   campaignId: string
   campaignName?: string
   campaignCode?: string | null
-  campaignSegment?: string | null
   onClose: () => void
   onCreated?: () => void
 }
@@ -31,7 +31,7 @@ const FORMATS: { v: ExportFormat; label: string }[] = [
   { v: "PDF", label: "PDF" },
 ]
 
-export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaignSegment, onClose, onCreated }: Props) {
+export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose, onCreated }: Props) {
   const [allPieces, setAllPieces] = useState<PieceLite[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [formats, setFormats] = useState<Set<ExportFormat>>(new Set(["PSD"]))
@@ -79,17 +79,20 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaig
         .map(p => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height, media: p.media }))
 
       // Se incluir apresentacao: gera o PPTX antes do ZIP pra empacotar em Deck/
+      // O segment vem por peca (nao mais por campanha) — passamos cada um adiante.
       let extraFiles: Array<{ folder: string; name: string; blob: Blob }> | undefined
       if (includePresentation) {
         setProgress("Gerando apresentação...")
         const { buildCampaignPresentationBlob } = await import("@/lib/generatePresentation")
         const piecesForDeck = allPieces
           .filter(p => selected.has(p.id))
-          .map(p => ({ id: p.id, name: p.name, imageUrl: p.imageUrl ?? null, width: p.width, height: p.height }))
+          .map(p => ({
+            id: p.id, name: p.name, segment: p.segment ?? null,
+            imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
+          }))
         const { blob: pptxBlob, fileName: pptxName } = await buildCampaignPresentationBlob({
           name: campaignName ?? "Campanha",
           code: campaignCode ?? null,
-          segment: campaignSegment ?? null,
           pieces: piecesForDeck,
         })
         extraFiles = [{ folder: "Deck", name: pptxName, blob: pptxBlob }]

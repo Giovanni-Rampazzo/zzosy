@@ -104,12 +104,12 @@ export default function ApprovalsPage() {
                 {/* Actions */}
                 <div style={{display:"flex",gap:8,padding:"10px 14px",borderTop:"1px solid #f5f5f5",background:"#fafafa"}}>
                   {(piece.status === "STANDBY" || piece.status === "CRIACAO") && (
-                    <Button size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "CLIENTE")} className="flex-1">Enviar para cliente</Button>
+                    <Button variant="primary" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "CLIENTE")} className="flex-1">Enviar para cliente</Button>
                   )}
                   {piece.status === "CLIENTE" && (
                     <>
-                      <Button variant="success" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "APROVADO")} className="flex-1">✓ Aprovar</Button>
-                      <Button variant="danger" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "REPROVADO")}>✗ Reprovar</Button>
+                      <Button variant="danger" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "REPROVADO")}>Reprovar</Button>
+                      <Button variant="success" size="sm" loading={updating === piece.id} onClick={() => updateStatus(piece.id, "APROVADO")} className="flex-1">Aprovar</Button>
                     </>
                   )}
                   {(piece.status === "APROVADO" || piece.status === "REPROVADO") && (

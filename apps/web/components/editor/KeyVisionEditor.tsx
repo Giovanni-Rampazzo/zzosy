@@ -1822,7 +1822,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           else go()
         }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
           title="Ir para a pagina de assets desta campanha">
-          📁 Assets
+          Assets
         </button>
         <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
         <div style={{ flex: 1 }} />
@@ -1912,7 +1912,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#aaa" }}
           title={isPieceMode ? "Exportar esta peca" : "Exportar Key Vision (matriz)"}
         >
-          ↗ Exportar
+          Exportar
         </button>
         <button
           onClick={saveNow}
@@ -2182,7 +2182,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               <button onClick={fitLayerToCanvas}
                 style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
                 title="Escala e centraliza o layer dentro da peça (100%)">
-                ⊞ Encaixar no canvas
+                Encaixar no canvas
               </button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -2313,7 +2313,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             <button onClick={fitLayerToCanvas}
               style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
               title="Escala e centraliza o layer dentro da peça (100%)">
-              ⊞ Encaixar no canvas
+              Encaixar no canvas
             </button>
           </div>
         )}

@@ -9,6 +9,7 @@ interface Piece {
   id: string
   name: string
   format: string
+  segment?: string | null
   width: number
   height: number
   imageUrl?: string | null
@@ -19,8 +20,31 @@ interface Campaign {
   id: string
   name: string
   code?: string | null
-  segment?: string | null
   client: { id: string; name: string }
+}
+
+/**
+ * Agrupa pecas por segmento. Pecas sem segmento ficam num grupo "Sem segmento"
+ * (que NAO recebe slide divisor — vao direto). Pecas com segmento sao agrupadas
+ * e cada grupo recebe um slide divisor antes.
+ *
+ * Ordem dos grupos: alfabetica por nome do segmento; o grupo "sem segmento" vem
+ * sempre primeiro (peças genericas antes das segmentadas).
+ */
+function groupPiecesBySegment(pieces: Piece[]): Array<{ segment: string | null; pieces: Piece[] }> {
+  const map = new Map<string, Piece[]>()
+  for (const p of pieces) {
+    const key = (p.segment ?? "").trim() || ""
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(p)
+  }
+  const groups: Array<{ segment: string | null; pieces: Piece[] }> = []
+  // Sem segmento primeiro
+  if (map.has("")) groups.push({ segment: null, pieces: map.get("")! })
+  // Outros segmentos em ordem alfabetica
+  const segNames = [...map.keys()].filter(k => k !== "").sort((a, b) => a.localeCompare(b, "pt-BR"))
+  for (const s of segNames) groups.push({ segment: s, pieces: map.get(s)! })
+  return groups
 }
 
 export default function PresentationPage() {
@@ -47,13 +71,15 @@ export default function PresentationPage() {
     load()
   }, [id])
 
-  // Ordena peças por formato + createdAt (igual a campanha)
+  // Ordena peças por formato + createdAt dentro de cada grupo
   const orderedPieces = [...pieces].sort((a, b) => {
     const fa = a.format || ""
     const fb = b.format || ""
     if (fa !== fb) return fa.localeCompare(fb)
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   })
+
+  const groups = groupPiecesBySegment(orderedPieces)
 
   async function exportPPTX() {
     if (!campaign) return
@@ -63,10 +89,9 @@ export default function PresentationPage() {
       await generateCampaignPresentation({
         name: campaign.name,
         code: campaign.code ?? null,
-        segment: campaign.segment ?? null,
         pieces: orderedPieces.map(p => ({
-          id: p.id, name: p.name, imageUrl: p.imageUrl ?? null,
-          width: p.width, height: p.height,
+          id: p.id, name: p.name, segment: p.segment ?? null,
+          imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
         })),
       })
     } catch (e: any) {
@@ -93,8 +118,12 @@ export default function PresentationPage() {
     )
   }
 
-  // Contagem total de slides (capa + código + segmento + peças + obrigado)
-  const totalSlides = 3 + orderedPieces.length + 1
+  // Total de slides:
+  //  - Capa (1) + Código (1) + grupos com segment (cada um 1 divisor) + todas pecas + Obrigado (1)
+  const segmentDividers = groups.filter(g => g.segment !== null).length
+  const totalSlides = 2 + segmentDividers + orderedPieces.length + 1
+
+  let slideNum = 0
 
   return (
     <PageShell>
@@ -108,7 +137,6 @@ export default function PresentationPage() {
         gap: 16,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Button variant="ghost" size="sm" onClick={() => router.push(`/campaigns/${id}`)}>← Voltar</Button>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
               Apresentação
@@ -122,8 +150,9 @@ export default function PresentationPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${id}`)}>Voltar</Button>
           <Button variant="primary" size="md" onClick={exportPPTX} disabled={exporting}>
-            {exporting ? "Exportando…" : "↓ Exportar PPT"}
+            {exporting ? "Exportando…" : "Exportar PPT"}
           </Button>
         </div>
       </div>
@@ -138,31 +167,36 @@ export default function PresentationPage() {
           display: "flex", flexDirection: "column", gap: 24,
           maxWidth: 935, margin: "0 auto",
         }}>
-          <SlideRow num={1} total={totalSlides} label="Capa">
+          <SlideRow num={++slideNum} total={totalSlides} label="Capa">
             <SlideCover />
           </SlideRow>
 
-          <SlideRow num={2} total={totalSlides} label="Código + Nome da campanha">
+          <SlideRow num={++slideNum} total={totalSlides} label="Código + Nome da campanha">
             <SlideCode campaignName={campaign.name} code={campaign.code ?? null} />
           </SlideRow>
 
-          <SlideRow num={3} total={totalSlides} label="Segmento">
-            <SlideSegment segment={campaign.segment ?? null} />
-          </SlideRow>
-
-          {orderedPieces.map((p, i) => (
-            <SlideRow key={p.id} num={4 + i} total={totalSlides} label={p.name || "Peça"}>
-              <SlidePiece
-                name={p.name || "Peça sem nome"}
-                width={p.width}
-                height={p.height}
-                imageUrl={p.imageUrl ?? null}
-                onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
-              />
-            </SlideRow>
+          {groups.map((group, gi) => (
+            <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              {group.segment !== null && (
+                <SlideRow num={++slideNum} total={totalSlides} label={`Segmento: ${group.segment}`}>
+                  <SlideSegment segment={group.segment} />
+                </SlideRow>
+              )}
+              {group.pieces.map(p => (
+                <SlideRow key={p.id} num={++slideNum} total={totalSlides} label={p.name || "Peça"}>
+                  <SlidePiece
+                    name={p.name || "Peça sem nome"}
+                    width={p.width}
+                    height={p.height}
+                    imageUrl={p.imageUrl ?? null}
+                    onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
+                  />
+                </SlideRow>
+              ))}
+            </div>
           ))}
 
-          <SlideRow num={totalSlides} total={totalSlides} label="Obrigado">
+          <SlideRow num={++slideNum} total={totalSlides} label="Obrigado">
             <SlideThanks />
           </SlideRow>
         </div>

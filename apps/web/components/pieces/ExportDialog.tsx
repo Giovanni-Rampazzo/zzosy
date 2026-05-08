@@ -49,9 +49,8 @@ export function ExportDialog({ pieces, onClose, campaignName }: Props) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: "#1a1a1a", borderRadius: 12, width: 520, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid #333" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderBottom: "1px solid #333" }}>
+        <div style={{ padding: "16px 24px", borderBottom: "1px solid #333" }}>
           <span style={{ fontWeight: 700, color: "white", fontSize: 16 }}>Exportar {pieces.length} peça{pieces.length > 1 ? "s" : ""}</span>
-          <button onClick={onClose} disabled={exporting} style={{ background: "transparent", border: "none", color: "#888", fontSize: 20, cursor: exporting ? "not-allowed" : "pointer" }}>✕</button>
         </div>
 
         <div style={{ padding: 24, flex: 1, overflowY: "auto" }}>
@@ -76,8 +75,8 @@ export function ExportDialog({ pieces, onClose, campaignName }: Props) {
         <div style={{ padding: "14px 24px", borderTop: "1px solid #333", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ color: "#888", fontSize: 12 }}>{exporting ? progress : `${selectedFormats.length} formato(s)`}</span>
           <div style={{ display: "flex", gap: 8 }}>
-            <Button variant="ghost" onClick={onClose} disabled={exporting}>Cancelar</Button>
-            <Button onClick={doExport} loading={exporting} disabled={!selectedFormats.length}>{exporting ? "Exportando..." : "Exportar"}</Button>
+            <Button variant="secondary" onClick={onClose} disabled={exporting}>Cancelar</Button>
+            <Button variant="primary" onClick={doExport} loading={exporting} disabled={!selectedFormats.length}>{exporting ? "Exportando..." : "Exportar"}</Button>
           </div>
         </div>
       </div>

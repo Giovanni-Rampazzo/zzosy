@@ -114,7 +114,7 @@ export default function MediasPage() {
             <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Mídias e Formatos</h1>
             <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Formatos disponíveis para geração de peças</p>
           </div>
-          <Button onClick={openCreate}>+ Novo formato</Button>
+          <Button variant="primary" onClick={openCreate}>+ Novo formato</Button>
         </div>
 
         {loading ? <div style={{textAlign:"center",padding:"64px 0",color:"#888"}}>Carregando...</div> : (
@@ -132,14 +132,17 @@ export default function MediasPage() {
                     <div style={{width:110,fontSize:12,color:"#888"}}>{f.width}×{f.height}</div>
                     <div style={{width:70,fontSize:12,color:"#888"}}>{f.dpi}dpi</div>
                     <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                      <Button variant="secondary" size="sm" onClick={() => handleDuplicate(f)}>Duplicar</Button>
                       {!f.isDefault ? (
                         <>
-                          <Button variant="secondary" size="sm" onClick={() => openEdit(f)}>Editar</Button>
                           <Button variant="danger" size="sm" onClick={() => handleDelete(f.id)}>Remover</Button>
+                          <Button variant="info" size="sm" onClick={() => handleDuplicate(f)}>Duplicar</Button>
+                          <Button variant="secondary" size="sm" onClick={() => openEdit(f)}>Editar</Button>
                         </>
                       ) : (
-                        <span style={{fontSize:11,color:"#aaa",padding:"0 8px"}}>padrão</span>
+                        <>
+                          <Button variant="info" size="sm" onClick={() => handleDuplicate(f)}>Duplicar</Button>
+                          <span style={{fontSize:11,color:"#aaa",padding:"0 8px"}}>padrão</span>
+                        </>
                       )}
                     </div>
                   </div>
@@ -156,9 +159,8 @@ export default function MediasPage() {
           style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}
         >
           <div style={{background:"white",borderRadius:12,width:500,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
+            <div style={{padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
               <span style={{fontWeight:700,fontSize:16}}>{isEditing ? "Editar Formato" : "Novo Formato"}</span>
-              <button onClick={closeModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
             </div>
             <form onSubmit={handleSubmit} style={{padding:24,display:"flex",flexDirection:"column",gap:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -186,7 +188,7 @@ export default function MediasPage() {
               </div>
               <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>
                 <Button type="button" variant="secondary" onClick={closeModal}>Cancelar</Button>
-                <Button type="submit">{isEditing ? "Salvar alterações" : "Criar"}</Button>
+                <Button type="submit" variant="primary">{isEditing ? "Salvar alterações" : "Criar"}</Button>
               </div>
             </form>
           </div>

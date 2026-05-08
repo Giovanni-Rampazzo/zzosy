@@ -34,9 +34,8 @@ export function NewCampaignModal({ clientId, onClose, onCreated }: Props) {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"white",borderRadius:12,width:440,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
+        <div style={{padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
           <span style={{fontWeight:700,fontSize:16}}>Nova Campanha</span>
-          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
         </div>
         <form onSubmit={handleSubmit} style={{padding:24,display:"flex",flexDirection:"column",gap:16}}>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>

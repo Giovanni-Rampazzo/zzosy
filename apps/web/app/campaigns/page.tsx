@@ -156,7 +156,7 @@ export default function CampaignsPage() {
                           <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
                         </div>
                       ) : (
-                        <Button variant="ghost" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>🗑</Button>
+                        <Button variant="danger" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>Apagar</Button>
                       )}
                     </div>
                   </div>
@@ -212,7 +212,7 @@ export default function CampaignsPage() {
                               <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
                             </>
                           ) : (
-                            <Button variant="ghost" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>🗑</Button>
+                            <Button variant="danger" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>Apagar</Button>
                           )}
                         </div>
                       </td>

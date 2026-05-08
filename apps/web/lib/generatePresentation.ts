@@ -17,6 +17,7 @@ import PptxGenJS from "pptxgenjs"
 interface Piece {
   id: string
   name: string | null
+  segment?: string | null
   imageUrl: string | null
   width: number
   height: number
@@ -25,7 +26,6 @@ interface Piece {
 interface CampaignData {
   name: string
   code?: string | null
-  segment?: string | null
   pieces: Piece[]
 }
 
@@ -312,12 +312,37 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
 
   addCoverSlide(pptx, sunoLogo, unitedLogo)
   addCodeSlide(pptx, data.name, data.code ?? null)
-  addSegmentSlide(pptx, data.segment ?? null)
 
+  // Pre-carrega todas as imagens em paralelo
   const imgs = await Promise.all(
     data.pieces.map(p => p.imageUrl ? imgToDataUri(p.imageUrl) : Promise.resolve(null))
   )
-  data.pieces.forEach((p, i) => addPieceSlide(pptx, p, imgs[i]))
+  // Mapa imageUrl→idx pra recuperar o dataUri por peca durante o for
+  const imgByPieceIdx = new Map<string, string | null>()
+  data.pieces.forEach((p, i) => imgByPieceIdx.set(p.id, imgs[i]))
+
+  // Agrupa pecas por segmento. Mesma logica da pagina de presentation:
+  // - Pecas sem segmento ficam num grupo "" e NAO recebem slide divisor
+  // - Pecas com segmento sao agrupadas e cada grupo recebe um divisor antes
+  const map = new Map<string, Piece[]>()
+  for (const p of data.pieces) {
+    const key = (p.segment ?? "").trim() || ""
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(p)
+  }
+  const groups: Array<{ segment: string | null; pieces: Piece[] }> = []
+  if (map.has("")) groups.push({ segment: null, pieces: map.get("")! })
+  const segNames = [...map.keys()].filter(k => k !== "").sort((a, b) => a.localeCompare(b, "pt-BR"))
+  for (const s of segNames) groups.push({ segment: s, pieces: map.get(s)! })
+
+  for (const group of groups) {
+    if (group.segment !== null) {
+      addSegmentSlide(pptx, group.segment)
+    }
+    for (const p of group.pieces) {
+      addPieceSlide(pptx, p, imgByPieceIdx.get(p.id) ?? null)
+    }
+  }
 
   addThanksSlide(pptx, sunoLogo)
   return pptx

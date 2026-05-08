@@ -23,7 +23,6 @@ export default function ClientPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null) // campanha id
-  const [confirmDeleteClient, setConfirmDeleteClient] = useState(false)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
 
   async function load() {
@@ -56,11 +55,6 @@ export default function ClientPage() {
     }
   }
 
-  async function deleteClient() {
-    await fetch(`/api/clients/${id}`, { method: "DELETE" })
-    router.push("/dashboard")
-  }
-
   if (loading) return <div style={{display:"flex",flexDirection:"column",height:"100vh"}}><TopNav /><div style={{padding:32,color:"#888"}}>Carregando...</div></div>
   if (!client) return <div style={{display:"flex",flexDirection:"column",height:"100vh"}}><TopNav /><div style={{padding:32,color:"#888"}}>Cliente não encontrado</div></div>
 
@@ -89,8 +83,7 @@ export default function ClientPage() {
               {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
             </div>
             <div style={{display:"flex",gap:10}}>
-              <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteClient(true)}>Apagar cliente</Button>
-              <Button onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
+              <Button variant="primary" onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
@@ -133,8 +126,6 @@ export default function ClientPage() {
                     <td style={{padding:"12px 16px",color:"#888",fontSize:13}}>{new Date(c.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td style={{padding:"12px 16px",textAlign:"right"}}>
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                        <Button variant="secondary" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)}>Abrir</Button>
-                        <Button variant="ghost" size="sm" onClick={() => duplicateCampaign(c.id)} loading={duplicatingId === c.id}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</Button>
                         {confirmDelete === c.id ? (
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
                             <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
@@ -142,7 +133,11 @@ export default function ClientPage() {
                             <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
                           </div>
                         ) : (
-                          <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(c.id)}>🗑</Button>
+                          <>
+                            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
+                            <Button variant="info" size="sm" onClick={() => duplicateCampaign(c.id)} loading={duplicatingId === c.id}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</Button>
+                            <Button variant="primary" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)}>Abrir</Button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -152,20 +147,6 @@ export default function ClientPage() {
             </table>
           </div>
       </div>
-
-      {/* Modal apagar cliente */}
-      {confirmDeleteClient && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <div style={{background:"white",borderRadius:12,padding:32,width:400,textAlign:"center"}}>
-            <div style={{fontSize:18,fontWeight:700,marginBottom:12}}>Apagar cliente?</div>
-            <div style={{fontSize:13,color:"#888",marginBottom:24}}>Esta ação é irreversível e apagará todas as campanhas do cliente.</div>
-            <div style={{display:"flex",gap:12,justifyContent:"center"}}>
-              <Button variant="secondary" onClick={() => setConfirmDeleteClient(false)}>Cancelar</Button>
-              <Button variant="danger" onClick={deleteClient}>Apagar</Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showModal && (
         <NewCampaignModal clientId={id} onClose={() => setShowModal(false)} onCreated={campaignId => router.push(`/campaigns/${campaignId}`)} />

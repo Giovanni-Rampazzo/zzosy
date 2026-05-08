@@ -87,8 +87,8 @@ function PiecesContent() {
           <div className="flex items-center gap-3">
             {selected.length > 0 && (
               <>
-                <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑 Apagar ({selected.length})</Button>
-                <Button size="sm" onClick={() => setExportOpen(true)}>↗ Exportar ({selected.length})</Button>
+                <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
+                <Button variant="primary" size="sm" onClick={() => setExportOpen(true)}>Exportar ({selected.length})</Button>
               </>
             )}
             <div className="flex gap-1.5">

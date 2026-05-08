@@ -18,7 +18,6 @@ interface Campaign {
   id: string
   name: string
   code?: string | null
-  segment?: string | null
   client: { id: string; name: string }
   psdName?: string | null
   assets: Asset[]
@@ -192,73 +191,55 @@ export default function CampaignOverviewPage() {
       <TopNav />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
 
-        <button
-          onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}
-          style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
-        >
-          ← Clientes
-        </button>
-
-        {/* Breadcrumb + título */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
-            <span style={{ cursor: "pointer" }} onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}>
-              {campaign.client?.name ?? "—"}
-            </span> /
-          </div>
-          <h1 style={{ margin: 0 }}>
-            <EditableText
-              value={campaign.name}
-              variant="h1"
-              onSave={async (newName) => {
-                const res = await fetch(`/api/campaigns/${id}`, {
-                  method: "PATCH", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name: newName }),
-                })
-                if (!res.ok) throw new Error()
-                setCampaign(c => c ? { ...c, name: newName } : c)
-              }}
-            />
-          </h1>
-          <div style={{ display: "flex", gap: 24, marginTop: 8, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>Código</span>
+        {/* Header com titulo a esquerda + voltar a direita */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 24 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
+              <span style={{ cursor: "pointer" }} onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}>
+                {campaign.client?.name ?? "—"}
+              </span> /
+            </div>
+            <h1 style={{ margin: 0 }}>
               <EditableText
-                value={campaign.code ?? ""}
-                placeholder="—"
-                onSave={async (v) => {
-                  const newCode = v.trim() || null
+                value={campaign.name}
+                variant="h1"
+                onSave={async (newName) => {
                   const res = await fetch(`/api/campaigns/${id}`, {
                     method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ code: newCode }),
+                    body: JSON.stringify({ name: newName }),
                   })
                   if (!res.ok) throw new Error()
-                  setCampaign(c => c ? { ...c, code: newCode } : c)
+                  setCampaign(c => c ? { ...c, name: newName } : c)
                 }}
               />
+            </h1>
+            <div style={{ display: "flex", gap: 24, marginTop: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>Código</span>
+                <EditableText
+                  value={campaign.code ?? ""}
+                  placeholder="—"
+                  onSave={async (v) => {
+                    const newCode = v.trim() || null
+                    const res = await fetch(`/api/campaigns/${id}`, {
+                      method: "PATCH", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ code: newCode }),
+                    })
+                    if (!res.ok) throw new Error()
+                    setCampaign(c => c ? { ...c, code: newCode } : c)
+                  }}
+                />
+              </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 200 }}>
-              <span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>Segmento</span>
-              <EditableText
-                value={campaign.segment ?? ""}
-                placeholder="—"
-                onSave={async (v) => {
-                  const newSegment = v.trim() || null
-                  const res = await fetch(`/api/campaigns/${id}`, {
-                    method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ segment: newSegment }),
-                  })
-                  if (!res.ok) throw new Error()
-                  setCampaign(c => c ? { ...c, segment: newSegment } : c)
-                }}
-              />
-            </div>
+            {campaign.psdName && (
+              <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
+                PSD: <strong>{campaign.psdName}</strong> · {campaign.assets?.length ?? 0} assets · {pieces.length} peça{pieces.length !== 1 ? "s" : ""}
+              </p>
+            )}
           </div>
-          {campaign.psdName && (
-            <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
-              PSD: <strong>{campaign.psdName}</strong> · {campaign.assets?.length ?? 0} assets · {pieces.length} peça{pieces.length !== 1 ? "s" : ""}
-            </p>
-          )}
+          <Button variant="primary" size="sm" onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}>
+            Voltar para Cliente
+          </Button>
         </div>
 
         {/* Preview KV + botões */}
@@ -318,11 +299,11 @@ export default function CampaignOverviewPage() {
                   {selected.length > 0 ? (
                     <>
                       <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{selected.length} selecionada(s)</span>
-                      <Button variant="secondary" size="sm" onClick={() => setBulkStatusOpen(o => !o)}>◐ Status ▾</Button>
-                      <Button variant="secondary" size="sm" onClick={duplicateSelected} title="Duplica as peças selecionadas (status volta para Standby)">⎘ Duplicar ({selected.length})</Button>
-                      <Button variant="dark" size="sm" onClick={() => setExportOpen(true)}>↗ Exportar ({selected.length})</Button>
-                      <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑 Apagar ({selected.length})</Button>
                       <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Cancelar</Button>
+                      <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
+                      <Button variant="info" size="sm" onClick={duplicateSelected} title="Duplica as peças selecionadas (status volta para Standby)">Duplicar ({selected.length})</Button>
+                      <Button variant="secondary" size="sm" onClick={() => setBulkStatusOpen(o => !o)}>Status</Button>
+                      <Button variant="primary" size="sm" onClick={() => setExportOpen(true)}>Exportar ({selected.length})</Button>
                     </>
                   ) : (
                     <Button variant="secondary" size="sm" onClick={toggleSelectAll}>Selecionar tudo</Button>
@@ -331,7 +312,7 @@ export default function CampaignOverviewPage() {
                     <FilterPill active={view === "grid"} onClick={() => setView("grid")} size="sm">Grid</FilterPill>
                     <FilterPill active={view === "list"} onClick={() => setView("list")} size="sm">Lista</FilterPill>
                   </div>
-                  <Button variant="link" size="sm" onClick={() => router.push(`/pieces?campaignId=${id}`)}>Ver todas →</Button>
+                  <Button variant="link" size="sm" onClick={() => router.push(`/pieces?campaignId=${id}`)}>Ver todas</Button>
                 </>
               )}
             </div>
@@ -430,7 +411,7 @@ export default function CampaignOverviewPage() {
                       <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "auto" }}>
-                      <Button variant="ghost" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑</Button>
+                      <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                     </div>
                   </div>
                 </div>
@@ -505,7 +486,7 @@ export default function CampaignOverviewPage() {
                         <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                        <Button variant="ghost" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑</Button>
+                        <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                       </td>
                     </tr>
                   ))}
@@ -523,7 +504,6 @@ export default function CampaignOverviewPage() {
           campaignId={id}
           campaignName={campaign.name}
           campaignCode={campaign.code ?? null}
-          campaignSegment={campaign.segment ?? null}
           onClose={() => setDeliveryOpen(false)}
           onCreated={() => loadAll()}
         />

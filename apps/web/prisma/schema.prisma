@@ -85,7 +85,6 @@ model Campaign {
   id              String             @id @default(cuid())
   name            String
   code            String?            @db.VarChar(64)
-  segment         String?            @db.VarChar(255)
   clientId        String
   status          String             @default("STANDBY")
   psdUrl          String?            @db.Text
@@ -165,6 +164,7 @@ model Piece {
   campaignId    String
   mediaFormatId String?
   name          String?
+  segment       String?        @db.VarChar(255)
   status        String         @default("STANDBY")
   data          String?        @db.LongText
   imageUrl      String?        @db.LongText

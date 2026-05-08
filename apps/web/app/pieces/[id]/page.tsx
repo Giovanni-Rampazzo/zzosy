@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button"
 interface Piece {
   id: string
   name: string
+  segment?: string | null
   status: string
   campaignId: string
   mediaFormatId: string | null
@@ -24,6 +25,7 @@ export default function PiecePage() {
   const router = useRouter()
   const [piece, setPiece] = useState<Piece | null>(null)
   const [name, setName] = useState("")
+  const [segment, setSegment] = useState("")
   const [status, setStatus] = useState("STANDBY")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -33,6 +35,7 @@ export default function PiecePage() {
       if (d.error) return
       setPiece(d)
       setName(d.name ?? "")
+      setSegment(d.segment ?? "")
       setStatus(d.status ?? "STANDBY")
     })
   }, [id])
@@ -42,7 +45,7 @@ export default function PiecePage() {
     await fetch(`/api/pieces/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, status }),
+      body: JSON.stringify({ name, status, segment: segment.trim() || null }),
     })
     setSaving(false)
     setSaved(true)
@@ -76,8 +79,8 @@ export default function PiecePage() {
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Editar Peça</h1>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Button variant="danger" onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">🗑 Apagar</Button>
-            <Button onClick={save} loading={saving}>{saving ? "Salvando..." : saved ? "✓ Salvo" : "Salvar"}</Button>
+            <Button variant="danger" onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+            <Button variant="primary" onClick={save} loading={saving}>{saving ? "Salvando..." : saved ? "Salvo" : "Salvar"}</Button>
           </div>
         </div>
 
@@ -104,6 +107,19 @@ export default function PiecePage() {
             </select>
           </div>
 
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Segmento</label>
+            <input
+              value={segment}
+              onChange={e => setSegment(e.target.value)}
+              placeholder="Ex: WhatsApp, Stories, Email…"
+              style={{ width: "100%", padding: "10px 12px", border: "1px solid #E0E0E0", borderRadius: 6, fontSize: 14, outline: "none", boxSizing: "border-box" }}
+            />
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
+              Usado pra agrupar peças na apresentação. Peças com mesmo segmento ficam juntas.
+            </div>
+          </div>
+
           {piece.imageUrl && (
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Preview</label>
@@ -118,7 +134,7 @@ export default function PiecePage() {
 
         {/* Abrir editor */}
         <div style={{ marginTop: 16 }}>
-          <Button variant="dark" size="lg" className="w-full" onClick={() => router.push(`/editor?campaignId=${piece.campaignId}&pieceId=${piece.id}`)}>✏️ Abrir no Editor</Button>
+          <Button variant="primary" size="lg" className="w-full" onClick={() => router.push(`/editor?campaignId=${piece.campaignId}&pieceId=${piece.id}`)}>Abrir no Editor</Button>
         </div>
       </div>
     </div>

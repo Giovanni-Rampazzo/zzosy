@@ -95,8 +95,6 @@ export default function DashboardPage() {
                   <td style={{padding:"12px 16px",fontSize:13}}>{c._count.campaigns}</td>
                   <td style={{padding:"12px 16px",textAlign:"right"}}>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      <Button variant="secondary" size="sm" onClick={() => setEditingClient(c)}>Editar</Button>
-                      <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
                       {confirmDelete === c.id ? (
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
                           <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
@@ -104,7 +102,11 @@ export default function DashboardPage() {
                           <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
                         </div>
                       ) : (
-                        <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(c.id)}>🗑</Button>
+                        <>
+                          <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
+                          <Button variant="secondary" size="sm" onClick={() => setEditingClient(c)}>Editar</Button>
+                          <Button variant="primary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -118,9 +120,8 @@ export default function DashboardPage() {
       {showModal && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <div style={{background:"white",borderRadius:12,width:480,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
+            <div style={{display:"flex",alignItems:"center",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
               <div style={{fontWeight:700,fontSize:16}}>Novo Cliente</div>
-              <button onClick={() => setShowModal(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#888"}}>✕</button>
             </div>
             <form onSubmit={createClient} style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
               {[["name","Nome *","Nome do cliente"],["contact","Contato","Nome do contato"],["email","E-mail","email@cliente.com"],["phone","Telefone","(11) 99999-9999"],["address","Endereço","Cidade, Estado"]].map(([k,l,p]) => (
