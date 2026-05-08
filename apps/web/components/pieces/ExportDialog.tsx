@@ -25,7 +25,7 @@ const FORMATS: { value: ExportFormat; label: string; desc: string }[] = [
 ]
 
 export function ExportDialog({ pieces, onClose, campaignName }: Props) {
-  const [selectedFormats, setSelectedFormats] = useState<ExportFormat[]>(["PNG"])
+  const [selectedFormats, setSelectedFormats] = useState<ExportFormat[]>(["PSD"])
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState("")
 

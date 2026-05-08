@@ -22,16 +22,16 @@ interface Props {
 }
 
 const FORMATS: { v: ExportFormat; label: string }[] = [
+  { v: "PSD", label: "PSD" },
   { v: "PNG", label: "PNG" },
   { v: "JPG", label: "JPG" },
-  { v: "PSD", label: "PSD" },
   { v: "PDF", label: "PDF" },
 ]
 
 export function DeliveryDialog({ campaignId, campaignName, onClose, onCreated }: Props) {
   const [allPieces, setAllPieces] = useState<PieceLite[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [formats, setFormats] = useState<Set<ExportFormat>>(new Set(["PNG"]))
+  const [formats, setFormats] = useState<Set<ExportFormat>>(new Set(["PSD"]))
   const [hideDelivered, setHideDelivered] = useState(true)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
