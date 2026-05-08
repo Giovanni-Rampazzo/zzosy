@@ -22,8 +22,8 @@ export async function GET() {
     distinct: ["segment"],
   })
   const segments = rows
-    .map(r => (r.segment ?? "").trim())
-    .filter(s => s.length > 0)
-    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((r: { segment: string | null }) => (r.segment ?? "").trim())
+    .filter((s: string) => s.length > 0)
+    .sort((a: string, b: string) => a.localeCompare(b, "pt-BR"))
   return NextResponse.json({ segments })
 }

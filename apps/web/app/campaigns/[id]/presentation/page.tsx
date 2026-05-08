@@ -10,6 +10,7 @@ interface Piece {
   name: string
   format: string
   segment?: string | null
+  copy?: string | null
   width: number
   height: number
   imageUrl?: string | null
@@ -90,7 +91,7 @@ export default function PresentationPage() {
         name: campaign.name,
         code: campaign.code ?? null,
         pieces: orderedPieces.map(p => ({
-          id: p.id, name: p.name, segment: p.segment ?? null,
+          id: p.id, name: p.name, segment: p.segment ?? null, copy: p.copy ?? null,
           imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
         })),
       })
@@ -189,6 +190,7 @@ export default function PresentationPage() {
                     width={p.width}
                     height={p.height}
                     imageUrl={p.imageUrl ?? null}
+                    copy={p.copy ?? null}
                     onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
                   />
                 </SlideRow>

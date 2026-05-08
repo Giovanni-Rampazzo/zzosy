@@ -19,8 +19,8 @@ export async function GET() {
     distinct: ["code"],
   })
   const codes = rows
-    .map(r => (r.code ?? "").trim())
-    .filter(c => c.length > 0)
-    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((r: { code: string | null }) => (r.code ?? "").trim())
+    .filter((c: string) => c.length > 0)
+    .sort((a: string, b: string) => a.localeCompare(b, "pt-BR"))
   return NextResponse.json({ codes })
 }

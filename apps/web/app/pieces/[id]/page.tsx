@@ -9,6 +9,7 @@ interface Piece {
   id: string
   name: string
   segment?: string | null
+  copy?: string | null
   status: string
   campaignId: string
   mediaFormatId: string | null
@@ -27,6 +28,7 @@ export default function PiecePage() {
   const [name, setName] = useState("")
   const [segment, setSegment] = useState("")
   const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
+  const [copy, setCopy] = useState("")
   const [status, setStatus] = useState("STANDBY")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -37,6 +39,7 @@ export default function PiecePage() {
       setPiece(d)
       setName(d.name ?? "")
       setSegment(d.segment ?? "")
+      setCopy(d.copy ?? "")
       setStatus(d.status ?? "STANDBY")
     })
   }, [id])
@@ -54,7 +57,12 @@ export default function PiecePage() {
     await fetch(`/api/pieces/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, status, segment: segment.trim() || null }),
+      body: JSON.stringify({
+        name,
+        status,
+        segment: segment.trim() || null,
+        copy: copy.trim() || null,
+      }),
     })
     setSaving(false)
     setSaved(true)
@@ -130,6 +138,36 @@ export default function PiecePage() {
             </datalist>
             <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
               Usado pra agrupar peças na apresentação. Peças com mesmo segmento ficam juntas.
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Legenda / Copy
+              <span style={{ fontSize: 10, color: "#bbb", fontWeight: 500, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
+                {copy.length} {copy.length === 1 ? "caractere" : "caracteres"}
+              </span>
+            </label>
+            <textarea
+              value={copy}
+              onChange={e => setCopy(e.target.value)}
+              placeholder="Ex: Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black"
+              rows={6}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "1px solid #E0E0E0",
+                borderRadius: 6,
+                fontSize: 14,
+                outline: "none",
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                resize: "vertical",
+                minHeight: 100,
+              }}
+            />
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
+              Texto pra redes sociais. Aparece na apresentação ao lado da peça e vai num arquivo .txt na entrega.
             </div>
           </div>
 

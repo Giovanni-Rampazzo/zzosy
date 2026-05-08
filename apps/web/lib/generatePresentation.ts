@@ -18,6 +18,7 @@ interface Piece {
   id: string
   name: string | null
   segment?: string | null
+  copy?: string | null
   imageUrl: string | null
   width: number
   height: number
@@ -210,26 +211,67 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
     fill: { color: YELLOW }, line: { color: YELLOW },
   })
 
-  // Imagem da peca: CENTRALIZADA VERTICAL E HORIZONTALMENTE no slide inteiro
-  // (nao mais empurrada pra baixo pelos boxes de nome — usuario prefere centro real do slide).
-  // Slide e 13.333 x 7.5. Margem segura 1.0 em cada lado pra nao sobrepor footer.
-  if (imgDataUri && piece.width > 0 && piece.height > 0) {
-    const maxW = 11.0, maxH = 5.7
-    const ratio = Math.min(maxW / piece.width, maxH / piece.height)
-    const w = (piece.width * ratio)
-    const h = (piece.height * ratio)
-    // Centraliza horizontalmente no slide e verticalmente entre topo (1.4) e footer (6.9)
-    const x = (13.333 - w) / 2
-    const y = (7.5 - h) / 2  // centro real do slide
-    slide.addImage({ data: imgDataUri, x, y, w, h })
-  } else if (imgDataUri) {
-    // Sem dimensoes — usa caixa fixa centralizada
-    slide.addImage({ data: imgDataUri, x: 1.4, y: 1.0, w: 10.5, h: 5.5 })
-  } else {
-    slide.addText("(Imagem não disponível)", {
-      x: 1.9, y: 3.5, w: 9.5, h: 0.6,
-      fontFace: "Calibri", fontSize: 16, color: TEXT_GRAY, align: "center",
+  // Imagem da peca + opcional card de legenda.
+  // Slide: 13.333 x 7.5
+  const hasCopy = !!(piece.copy && piece.copy.trim().length > 0)
+
+  if (hasCopy) {
+    // Layout split: peca a esquerda 55%, copy a direita 45%
+    // Area peca: x 0.4 -> 7.4 (w 7.0), y 1.5 -> 6.5 (h 5.0)
+    // Area copy: x 7.6 -> 12.9 (w 5.3), y 1.5 -> 6.5 (h 5.0)
+    if (imgDataUri && piece.width > 0 && piece.height > 0) {
+      const maxW = 7.0, maxH = 5.0
+      const ratio = Math.min(maxW / piece.width, maxH / piece.height)
+      const w = piece.width * ratio
+      const h = piece.height * ratio
+      const x = 0.4 + (maxW - w) / 2
+      const y = 1.5 + (maxH - h) / 2
+      slide.addImage({ data: imgDataUri, x, y, w, h })
+    } else if (imgDataUri) {
+      slide.addImage({ data: imgDataUri, x: 0.7, y: 1.5, w: 6.4, h: 5.0 })
+    } else {
+      slide.addText("(Imagem não disponível)", {
+        x: 0.4, y: 3.7, w: 7.0, h: 0.6,
+        fontFace: "Calibri", fontSize: 14, color: TEXT_GRAY, align: "center",
+      })
+    }
+
+    // Card legenda (background branco arredondado)
+    slide.addShape("roundRect", {
+      x: 7.6, y: 1.5, w: 5.3, h: 5.0,
+      fill: { color: "FFFFFF" }, line: { color: "EEEEEE", width: 1 },
+      rectRadius: 0.10,
     })
+    // Label "LEGENDA"
+    slide.addText("LEGENDA", {
+      x: 7.85, y: 1.7, w: 4.8, h: 0.3,
+      fontFace: "Calibri", fontSize: 9, bold: true,
+      color: TEXT_DARK, charSpacing: 1, valign: "top",
+    })
+    // Texto da copy
+    slide.addText(piece.copy!.trim(), {
+      x: 7.85, y: 2.1, w: 4.8, h: 4.2,
+      fontFace: "Calibri", fontSize: 11,
+      color: TEXT_DARK, valign: "top", align: "left",
+    })
+  } else {
+    // Layout original: imagem centralizada
+    if (imgDataUri && piece.width > 0 && piece.height > 0) {
+      const maxW = 11.0, maxH = 5.7
+      const ratio = Math.min(maxW / piece.width, maxH / piece.height)
+      const w = (piece.width * ratio)
+      const h = (piece.height * ratio)
+      const x = (13.333 - w) / 2
+      const y = (7.5 - h) / 2
+      slide.addImage({ data: imgDataUri, x, y, w, h })
+    } else if (imgDataUri) {
+      slide.addImage({ data: imgDataUri, x: 1.4, y: 1.0, w: 10.5, h: 5.5 })
+    } else {
+      slide.addText("(Imagem não disponível)", {
+        x: 1.9, y: 3.5, w: 9.5, h: 0.6,
+        fontFace: "Calibri", fontSize: 16, color: TEXT_GRAY, align: "center",
+      })
+    }
   }
 
   addFooter(slide, pptx)

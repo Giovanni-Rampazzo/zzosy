@@ -165,6 +165,7 @@ model Piece {
   mediaFormatId String?
   name          String?
   segment       String?        @db.VarChar(255)
+  copy          String?        @db.LongText
   status        String         @default("STANDBY")
   data          String?        @db.LongText
   imageUrl      String?        @db.LongText

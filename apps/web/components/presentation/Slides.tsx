@@ -134,12 +134,14 @@ interface PieceSlideProps {
   width: number
   height: number
   imageUrl: string | null
+  copy?: string | null
   onClick?: () => void
 }
 
-export function SlidePiece({ name, width, height, imageUrl, onClick }: PieceSlideProps) {
+export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: PieceSlideProps) {
   const dims = (width && height) ? `${width} x ${height} px` : "—"
   const clickable = !!onClick
+  const hasCopy = !!(copy && copy.trim().length > 0)
   return (
     <div
       onClick={onClick}
@@ -190,32 +192,99 @@ export function SlidePiece({ name, width, height, imageUrl, onClick }: PieceSlid
         width: "3cqw", height: "3cqw", borderRadius: "50%",
         background: YELLOW, zIndex: 2,
       }} />
-      {/* Imagem da peca centralizada vertical e horizontalmente no slide inteiro */}
-      <div style={{
-        position: "absolute", inset: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "8% 12%",
-      }}>
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={name}
-            style={{
-              maxWidth: "100%", maxHeight: "100%",
-              objectFit: "contain",
-              borderRadius: RADIUS,
-              boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-            }}
-          />
-        ) : (
+
+      {/* CONTEUDO: imagem (e legenda, se houver) */}
+      {hasCopy ? (
+        // Layout split: peca a esquerda 55%, copy a direita 45%
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "grid", gridTemplateColumns: "55% 45%",
+          padding: "8% 4% 8% 4%",
+          gap: "2%",
+          alignItems: "center",
+        }}>
+          {/* Peca */}
           <div style={{
-            color: TEXT_GRAY, fontSize: "1.4cqw",
-            fontFamily: "system-ui, -apple-system, sans-serif",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            height: "100%",
           }}>
-            (Imagem não disponível)
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={name}
+                style={{
+                  maxWidth: "100%", maxHeight: "100%",
+                  objectFit: "contain",
+                  borderRadius: RADIUS,
+                  boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+                }}
+              />
+            ) : (
+              <div style={{ color: TEXT_GRAY, fontSize: "1.4cqw" }}>
+                (Imagem não disponível)
+              </div>
+            )}
           </div>
-        )}
-      </div>
+          {/* Card legenda */}
+          <div style={{
+            background: "white",
+            borderRadius: RADIUS,
+            padding: "3.5% 3.5%",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+            border: "1px solid rgba(0,0,0,0.05)",
+            maxHeight: "80%",
+            overflow: "hidden",
+            display: "flex", flexDirection: "column", gap: "1.2cqw",
+          }}>
+            <div style={{
+              fontSize: "1.05cqw", fontWeight: 700,
+              color: TEXT_DARK, textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+            }}>
+              Legenda
+            </div>
+            <div style={{
+              fontSize: "1.25cqw",
+              lineHeight: 1.5,
+              color: TEXT_DARK,
+              fontFamily: "system-ui, -apple-system, sans-serif",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              overflow: "hidden",
+            }}>
+              {copy}
+            </div>
+          </div>
+        </div>
+      ) : (
+        // Layout original: peca centralizada
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "8% 12%",
+        }}>
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={name}
+              style={{
+                maxWidth: "100%", maxHeight: "100%",
+                objectFit: "contain",
+                borderRadius: RADIUS,
+                boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+              }}
+            />
+          ) : (
+            <div style={{
+              color: TEXT_GRAY, fontSize: "1.4cqw",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+            }}>
+              (Imagem não disponível)
+            </div>
+          )}
+        </div>
+      )}
       <Footer />
     </div>
   )

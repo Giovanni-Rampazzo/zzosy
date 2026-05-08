@@ -12,6 +12,7 @@ interface PieceLite {
   height: number
   status?: string
   segment?: string | null
+  copy?: string | null
   media?: string
   imageUrl?: string | null
 }
@@ -80,14 +81,14 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
 
       // Se incluir apresentacao: gera o PPTX antes do ZIP pra empacotar em Deck/
       // O segment vem por peca (nao mais por campanha) — passamos cada um adiante.
-      let extraFiles: Array<{ folder: string; name: string; blob: Blob }> | undefined
+      let extraFiles: Array<{ folder: string; name: string; blob: Blob }> = []
       if (includePresentation) {
         setProgress("Gerando apresentação...")
         const { buildCampaignPresentationBlob } = await import("@/lib/generatePresentation")
         const piecesForDeck = allPieces
           .filter(p => selected.has(p.id))
           .map(p => ({
-            id: p.id, name: p.name, segment: p.segment ?? null,
+            id: p.id, name: p.name, segment: p.segment ?? null, copy: p.copy ?? null,
             imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
           }))
         const { blob: pptxBlob, fileName: pptxName } = await buildCampaignPresentationBlob({
@@ -95,11 +96,21 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
           code: campaignCode ?? null,
           pieces: piecesForDeck,
         })
-        extraFiles = [{ folder: "Deck", name: pptxName, blob: pptxBlob }]
+        extraFiles.push({ folder: "Deck", name: pptxName, blob: pptxBlob })
+      }
+
+      // Arquivos .txt com a legenda (copy) de cada peca que tiver. Vai pra pasta Copy/.
+      // Nome do arquivo usa o nome da peca (sanitizado) + .txt. Util pra o cliente colar
+      // direto nas redes sem precisar abrir o slide.
+      const piecesWithCopy = allPieces.filter(p => selected.has(p.id) && p.copy && p.copy.trim().length > 0)
+      for (const p of piecesWithCopy) {
+        const safeName = (p.name || "peca").replace(/[\\/:*?"<>|]/g, "_").trim() || "peca"
+        const txtBlob = new Blob([p.copy!.trim()], { type: "text/plain;charset=utf-8" })
+        extraFiles.push({ folder: "Copy", name: `${safeName}.txt`, blob: txtBlob })
       }
 
       // 1) Gerar ZIP no browser
-      const zipBlob = await buildDeliveryZip(piecesToExport, Array.from(formats), campaignName, setProgress, extraFiles)
+      const zipBlob = await buildDeliveryZip(piecesToExport, Array.from(formats), campaignName, setProgress, extraFiles.length > 0 ? extraFiles : undefined)
 
       // 2) Nome do ZIP usa codigo da campanha quando existir
       const codeForName = (campaignCode || "").trim()
