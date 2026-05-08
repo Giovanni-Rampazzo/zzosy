@@ -48,29 +48,26 @@ function Footer() {
 export function SlideCover() {
   return (
     <div style={{ ...slideShellBase, background: BG_LIGHT, containerType: "inline-size" }}>
-      {/* SUNO no topo direito */}
-      <div style={{
-        position: "absolute", top: "8%", right: "5%",
-        display: "flex", alignItems: "center", gap: "0.8cqw",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "5.5cqw", fontWeight: 700, color: TEXT_DARK,
-        letterSpacing: "-0.02em",
-      }}>
-        SUNO
-        <span style={{
-          width: "3.2cqw", height: "3.2cqw", borderRadius: "50%",
-          background: YELLOW, display: "inline-block",
-        }} />
-      </div>
+      {/* SUNO logo no topo direito */}
+      <img
+        src="/presentation/suno.png"
+        alt="SUNO"
+        style={{
+          position: "absolute", top: "8%", right: "5%",
+          height: "8cqw", width: "auto",
+          display: "block",
+        }}
+      />
       {/* UNITED CREATORS gigante embaixo */}
-      <div style={{
-        position: "absolute", bottom: "12%", left: "5%", right: "5%",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "8.4cqw", fontWeight: 700, color: TEXT_DARK,
-        letterSpacing: "-0.02em", lineHeight: 1,
-      }}>
-        UNITED CREATORS
-      </div>
+      <img
+        src="/presentation/united-creators.png"
+        alt="UNITED CREATORS"
+        style={{
+          position: "absolute", bottom: "13%", left: "5%",
+          width: "90%", height: "auto",
+          display: "block",
+        }}
+      />
       <Footer />
     </div>
   )
@@ -228,20 +225,16 @@ export function SlidePiece({ name, width, height, imageUrl, onClick }: PieceSlid
 export function SlideThanks() {
   return (
     <div style={{ ...slideShellBase, background: BG_LIGHT, containerType: "inline-size" }}>
-      {/* SUNO topo direito */}
-      <div style={{
-        position: "absolute", top: "6%", right: "5%",
-        display: "flex", alignItems: "center", gap: "0.7cqw",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "3.5cqw", fontWeight: 700, color: TEXT_DARK,
-        letterSpacing: "-0.02em",
-      }}>
-        SUNO
-        <span style={{
-          width: "2cqw", height: "2cqw", borderRadius: "50%",
-          background: YELLOW, display: "inline-block",
-        }} />
-      </div>
+      {/* SUNO logo topo direito */}
+      <img
+        src="/presentation/suno.png"
+        alt="SUNO"
+        style={{
+          position: "absolute", top: "6%", right: "5%",
+          height: "5cqw", width: "auto",
+          display: "block",
+        }}
+      />
       {/* OBRIGADO + smiley bottom-left */}
       <div style={{
         position: "absolute", left: "4%", bottom: "10%",

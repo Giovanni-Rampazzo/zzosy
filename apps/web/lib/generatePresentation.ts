@@ -70,31 +70,39 @@ function addFooter(slide: any, pptx: PptxGenJS) {
 
 /**
  * Slide 1: Capa
- *  - SUNO (texto bold preto) + bolinha amarela (substitui logo real ate enviarem PNG)
- *  - "UNITED CREATORS" grande embaixo
+ *  - Logo SUNO no topo direito
+ *  - Logo UNITED CREATORS gigante embaixo
  */
-function addCoverSlide(pptx: PptxGenJS) {
+function addCoverSlide(pptx: PptxGenJS, sunoLogo: string | null, unitedLogo: string | null) {
   const slide = pptx.addSlide()
   slide.background = { color: BG_LIGHT }
 
-  // SUNO no topo direito
-  slide.addText("SUNO", {
-    x: 9.5, y: 0.4, w: 2.6, h: 0.9,
-    fontFace: "Calibri", fontSize: 54, bold: true,
-    color: TEXT_DARK, align: "right", valign: "middle",
-  })
-  // Bolinha amarela ao lado do "O" (decorativa)
-  slide.addShape("ellipse", {
-    x: 12.2, y: 0.65, w: 0.45, h: 0.45,
-    fill: { color: YELLOW }, line: { color: YELLOW },
-  })
+  // Logo SUNO topo direito (830x278 = ratio 2.99). Altura ~1.0", largura 2.99"
+  if (sunoLogo) {
+    slide.addImage({ data: sunoLogo, x: 10.0, y: 0.5, w: 2.99, h: 1.0 })
+  } else {
+    // Fallback texto
+    slide.addText("SUNO", {
+      x: 9.5, y: 0.4, w: 2.6, h: 0.9,
+      fontFace: "Calibri", fontSize: 54, bold: true,
+      color: TEXT_DARK, align: "right", valign: "middle",
+    })
+    slide.addShape("ellipse", {
+      x: 12.2, y: 0.65, w: 0.45, h: 0.45,
+      fill: { color: YELLOW }, line: { color: YELLOW },
+    })
+  }
 
-  // UNITED CREATORS gigante no centro-baixo
-  slide.addText("UNITED CREATORS", {
-    x: 0.6, y: 5.2, w: 12.1, h: 1.4,
-    fontFace: "Calibri", fontSize: 80, bold: true,
-    color: TEXT_DARK, align: "left", valign: "middle",
-  })
+  // Logo UNITED CREATORS gigante no centro-baixo (1792x226 = ratio 7.93). Largura 12", altura 12/7.93 = 1.51"
+  if (unitedLogo) {
+    slide.addImage({ data: unitedLogo, x: 0.66, y: 5.4, w: 12.0, h: 1.51 })
+  } else {
+    slide.addText("UNITED CREATORS", {
+      x: 0.6, y: 5.2, w: 12.1, h: 1.4,
+      fontFace: "Calibri", fontSize: 80, bold: true,
+      color: TEXT_DARK, align: "left", valign: "middle",
+    })
+  }
 
   addFooter(slide, pptx)
 }
@@ -226,19 +234,24 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
 /**
  * Slide final: OBRIGADO + smiley + SUNO no topo
  */
-function addThanksSlide(pptx: PptxGenJS) {
+function addThanksSlide(pptx: PptxGenJS, sunoLogo: string | null) {
   const slide = pptx.addSlide()
   slide.background = { color: BG_LIGHT }
 
-  slide.addText("SUNO", {
-    x: 9.7, y: 0.35, w: 2.4, h: 0.7,
-    fontFace: "Calibri", fontSize: 32, bold: true,
-    color: TEXT_DARK, align: "right", valign: "middle",
-  })
-  slide.addShape("ellipse", {
-    x: 12.0, y: 0.5, w: 0.35, h: 0.35,
-    fill: { color: YELLOW }, line: { color: YELLOW },
-  })
+  // Logo SUNO topo direito (menor que na capa). Altura ~0.6", largura 0.6 * 2.99 = 1.79"
+  if (sunoLogo) {
+    slide.addImage({ data: sunoLogo, x: 11.0, y: 0.4, w: 1.79, h: 0.6 })
+  } else {
+    slide.addText("SUNO", {
+      x: 9.7, y: 0.35, w: 2.4, h: 0.7,
+      fontFace: "Calibri", fontSize: 32, bold: true,
+      color: TEXT_DARK, align: "right", valign: "middle",
+    })
+    slide.addShape("ellipse", {
+      x: 12.0, y: 0.5, w: 0.35, h: 0.35,
+      fill: { color: YELLOW }, line: { color: YELLOW },
+    })
+  }
 
   // OBRIGADO bottom-left
   slide.addText("OBRIGADO", {
@@ -285,8 +298,14 @@ export async function generateCampaignPresentation(data: CampaignData): Promise<
   pptx.title = `${data.name} - Apresentação`
   pptx.author = "ZZOSY"
 
+  // Pre-carrega logos servidos do /public/presentation. URL relativa funciona pq mesmo origin.
+  const [sunoLogo, unitedLogo] = await Promise.all([
+    imgToDataUri("/presentation/suno.png"),
+    imgToDataUri("/presentation/united-creators.png"),
+  ])
+
   // Capa + intro slides
-  addCoverSlide(pptx)
+  addCoverSlide(pptx, sunoLogo, unitedLogo)
   addCodeSlide(pptx, data.name)
   addSegmentSlide(pptx)
 
@@ -297,7 +316,7 @@ export async function generateCampaignPresentation(data: CampaignData): Promise<
   data.pieces.forEach((p, i) => addPieceSlide(pptx, p, imgs[i]))
 
   // Slide final
-  addThanksSlide(pptx)
+  addThanksSlide(pptx, sunoLogo)
 
   await pptx.writeFile({ fileName: fileNameFor(data.name) })
 }
