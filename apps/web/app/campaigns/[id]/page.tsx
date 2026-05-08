@@ -153,36 +153,6 @@ export default function CampaignOverviewPage() {
     }
   }
 
-  const [generatingPresentation, setGeneratingPresentation] = useState(false)
-  async function generatePresentation() {
-    if (!campaign || pieces.length === 0) return
-    setGeneratingPresentation(true)
-    try {
-      // Import dinamico — pptxgenjs eh ~700KB, evita carregar no bundle inicial.
-      // So baixa quando o usuario realmente clica em "Apresentação".
-      const { generateCampaignPresentation } = await import("@/lib/generatePresentation")
-      // Ordena pecas pelo formato (igual a lista visivel) — ou usa ordem de criacao
-      const orderedPieces = [...pieces].sort((a, b) => {
-        const fa = a.format || ""
-        const fb = b.format || ""
-        if (fa !== fb) return fa.localeCompare(fb)
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      })
-      await generateCampaignPresentation({
-        name: campaign.name,
-        pieces: orderedPieces.map(p => ({
-          id: p.id, name: p.name, imageUrl: p.imageUrl ?? null,
-          width: p.width, height: p.height,
-        })),
-      })
-    } catch (e: any) {
-      console.error("[generatePresentation] erro:", e)
-      alert(`Erro ao gerar apresentação: ${e?.message ?? e}`)
-    } finally {
-      setGeneratingPresentation(false)
-    }
-  }
-
   async function bulkSetStatus(status: string) {
     if (selected.length === 0) return
     await Promise.all(selected.map(id =>
@@ -280,8 +250,8 @@ export default function CampaignOverviewPage() {
             <PsdImporter campaignId={id} onImported={loadAll} />
             <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
             <Button variant="primary" size="lg" onClick={() => router.push(`/editor?campaignId=${id}`)}>Key Vision</Button>
-            <Button variant="primary" size="lg" onClick={generatePresentation} disabled={generatingPresentation || pieces.length === 0}>
-              {generatingPresentation ? "Gerando..." : "Apresentação"}
+            <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/presentation`)} disabled={pieces.length === 0}>
+              Apresentação
             </Button>
             <Button variant="primary" size="lg" onClick={() => setDeliveryOpen(true)} disabled={pieces.length === 0}>Entrega</Button>
           </div>

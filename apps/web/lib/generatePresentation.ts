@@ -168,10 +168,11 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   const name = piece.name ?? "Peça sem nome"
   const dims = piece.width && piece.height ? `${piece.width} x ${piece.height} px` : "—"
 
-  // Box amarelo nome (top-left)
-  slide.addShape("rect", {
+  // Box amarelo nome (top-left) — radius 12pt = ~0.166" em pptxgenjs
+  slide.addShape("roundRect", {
     x: 0.3, y: 0.3, w: Math.min(5.0, name.length * 0.16 + 0.5), h: 0.5,
     fill: { color: YELLOW }, line: { color: YELLOW },
+    rectRadius: 0.12,
   })
   slide.addText(name, {
     x: 0.4, y: 0.3, w: Math.min(4.9, name.length * 0.16 + 0.4), h: 0.5,
@@ -180,9 +181,10 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   })
 
   // Box amarelo dimensao (abaixo)
-  slide.addShape("rect", {
+  slide.addShape("roundRect", {
     x: 0.3, y: 0.85, w: Math.min(3.0, dims.length * 0.13 + 0.4), h: 0.4,
     fill: { color: YELLOW }, line: { color: YELLOW },
+    rectRadius: 0.10,
   })
   slide.addText(dims, {
     x: 0.4, y: 0.85, w: Math.min(2.9, dims.length * 0.13 + 0.3), h: 0.4,
@@ -196,18 +198,21 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
     fill: { color: YELLOW }, line: { color: YELLOW },
   })
 
-  // Imagem da peca centralizada. Calcula aspect ratio pra caber em 9.5 x 5.5 max.
+  // Imagem da peca: CENTRALIZADA VERTICAL E HORIZONTALMENTE no slide inteiro
+  // (nao mais empurrada pra baixo pelos boxes de nome — usuario prefere centro real do slide).
+  // Slide e 13.333 x 7.5. Margem segura 1.0 em cada lado pra nao sobrepor footer.
   if (imgDataUri && piece.width > 0 && piece.height > 0) {
-    const maxW = 9.5, maxH = 5.5
+    const maxW = 11.0, maxH = 5.7
     const ratio = Math.min(maxW / piece.width, maxH / piece.height)
     const w = (piece.width * ratio)
     const h = (piece.height * ratio)
+    // Centraliza horizontalmente no slide e verticalmente entre topo (1.4) e footer (6.9)
     const x = (13.333 - w) / 2
-    const y = 1.6 + (5.5 - h) / 2
+    const y = (7.5 - h) / 2  // centro real do slide
     slide.addImage({ data: imgDataUri, x, y, w, h })
   } else if (imgDataUri) {
-    // Sem dimensoes — usa caixa fixa 16:9
-    slide.addImage({ data: imgDataUri, x: 1.9, y: 1.7, w: 9.5, h: 5.3 })
+    // Sem dimensoes — usa caixa fixa centralizada
+    slide.addImage({ data: imgDataUri, x: 1.4, y: 1.0, w: 10.5, h: 5.5 })
   } else {
     slide.addText("(Imagem não disponível)", {
       x: 1.9, y: 3.5, w: 9.5, h: 0.6,
