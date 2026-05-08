@@ -95,8 +95,8 @@ export default function DashboardPage() {
                   <td style={{padding:"12px 16px",fontSize:13}}>{c._count.campaigns}</td>
                   <td style={{padding:"12px 16px",textAlign:"right"}}>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
                       <Button variant="secondary" size="sm" onClick={() => setEditingClient(c)}>Editar</Button>
+                      <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
                       {confirmDelete === c.id ? (
                         <div style={{display:"flex",gap:6,alignItems:"center"}}>
                           <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
