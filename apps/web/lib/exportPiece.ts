@@ -616,6 +616,20 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     if ((obj as any).__isBg) continue
     // DIAGNOSTICO: tipo de cada objeto que entra no loop
     console.log("[PSD-LOOP]", { type: obj.type, isBg: (obj as any).__isBg, hasText: !!(obj as any).text, name: (obj as any).__assetLabel })
+    // DIAGNOSTICO DETALHADO: estado completo do objeto Fabric ANTES de qualquer processamento.
+    // Permite ver scaleX/Y, fontSize, width brutos como vieram do canvas.
+    console.log("[PSD-LOOP-DETAIL]", {
+      name: (obj as any).__assetLabel,
+      type: obj.type,
+      text: (obj as any).text?.substring?.(0, 40),
+      left: obj.left, top: obj.top,
+      width: obj.width, height: obj.height,
+      scaleX: obj.scaleX, scaleY: obj.scaleY,
+      fontSize: (obj as any).fontSize,
+      scaledWidth: obj.getScaledWidth?.(),
+      scaledHeight: obj.getScaledHeight?.(),
+      hasStyles: !!(obj as any).styles && Object.keys((obj as any).styles).length > 0,
+    })
     const ox = obj.left ?? 0
     const oy = obj.top ?? 0
     const ow = (obj.width ?? 100) * (obj.scaleX ?? 1)
@@ -629,6 +643,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     let name = (obj as any).__assetLabel ?? obj.type ?? "Layer"
 
     if (obj.type === "textbox" || obj.type === "i-text" || obj.type === "text") {
+      try {
       // Nome da layer = label do asset (editavel na pagina de assets).
       // Fallback: conteudo do texto se nao tiver label.
       if (!((obj as any).__assetLabel)) {
@@ -698,6 +713,17 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           paragraphStyle: { justification: "left" },
         },
       })
+      } catch (errText) {
+        // CRITICO: se algo na branch text deu throw, o console.log [PSD-TEXT-EXPORT] nao roda
+        // e o layer nao eh adicionado ao PSD. Antes esse erro era engolido silenciosamente.
+        // Agora logamos pra debug.
+        console.error("[PSD-TEXT-CRASH]", {
+          name: (obj as any).__assetLabel ?? "?",
+          text: (obj as any).text?.substring?.(0, 60),
+          error: errText,
+          stack: (errText as any)?.stack,
+        })
+      }
     } else {
       // === Imagem: detecta se eh Smart Object embeddavel ===
       // Eh SO se: (a) asset preserva smart object de import, OU (b) eh SVG via imageUrl.
