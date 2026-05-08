@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/Button"
 
 interface Props {
@@ -10,8 +10,17 @@ interface Props {
 
 export function NewCampaignModal({ clientId, onClose, onCreated }: Props) {
   const [name, setName] = useState("")
+  const [code, setCode] = useState("")
+  const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+
+  useEffect(() => {
+    fetch("/api/campaigns/codes", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { codes: [] })
+      .then(d => setCodeSuggestions(Array.isArray(d.codes) ? d.codes : []))
+      .catch(() => setCodeSuggestions([]))
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -20,7 +29,7 @@ export function NewCampaignModal({ clientId, onClose, onCreated }: Props) {
     const res = await fetch("/api/campaigns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, clientId }),
+      body: JSON.stringify({ name, code: code.trim() || null, clientId }),
     })
     setLoading(false)
     if (res.ok) {
@@ -47,6 +56,19 @@ export function NewCampaignModal({ clientId, onClose, onCreated }: Props) {
               autoFocus
               style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}
             />
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Código</label>
+            <input
+              value={code}
+              onChange={e => setCode(e.target.value)}
+              list="campaign-codes"
+              placeholder="Ex: CAMP-2026-001"
+              style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}
+            />
+            <datalist id="campaign-codes">
+              {codeSuggestions.map(c => <option key={c} value={c} />)}
+            </datalist>
           </div>
           {error && <p style={{color:"#dc2626",fontSize:12,margin:0}}>{error}</p>}
           <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>

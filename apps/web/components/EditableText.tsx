@@ -6,6 +6,8 @@ interface Props {
   onSave: (newValue: string) => Promise<void> | void
   variant?: "h1" | "h2" | "inline"
   placeholder?: string
+  /** Sugestoes pra autocomplete (renderizadas via datalist HTML5). */
+  suggestions?: string[]
 }
 
 const VARIANT_STYLES: Record<string, React.CSSProperties> = {
@@ -14,18 +16,21 @@ const VARIANT_STYLES: Record<string, React.CSSProperties> = {
   inline: { fontSize: 14, fontWeight: 500 },
 }
 
-export function EditableText({ value, onSave, variant = "h1", placeholder = "Sem nome" }: Props) {
+let editableTextSeq = 0
+
+export function EditableText({ value, onSave, variant = "h1", placeholder = "Sem nome", suggestions }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listIdRef = useRef<string>(`et-${++editableTextSeq}`)
 
   useEffect(() => { setDraft(value) }, [value])
   useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
 
   async function commit() {
     const trimmed = draft.trim()
-    if (!trimmed || trimmed === value) { setEditing(false); setDraft(value); return }
+    if (trimmed === value) { setEditing(false); setDraft(value); return }
     setSaving(true)
     try {
       await onSave(trimmed)
@@ -44,28 +49,36 @@ export function EditableText({ value, onSave, variant = "h1", placeholder = "Sem
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
       {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={e => {
-            if (e.key === "Enter") { e.preventDefault(); commit() }
-            else if (e.key === "Escape") { e.preventDefault(); cancel() }
-          }}
-          disabled={saving}
-          placeholder={placeholder}
-          style={{
-            ...style,
-            padding: "2px 6px",
-            border: "2px solid #F5C400",
-            borderRadius: 4,
-            outline: "none",
-            background: "#fffbeb",
-            minWidth: 200,
-            opacity: saving ? 0.6 : 1,
-          }}
-        />
+        <>
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => {
+              if (e.key === "Enter") { e.preventDefault(); commit() }
+              else if (e.key === "Escape") { e.preventDefault(); cancel() }
+            }}
+            disabled={saving}
+            placeholder={placeholder}
+            list={suggestions && suggestions.length ? listIdRef.current : undefined}
+            style={{
+              ...style,
+              padding: "2px 6px",
+              border: "2px solid #F5C400",
+              borderRadius: 4,
+              outline: "none",
+              background: "#fffbeb",
+              minWidth: 200,
+              opacity: saving ? 0.6 : 1,
+            }}
+          />
+          {suggestions && suggestions.length > 0 && (
+            <datalist id={listIdRef.current}>
+              {suggestions.map(s => <option key={s} value={s} />)}
+            </datalist>
+          )}
+        </>
       ) : (
         <span
           onClick={() => setEditing(true)}

@@ -26,6 +26,7 @@ export default function PiecePage() {
   const [piece, setPiece] = useState<Piece | null>(null)
   const [name, setName] = useState("")
   const [segment, setSegment] = useState("")
+  const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
   const [status, setStatus] = useState("STANDBY")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -39,6 +40,14 @@ export default function PiecePage() {
       setStatus(d.status ?? "STANDBY")
     })
   }, [id])
+
+  // Sugestoes de segmento (datalist)
+  useEffect(() => {
+    fetch("/api/pieces/segments", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { segments: [] })
+      .then(d => setSegmentSuggestions(Array.isArray(d.segments) ? d.segments : []))
+      .catch(() => {})
+  }, [])
 
   async function save() {
     setSaving(true)
@@ -112,9 +121,13 @@ export default function PiecePage() {
             <input
               value={segment}
               onChange={e => setSegment(e.target.value)}
+              list="piece-segments"
               placeholder="Ex: WhatsApp, Stories, Email…"
               style={{ width: "100%", padding: "10px 12px", border: "1px solid #E0E0E0", borderRadius: 6, fontSize: 14, outline: "none", boxSizing: "border-box" }}
             />
+            <datalist id="piece-segments">
+              {segmentSuggestions.map(s => <option key={s} value={s} />)}
+            </datalist>
             <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
               Usado pra agrupar peças na apresentação. Peças com mesmo segmento ficam juntas.
             </div>

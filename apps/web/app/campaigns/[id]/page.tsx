@@ -66,6 +66,7 @@ export default function CampaignOverviewPage() {
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
+  const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
 
   async function loadAll() {
     console.log("[LOAD-ALL] disparou em", new Date().toISOString().slice(11, 19), "id=", id)
@@ -100,6 +101,14 @@ export default function CampaignOverviewPage() {
   }
 
   useEffect(() => { loadAll() }, [id])
+
+  // Sugestoes de codigo (datalist)
+  useEffect(() => {
+    fetch("/api/campaigns/codes", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { codes: [] })
+      .then(d => setCodeSuggestions(Array.isArray(d.codes) ? d.codes : []))
+      .catch(() => {})
+  }, [])
 
   // Sempre que a overview volta a ficar ativa, recarrega para pegar thumb novo do KV/peças.
   // Cobre todos os cenarios: troca de aba, navegacao SPA, back/forward, etc.
@@ -219,6 +228,7 @@ export default function CampaignOverviewPage() {
                 <EditableText
                   value={campaign.code ?? ""}
                   placeholder="—"
+                  suggestions={codeSuggestions}
                   onSave={async (v) => {
                     const newCode = v.trim() || null
                     const res = await fetch(`/api/campaigns/${id}`, {

@@ -8,8 +8,8 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const tenantId = (session.user as any).tenantId
-    const { name, clientId } = await req.json()
-    console.log("[CAMPAIGN-CREATE] start", { tenantId, name, clientId, userEmail: (session.user as any).email })
+    const { name, clientId, code } = await req.json()
+    console.log("[CAMPAIGN-CREATE] start", { tenantId, name, clientId, code, userEmail: (session.user as any).email })
 
     if (!name || !clientId) return NextResponse.json({ error: "name e clientId obrigatórios" }, { status: 400 })
 
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     }
 
     const campaign = await prisma.campaign.create({
-      data: { name, clientId },
+      data: { name, clientId, code: (typeof code === "string" && code.trim()) ? code.trim() : null },
       include: { assets: true }
     })
     console.log("[CAMPAIGN-CREATE] sucesso", { id: campaign.id })
