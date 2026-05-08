@@ -153,6 +153,7 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
+  const isInitialized = useRef(false)
   const pendingTextPropagation = useRef(false)
   const [confirmExit, setConfirmExit] = useState<null | (() => void)>(null)
   const [exportOpen, setExportOpen] = useState(false)
@@ -888,11 +889,20 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
         redoStack.current = []
       } catch (e) {}
       isApplyingHistory.current = false
+      // Marca init concluido — saves sao liberados a partir daqui. Antes disso, salvar
+      // poderia gravar layers: [] (canvas ainda nao tinha objetos carregados).
+      isInitialized.current = true
     }
 
     init()
     return () => {
       alive = false
+      // Bloqueia saves apos cleanup. Sem isso, um saveTimer pendente (debounce 800ms)
+      // dispararia depois do dispose, e poderia salvar sobre um canvas em meio de re-init
+      // (causando layers: [] no banco — bug "KV volta vazio ao alternar com /assets").
+      isInitialized.current = false
+      // Cancela qualquer save pendente pra nao gravar lixo apos o user sair
+      clearTimeout(saveTimer.current)
       const fcc: any = fabricRef.current
       if (fcc) {
         if (fcc.__blockKeyHandler) document.removeEventListener("keydown", fcc.__blockKeyHandler, true)
@@ -1338,6 +1348,18 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
           }
           return layer
         })
+      // Circuit breaker (mesma logica do doSave): nao grava matriz vazia sobre KV que tinha layers
+      if (layersToSave.length === 0) {
+        const previousLayers = (campaignRef.current?.keyVision?.layers as any) ?? []
+        const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
+        if (hadLayers) {
+          console.warn("[saveNow MATRIX] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
+          isDirtyRef.current = false
+          setIsDirty(false)
+          setSaving(false)
+          return
+        }
+      }
       await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
         const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
@@ -1356,6 +1378,13 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
   function doSave() {
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
+      // Guard 1: se o init nao terminou (ou se o cleanup ja rodou), aborta.
+      // Sem isso, um timer que ficou pendurado dispara depois que o useEffect re-rodou
+      // mas antes do init recarregar todos os layers, gravando layers: [] no banco.
+      if (!isInitialized.current) {
+        console.warn("[doSave] abortado — init nao terminou (canvas em re-mount)")
+        return
+      }
       // Se há propagação de texto em curso (PUT asset migrando styles em todos escopos),
       // adia o save: rodar agora salvaria layers com styles em índices errados.
       if (pendingTextPropagation.current) {
@@ -1460,6 +1489,19 @@ export function KeyVisionEditor({ campaignId, pieceId }: { campaignId: string; p
             }
             return layer
           })
+        // Circuit breaker: se o save tentaria gravar matriz VAZIA mas o KV anterior tinha
+        // layers, eh quase certamente um init incompleto disparando save por engano. Aborta
+        // pra nao perder o trabalho. O usuario pode esvaziar de propriedade clicando em Apagar
+        // em cada layer (passa por moveLayer/remove + doSave com canvas ja inicializado).
+        if (layersToSave.length === 0) {
+          const previousLayers = (campaignRef.current?.keyVision?.layers as any) ?? []
+          const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
+          if (hadLayers) {
+            console.warn("[SAVE-MATRIX-2] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
+            setSaving(false)
+            return
+          }
+        }
         await fetch(`/api/campaigns/${campaignId}/key-vision`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
