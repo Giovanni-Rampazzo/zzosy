@@ -144,13 +144,44 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaig
         </div>
 
         <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
-          {/* Toggle: ocultar entregues */}
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontSize: 13, color: "#555" }}>
+          {/* 1. Apresentação */}
+          <div style={{ marginBottom: 16, padding: 12, background: "#fafafa", borderRadius: 6, border: "1px solid #eee" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={includePresentation} onChange={e => setIncludePresentation(e.target.checked)} />
+              Incluir apresentação
+            </label>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 4, marginLeft: 24 }}>
+              Adiciona o .pptx da campanha numa pasta <strong>Deck/</strong> dentro do ZIP.
+            </div>
+          </div>
+
+          {/* 2. Formatos */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Formatos a exportar</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {FORMATS.map(f => {
+                const isSel = formats.has(f.v)
+                return (
+                  <button key={f.v} onClick={() => toggleFormat(f.v)}
+                    style={{
+                      padding: "6px 14px", border: isSel ? "2px solid #F5C400" : "1px solid #ddd",
+                      borderRadius: 6, background: isSel ? "#fffbeb" : "#fff",
+                      cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    }}>
+                    {f.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 3. Toggle: ocultar entregues */}
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, color: "#555" }}>
             <input type="checkbox" checked={hideDelivered} onChange={e => setHideDelivered(e.target.checked)} />
             Ocultar peças já entregues
           </label>
 
-          {/* Lista de peças */}
+          {/* 4. Lista de peças */}
           {loading ? <div style={{ color: "#888" }}>Carregando peças...</div> : (
             <>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
@@ -159,7 +190,7 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaig
                   {selected.size === visible.length && visible.length > 0 ? "Desmarcar tudo" : "Selecionar tudo"}
                 </button>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8, marginBottom: 24 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8, marginBottom: 8 }}>
                 {visible.map(p => {
                   const isSel = selected.has(p.id)
                   const isDelivered = p.status === "ENTREGUE"
@@ -184,37 +215,6 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaig
               </div>
             </>
           )}
-
-          {/* Formatos */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Formatos a exportar</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {FORMATS.map(f => {
-                const isSel = formats.has(f.v)
-                return (
-                  <button key={f.v} onClick={() => toggleFormat(f.v)}
-                    style={{
-                      padding: "6px 14px", border: isSel ? "2px solid #F5C400" : "1px solid #ddd",
-                      borderRadius: 6, background: isSel ? "#fffbeb" : "#fff",
-                      cursor: "pointer", fontSize: 12, fontWeight: 600,
-                    }}>
-                    {f.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Apresentação */}
-          <div style={{ marginBottom: 8, padding: 12, background: "#fafafa", borderRadius: 6, border: "1px solid #eee" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-              <input type="checkbox" checked={includePresentation} onChange={e => setIncludePresentation(e.target.checked)} />
-              Incluir apresentação
-            </label>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 4, marginLeft: 24 }}>
-              Adiciona o .pptx da campanha numa pasta <strong>Deck/</strong> dentro do ZIP.
-            </div>
-          </div>
 
           {progress && <div style={{ fontSize: 12, color: "#888", marginTop: 8 }}>{progress}</div>}
         </div>
