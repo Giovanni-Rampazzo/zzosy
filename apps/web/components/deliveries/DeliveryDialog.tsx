@@ -17,6 +17,8 @@ interface PieceLite {
 interface Props {
   campaignId: string
   campaignName?: string
+  campaignCode?: string | null
+  campaignSegment?: string | null
   onClose: () => void
   onCreated?: () => void
 }
@@ -28,11 +30,12 @@ const FORMATS: { v: ExportFormat; label: string }[] = [
   { v: "PDF", label: "PDF" },
 ]
 
-export function DeliveryDialog({ campaignId, campaignName, onClose, onCreated }: Props) {
+export function DeliveryDialog({ campaignId, campaignName, campaignCode, campaignSegment, onClose, onCreated }: Props) {
   const [allPieces, setAllPieces] = useState<PieceLite[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [formats, setFormats] = useState<Set<ExportFormat>>(new Set(["PSD"]))
   const [hideDelivered, setHideDelivered] = useState(true)
+  const [includePresentation, setIncludePresentation] = useState(true)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [progress, setProgress] = useState("")
@@ -74,17 +77,40 @@ export function DeliveryDialog({ campaignId, campaignName, onClose, onCreated }:
         .filter(p => selected.has(p.id))
         .map(p => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height, media: p.media }))
 
-      // 1) Gerar ZIP no browser
-      const zipBlob = await buildDeliveryZip(piecesToExport, Array.from(formats), campaignName, setProgress)
+      // Se incluir apresentacao: gera o PPTX antes do ZIP pra empacotar em Deck/
+      let extraFiles: Array<{ folder: string; name: string; blob: Blob }> | undefined
+      if (includePresentation) {
+        setProgress("Gerando apresentação...")
+        const { buildCampaignPresentationBlob } = await import("@/lib/generatePresentation")
+        const piecesForDeck = allPieces
+          .filter(p => selected.has(p.id))
+          .map(p => ({ id: p.id, name: p.name, imageUrl: p.imageUrl ?? null, width: p.width, height: p.height }))
+        const { blob: pptxBlob, fileName: pptxName } = await buildCampaignPresentationBlob({
+          name: campaignName ?? "Campanha",
+          code: campaignCode ?? null,
+          segment: campaignSegment ?? null,
+          pieces: piecesForDeck,
+        })
+        extraFiles = [{ folder: "Deck", name: pptxName, blob: pptxBlob }]
+      }
 
-      // 2) Download local pro user
-      const downloadName = `Entrega-${new Date().toISOString().slice(0,10)}.zip`
+      // 1) Gerar ZIP no browser
+      const zipBlob = await buildDeliveryZip(piecesToExport, Array.from(formats), campaignName, setProgress, extraFiles)
+
+      // 2) Nome do ZIP usa codigo da campanha quando existir
+      const codeForName = (campaignCode || "").trim()
+      const safeCode = codeForName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "")
+      const downloadName = safeCode
+        ? `Entrega ${safeCode}.zip`
+        : `Entrega-${new Date().toISOString().slice(0,10)}.zip`
+
+      // 3) Download local pro user
       const url = URL.createObjectURL(zipBlob)
       const a = document.createElement("a"); a.href = url; a.download = downloadName
       document.body.appendChild(a); a.click(); a.remove()
       URL.revokeObjectURL(url)
 
-      // 3) Salvar copia no servidor + criar Delivery + marcar pecas como ENTREGUE
+      // 4) Salvar copia no servidor + criar Delivery + marcar pecas como ENTREGUE
       setProgress("Salvando entrega no servidor...")
       const fd = new FormData()
       fd.append("zip", zipBlob, downloadName)
@@ -176,6 +202,17 @@ export function DeliveryDialog({ campaignId, campaignName, onClose, onCreated }:
                   </button>
                 )
               })}
+            </div>
+          </div>
+
+          {/* Apresentação */}
+          <div style={{ marginBottom: 8, padding: 12, background: "#fafafa", borderRadius: 6, border: "1px solid #eee" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={includePresentation} onChange={e => setIncludePresentation(e.target.checked)} />
+              Incluir apresentação
+            </label>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 4, marginLeft: 24 }}>
+              Adiciona o .pptx da campanha numa pasta <strong>Deck/</strong> dentro do ZIP.
             </div>
           </div>
 

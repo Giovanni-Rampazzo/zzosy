@@ -74,7 +74,7 @@ export function SlideCover() {
 }
 
 /* ============== Slide 2 — Codigo + Nome ============== */
-export function SlideCode({ campaignName }: { campaignName: string }) {
+export function SlideCode({ campaignName, code }: { campaignName: string; code?: string | null }) {
   return (
     <div style={{ ...slideShellBase, background: YELLOW, containerType: "inline-size" }}>
       <div style={{
@@ -90,7 +90,7 @@ export function SlideCode({ campaignName }: { campaignName: string }) {
           fontSize: "3.2cqw", fontWeight: 800, color: "#fff",
           letterSpacing: "-0.01em", lineHeight: 1.1,
         }}>
-          CÓDIGO CAMPANHA
+          {code && code.trim() ? code.toUpperCase() : "CÓDIGO CAMPANHA"}
         </div>
         <div style={{
           fontFamily: "system-ui, -apple-system, sans-serif",
@@ -107,7 +107,7 @@ export function SlideCode({ campaignName }: { campaignName: string }) {
 }
 
 /* ============== Slide 3 — Segmento ============== */
-export function SlideSegment() {
+export function SlideSegment({ segment }: { segment?: string | null }) {
   return (
     <div style={{ ...slideShellBase, background: YELLOW, containerType: "inline-size" }}>
       <div style={{
@@ -120,7 +120,7 @@ export function SlideSegment() {
           fontSize: "3.2cqw", fontWeight: 700, fontStyle: "italic",
           color: "#fff", letterSpacing: "-0.01em",
         }}>
-          SEGMENTO DA CAMPANHA
+          {segment && segment.trim() ? segment.toUpperCase() : "SEGMENTO DA CAMPANHA"}
         </div>
       </div>
       <Footer />

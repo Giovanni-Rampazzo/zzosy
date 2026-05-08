@@ -16,6 +16,8 @@ interface Asset { id: string; type: string; label: string }
 interface Campaign {
   id: string
   name: string
+  code?: string | null
+  segment?: string | null
   client: { id: string; name: string }
   psdName?: string | null
   assets: Asset[]
@@ -217,6 +219,40 @@ export default function CampaignOverviewPage() {
               }}
             />
           </h1>
+          <div style={{ display: "flex", gap: 24, marginTop: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>Código</span>
+              <EditableText
+                value={campaign.code ?? ""}
+                placeholder="—"
+                onSave={async (v) => {
+                  const newCode = v.trim() || null
+                  const res = await fetch(`/api/campaigns/${id}`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ code: newCode }),
+                  })
+                  if (!res.ok) throw new Error()
+                  setCampaign(c => c ? { ...c, code: newCode } : c)
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 200 }}>
+              <span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>Segmento</span>
+              <EditableText
+                value={campaign.segment ?? ""}
+                placeholder="—"
+                onSave={async (v) => {
+                  const newSegment = v.trim() || null
+                  const res = await fetch(`/api/campaigns/${id}`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ segment: newSegment }),
+                  })
+                  if (!res.ok) throw new Error()
+                  setCampaign(c => c ? { ...c, segment: newSegment } : c)
+                }}
+              />
+            </div>
+          </div>
           {campaign.psdName && (
             <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
               PSD: <strong>{campaign.psdName}</strong> · {campaign.assets?.length ?? 0} assets · {pieces.length} peça{pieces.length !== 1 ? "s" : ""}
@@ -494,6 +530,8 @@ export default function CampaignOverviewPage() {
         <DeliveryDialog
           campaignId={id}
           campaignName={campaign.name}
+          campaignCode={campaign.code ?? null}
+          campaignSegment={campaign.segment ?? null}
           onClose={() => setDeliveryOpen(false)}
           onCreated={() => loadAll()}
         />

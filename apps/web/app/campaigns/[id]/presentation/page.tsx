@@ -18,6 +18,8 @@ interface Piece {
 interface Campaign {
   id: string
   name: string
+  code?: string | null
+  segment?: string | null
   client: { id: string; name: string }
 }
 
@@ -60,6 +62,8 @@ export default function PresentationPage() {
       const { generateCampaignPresentation } = await import("@/lib/generatePresentation")
       await generateCampaignPresentation({
         name: campaign.name,
+        code: campaign.code ?? null,
+        segment: campaign.segment ?? null,
         pieces: orderedPieces.map(p => ({
           id: p.id, name: p.name, imageUrl: p.imageUrl ?? null,
           width: p.width, height: p.height,
@@ -139,11 +143,11 @@ export default function PresentationPage() {
           </SlideRow>
 
           <SlideRow num={2} total={totalSlides} label="Código + Nome da campanha">
-            <SlideCode campaignName={campaign.name} />
+            <SlideCode campaignName={campaign.name} code={campaign.code ?? null} />
           </SlideRow>
 
           <SlideRow num={3} total={totalSlides} label="Segmento">
-            <SlideSegment />
+            <SlideSegment segment={campaign.segment ?? null} />
           </SlideRow>
 
           {orderedPieces.map((p, i) => (

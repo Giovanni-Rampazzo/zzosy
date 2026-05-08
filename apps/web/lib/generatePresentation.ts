@@ -24,6 +24,8 @@ interface Piece {
 
 interface CampaignData {
   name: string
+  code?: string | null
+  segment?: string | null
   pieces: Piece[]
 }
 
@@ -114,7 +116,7 @@ function addCoverSlide(pptx: PptxGenJS, sunoLogo: string | null, unitedLogo: str
  *  - "CÓDIGO CAMPANHA" bold (placeholder por enquanto)
  *  - Nome real abaixo, regular
  */
-function addCodeSlide(pptx: PptxGenJS, campaignName: string) {
+function addCodeSlide(pptx: PptxGenJS, campaignName: string, code: string | null) {
   const slide = pptx.addSlide()
   slide.background = { color: YELLOW }
 
@@ -126,7 +128,8 @@ function addCodeSlide(pptx: PptxGenJS, campaignName: string) {
     rectRadius: 0.15,
   })
 
-  slide.addText("CÓDIGO CAMPANHA", {
+  const codeText = (code && code.trim()) ? code.toUpperCase() : "CÓDIGO CAMPANHA"
+  slide.addText(codeText, {
     x: 1.0, y: 4.8, w: 11.3, h: 0.6,
     fontFace: "Calibri", fontSize: 32, bold: true,
     color: "FFFFFF",
@@ -141,9 +144,9 @@ function addCodeSlide(pptx: PptxGenJS, campaignName: string) {
 }
 
 /**
- * Slide 3: Segmento (placeholder)
+ * Slide 3: Segmento
  */
-function addSegmentSlide(pptx: PptxGenJS) {
+function addSegmentSlide(pptx: PptxGenJS, segment: string | null) {
   const slide = pptx.addSlide()
   slide.background = { color: YELLOW }
 
@@ -153,7 +156,8 @@ function addSegmentSlide(pptx: PptxGenJS) {
     line: { color: "FFFFFF", width: 1 },
     rectRadius: 0.15,
   })
-  slide.addText("SEGMENTO DA CAMPANHA", {
+  const segText = (segment && segment.trim()) ? segment.toUpperCase() : "SEGMENTO DA CAMPANHA"
+  slide.addText(segText, {
     x: 1.0, y: 5.4, w: 11.3, h: 0.8,
     fontFace: "Calibri", fontSize: 32, bold: true, italic: true,
     color: "FFFFFF",
@@ -290,9 +294,11 @@ function fileNameFor(campaignName: string): string {
 }
 
 /**
- * Gera e dispara download do .pptx da campanha.
+ * Constroi o objeto pptx populado com todos os slides (sem disparar download).
+ * Compartilhado entre generateCampaignPresentation (download direto) e
+ * buildCampaignPresentationBlob (usado na entrega pra empacotar no ZIP).
  */
-export async function generateCampaignPresentation(data: CampaignData): Promise<void> {
+async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
   const pptx = new PptxGenJS()
   pptx.layout = "LAYOUT_WIDE" // 13.333 x 7.5 inches (16:9)
   pptx.title = `${data.name} - Apresentação`
@@ -304,19 +310,34 @@ export async function generateCampaignPresentation(data: CampaignData): Promise<
     imgToDataUri("/presentation/united-creators.png"),
   ])
 
-  // Capa + intro slides
   addCoverSlide(pptx, sunoLogo, unitedLogo)
-  addCodeSlide(pptx, data.name)
-  addSegmentSlide(pptx)
+  addCodeSlide(pptx, data.name, data.code ?? null)
+  addSegmentSlide(pptx, data.segment ?? null)
 
-  // Pre-carrega todas as imagens em paralelo (acelera bastante em decks com 10+ pecas)
   const imgs = await Promise.all(
     data.pieces.map(p => p.imageUrl ? imgToDataUri(p.imageUrl) : Promise.resolve(null))
   )
   data.pieces.forEach((p, i) => addPieceSlide(pptx, p, imgs[i]))
 
-  // Slide final
   addThanksSlide(pptx, sunoLogo)
+  return pptx
+}
 
+/**
+ * Gera e dispara download do .pptx da campanha.
+ */
+export async function generateCampaignPresentation(data: CampaignData): Promise<void> {
+  const pptx = await buildPptx(data)
   await pptx.writeFile({ fileName: fileNameFor(data.name) })
+}
+
+/**
+ * Gera o .pptx e retorna como Blob (sem download).
+ * Usado pelo fluxo de entrega pra empacotar dentro do ZIP em pasta Deck/.
+ */
+export async function buildCampaignPresentationBlob(data: CampaignData): Promise<{ blob: Blob; fileName: string }> {
+  const pptx = await buildPptx(data)
+  // pptxgenjs permite writeFile com outputType "blob" — retorna Blob direto sem download
+  const blob = await pptx.write({ outputType: "blob" }) as unknown as Blob
+  return { blob, fileName: fileNameFor(data.name) }
 }

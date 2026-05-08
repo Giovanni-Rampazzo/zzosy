@@ -865,6 +865,8 @@ export async function buildDeliveryZip(
   formats: ExportFormat[],
   campaignName?: string,
   onProgress?: (msg: string) => void,
+  /** Arquivos extras a incluir no zip. Cada um vai pra pasta especificada em folder. */
+  extraFiles?: Array<{ folder: string; name: string; blob: Blob }>,
 ): Promise<Blob> {
   const JSZip = (await import("jszip")).default
   const zip = new JSZip()
@@ -885,6 +887,15 @@ export async function buildDeliveryZip(
       } catch (e) {
         console.error("Falha exportar", piece.name, fmt, e)
       }
+    }
+  }
+
+  // Adiciona arquivos extras (ex: apresentacao em Deck/) se fornecidos
+  if (extraFiles && extraFiles.length > 0) {
+    for (const f of extraFiles) {
+      onProgress?.(`Adicionando ${f.folder}/${f.name}...`)
+      const buf = await f.blob.arrayBuffer()
+      zip.file(`${f.folder}/${f.name}`, buf)
     }
   }
 

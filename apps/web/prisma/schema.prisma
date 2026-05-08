@@ -84,6 +84,8 @@ model Client {
 model Campaign {
   id              String             @id @default(cuid())
   name            String
+  code            String?            @db.VarChar(64)
+  segment         String?            @db.VarChar(255)
   clientId        String
   status          String             @default("STANDBY")
   psdUrl          String?            @db.Text
