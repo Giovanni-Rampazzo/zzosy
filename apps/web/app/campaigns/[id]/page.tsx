@@ -255,11 +255,25 @@ export default function CampaignOverviewPage() {
         {/* Preview KV + botões */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, marginBottom: 28, display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, marginBottom: 12 }}>Key Vision (Matriz)</div>
-            <div style={{
-              maxHeight: 220, display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#aaa", fontSize: 13,
-            }}>
+            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, marginBottom: 12 }}>Key Vision (Matriz) — clique para editar</div>
+            <div
+              onClick={() => router.push(`/editor?campaignId=${id}`)}
+              title="Abrir editor da matriz"
+              style={{
+                maxHeight: 220, display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#aaa", fontSize: 13,
+                cursor: "pointer",
+                transition: "transform 0.15s ease, box-shadow 0.15s ease",
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = "translateY(-1px)"
+                e.currentTarget.style.filter = "brightness(1.02)"
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = "translateY(0)"
+                e.currentTarget.style.filter = "brightness(1)"
+              }}
+            >
               {campaign.keyVision?.thumbnailUrl ? (
                 <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
                   style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
@@ -277,7 +291,6 @@ export default function CampaignOverviewPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <PsdImporter campaignId={id} onImported={loadAll} />
             <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
-            <Button variant="primary" size="lg" onClick={() => router.push(`/editor?campaignId=${id}`)}>Key Vision</Button>
             <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/presentation`)} disabled={pieces.length === 0}>
               Apresentação
             </Button>
