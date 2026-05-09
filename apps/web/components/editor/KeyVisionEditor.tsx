@@ -1423,12 +1423,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     try {
       const w = canvasWRef.current
       const h = canvasHRef.current
-      // Thumbnail em 1600px no maior lado (era 480 — ficava borrada na apresentacao
-      // que renderiza peca em ~700-1000px). 1600 da margem pra retina/HiDPI sem
-      // explodir tamanho do banco. JPEG quality 0.92 (era 0.85) pra texto nitido.
+      // Thumbnail: render num StaticCanvas offscreen no tamanho real da peça
+      // para garantir nitidez na apresentação (sem depender do zoom do editor).
       const TARGET = 1600
-      const thumbScale = Math.min(TARGET / w, TARGET / h, 1) / (zoomRef.current || 1)
-      const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: thumbScale })
+      const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
+      const tw = Math.round(w * thumbScale)
+      const th = Math.round(h * thumbScale)
+      const { StaticCanvas: _ThumbSC } = await import("fabric") as any
+      const thumbEl = document.createElement("canvas")
+      thumbEl.width = tw; thumbEl.height = th
+      const thumbFc = new _ThumbSC(thumbEl, { width: tw, height: th, enableRetinaScaling: false, backgroundColor: bgColorRef.current })
+      await Promise.all(fc.getObjects().map((obj: any) => new Promise<void>(res => {
+        obj.clone((cloned: any) => {
+          cloned.set({ left: (obj.left ?? 0) * thumbScale, top: (obj.top ?? 0) * thumbScale, scaleX: (obj.scaleX ?? 1) * thumbScale, scaleY: (obj.scaleY ?? 1) * thumbScale })
+          thumbFc.add(cloned); res()
+        })
+      })))
+      thumbFc.renderAll()
+      await new Promise(r => setTimeout(r, 100))
+      const dataUrl = thumbFc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: 1 })
+      thumbFc.dispose()
       const blob = await (await fetch(dataUrl)).blob()
       const fd = new FormData()
       fd.append("thumbnail", blob, "thumb.jpg")
