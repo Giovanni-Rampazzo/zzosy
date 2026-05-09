@@ -2247,20 +2247,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         >
           Exportar
         </button>
-        <button
-          onClick={saveNow}
-          disabled={saving}
-          style={{
-            background: saving ? "#2a2a2a" : "white",
-            border: "1px solid #333",
-            borderRadius: 6, padding: "6px 14px",
-            fontWeight: 600, fontSize: 13,
-            cursor: saving ? "wait" : "pointer",
-            color: saving ? "#888" : "#111",
-          }}
-        >
-          {saving ? "Salvando..." : "💾 Salvar"}
-        </button>
         {!isPieceMode && (
           <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>▶ Gerar Peças</button>
         )}
