@@ -255,9 +255,11 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
       color: TEXT_DARK, valign: "top", align: "left",
     })
   } else {
-    // Layout original: imagem centralizada
+    // Layout original: imagem centralizada.
+    // Area util aumentada (era 11.0x5.7 = 47.5% da area; agora 12.0x6.0 = 54%)
+    // pra peca aproveitar mais espaço do slide.
     if (imgDataUri && piece.width > 0 && piece.height > 0) {
-      const maxW = 11.0, maxH = 5.7
+      const maxW = 12.0, maxH = 6.0
       const ratio = Math.min(maxW / piece.width, maxH / piece.height)
       const w = (piece.width * ratio)
       const h = (piece.height * ratio)
@@ -265,7 +267,7 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
       const y = (7.5 - h) / 2
       slide.addImage({ data: imgDataUri, x, y, w, h })
     } else if (imgDataUri) {
-      slide.addImage({ data: imgDataUri, x: 1.4, y: 1.0, w: 10.5, h: 5.5 })
+      slide.addImage({ data: imgDataUri, x: 0.7, y: 0.75, w: 11.9, h: 6.0 })
     } else {
       slide.addText("(Imagem não disponível)", {
         x: 1.9, y: 3.5, w: 9.5, h: 0.6,

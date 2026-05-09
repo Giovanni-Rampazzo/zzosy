@@ -199,7 +199,7 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
         <div style={{
           position: "absolute", inset: 0,
           display: "grid", gridTemplateColumns: "55% 45%",
-          padding: "8% 4% 8% 4%",
+          padding: "6% 3% 6% 3%",
           gap: "2%",
           alignItems: "center",
         }}>
@@ -215,7 +215,6 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
                 style={{
                   maxWidth: "100%", maxHeight: "100%",
                   objectFit: "contain",
-                  borderRadius: RADIUS,
                   boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
                 }}
               />
@@ -258,11 +257,14 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
           </div>
         </div>
       ) : (
-        // Layout original: peca centralizada
+        // Layout original: peca centralizada.
+        // Sem padding generoso (era 8% 12%) — perdia muita area com aspect extremo.
+        // Sem borderRadius na peca — peca renderiza fielmente, designer nao quer
+        // bordas arredondadas adulterando o trabalho.
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "8% 12%",
+          padding: "5% 5%",
         }}>
           {imageUrl ? (
             <img
@@ -271,7 +273,6 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
               style={{
                 maxWidth: "100%", maxHeight: "100%",
                 objectFit: "contain",
-                borderRadius: RADIUS,
                 boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
               }}
             />
