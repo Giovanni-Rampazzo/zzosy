@@ -347,13 +347,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       }
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault()
-        if (e.shiftKey) redo()
-        else undo()
+        e.preventDefault() // undo desabilitado
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
-        e.preventDefault()
-        redo()
+        e.preventDefault() // redo desabilitado
       }
       // Cmd+Shift+> / Cmd+Shift+< (Photoshop-style font size)
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === ">" || e.key === "." || e.key === "<" || e.key === ",")) {
