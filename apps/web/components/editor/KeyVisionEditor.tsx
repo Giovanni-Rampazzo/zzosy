@@ -1387,8 +1387,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     try {
       const w = canvasWRef.current
       const h = canvasHRef.current
-      const thumbScale = Math.min(480 / w, 480 / h, 1) / (zoomRef.current || 1)
-      const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.85, multiplier: thumbScale })
+      // Thumbnail em 1600px no maior lado (era 480 — ficava borrada na apresentacao
+      // que renderiza peca em ~700-1000px). 1600 da margem pra retina/HiDPI sem
+      // explodir tamanho do banco. JPEG quality 0.92 (era 0.85) pra texto nitido.
+      const TARGET = 1600
+      const thumbScale = Math.min(TARGET / w, TARGET / h, 1) / (zoomRef.current || 1)
+      const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: thumbScale })
       const blob = await (await fetch(dataUrl)).blob()
       const fd = new FormData()
       fd.append("thumbnail", blob, "thumb.jpg")

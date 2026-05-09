@@ -73,8 +73,8 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
     fc.renderAll()
     await new Promise(r => setTimeout(r, 200))
 
-    const thumbScale = Math.min(480 / W, 480 / H, 1)
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.85, multiplier: thumbScale })
+    const thumbScale = Math.min(1600 / W, 1600 / H, 1)
+    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: thumbScale })
     fc.dispose()
     const res = await fetch(dataUrl)
     return await res.blob()
