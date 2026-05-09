@@ -36,8 +36,8 @@ export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  // Carrega na primeira vez COM permissao (acao do usuario).
-  useEffect(() => { loadFamilies(true).then(setFamilies) }, [])
+  // Monta sem pedir permissao — usa cache se disponivel.
+  useEffect(() => { loadFamilies(false).then(setFamilies) }, [])
 
   useEffect(() => {
     if (!open) return
@@ -50,7 +50,12 @@ export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
     return () => document.removeEventListener("mousedown", onClick)
   }, [open])
 
-  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 50) }, [open])
+  useEffect(() => {
+    if (!open) return
+    // Pede permissao na primeira abertura (gesto do usuario)
+    loadFamilies(true).then(setFamilies)
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [open])
 
   const { family: currentFamily, variant: currentVariant } = findFamilyAndVariant(value, families)
 
