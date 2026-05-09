@@ -2019,6 +2019,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (currentObj.__assetId === newAsset.id) return // no-op
 
     // Captura transform + overrides de estilo do objeto atual
+    console.log("[SWAP] currentObj:", { type: currentObj.type, fill: currentObj.fill, fontSize: currentObj.fontSize, fontFamily: currentObj.fontFamily, assetId: currentObj.__assetId })
     const overrides: any = {}
     if (currentObj.type === "textbox" || currentObj.type === "i-text") {
       if (currentObj.fill !== undefined) overrides.fill = currentObj.fill
@@ -2052,6 +2053,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     await addAssetToCanvas(fc, newAsset, layerSpec)
 
     const newObj = fc.getObjects().find((o: any) => !beforeIds.has(o))
+    console.log("[SWAP] overrides capturados:", overrides)
+    console.log("[SWAP] newObj:", newObj ? { type: newObj.type, fill: newObj.fill, fontSize: newObj.fontSize } : null)
     if (newObj && (newObj.type === "textbox" || newObj.type === "i-text") && Object.keys(overrides).length > 0) {
       if (overrides.fill !== undefined) newObj.set("fill", overrides.fill)
       if (overrides.fontSize !== undefined) newObj.set("fontSize", overrides.fontSize)
