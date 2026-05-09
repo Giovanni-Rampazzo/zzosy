@@ -869,6 +869,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             const objs = fc.getObjects()
             const created = objs[objs.length - 1] as any
             if (created && (created.type === "textbox" || created.type === "i-text") && layer.overrides) {
+              // DEBUG: log antes/depois do override pra investigar bug "config zera"
+              console.log("[PIECE-LOAD-TEXT] before override", {
+                assetLabel: asset.label,
+                assetId: asset.id,
+                fontSize_obj: created.fontSize,
+                fontFamily_obj: created.fontFamily,
+                fontWeight_obj: created.fontWeight,
+                fill_obj: created.fill,
+                overrides: layer.overrides,
+              })
               if (layer.overrides.fill !== undefined) created.set("fill", layer.overrides.fill)
               if (layer.overrides.fontSize !== undefined) created.set("fontSize", layer.overrides.fontSize)
               if (layer.overrides.fontFamily !== undefined) created.set("fontFamily", layer.overrides.fontFamily)
@@ -887,6 +897,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 if (created.initDimensions) created.initDimensions()
               }
               ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
+              console.log("[PIECE-LOAD-TEXT] after override", {
+                assetLabel: asset.label,
+                fontSize_final: created.fontSize,
+                fontFamily_final: created.fontFamily,
+                fill_final: created.fill,
+                styles_count: Object.keys(created.styles ?? {}).length,
+              })
               // Em modo peca, deixa editavel pra permitir seleção de caracteres,
               // mas o key handler abaixo bloqueia digitacao real
             } else if (created) {
@@ -1558,6 +1575,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           bgColor: bgColorRef.current,
           layers: newLayers,
         }
+        console.log("[PIECE-SAVE]", {
+          pieceId,
+          layersCount: newLayers.length,
+          textLayers: newLayers
+            .filter((l: any) => l.overrides && (l.overrides.fontSize !== undefined || l.overrides.fontFamily !== undefined))
+            .map((l: any) => ({
+              assetId: l.assetId,
+              fontSize: l.overrides.fontSize,
+              fontFamily: l.overrides.fontFamily,
+              fontWeight: l.overrides.fontWeight,
+              fill: l.overrides.fill,
+              hasStyles: !!l.overrides.styles && Object.keys(l.overrides.styles).length > 0,
+            })),
+        })
         await fetch(`/api/pieces/${pieceId}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data: JSON.stringify(newData) })
