@@ -2032,8 +2032,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const beforeIds = new Set(fc.getObjects())
     fc.remove(currentObj)
     await addAssetToCanvas(fc, newAsset, layerSpec)
-    fc.requestRenderAll()
+
     const newObj = fc.getObjects().find((o: any) => !beforeIds.has(o))
+    if (newObj && (newObj.type === "textbox" || newObj.type === "i-text") && Object.keys(overrides).length > 0) {
+      if (overrides.fill !== undefined) newObj.set("fill", overrides.fill)
+      if (overrides.fontSize !== undefined) newObj.set("fontSize", overrides.fontSize)
+      if (overrides.fontFamily !== undefined) newObj.set("fontFamily", overrides.fontFamily)
+      if (overrides.fontWeight !== undefined) newObj.set("fontWeight", overrides.fontWeight)
+      if (overrides.charSpacing !== undefined) newObj.set("charSpacing", overrides.charSpacing)
+      if (overrides.lineHeight !== undefined) newObj.set("lineHeight", overrides.lineHeight)
+      if (overrides.textAlign !== undefined) newObj.set("textAlign", overrides.textAlign)
+      if (overrides.leadingPt !== undefined) (newObj as any).leadingPt = overrides.leadingPt
+      if (overrides.styles && Object.keys(overrides.styles).length > 0) {
+        newObj.set("styles", overrides.styles)
+        if ((newObj as any).initDimensions) (newObj as any).initDimensions()
+      }
+    }
+
+    fc.requestRenderAll()
     if (newObj) {
       fc.setActiveObject(newObj)
       fc.fire("object:modified", { target: newObj })
