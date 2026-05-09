@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
         status: "STANDBY",
         data: orig.data ?? undefined,
         imageUrl: orig.imageUrl ?? undefined,
+        segment: orig.segment ?? undefined,
+        copy: orig.copy ?? undefined,
       },
     })
     created.push(newPiece)

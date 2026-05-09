@@ -1041,24 +1041,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const fc = fabricRef.current
     if (!fc) return
     isApplyingHistory.current = true
+    // Cancela qualquer save pendente IMEDIATAMENTE — antes do loadFromJSON disparar
+    // eventos que poderiam re-agendar saves em estado transitorio.
+    clearTimeout(saveTimer.current)
     try {
       // Parse o snapshot pra ter acesso aos dados originais (precisaremos pra restaurar
       // styles per-char e props customizadas que loadFromJSON pode perder)
       const snapData = JSON.parse(snap)
       const snapObjects: any[] = Array.isArray(snapData?.objects) ? snapData.objects : []
 
+      // CRITICO 0 (bug fix "tudo preto"): injeta bgColor no snapData ANTES do load
+      // pra evitar gap entre load e re-add do bg Rect. Sem isso, loadFromJSON
+      // limpa canvas, deixa transparente, e mostra fundo escuro do editor por
+      // alguns frames antes do bg ser re-adicionado.
+      snapData.background = bgColorRef.current
+      // Remove backgroundImage/overlayImage do snap se existirem
+      delete snapData.backgroundImage
+      delete snapData.overlayImage
+
       await new Promise<void>((resolve) => {
         const r = fc.loadFromJSON(snapData, () => resolve())
         if (r && typeof r.then === "function") r.then(() => resolve())
       })
 
-      // CRITICO 0 (bug fix "tudo preto"): loadFromJSON restaura canvas.backgroundColor
-      // do snapshot. Se snap nao tinha (snap inicial), backgroundColor vira null/undefined,
-      // canvas fica transparente, e mostra o fundo escuro do editor (#1a1a1a) como se fosse
-      // preto. Forca a cor logo apos load. Tambem zera backgroundImage/overlay por seguranca.
+      // Reforca a cor (algumas versoes do Fabric ignoram `background` no JSON)
       ;(fc as any).backgroundColor = bgColorRef.current
       ;(fc as any).backgroundImage = null
       ;(fc as any).overlayImage = null
+      fc.renderAll() // render imediato com bg setado, antes de qualquer outro processamento
 
       // CRITICO 1: Fabric Textbox ignora `styles` no construtor. Apos loadFromJSON,
       // os textboxes restaurados perdem styles per-char. Reaplica manualmente do snapshot.
@@ -1097,7 +1107,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       fc.renderAll()
       refreshLayers(fc)
     } catch (e) { console.warn("applySnapshot fail:", e) }
+    // Limpa quaisquer save timers pendentes que poderiam ter sido enfileirados
+    // por eventos de Fabric durante o loadFromJSON (object:added/modified).
+    // Esses timers, se disparassem agora, salvariam layers em estado intermediario.
+    clearTimeout(saveTimer.current)
     isApplyingHistory.current = false
+    // Marca como dirty pra trigger save EXPLICITO (nao via debounce)
+    // do estado pos-undo. Sem isso, se usuario fechar e abrir a peca,
+    // o estado anterior ao undo permanece no banco.
+    isDirtyRef.current = true
+    setIsDirty(true)
+    // Dispara save imediato do novo estado (sem debounce)
+    doSave()
   }
 
   async function undo() {
@@ -1467,6 +1488,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   function doSave() {
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
+      // Guard 0: durante apply de undo/redo, NUNCA salva. loadFromJSON dispara
+      // object:added/modified que poderiam acionar saves com canvas em estado
+      // transitorio (sem __assetId restaurados, sem bg, etc).
+      if (isApplyingHistory.current) {
+        console.warn("[doSave] abortado — undo/redo em andamento")
+        return
+      }
       // Guard 1: se o init nao terminou (ou se o cleanup ja rodou), aborta.
       // Sem isso, um timer que ficou pendurado dispara depois que o useEffect re-rodou
       // mas antes do init recarregar todos os layers, gravando layers: [] no banco.

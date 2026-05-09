@@ -32,6 +32,7 @@ export default function PiecePage() {
   const [status, setStatus] = useState("STANDBY")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
 
   useEffect(() => {
     fetch(`/api/pieces/${id}`).then(r => r.json()).then(d => {
@@ -75,6 +76,32 @@ export default function PiecePage() {
     router.push(piece?.campaignId ? `/pieces?campaignId=${piece.campaignId}` : "/pieces")
   }
 
+  async function duplicatePiece() {
+    if (duplicating) return
+    setDuplicating(true)
+    try {
+      const res = await fetch("/api/pieces/duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [id] }),
+      })
+      if (!res.ok) throw new Error("Falha")
+      const data = await res.json()
+      // Endpoint retorna {ok, count, pieces: [...]}
+      const newId = data?.pieces?.[0]?.id
+      if (newId) {
+        router.push(`/pieces/${newId}`)
+      } else {
+        // Fallback: volta pra lista da campanha
+        router.push(piece?.campaignId ? `/pieces?campaignId=${piece.campaignId}` : "/pieces")
+      }
+    } catch {
+      alert("Falha ao duplicar peça")
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (!piece) return (
     <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
       <TopNav />
@@ -97,6 +124,7 @@ export default function PiecePage() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Button variant="danger" onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+            <Button variant="info" onClick={duplicatePiece} loading={duplicating}>Duplicar</Button>
             <Button variant="primary" onClick={save} loading={saving}>{saving ? "Salvando..." : saved ? "Salvo" : "Salvar"}</Button>
           </div>
         </div>
