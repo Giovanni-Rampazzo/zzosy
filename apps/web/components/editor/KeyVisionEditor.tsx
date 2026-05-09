@@ -1812,7 +1812,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (!fc || !c || !aid) return
     const asset = c.assets.find((a: Asset) => a.id === aid)
     if (!asset) return
-    await addAssetToCanvas(fc, asset, { posX: 100, posY: 100, width: asset.type === "TEXT" ? 800 : 400, scaleX: 1, scaleY: 1, rotation: 0 })
+
+    // Se estamos numa PECA e a matriz ja tem esse asset configurado, copia
+    // os overrides da matriz como template inicial. Sem isso, asset adicionado
+    // direto na peca viria com cor/fonte default (asset = so texto cru).
+    let templateOverrides: any = undefined
+    if (pieceId) {
+      const kvLayers: any[] = (c?.keyVision?.layers as any) ?? []
+      const matrixLayer = Array.isArray(kvLayers) ? kvLayers.find((l: any) => l?.assetId === aid) : null
+      if (matrixLayer?.overrides && Object.keys(matrixLayer.overrides).length > 0) {
+        templateOverrides = { ...matrixLayer.overrides }
+      }
+    }
+
+    await addAssetToCanvas(fc, asset, {
+      posX: 100,
+      posY: 100,
+      width: asset.type === "TEXT" ? 800 : 400,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      overrides: templateOverrides,
+    })
     fc.renderAll()
     doSave()
   }
