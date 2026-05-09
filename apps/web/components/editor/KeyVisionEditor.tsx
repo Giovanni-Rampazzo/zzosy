@@ -2012,7 +2012,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       if (currentObj.lineHeight !== undefined) overrides.lineHeight = currentObj.lineHeight
       if (currentObj.textAlign !== undefined) overrides.textAlign = currentObj.textAlign
       if ((currentObj as any).leadingPt !== undefined && (currentObj as any).leadingPt !== null) overrides.leadingPt = (currentObj as any).leadingPt
-      if (currentObj.styles && Object.keys(currentObj.styles).length > 0) overrides.styles = currentObj.styles
+      // NAO transferir styles per-char ao trocar asset — são indexados por posição
+      // e não fazem sentido em texto diferente. Apenas overrides de bloco são transferidos.
     }
 
     const layerSpec = {
@@ -2043,10 +2044,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       if (overrides.lineHeight !== undefined) newObj.set("lineHeight", overrides.lineHeight)
       if (overrides.textAlign !== undefined) newObj.set("textAlign", overrides.textAlign)
       if (overrides.leadingPt !== undefined) (newObj as any).leadingPt = overrides.leadingPt
-      if (overrides.styles && Object.keys(overrides.styles).length > 0) {
-        newObj.set("styles", overrides.styles)
-        if ((newObj as any).initDimensions) (newObj as any).initDimensions()
-      }
+      // styles per-char não são transferidos entre assets
     }
 
     fc.requestRenderAll()
