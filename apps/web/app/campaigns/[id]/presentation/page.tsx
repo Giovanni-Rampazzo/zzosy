@@ -83,16 +83,10 @@ export default function PresentationPage() {
   const groups = groupPiecesBySegment(orderedPieces)
 
   async function exportPPTX() {
-    console.warn("===== [EXPORT-PPT] CLIQUE DETECTADO =====", { campaign: !!campaign, pieces: orderedPieces.length })
-    if (!campaign) {
-      alert("ERRO: campaign vazia")
-      return
-    }
+    if (!campaign) return
     setExporting(true)
     try {
-      console.warn("===== [EXPORT-PPT] importando lib =====")
       const { generateCampaignPresentation } = await import("@/lib/generatePresentation")
-      console.warn("===== [EXPORT-PPT] lib importada, chamando generateCampaignPresentation =====")
       await generateCampaignPresentation({
         name: campaign.name,
         code: campaign.code ?? null,
@@ -101,11 +95,9 @@ export default function PresentationPage() {
           imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
         })),
       })
-      console.warn("===== [EXPORT-PPT] SUCCESS — generateCampaignPresentation retornou =====")
     } catch (e: any) {
-      console.error("===== [EXPORT-PPT] ERRO CAPTURADO =====", e)
-      console.error("[EXPORT-PPT] stack:", e?.stack)
-      alert(`Erro ao exportar PPT: ${e?.message ?? e}`)
+      console.error("[exportPPTX]", e)
+      alert(`Erro ao exportar: ${e?.message ?? e}`)
     } finally {
       setExporting(false)
     }
