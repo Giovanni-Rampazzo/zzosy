@@ -56,7 +56,7 @@ export default function LoginPage() {
               />
             </div>
             {error && <p className="text-red-400 text-[12px]">{error}</p>}
-            <Button type="submit" loading={loading} className="w-full mt-2">{loading ? "Entrando..." : "Entrar"}</Button>
+            <Button type="submit" variant="primary" loading={loading} className="w-full mt-2">{loading ? "Entrando..." : "Entrar"}</Button>
           </form>
           <p className="text-center text-[12px] text-[#444] mt-4">
             Não tem conta?{" "}
