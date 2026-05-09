@@ -1982,7 +1982,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (!fc || !currentObj || !newAsset) return
     if (currentObj.__assetId === newAsset.id) return // no-op
 
-    // Captura transform atual
+    // Captura transform + overrides de estilo do objeto atual
+    const overrides: any = {}
+    if (currentObj.type === "textbox" || currentObj.type === "i-text") {
+      if (currentObj.fill !== undefined) overrides.fill = currentObj.fill
+      if (currentObj.fontSize !== undefined) overrides.fontSize = currentObj.fontSize
+      if (currentObj.fontFamily !== undefined) overrides.fontFamily = currentObj.fontFamily
+      if (currentObj.fontWeight !== undefined) overrides.fontWeight = currentObj.fontWeight
+      if (currentObj.charSpacing !== undefined) overrides.charSpacing = currentObj.charSpacing
+      if (currentObj.lineHeight !== undefined) overrides.lineHeight = currentObj.lineHeight
+      if (currentObj.textAlign !== undefined) overrides.textAlign = currentObj.textAlign
+      if ((currentObj as any).leadingPt !== undefined && (currentObj as any).leadingPt !== null) overrides.leadingPt = (currentObj as any).leadingPt
+      if (currentObj.styles && Object.keys(currentObj.styles).length > 0) overrides.styles = currentObj.styles
+    }
+
     const layerSpec = {
       posX: currentObj.left ?? 0,
       posY: currentObj.top ?? 0,
@@ -1991,6 +2004,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       scaleX: currentObj.scaleX ?? 1,
       scaleY: currentObj.scaleY ?? 1,
       rotation: currentObj.angle ?? 0,
+      overrides,
     }
 
     // Remove o atual e adiciona o novo asset com mesmo transform.
