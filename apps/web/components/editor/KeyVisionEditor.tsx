@@ -1346,7 +1346,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           const img = await new Promise<any>((resolve, reject) => {
             const el = new window.Image()
             el.crossOrigin = "anonymous"
-            el.onload = () => resolve(new FabricImage(el, { left: posX, top: posY, scaleX, scaleY, angle }))
+            el.onload = () => {
+              const naturalW = el.naturalWidth || el.width || 1
+              const naturalH = el.naturalHeight || el.height || 1
+              const layerH = layer?.height ?? naturalH
+              const sx = (scaleX !== 1 || scaleY !== 1) ? scaleX : (width / naturalW)
+              const sy = (scaleX !== 1 || scaleY !== 1) ? scaleY : (layerH / naturalH)
+              resolve(new FabricImage(el, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle }))
+            }
             el.onerror = reject
             el.src = imgSrc
           })
