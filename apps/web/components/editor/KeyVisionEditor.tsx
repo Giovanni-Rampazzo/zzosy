@@ -750,28 +750,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const oldText = (obj as any).__editStartText ?? ""
         const oldStyles = (obj as any).__editStartStyles ?? {}
         const newText = obj.text ?? ""
+        const newStyles = obj.styles ?? {}
         const textChanged = oldText !== newText
+        const stylesChanged = JSON.stringify(oldStyles) !== JSON.stringify(newStyles)
 
         // Sempre limpar refs de edicao
         delete (obj as any).__editStartText
         delete (obj as any).__editStartStyles
 
-        if (!textChanged) {
-          // Sem mudança de texto: caminho rápido. doSave normal.
+        if (!textChanged && !stylesChanged) {
+          // Nem texto nem styles mudaram: caminho rapido. doSave normal.
           if (!isApplyingHistory.current) doSave()
           return
         }
 
-        // CASO: texto mudou
-        // 1) Migra styles localmente para feedback visual imediato (sem flicker)
-        const migratedLocal = migrateStyles(oldText, newText, oldStyles)
-        obj.set("styles", migratedLocal)
-        if ((obj as any).initDimensions) (obj as any).initDimensions()
-        fc.renderAll()
+        // Texto mudou: migrar styles localmente pra evitar flicker visual
+        if (textChanged) {
+          const migratedLocal = migrateStyles(oldText, newText, oldStyles)
+          obj.set("styles", migratedLocal)
+          if ((obj as any).initDimensions) (obj as any).initDimensions()
+          fc.renderAll()
+        }
 
         if (!obj.__assetId) { doSave(); return }
 
-        // 2) Bloqueia doSave enquanto servidor faz migração canônica em todos os escopos
+        // NOVO MODELO: edicao inline so existe na MATRIZ (peca tem editable: false).
+        // Asset.content (TextSpan[]) e a fonte da verdade pro conteudo + styles per-char.
+        // Toda edicao inline (caracteres OU styles) grava no asset, propagando pra todas
+        // as pecas que usam esse asset.
         pendingTextPropagation.current = true
         try {
           const spans = textboxToSpans(obj)
@@ -785,8 +791,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           pendingTextPropagation.current = false
         }
 
-        // 3) Agora sim: doSave salva os layers locais (com styles migrados que batem
-        // com os que o servidor acabou de gravar nos outros escopos).
+        // Salva tambem o layer local (posicao/transform da matriz)
         doSave()
       })
 
@@ -1398,9 +1403,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         fontFamily: def.fontFamily ?? "Arial",
         fontWeight: def.fontWeight ?? "normal",
         fill: def.color ?? "#111111",
-        editable: true,
+        // MATRIZ: editavel inline (edita caracteres + styles per-char -> grava no asset).
+        // PECA: read-only (texto vem do asset, peca nao edita conteudo).
+        editable: !pieceId,
         scaleX, scaleY, angle,
       })
+      // NOVO MODELO: asset.content (TextSpan[]) e a fonte da verdade pro conteudo +
+      // styles per-char. Aplicamos primeiro os styles do asset; overrides do layer
+      // podem sobrescrever box-level (fill, fontSize do textbox inteiro etc) sem mexer
+      // nos styles per-char ja aplicados.
+      if (data.styles && Object.keys(data.styles).length > 0) {
+        ;(t as any).set("styles", data.styles)
+      }
       // Aplica overrides do layer (estilos editados pelo usuário no editor)
       const ov = layer?.overrides
       if (ov) {
@@ -1415,17 +1429,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           ;(t as any).leadingPt = ov.leadingPt
           syncLineHeightFromLeading(t)
         }
+        // Back-compat: pecas antigas podem ter overrides.styles per-char salvos.
+        // Se existir, sobrescreve os styles do asset (preserva trabalho legacy).
         if (ov.styles && Object.keys(ov.styles).length > 0) {
           t.set("styles", ov.styles)
-          if ((t as any).initDimensions) (t as any).initDimensions()
         }
       }
-      // NOTA: NAO aplicar `data.styles` per-char vindos do asset aqui.
-      // O texto literal (caracteres) eh fonte de verdade no asset; quando o usuario edita o
-      // texto na pagina de assets, o numero de caracteres muda e os indices dos styles ficam
-      // dessincronizados. Comportamento Photoshop-style: estilo default vem do asset,
-      // styles per-char so existem quando editados localmente DENTRO do editor da matriz
-      // (e a partir desse momento sao parte do estado do textbox no canvas, nao do asset).
+      if ((t as any).initDimensions) (t as any).initDimensions()
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
       fc.add(t)
@@ -1524,7 +1534,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
               layer.overrides.leadingPt = (o as any).leadingPt
             }
-            if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
           }
           return layer
         })
@@ -1573,7 +1582,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
               layer.overrides.leadingPt = (o as any).leadingPt
             }
-            if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
           }
           return layer
         })
@@ -1679,7 +1687,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
                 layer.overrides.leadingPt = (o as any).leadingPt
               }
-              if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
             }
             return layer
           })
@@ -1750,7 +1757,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
                 layer.overrides.leadingPt = (o as any).leadingPt
               }
-              if (o.styles && Object.keys(o.styles).length > 0) layer.overrides.styles = o.styles
             }
             return layer
           })
@@ -1934,10 +1940,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
     obj.setCoords()
     fc.renderAll()
-    // Mantém a referencia REAL do Fabric (sem proxy zumbi).
-    // Para forcar re-render do painel, incrementa um contador separado.
     setSelectedTick(t => t + 1)
-    doSave()
+
+    // NOVO MODELO: na MATRIZ, mudar style de texto via painel direito tambem propaga
+    // pro asset (afeta todas as pecas que usam esse asset). Em PECA, fica local em
+    // overrides (so a peca muda).
+    if (isText && !pieceId && (obj as any).__assetId) {
+      ;(async () => {
+        try {
+          pendingTextPropagation.current = true
+          const spans = textboxToSpans(obj)
+          await fetch(`/api/campaigns/${campaignId}/assets/${(obj as any).__assetId}`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: spans, value: obj.text }),
+          })
+        } catch (err) {
+          console.warn("[applyStyle] PUT asset failed:", err)
+        } finally {
+          pendingTextPropagation.current = false
+          doSave()
+        }
+      })()
+    } else {
+      doSave()
+    }
   }
 
   /**
@@ -2168,7 +2194,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                     if (o.fontStyle) overrides.fontStyle = o.fontStyle
                     if (o.textAlign) overrides.textAlign = o.textAlign
                     if (o.lineHeight !== undefined) overrides.lineHeight = o.lineHeight
-                    if (o.styles && Object.keys(o.styles).length) overrides.styles = o.styles
                     if ((o as any).leadingPt !== undefined) overrides.leadingPt = (o as any).leadingPt
                   }
                   return {
