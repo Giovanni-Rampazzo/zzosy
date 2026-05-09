@@ -139,6 +139,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   const bgRef = useRef<any>(null)
   const campaignRef = useRef<Campaign | null>(null)
   const saveTimer = useRef<any>()
+  const savedTextSelection = useRef<{ obj: any; start: number; end: number } | null>(null)
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [piece, setPiece] = useState<any>(null)
   const pieceRef = useRef<any>(null)
@@ -581,6 +582,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
       fc.on("selection:created", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
+      fc.on("text:selection:changed", (e: any) => {
+        const obj = e.target
+        if (obj?.isEditing && obj.selectionStart !== obj.selectionEnd)
+          savedTextSelection.current = { obj, start: obj.selectionStart, end: obj.selectionEnd }
+        else if (savedTextSelection.current?.obj !== obj)
+          savedTextSelection.current = null
+      })
       fc.on("selection:cleared", () => setSelected(null))
       fc.on("object:modified", () => { if (alive) doSave() })
       // Quando o usuario muda a selecao DENTRO de um textbox em modo edicao (cursor moveu,
@@ -1894,9 +1902,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
     const isText = obj.type === "textbox" || obj.type === "i-text"
     const isEditing = (obj as any).isEditing
-    const selStart = obj.selectionStart ?? 0
-    const selEnd = obj.selectionEnd ?? 0
-    const hasSelection = isEditing && selStart !== selEnd
+    const saved = savedTextSelection.current
+    const hasSavedSel = !!(saved && saved.obj === obj && saved.start !== saved.end)
+    const selStart = isEditing ? (obj.selectionStart ?? 0) : (hasSavedSel ? saved!.start : 0)
+    const selEnd = isEditing ? (obj.selectionEnd ?? 0) : (hasSavedSel ? saved!.end : 0)
+    const hasSelection = (isEditing || hasSavedSel) && selStart !== selEnd
 
     if (isText && hasSelection) {
       // Photoshop: aplica so nos caracteres selecionados
