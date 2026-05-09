@@ -1388,6 +1388,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         editable: true,
         scaleX, scaleY, angle,
       })
+      // Aplica overrides do layer (estilos editados pelo usuário no editor)
+      const ov = layer?.overrides
+      if (ov) {
+        if (ov.fill !== undefined) t.set("fill", ov.fill)
+        if (ov.fontSize !== undefined) t.set("fontSize", ov.fontSize)
+        if (ov.fontFamily !== undefined) t.set("fontFamily", ov.fontFamily)
+        if (ov.fontWeight !== undefined) t.set("fontWeight", ov.fontWeight)
+        if (ov.charSpacing !== undefined) t.set("charSpacing", ov.charSpacing)
+        if (ov.lineHeight !== undefined) t.set("lineHeight", ov.lineHeight)
+        if (ov.textAlign !== undefined) t.set("textAlign", ov.textAlign)
+        if (ov.leadingPt !== undefined && ov.leadingPt !== null) {
+          ;(t as any).leadingPt = ov.leadingPt
+          syncLineHeightFromLeading(t)
+        }
+        if (ov.styles && Object.keys(ov.styles).length > 0) {
+          t.set("styles", ov.styles)
+          if ((t as any).initDimensions) (t as any).initDimensions()
+        }
+      }
       // NOTA: NAO aplicar `data.styles` per-char vindos do asset aqui.
       // O texto literal (caracteres) eh fonte de verdade no asset; quando o usuario edita o
       // texto na pagina de assets, o numero de caracteres muda e os indices dos styles ficam
