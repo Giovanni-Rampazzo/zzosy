@@ -142,23 +142,63 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
       const offsetX = (f.width - matrixW * scale) / 2
       const offsetY = (f.height - matrixH * scale) / 2
 
-      const pieceLayers = matrixLayers.map((l: any) => ({
-        assetId: l.assetId,
-        posX: Math.round((l.posX ?? 0) * scale + offsetX),
-        posY: Math.round((l.posY ?? 0) * scale + offsetY),
-        scaleX: (l.scaleX ?? 1) * scale,
-        scaleY: (l.scaleY ?? 1) * scale,
-        rotation: l.rotation ?? 0,
-        zIndex: l.zIndex ?? 0,
-        width: l.width ?? 400,
-        height: l.height ?? 100,
-        // Copia overrides da matriz (fill, fontSize, fontFamily, fontWeight, content, styles per-char...)
-        // pra preservar customizacoes que o usuario fez no KV (cores, fonts, etc).
-        // Sem isso, peca aparece com texto/estilo "default" do asset, ignorando o que foi
-        // editado na matriz visual. Thumbnail funciona pq usa o canvas atual mas a peca
-        // serializada nao tinha overrides.
-        overrides: { ...(l.overrides ?? {}) },
-      }))
+      const pieceLayers = matrixLayers.map((l: any) => {
+        // Detecta se layer e de TEXTO (tem fontSize override)
+        const ov = l.overrides ?? {}
+        const isTextLayer = typeof ov.fontSize === "number"
+
+        const base: any = {
+          assetId: l.assetId,
+          posX: Math.round((l.posX ?? 0) * scale + offsetX),
+          posY: Math.round((l.posY ?? 0) * scale + offsetY),
+          rotation: l.rotation ?? 0,
+          zIndex: l.zIndex ?? 0,
+        }
+
+        if (isTextLayer) {
+          // TEXTO: consolida scale no fontSize/width/leadingPt e MANTEM scaleX=scaleY=1.
+          // Sem isso, ao clicar no texto na peca o Fabric consolida sozinho e o tamanho
+          // 'salta' — efeito ruim pro usuario. Photoshop-style: fontSize sempre representa
+          // o tamanho real renderizado, scale fica em 1.
+          const newOverrides: any = { ...ov }
+          newOverrides.fontSize = (ov.fontSize ?? 48) * scale
+          if (typeof ov.leadingPt === "number") {
+            newOverrides.leadingPt = ov.leadingPt * scale
+          }
+          // Aplica scale tambem nos styles per-char (cada char com fontSize override
+          // tambem precisa escalar pra preservar proporcoes).
+          if (ov.styles && typeof ov.styles === "object") {
+            const newStyles: any = {}
+            for (const lineKey of Object.keys(ov.styles)) {
+              newStyles[lineKey] = {}
+              for (const colKey of Object.keys(ov.styles[lineKey])) {
+                const cs = { ...ov.styles[lineKey][colKey] }
+                if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
+                newStyles[lineKey][colKey] = cs
+              }
+            }
+            newOverrides.styles = newStyles
+          }
+          return {
+            ...base,
+            scaleX: 1,
+            scaleY: 1,
+            width: Math.round((l.width ?? 400) * scale),
+            height: Math.round((l.height ?? 100) * scale),
+            overrides: newOverrides,
+          }
+        }
+
+        // IMAGEM (e qualquer nao-texto): scale fica em scaleX/scaleY (raster nao consolida)
+        return {
+          ...base,
+          scaleX: (l.scaleX ?? 1) * scale,
+          scaleY: (l.scaleY ?? 1) * scale,
+          width: l.width ?? 400,
+          height: l.height ?? 100,
+          overrides: { ...ov },
+        }
+      })
 
       // Cria a peca com NOVO formato: layers + dimensoes + bgColor
       const pieceData = {
