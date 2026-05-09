@@ -1468,12 +1468,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const thumbEl = document.createElement("canvas")
       thumbEl.width = tw; thumbEl.height = th
       const thumbFc = new _ThumbSC(thumbEl, { width: tw, height: th, enableRetinaScaling: false, backgroundColor: bgColorRef.current })
-      await Promise.all(fc.getObjects().map((obj: any) => new Promise<void>(res => {
-        obj.clone((cloned: any) => {
-          cloned.set({ left: (obj.left ?? 0) * thumbScale, top: (obj.top ?? 0) * thumbScale, scaleX: (obj.scaleX ?? 1) * thumbScale, scaleY: (obj.scaleY ?? 1) * thumbScale })
-          thumbFc.add(cloned); res()
-        })
-      })))
+      await Promise.all(fc.getObjects().map(async (obj: any) => {
+        const cloned = await obj.clone()
+        cloned.set({ left: (obj.left ?? 0) * thumbScale, top: (obj.top ?? 0) * thumbScale, scaleX: (obj.scaleX ?? 1) * thumbScale, scaleY: (obj.scaleY ?? 1) * thumbScale })
+        thumbFc.add(cloned)
+      }))
       thumbFc.renderAll()
       await new Promise(r => setTimeout(r, 100))
       const dataUrl = thumbFc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: 1 })
