@@ -323,6 +323,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           const enlivened = await util.enlivenObjects([cb.json]) as any[]
           const cloned = enlivened?.[0]
           if (!cloned || !fc) return
+          // CRITICO: enlivenObjects reconstroi via construtor Fabric, que NAO copia
+          // props customizadas (__assetId/__assetLabel/leadingPt). Sem isso, o objeto
+          // colado fica com __assetId=undefined e ao salvar/recarregar a peca o load
+          // pula esse layer (assetMap[null] = undefined) -> texto "desaparece".
+          if (cb.json.__assetId) (cloned as any).__assetId = cb.json.__assetId
+          if (cb.json.__assetLabel) (cloned as any).__assetLabel = cb.json.__assetLabel
+          if (cb.json.leadingPt !== undefined) (cloned as any).leadingPt = cb.json.leadingPt
           // Offset visivel pra nao ficar exatamente em cima do original
           cloned.set({
             left: (cloned.left ?? 0) + 20,
@@ -1399,10 +1406,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const p = pieceRef.current
       const oldData = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
       const newLayers = fc.getObjects()
-        .filter((o: any) => !o.__isBg)
+        .filter((o: any) => {
+          if (o.__isBg) return false
+          if (!o.__assetId) {
+            console.warn("[PIECE-SAVE-NOW] objeto sem __assetId BLOQUEADO:", {
+              type: o.type, text: (o as any).text?.slice(0, 30),
+              left: o.left, top: o.top,
+            })
+            return false
+          }
+          return true
+        })
         .map((o: any, i: number) => {
           const layer: any = {
-            assetId: o.__assetId ?? null,
+            assetId: o.__assetId,
             posX: Math.round(o.left ?? 0), posY: Math.round(o.top ?? 0),
             scaleX: o.scaleX ?? 1, scaleY: o.scaleY ?? 1,
             rotation: o.angle ?? 0, zIndex: i,
@@ -1536,10 +1553,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const oldData = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
 
         const newLayers = fc.getObjects()
-          .filter((o: any) => !o.__isBg)
+          .filter((o: any) => {
+            if (o.__isBg) return false
+            // CRITICO (defesa em profundidade): bloqueia salvar objetos sem __assetId
+            // no banco. Sem o vinculo com Asset, no proximo load assetMap[null]=undefined
+            // e o layer e PULADO -> texto "desaparece" da peca. Caminhos que poderiam
+            // criar objetos sem __assetId: copy/paste mal feito, drag-from-asset com
+            // bug, manipulacao manual via DevTools. Loga warning pra detectar.
+            if (!o.__assetId) {
+              console.warn("[PIECE-SAVE] objeto sem __assetId BLOQUEADO:", {
+                type: o.type, text: (o as any).text?.slice(0, 30),
+                left: o.left, top: o.top,
+              })
+              return false
+            }
+            return true
+          })
           .map((o: any, i: number) => {
             const layer: any = {
-              assetId: o.__assetId ?? null,
+              assetId: o.__assetId,
               posX: Math.round(o.left ?? 0),
               posY: Math.round(o.top ?? 0),
               scaleX: o.scaleX ?? 1,
