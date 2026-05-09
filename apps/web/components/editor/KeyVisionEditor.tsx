@@ -582,14 +582,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
       fc.on("selection:created", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
-      fc.on("text:selection:changed", (e: any) => {
-        const obj = e.target
-        if (obj?.isEditing && obj.selectionStart !== obj.selectionEnd) {
-          savedTextSelection.current = { obj, start: obj.selectionStart, end: obj.selectionEnd }
-          console.log("[SEL-SAVED]", obj.selectionStart, obj.selectionEnd)
-        } else if (savedTextSelection.current?.obj !== obj) {
-          savedTextSelection.current = null
+      // Salva seleção de texto via mouse:up e keyup no canvas (text:selection:changed
+      // nao dispara no Fabric v7). Intervalo de polling enquanto objeto esta em edicao.
+      let selPollTimer: any = null
+      function pollTextSelection() {
+        const active = fc.getActiveObject() as any
+        if (active?.isEditing && active.selectionStart !== active.selectionEnd) {
+          savedTextSelection.current = { obj: active, start: active.selectionStart, end: active.selectionEnd }
         }
+      }
+      fc.on("text:editing:entered", () => {
+        selPollTimer = setInterval(pollTextSelection, 100)
+      })
+      fc.on("text:editing:exited", () => {
+        clearInterval(selPollTimer)
       })
       fc.on("selection:cleared", () => setSelected(null))
       fc.on("object:modified", () => { if (alive) doSave() })
@@ -1909,7 +1915,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const selStart = isEditing ? (obj.selectionStart ?? 0) : (hasSavedSel ? saved!.start : 0)
     const selEnd = isEditing ? (obj.selectionEnd ?? 0) : (hasSavedSel ? saved!.end : 0)
     const hasSelection = (isEditing || hasSavedSel) && selStart !== selEnd
-    console.log("[APPLY-STYLE]", key, val, { isEditing, hasSavedSel, selStart, selEnd, hasSelection })
 
     if (isText && hasSelection) {
       // Photoshop: aplica so nos caracteres selecionados
