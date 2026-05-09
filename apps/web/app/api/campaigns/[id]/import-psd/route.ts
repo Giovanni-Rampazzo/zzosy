@@ -57,6 +57,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     // Salvar PSD original
+    console.log("[import-psd] iniciando upload, images:", images.length, "assets:", assets.length)
     const psdBuffer = Buffer.from(await psdFile.arrayBuffer())
     const psdFilename = `master-${randomUUID()}.psd`
     const psdPath = path.join(uploadDir, psdFilename)
@@ -193,6 +194,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       data: { psdUrl, psdName: psdFile.name },
     })
 
+    console.log("[import-psd] concluido, assets criados:", created.length, "imageUrls:", imageUrls)
     return NextResponse.json({
       ok: true,
       assetsCreated: created.length,
