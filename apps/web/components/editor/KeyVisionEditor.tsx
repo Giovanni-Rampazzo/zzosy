@@ -2018,7 +2018,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (!fc || !currentObj || !newAsset) return
     if (currentObj.__assetId === newAsset.id) return // no-op
 
-    // Captura transform + overrides de estilo do objeto atual
+    // Flush de qualquer save pendente antes de trocar — garante que overrides atuais estão no banco
+    clearTimeout(saveTimer.current)
     console.log("[SWAP] currentObj:", { type: currentObj.type, fill: currentObj.fill, fontSize: currentObj.fontSize, fontFamily: currentObj.fontFamily, assetId: currentObj.__assetId })
     const overrides: any = {}
     if (currentObj.type === "textbox" || currentObj.type === "i-text") {
@@ -2436,7 +2437,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 value={(selected as any).__assetId ?? ""}
                 onChange={e => {
                   const newAsset = (campaign?.assets ?? []).find(a => a.id === e.target.value)
-                  if (newAsset) swapAsset(selected, newAsset)
+                  if (newAsset) {
+                    const currentObj = fabricRef.current?.getActiveObject() ?? selected
+                    swapAsset(currentObj, newAsset)
+                  }
                 }}
                 style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 24 }}
               >
@@ -2615,7 +2619,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 value={(selected as any).__assetId ?? ""}
                 onChange={e => {
                   const newAsset = (campaign?.assets ?? []).find(a => a.id === e.target.value)
-                  if (newAsset) swapAsset(selected, newAsset)
+                  if (newAsset) {
+                    const currentObj = fabricRef.current?.getActiveObject() ?? selected
+                    swapAsset(currentObj, newAsset)
+                  }
                 }}
                 style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 24 }}
               >
