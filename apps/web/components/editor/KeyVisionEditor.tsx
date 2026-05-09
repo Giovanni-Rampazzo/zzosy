@@ -995,9 +995,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
       fc.renderAll()
       if (alive) refreshLayers(fc)
+      // SAUDE: remove objetos orfaos (sem __assetId) que possam ter vindo do banco
+      // ou de bugs antigos. Tanto em PECA quanto em MATRIZ todo objeto deve ter __assetId.
+      // Limpar aqui evita que entrem no undoStack e causem desync no undo/redo.
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
+      if (orphans.length > 0) {
+        console.warn("[INIT-CLEAN]", pieceId ? "peca" : "matriz", "tinha", orphans.length, "objetos orfaos no canvas. Removendo.")
+        for (const orphan of orphans) fc.remove(orphan)
+        fc.renderAll()
+        if (alive) refreshLayers(fc)
+      }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -1049,6 +1059,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const fc = fabricRef.current
     if (!fc) return
     try {
+      // SAUDE: detecta objetos orfaos (sem __assetId) no canvas. Esses sao
+      // "fantasmas" criados por bugs de paste antigos ou caminhos quebrados.
+      // Eles nao se persistem (save filtra), mas confundem o undo (entram em
+      // snapshots e voltam ao canvas em estado quebrado). Limpa antes de
+      // capturar snapshot pra manter undoStack consistente.
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
+      if (orphans.length > 0) {
+        console.warn("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
+        for (const orphan of orphans) fc.remove(orphan)
+      }
       const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
@@ -1115,6 +1135,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           obj.set("styles", src.styles)
           if (obj.initDimensions) obj.initDimensions()
         }
+      }
+
+      // SAUDE pos-restore: qualquer objeto sem __assetId restaurado e fantasma
+      // (snap continha objeto com __assetId undefined, ou houve race no restore).
+      // Remove pra manter canvas saudavel — esses objetos nunca persistem mesmo.
+      const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
+      if (orphansAfterRestore.length > 0) {
+        console.warn("[UNDO-CLEAN] applySnapshot: removendo", orphansAfterRestore.length, "objetos orfaos pos-restore")
+        for (const orphan of orphansAfterRestore) fc.remove(orphan)
       }
 
       // CRITICO 3: bg tem excludeFromExport=true, fica fora do snapshot. Re-adiciona no fundo.
