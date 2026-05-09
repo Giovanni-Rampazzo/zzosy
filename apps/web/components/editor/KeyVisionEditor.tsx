@@ -584,10 +584,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
       fc.on("text:selection:changed", (e: any) => {
         const obj = e.target
-        if (obj?.isEditing && obj.selectionStart !== obj.selectionEnd)
+        if (obj?.isEditing && obj.selectionStart !== obj.selectionEnd) {
           savedTextSelection.current = { obj, start: obj.selectionStart, end: obj.selectionEnd }
-        else if (savedTextSelection.current?.obj !== obj)
+          console.log("[SEL-SAVED]", obj.selectionStart, obj.selectionEnd)
+        } else if (savedTextSelection.current?.obj !== obj) {
           savedTextSelection.current = null
+        }
       })
       fc.on("selection:cleared", () => setSelected(null))
       fc.on("object:modified", () => { if (alive) doSave() })
@@ -1907,6 +1909,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const selStart = isEditing ? (obj.selectionStart ?? 0) : (hasSavedSel ? saved!.start : 0)
     const selEnd = isEditing ? (obj.selectionEnd ?? 0) : (hasSavedSel ? saved!.end : 0)
     const hasSelection = (isEditing || hasSavedSel) && selStart !== selEnd
+    console.log("[APPLY-STYLE]", key, val, { isEditing, hasSavedSel, selStart, selEnd, hasSelection })
 
     if (isText && hasSelection) {
       // Photoshop: aplica so nos caracteres selecionados
