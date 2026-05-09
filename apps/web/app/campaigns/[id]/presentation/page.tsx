@@ -56,25 +56,20 @@ export default function PresentationPage() {
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
-  async function load() {
-    try {
-      const [c, p] = await Promise.all([
-        fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
-        fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
-      ])
-      setCampaign(c)
-      setPieces(Array.isArray(p) ? p : [])
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
+    async function load() {
+      try {
+        const [c, p] = await Promise.all([
+          fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
+          fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
+        ])
+        setCampaign(c)
+        setPieces(Array.isArray(p) ? p : [])
+      } finally {
+        setLoading(false)
+      }
+    }
     load()
-    // Recarrega ao ganhar foco (ex: usuário edita peça em outra aba e volta)
-    const onFocus = () => load()
-    window.addEventListener("focus", onFocus)
-    return () => window.removeEventListener("focus", onFocus)
   }, [id])
 
   // Ordena peças por formato + createdAt dentro de cada grupo
