@@ -1996,8 +1996,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   function applyStyle(key: string, val: any) {
+    console.warn("[applyStyle] CHAMADO", { key, val, hasFc: !!fabricRef.current, hasSelected: !!selected, selectedType: selected?.type, selectedAssetId: (selected as any)?.__assetId })
     const fc = fabricRef.current; const obj = selected
-    if (!fc || !obj) return
+    if (!fc || !obj) {
+      console.warn("[applyStyle] ABORTADO: !fc ou !obj")
+      return
+    }
     const value = key === "fontSize" ? Number(val) : val
     const styleKey = key === "fill" ? "fill" : key
 
