@@ -1369,7 +1369,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         ? (asset as any).lastOverride
         : null
       const ov: any = layerOv ?? assetTpl ?? null
-      const initialText = (ov && typeof ov.content === "string") ? ov.content : data.text
+      // Texto: PECA pode ter override.content (conteudo editado localmente).
+      // MATRIZ ignora overrides.content e sempre usa data.text (texto do asset).
+      // Modelo: caracteres do texto sao fonte da verdade no ASSET; matriz so guarda
+      // styles/posicao. Sem isso, mudancas em /assets nao propagavam pra matriz
+      // (overrides.content era stale e travava o texto antigo).
+      const initialText = (pieceId && ov && typeof ov.content === "string") ? ov.content : data.text
 
       // Back-compat: pecas antigas geradas com scaleX!=1 (antes do fix da geracao). Consolida
       // scale no fontSize/width na hora de criar pra evitar que Fabric "salte" o tamanho ao
@@ -1571,9 +1576,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           // perdia mudancas de estilo (estilos sao salvos no asset.content e
           // sobrescritos por overrides do layer).
           if (o.type === "textbox" || o.type === "i-text") {
-            // Texto e styles per-char ficam no override do layer da matriz.
-            // (Matriz e template; nao propaga pro asset.)
-            layer.overrides.content = o.text
+            // Matriz: NAO salva overrides.content (texto cru vem do asset). Salvar
+            // o texto aqui congelava o conteudo e impedia edicao em /assets de
+            // propagar pra matriz. Caracteres = asset; styles = overrides.
             layer.overrides.fill = o.fill
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
@@ -1759,9 +1764,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
             // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset
             if (o.type === "textbox" || o.type === "i-text") {
-              // Texto e styles per-char ficam no override do layer da matriz.
-              // (Matriz e template; nao propaga pro asset.)
-              layer.overrides.content = o.text
+              // Matriz: NAO salva overrides.content (texto cru vem do asset).
+              // Caracteres = asset; styles = overrides.
               layer.overrides.fill = o.fill
               layer.overrides.fontSize = o.fontSize
               layer.overrides.fontFamily = o.fontFamily
