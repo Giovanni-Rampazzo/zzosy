@@ -14,6 +14,7 @@ interface TextSpan {
 interface Asset {
   id: string; type: string; label: string; value: string | null
   imageUrl: string | null; content: any
+  lastOverride?: any
 }
 interface Layer {
   assetId: string; posX: number; posY: number
@@ -752,9 +753,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         delete (obj as any).__editStartText
         delete (obj as any).__editStartStyles
 
-        // Modelo final: edicao inline em texto (matriz ou peca) sempre grava
-        // overrides locais (texto + styles per-char), nunca propaga pro asset.
-        // O asset so e alterado em /assets ou quando user adiciona/remove layer.
+        // Modelo final: edicao inline em texto (matriz ou peca) grava overrides
+        // locais (texto + styles per-char), nunca propaga pro asset (asset = texto cru).
+        // Excecao: na MATRIZ, atualiza tamem o asset.lastOverride (template visual).
+        updateAssetLastOverride(obj)
         if (!isApplyingHistory.current) doSave()
       })
 
@@ -1813,17 +1815,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const asset = c.assets.find((a: Asset) => a.id === aid)
     if (!asset) return
 
-    // Se estamos numa PECA e a matriz ja tem esse asset configurado, copia
-    // os overrides da matriz como template inicial. Sem isso, asset adicionado
-    // direto na peca viria com cor/fonte default (asset = so texto cru).
-    let templateOverrides: any = undefined
-    if (pieceId) {
-      const kvLayers: any[] = (c?.keyVision?.layers as any) ?? []
-      const matrixLayer = Array.isArray(kvLayers) ? kvLayers.find((l: any) => l?.assetId === aid) : null
-      if (matrixLayer?.overrides && Object.keys(matrixLayer.overrides).length > 0) {
-        templateOverrides = { ...matrixLayer.overrides }
-      }
-    }
+    // Modelo final: cada asset guarda seu lastOverride (ultimo template visual
+    // aplicado na MATRIZ). Quando adiciona o asset no canvas (matriz ou peca),
+    // vem com esse template. Se o asset nunca foi configurado, vem default.
+    const templateOverrides = (asset.lastOverride && typeof asset.lastOverride === "object")
+      ? { ...asset.lastOverride }
+      : undefined
 
     await addAssetToCanvas(fc, asset, {
       posX: 100,
@@ -1936,6 +1933,42 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     }
   }, [selected, selectedTick])
 
+  /**
+   * Atualiza o lastOverride do asset (so na MATRIZ).
+   * lastOverride = template visual que vai ser aplicado quando o asset for
+   * adicionado em outro canvas ou via swap. Pecas NAO atualizam isso.
+   */
+  function updateAssetLastOverride(obj: any) {
+    if (pieceId) return // peca nao atualiza lastOverride
+    const aid = obj?.__assetId
+    if (!aid) return
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+    if (!isText) return // por ora so texto tem lastOverride
+
+    const lastOverride: any = {}
+    if (obj.fill !== undefined) lastOverride.fill = obj.fill
+    if (obj.fontSize !== undefined) lastOverride.fontSize = obj.fontSize
+    if (obj.fontFamily !== undefined) lastOverride.fontFamily = obj.fontFamily
+    if (obj.fontWeight !== undefined) lastOverride.fontWeight = obj.fontWeight
+    if (obj.charSpacing !== undefined) lastOverride.charSpacing = obj.charSpacing
+    if (obj.lineHeight !== undefined) lastOverride.lineHeight = obj.lineHeight
+    if (obj.textAlign !== undefined) lastOverride.textAlign = obj.textAlign
+    if ((obj as any).leadingPt !== undefined && (obj as any).leadingPt !== null) {
+      lastOverride.leadingPt = (obj as any).leadingPt
+    }
+    // Atualiza tambem o cache local pra swap funcionar dentro da mesma sessao
+    const c = campaignRef.current
+    if (c?.assets) {
+      const asset = c.assets.find((a: Asset) => a.id === aid)
+      if (asset) (asset as any).lastOverride = lastOverride
+    }
+    // Persiste no banco (fire-and-forget)
+    fetch(`/api/campaigns/${campaignId}/assets/${aid}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lastOverride }),
+    }).catch(err => console.warn("[updateAssetLastOverride] failed:", err))
+  }
+
   function applyStyle(key: string, val: any) {
     const fc = fabricRef.current; const obj = selected
     if (!fc || !obj) return
@@ -1973,6 +2006,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     obj.setCoords()
     fc.renderAll()
     setSelectedTick(t => t + 1)
+
+    // Atualiza lastOverride do asset (so na matriz). Define o template visual
+    // que sera aplicado em swaps futuros e novas pecas.
+    if (isText) updateAssetLastOverride(obj)
 
     // Modelo final: styles editados via painel direito sao SEMPRE locais
     // (override do layer), tanto na matriz quanto na peca. Nao propaga pro asset.
@@ -2057,29 +2094,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // Flush de qualquer save pendente antes de trocar — garante que overrides atuais estão no banco
     clearTimeout(saveTimer.current)
     console.log("[SWAP] currentObj:", { type: currentObj.type, fill: currentObj.fill, fontSize: currentObj.fontSize, fontFamily: currentObj.fontFamily, assetId: currentObj.__assetId })
-    const overrides: any = {}
-    if (currentObj.type === "textbox" || currentObj.type === "i-text") {
-      if (currentObj.fill !== undefined) overrides.fill = currentObj.fill
-      if (currentObj.fontSize !== undefined) overrides.fontSize = currentObj.fontSize
-      if (currentObj.fontFamily !== undefined) overrides.fontFamily = currentObj.fontFamily
-      if (currentObj.fontWeight !== undefined) overrides.fontWeight = currentObj.fontWeight
-      if (currentObj.charSpacing !== undefined) overrides.charSpacing = currentObj.charSpacing
-      if (currentObj.lineHeight !== undefined) overrides.lineHeight = currentObj.lineHeight
-      if (currentObj.textAlign !== undefined) overrides.textAlign = currentObj.textAlign
-      if ((currentObj as any).leadingPt !== undefined && (currentObj as any).leadingPt !== null) overrides.leadingPt = (currentObj as any).leadingPt
-      // NAO transferir styles per-char ao trocar asset — são indexados por posição
-      // e não fazem sentido em texto diferente. Apenas overrides de bloco são transferidos.
-    }
+
+    // MODELO FINAL: cada asset tem seu lastOverride (template visual). Ao swap,
+    // o novo asset vem com SEU lastOverride — nao herda os styles do asset
+    // anterior. Isso permite swap de ida e volta entre ABC (amarelo) e DEF (azul).
+    // Se o novo asset nunca foi configurado, vem default.
+    const newAssetOverrides: any = (newAsset.lastOverride && typeof newAsset.lastOverride === "object")
+      ? { ...newAsset.lastOverride }
+      : {}
 
     const layerSpec = {
       posX: currentObj.left ?? 0,
       posY: currentObj.top ?? 0,
       width: currentObj.width ?? 400,
       height: currentObj.height ?? 100,
+      // Mantem o transform fisico (posicao/scale/angulo) — so o conteudo + estilos trocam
       scaleX: currentObj.scaleX ?? 1,
       scaleY: currentObj.scaleY ?? 1,
       rotation: currentObj.angle ?? 0,
-      overrides,
+      overrides: newAssetOverrides,
     }
 
     // Remove o atual e adiciona o novo asset com mesmo transform.
@@ -2090,19 +2123,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     await addAssetToCanvas(fc, newAsset, layerSpec)
 
     const newObj = fc.getObjects().find((o: any) => !beforeIds.has(o))
-    console.log("[SWAP] overrides capturados:", overrides)
+    console.log("[SWAP] newAsset.lastOverride aplicado:", newAssetOverrides)
     console.log("[SWAP] newObj:", newObj ? { type: newObj.type, fill: newObj.fill, fontSize: newObj.fontSize } : null)
-    if (newObj && (newObj.type === "textbox" || newObj.type === "i-text") && Object.keys(overrides).length > 0) {
-      if (overrides.fill !== undefined) newObj.set("fill", overrides.fill)
-      if (overrides.fontSize !== undefined) newObj.set("fontSize", overrides.fontSize)
-      if (overrides.fontFamily !== undefined) newObj.set("fontFamily", overrides.fontFamily)
-      if (overrides.fontWeight !== undefined) newObj.set("fontWeight", overrides.fontWeight)
-      if (overrides.charSpacing !== undefined) newObj.set("charSpacing", overrides.charSpacing)
-      if (overrides.lineHeight !== undefined) newObj.set("lineHeight", overrides.lineHeight)
-      if (overrides.textAlign !== undefined) newObj.set("textAlign", overrides.textAlign)
-      if (overrides.leadingPt !== undefined) (newObj as any).leadingPt = overrides.leadingPt
-      // styles per-char não são transferidos entre assets
-    }
 
     fc.requestRenderAll()
     if (newObj) {

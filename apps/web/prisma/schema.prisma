@@ -107,6 +107,10 @@ model CampaignAsset {
   content         String?          @db.LongText
   value           String?          @db.Text
   imageUrl        String?          @db.LongText
+  // lastOverride: JSON com o ultimo template visual aplicado na MATRIZ
+  // (cor, fonte, tamanho, etc). Quando o asset e adicionado de novo no canvas
+  // ou via swap, vem com esse template. Pecas nao atualizam esse campo.
+  lastOverride    Json?
   order           Int              @default(0)
   posX            Float            @default(100)
   posY            Float            @default(100)

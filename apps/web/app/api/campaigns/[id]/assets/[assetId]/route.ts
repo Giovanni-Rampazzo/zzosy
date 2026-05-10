@@ -30,6 +30,12 @@ export async function PUT(req: Request, ctx: Ctx) {
   for (const k of ["imageUrl", "label", "order", "visible", "value"]) {
     if (k in body) data[k] = body[k]
   }
+  // lastOverride: template visual aplicado na matriz. Atualizado quando user
+  // edita styles na matriz (applyStyle, text:editing:exited) ou quando salva
+  // override por outro caminho. Pecas NAO atualizam isso.
+  if ("lastOverride" in body) {
+    data.lastOverride = body.lastOverride === null ? null : body.lastOverride
+  }
   if ("content" in body) {
     const c = body.content
     data.content = typeof c === "string" ? c : JSON.stringify(c)
