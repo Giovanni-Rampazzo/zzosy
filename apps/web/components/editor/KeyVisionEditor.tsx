@@ -1947,21 +1947,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
    * adicionado em outro canvas ou via swap. Pecas NAO atualizam isso.
    */
   function updateAssetLastOverride(obj: any) {
-    console.warn("[updateAssetLastOverride] CHAMADO", { pieceId, hasObj: !!obj, type: obj?.type, assetId: obj?.__assetId })
-    if (pieceId) {
-      console.warn("[updateAssetLastOverride] ABORTADO: estamos em peca")
-      return
-    }
+    if (pieceId) return // peca nao atualiza lastOverride
     const aid = obj?.__assetId
-    if (!aid) {
-      console.warn("[updateAssetLastOverride] ABORTADO: sem __assetId")
-      return
-    }
+    if (!aid) return
     const isText = obj.type === "textbox" || obj.type === "i-text"
-    if (!isText) {
-      console.warn("[updateAssetLastOverride] ABORTADO: nao e texto")
-      return
-    }
+    if (!isText) return // por ora so texto tem lastOverride
 
     const lastOverride: any = {}
     if (obj.fill !== undefined) lastOverride.fill = obj.fill
@@ -1974,34 +1964,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if ((obj as any).leadingPt !== undefined && (obj as any).leadingPt !== null) {
       lastOverride.leadingPt = (obj as any).leadingPt
     }
-    console.warn("[updateAssetLastOverride] SALVANDO", { aid, lastOverride })
     // Atualiza tambem o cache local pra swap funcionar dentro da mesma sessao
     const c = campaignRef.current
     if (c?.assets) {
       const asset = c.assets.find((a: Asset) => a.id === aid)
-      if (asset) {
-        ;(asset as any).lastOverride = lastOverride
-        console.warn("[updateAssetLastOverride] cache local atualizado")
-      } else {
-        console.warn("[updateAssetLastOverride] ATENCAO: asset nao encontrado em campaignRef")
-      }
+      if (asset) (asset as any).lastOverride = lastOverride
     }
     // Persiste no banco (fire-and-forget)
     fetch(`/api/campaigns/${campaignId}/assets/${aid}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lastOverride }),
-    })
-      .then(r => console.warn("[updateAssetLastOverride] PUT response", r.status))
-      .catch(err => console.warn("[updateAssetLastOverride] failed:", err))
+    }).catch(err => console.warn("[updateAssetLastOverride] failed:", err))
   }
 
   function applyStyle(key: string, val: any) {
-    console.warn("[applyStyle] CHAMADO", { key, val, hasFc: !!fabricRef.current, hasSelected: !!selected, selectedType: selected?.type, selectedAssetId: (selected as any)?.__assetId })
     const fc = fabricRef.current; const obj = selected
-    if (!fc || !obj) {
-      console.warn("[applyStyle] ABORTADO: !fc ou !obj")
-      return
-    }
+    if (!fc || !obj) return
     const value = key === "fontSize" ? Number(val) : val
     const styleKey = key === "fill" ? "fill" : key
 
@@ -2039,7 +2017,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
     // Atualiza lastOverride do asset (so na matriz). Define o template visual
     // que sera aplicado em swaps futuros e novas pecas.
-    console.warn("[applyStyle] depois de aplicar", { key, value, isText, pieceId, fill: obj.fill, fontSize: obj.fontSize })
     if (isText) updateAssetLastOverride(obj)
 
     // Modelo final: styles editados via painel direito sao SEMPRE locais
