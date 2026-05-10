@@ -1795,31 +1795,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
         })
-
-        // Sincroniza lastOverride de cada asset com o ultimo override aplicado na MATRIZ.
-        // Modelo: cada asset guarda um "template visual" (cor, fonte, etc) que vem da
-        // matriz. Quando o asset e adicionado de novo no canvas (em outra peca, ou via
-        // swap), vem com esse lastOverride. Pecas NAO atualizam lastOverride — so matriz.
-        // Roda em background (nao bloqueia setSaving false).
-        ;(async () => {
-          for (const layer of layersToSave) {
-            if (!layer.assetId) continue
-            const ov = layer.overrides ?? {}
-            // So envia se tem alguma chave estilistica (evita PUT vazio)
-            const hasStyleKeys = Object.keys(ov).some(k => k !== "content")
-            if (!hasStyleKeys) continue
-            // Filtra fora 'content' (texto editado fica so no layer da matriz, nao
-            // vira template do asset; user edita texto cru em /assets se quiser)
-            const tpl: any = { ...ov }
-            delete tpl.content
-            try {
-              await fetch(`/api/campaigns/${campaignId}/assets/${layer.assetId}`, {
-                method: "PUT", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ lastOverride: tpl }),
-              })
-            } catch (e) { /* silencia */ }
-          }
-        })()
+        // Nota: lastOverride dos assets ja foi atualizado em tempo real via
+        // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
+        // Nao precisa propagar de novo aqui no doSave.
 
         // Gerar e enviar thumbnail do KV (max 480px maior lado, JPEG 0.85)
         try {
