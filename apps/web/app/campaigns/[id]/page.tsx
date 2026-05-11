@@ -12,6 +12,7 @@ import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
 import { Button } from "@/components/ui/Button"
+import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -247,10 +248,12 @@ export default function CampaignOverviewPage() {
               </p>
             )}
           </div>
-          <Button variant="primary" size="sm" onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}>
-            Voltar para Cliente
-          </Button>
         </div>
+
+        <CampaignSubnav
+          campaignId={id}
+          clientId={campaign.client?.id}
+        />
 
         {/* Preview KV + botões */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, marginBottom: 28, display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>

@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
+import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 
 interface Piece {
   id: string
@@ -41,6 +42,7 @@ function PiecesContent() {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [campaignName, setCampaignName] = useState<string | undefined>(undefined)
+  const [campaignClientId, setCampaignClientId] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const url = campaignId ? `/api/pieces?campaignId=${campaignId}` : "/api/pieces"
@@ -48,6 +50,7 @@ function PiecesContent() {
     if (campaignId) {
       fetch(`/api/campaigns/${campaignId}`).then(r => r.json()).then((c: any) => {
         setCampaignName(c?.title ?? c?.name)
+        setCampaignClientId(c?.client?.id ?? c?.clientId)
       }).catch(() => {})
     }
   }, [campaignId])
@@ -92,12 +95,11 @@ function PiecesContent() {
     <PageShell>
       <div className="p-8">
         {campaignId && (
-          <button
-            onClick={() => router.push(`/campaigns/${campaignId}`)}
-            className="text-xs text-[#888888] hover:text-[#111] mb-3 bg-transparent border-0 cursor-pointer p-0"
-          >
-            ← Campanha
-          </button>
+          <CampaignSubnav
+            campaignId={campaignId}
+            clientId={campaignClientId}
+            activeTab="pieces"
+          />
         )}
         <div className="flex items-center justify-between mb-6">
           <div>

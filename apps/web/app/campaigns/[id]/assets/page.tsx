@@ -6,6 +6,7 @@ import TopNav from "@/components/TopNav"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
+import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 
 interface Asset {
   id: string
@@ -198,14 +199,7 @@ export default function CampaignAssetsPage() {
       <TopNav />
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
 
-        <button
-          onClick={() => router.push(`/campaigns/${id}`)}
-          style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}
-        >
-          ← Campanha
-        </button>
-
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, gap: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, gap: 16 }}>
           <div>
             <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display: "flex", gap: 6, alignItems: "center" }}>
               <span style={{ cursor: "pointer", color: "#888" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
@@ -225,38 +219,48 @@ export default function CampaignAssetsPage() {
               </p>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }} 
-            onBlur={(e) => {
-              // Fecha quando o foco sai do container inteiro (clique fora)
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) setShowAddMenu(false)
-            }}
-            tabIndex={-1}>
-            <Button variant="secondary" size="sm" onClick={() => setShowAddMenu(s => !s)}>+ Adicionar asset</Button>
-            {showAddMenu && (
-              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 240 }}>
-                <button onClick={addTextAsset} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                  Texto
-                </button>
-                <button onClick={() => { setShowAddMenu(false); newImageInputRef.current?.click() }} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                  Imagem <span style={{ fontSize: 11, color: "#aaa" }}>(PNG, JPG, SVG…)</span>
-                </button>
-                <div style={{ borderTop: "1px solid #f0f0f0", padding: "8px 14px", fontSize: 11, color: "#888", lineHeight: 1.5, background: "#fafafa", borderRadius: "0 0 6px 6px" }}>
-                  Para vetor: exporte como <strong>SVG</strong> do Illustrator<br/>
-                  <span style={{ color: "#aaa" }}>(File → Export → SVG)</span>
-                </div>
+        </div>
+
+        {/* Sub-nav contextual da campanha. Linha 1: ← Cliente + Peças (amarelo).
+            Linha 2 (actions): Adicionar asset + Importar PSD + Editar Matriz. */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative", marginBottom: 4 }}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setShowAddMenu(false)
+          }}
+          tabIndex={-1}>
+          <CampaignSubnav
+            campaignId={id}
+            clientId={campaign.client?.id}
+            actions={
+              <>
+                <Button variant="secondary" size="md" onClick={() => setShowAddMenu(s => !s)}>+ Adicionar asset</Button>
+                <PsdImporter campaignId={id} onImported={load} />
+                {campaign.assets.length > 0 && (
+                  <Button variant="primary" size="md" onClick={() => router.push(`/editor?campaignId=${id}`)}>Editar Matriz (KV)</Button>
+                )}
+              </>
+            }
+          />
+          {showAddMenu && (
+            <div style={{ position: "absolute", top: 96, left: 0, background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 240 }}>
+              <button onClick={addTextAsset} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                Texto
+              </button>
+              <button onClick={() => { setShowAddMenu(false); newImageInputRef.current?.click() }} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                Imagem <span style={{ fontSize: 11, color: "#aaa" }}>(PNG, JPG, SVG…)</span>
+              </button>
+              <div style={{ borderTop: "1px solid #f0f0f0", padding: "8px 14px", fontSize: 11, color: "#888", lineHeight: 1.5, background: "#fafafa", borderRadius: "0 0 6px 6px" }}>
+                Para vetor: exporte como <strong>SVG</strong> do Illustrator<br/>
+                <span style={{ color: "#aaa" }}>(File → Export → SVG)</span>
               </div>
-            )}
-            <input ref={newImageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
-              onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
-            <PsdImporter campaignId={id} onImported={load} />
-            {campaign.assets.length > 0 && (
-              <Button variant="primary" onClick={() => router.push(`/editor?campaignId=${id}`)}>Editar Matriz (KV)</Button>
-            )}
-          </div>
+            </div>
+          )}
+          <input ref={newImageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
+            onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
         </div>
 
         {campaign.assets.length === 0 ? (
