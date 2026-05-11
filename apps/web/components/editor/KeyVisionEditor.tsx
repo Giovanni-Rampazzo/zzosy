@@ -2313,7 +2313,36 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           style={{ background: "#222", color: "white", border: "1px solid #333", borderRadius: 4, padding: "4px 8px", fontSize: 12, maxWidth: 260 }}>
           {campaign.assets.map((a: Asset) => <option key={a.id} value={a.id}>{a.label}</option>)}
         </select>
-        <button onClick={addLayer} style={{ background: "#F5C400", color: "#111", border: "none", padding: "5px 14px", borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Adicionar ao canvas</button>
+        {(() => {
+          // Regra: asset TEXTO so pode aparecer 1x no canvas (matriz ou peca).
+          // Se ja existe layer com esse assetId E o asset eh TEXT, desabilita o botao.
+          const currentAsset = campaign.assets.find((a: Asset) => a.id === assetId)
+          const isText = currentAsset?.type === "TEXT"
+          const fc = fabricRef.current
+          const alreadyOnCanvas = isText && fc
+            ? fc.getObjects().some((o: any) => o.__assetId === assetId)
+            : false
+          // selectedTick na deps pra re-render quando layers mudam
+          void selectedTick
+          const disabled = alreadyOnCanvas
+          return (
+            <button
+              onClick={addLayer}
+              disabled={disabled}
+              title={disabled ? "Este asset de texto ja esta no canvas. Cada asset texto so pode aparecer uma vez." : undefined}
+              style={{
+                background: disabled ? "#3a3a1a" : "#F5C400",
+                color: disabled ? "#666" : "#111",
+                border: "none",
+                padding: "5px 14px",
+                borderRadius: 4,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: disabled ? "not-allowed" : "pointer",
+              }}
+            >+ Adicionar ao canvas</button>
+          )
+        })()}
         <div style={{ flex: 1 }} />
         <button onClick={() => changeZoom(-0.1)} style={bS}>−</button>
         <span style={{ fontSize: 11, color: "#555", minWidth: 40, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
@@ -2520,12 +2549,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 }}
                 style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 24 }}
               >
-                {(campaign?.assets ?? [])
-                  .filter(a => a.type === "TEXT")
-                  .map(a => (
-                    <option key={a.id} value={a.id}>{a.label || a.value || "Sem nome"}</option>
-                  ))
-                }
+                {(() => {
+                  // Regra: nao listar assets TEXT que ja estao em outros layers (cada
+                  // asset texto so pode aparecer 1x no canvas). Mas SEMPRE incluir o
+                  // asset atual (o selecionado), senao o swap perde a referencia visual.
+                  const fc = fabricRef.current
+                  const objs = fc ? fc.getObjects() : []
+                  const usedIds = new Set(objs.map((o: any) => o.__assetId).filter(Boolean))
+                  const currentId = (selected as any).__assetId
+                  return (campaign?.assets ?? [])
+                    .filter(a => a.type === "TEXT")
+                    .filter(a => a.id === currentId || !usedIds.has(a.id))
+                    .map(a => (
+                      <option key={a.id} value={a.id}>{a.label || a.value || "Sem nome"}</option>
+                    ))
+                })()}
               </select>
             </div>
             <div>
