@@ -814,16 +814,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const blockKey = (e: KeyboardEvent) => {
           const fcc = fabricRef.current
           if (!fcc) return
-          // Se o usuario esta digitando num input/select do painel, nao bloqueia.
-          const t = e.target as HTMLElement | null
-          if (t) {
-            const tag = (t.tagName || "").toUpperCase()
-            if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
-            if (t.isContentEditable) return
-          }
+          // Primeiro checa se algum textbox esta em edicao — se sim, bloqueia
+          // mesmo que o evento venha do hiddenTextarea do Fabric (que e onde
+          // o Fabric captura digitacao pra escrever no canvas).
           const active = fcc.getActiveObject() as any
-          if (!active || !active.isEditing) return
-          // Permitir teclas de navegacao/selecao
+          const isFabricEditing = active?.isEditing
+          // Se NAO esta editando texto no canvas, deixa passar pros inputs do painel.
+          if (!isFabricEditing) {
+            const t = e.target as HTMLElement | null
+            if (t) {
+              const tag = (t.tagName || "").toUpperCase()
+              if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+              if (t.isContentEditable) return
+            }
+            return
+          }
+          // Esta em edicao do textbox no canvas. Bloquear digitacao mas permitir
+          // teclas de navegacao/selecao.
           const allowed = new Set([
             "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
             "Home", "End", "PageUp", "PageDown", "Tab", "Escape",
