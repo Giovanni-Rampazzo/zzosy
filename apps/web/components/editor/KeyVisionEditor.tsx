@@ -552,6 +552,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     }
     // Guard sincrono: previne double-init em Strict Mode quando useEffect roda 2x.
     // Setamos a flag ANTES de qualquer await, e zeramos no cleanup.
+    console.warn("[useEffect-init] start, isInitInProgress=", isInitInProgress.current, "campaign?", !!campaign, "pieceId=", pieceId)
     if (isInitInProgress.current) {
       console.warn("[init] ABORTADO: init ja em progresso (strict mode double-run)")
       return
@@ -1015,6 +1016,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
     init()
     return () => {
+      console.warn("[useEffect-cleanup] disposing")
       alive = false
       // Bloqueia saves apos cleanup. Sem isso, um saveTimer pendente (debounce 800ms)
       // dispararia depois do dispose, e poderia salvar sobre um canvas em meio de re-init
