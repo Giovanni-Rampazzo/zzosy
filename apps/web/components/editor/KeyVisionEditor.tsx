@@ -806,9 +806,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       window.addEventListener("keydown", onKey)
       cleanupFns.push(() => window.removeEventListener("keydown", onKey))
 
-      // Em MODO PEÇA, bloquear digitacao mas permitir seleção de caracteres
-      // (necessario para mudar cor/tamanho de letras especificas, estilo Photoshop)
-      if (pieceId) {
+      // Bloquear digitacao (matriz E peca) mas permitir selecao de caracteres
+      // (necessario pra mudar cor/tamanho de letras especificas, estilo Photoshop).
+      // Caracteres so podem ser alterados via pagina /assets — no editor o user
+      // edita APENAS overrides (BOX + CHARACTER), nao o texto cru.
+      {
         const blockKey = (e: KeyboardEvent) => {
           const fcc = fabricRef.current
           if (!fcc) return
@@ -1411,8 +1413,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         fontFamily: (ov?.fontFamily ?? def.fontFamily ?? "Arial"),
         fontWeight: (ov?.fontWeight ?? def.fontWeight ?? "normal"),
         fill: (ov?.fill ?? def.color ?? "#111111"),
-        // Texto editavel inline tanto na matriz quanto na peca.
-        // Ambas guardam overrides locais; nao propaga pro asset.
+        // editable: true permite duplo-clique pra SELECIONAR caracteres (necessario
+        // pra aplicar styles per-char no painel direito). Mas digitar/apagar e
+        // bloqueado por listener separado abaixo, porque caracteres so podem ser
+        // alterados via /assets.
         editable: true,
         scaleX: effScaleX, scaleY: effScaleY, angle,
       })
