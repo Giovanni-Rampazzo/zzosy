@@ -1243,9 +1243,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   function fitLayerToCanvas() {
-    // FIT = encaixar a 100% (menor lado limita). Delega pra scaleLayerToCanvas
-    // que ja trata textbox corretamente (consolida em fontSize/width).
-    scaleLayerToCanvas(1)
+    // FIT = encaixar a 100% (menor lado limita) E centralizar no canvas.
+    // Botoes 20/40/60/80% nao centralizam (so escalam ancorado no centro do obj).
+    scaleLayerToCanvas(1, true)
   }
 
   /**
@@ -1255,8 +1255,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
    * o usuario quer um tamanho-alvo, nao um delta).
    *
    * percent: 0.2 = 20%, 0.4 = 40%, ..., 1.0 = 100% (caber inteiro - menor lado limita).
+   * recenter: se true, centraliza no canvas. Se false (default), ancora no centro
+   *           atual do objeto (so muda tamanho, posicao visual fica igual).
    */
-  function scaleLayerToCanvas(percent: number) {
+  function scaleLayerToCanvas(percent: number, recenter: boolean = false) {
     const fc = fabricRef.current
     const obj: any = selected
     if (!fc || !obj) return
@@ -1273,6 +1275,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const curScaleY = obj.scaleY ?? 1
     const curPhysW = ow * curScaleX
     const curPhysH = oh * curScaleY
+    // Centro-alvo: se recenter, centro do canvas; senao, centro atual do objeto.
+    // recenter=true (Encaixar): centraliza no canvas.
+    // recenter=false (20/40/60/80): ancora no centro atual — so muda tamanho.
+    const curLeft = obj.left ?? 0
+    const curTop = obj.top ?? 0
+    const centerX = recenter ? cw / 2 : (curLeft + curPhysW / 2)
+    const centerY = recenter ? ch / 2 : (curTop + curPhysH / 2)
     // Tamanho-alvo: a maior dimensao do objeto vai ocupar `percent` da menor dimensao da peca.
     // (igual Photoshop Image Size com Constrain Proportions ligado.)
     const minCanvas = Math.min(cw, ch)
@@ -1284,8 +1293,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (isText) {
       // Textbox: NUNCA usar scaleX/scaleY no objeto Fabric pra mudar tamanho.
       // Consolida em fontSize + width + styles per-char + leadingPt direto.
-      // Sem isso, o handler object:modified ao primeiro clique consolidava
-      // scaleY em height (texto vazava) ou Fabric perdia a referencia.
       const curFontSize = obj.fontSize ?? 48
       const newFontSize = curFontSize * factor
       const newWidth = ow * factor
@@ -1302,23 +1309,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           }
         }
       }
-      obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1, angle: 0 })
+      obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
       if (curLeadingPt !== undefined && curLeadingPt !== null) {
         obj.set({ lineHeight: ((obj as any).leadingPt) / newFontSize })
       }
       if (obj.initDimensions) obj.initDimensions()
+      // Re-mede e ancora no centro original (mantem posicao visual, so muda tamanho)
       const effW = (obj.width ?? newWidth)
       const effH = (obj.height ?? newFontSize)
-      obj.set({ left: (cw - effW) / 2, top: (ch - effH) / 2 })
+      obj.set({ left: centerX - effW / 2, top: centerY - effH / 2 })
     } else {
       // Imagens/shapes: scaleX/scaleY legitimos. Aplica factor por cima do scale atual.
       const newScaleX = curScaleX * factor
       const newScaleY = curScaleY * factor
       const newPhysW = ow * newScaleX
       const newPhysH = oh * newScaleY
-      const left = (cw - newPhysW) / 2
-      const top = (ch - newPhysH) / 2
-      obj.set({ scaleX: newScaleX, scaleY: newScaleY, left, top, angle: 0 })
+      // Ancora no centro original: mantem posicao visual, so muda tamanho.
+      obj.set({ scaleX: newScaleX, scaleY: newScaleY, left: centerX - newPhysW / 2, top: centerY - newPhysH / 2 })
     }
     obj.setCoords()
     fc.renderAll()
