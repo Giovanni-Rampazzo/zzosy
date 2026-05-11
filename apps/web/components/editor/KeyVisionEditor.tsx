@@ -157,6 +157,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
   const isInitialized = useRef(false)
+  // Guard sincrono pra prevenir double-init em Strict Mode / re-renders rapidos.
+  // useEffect roda 2x em dev (strict mode). Se init e async, ambos podem passar pelos
+  // guards iniciais antes do primeiro chegar a setar fabricRef.current = fc, resultando
+  // em 2 canvas criados e cada layer adicionado 2x. Esse flag e setado SINCRONO antes
+  // de qualquer await.
+  const isInitInProgress = useRef(false)
   const pendingTextPropagation = useRef(false)
   const [confirmExit, setConfirmExit] = useState<null | (() => void)>(null)
   const [exportOpen, setExportOpen] = useState(false)
@@ -544,6 +550,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       try { fabricRef.current.dispose() } catch {}
       fabricRef.current = null
     }
+    // Guard sincrono: previne double-init em Strict Mode quando useEffect roda 2x.
+    // Setamos a flag ANTES de qualquer await, e zeramos no cleanup.
+    if (isInitInProgress.current) {
+      console.warn("[init] ABORTADO: init ja em progresso (strict mode double-run)")
+      return
+    }
+    isInitInProgress.current = true
     let alive = true
     const cleanupFns: Array<() => void> = []
 
@@ -1022,6 +1035,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         try { fabricRef.current.dispose() } catch {}
         fabricRef.current = null
       }
+      isInitInProgress.current = false
     }
   }, [campaign])
 
