@@ -1243,26 +1243,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   function fitLayerToCanvas() {
-    const fc = fabricRef.current
-    const obj: any = selected
-    if (!fc || !obj) return
-    const cw = canvasWRef.current, ch = canvasHRef.current
-    // Tamanho real do objeto (sem escala) - pega bounding box logico do textbox/imagem
-    const ow = obj.width ?? 100
-    const oh = obj.height ?? 100
-    if (!ow || !oh) return
-    // Escala que faz o objeto caber por inteiro dentro do canvas (FIT - menor lado limita)
-    const scale = Math.min(cw / ow, ch / oh)
-    const newW = ow * scale
-    const newH = oh * scale
-    // Centralizar
-    const left = (cw - newW) / 2
-    const top = (ch - newH) / 2
-    obj.set({ scaleX: scale, scaleY: scale, left, top, angle: 0 })
-    obj.setCoords()
-    fc.renderAll()
-    setSelectedTick(t => t + 1)
-    doSave()
+    // FIT = encaixar a 100% (menor lado limita). Delega pra scaleLayerToCanvas
+    // que ja trata textbox corretamente (consolida em fontSize/width).
+    scaleLayerToCanvas(1)
   }
 
   /**
@@ -1279,11 +1262,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const oh = obj.height ?? 100
     if (!ow || !oh) return
     const scale = Math.min(cw / ow, ch / oh) * percent
-    const newW = ow * scale
-    const newH = oh * scale
-    const left = (cw - newW) / 2
-    const top = (ch - newH) / 2
-    obj.set({ scaleX: scale, scaleY: scale, left, top, angle: 0 })
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+
+    if (isText) {
+      // Textbox: NUNCA usar scaleX/scaleY. Consolidar direto em fontSize, width
+      // e styles per-char (Photoshop-style). Sem isso, o textbox fica com
+      // scaleY=0.2 + height pequeno + fontSize grande, e o handler object:modified
+      // ao primeiro clique consolida scaleY em height (deixando texto vazar),
+      // dando a sensacao de que o tamanho "saltou".
+      const curFontSize = obj.fontSize ?? 48
+      const curWidth = ow
+      const newFontSize = curFontSize * scale
+      const newWidth = curWidth * scale
+      // Escala leadingPt junto (mesma regra do object:scaling cantos)
+      const curLeadingPt: number | undefined | null = (obj as any).leadingPt
+      if (curLeadingPt !== undefined && curLeadingPt !== null) {
+        ;(obj as any).leadingPt = curLeadingPt * scale
+      }
+      // Escala styles per-char (cada caractere com fontSize proprio)
+      if (obj.styles && typeof obj.styles === "object") {
+        for (const lineKey of Object.keys(obj.styles)) {
+          const line = obj.styles[lineKey]
+          for (const colKey of Object.keys(line)) {
+            const cs = line[colKey]
+            if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
+          }
+        }
+      }
+      obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1, angle: 0 })
+      // Recalcula lineHeight se leadingPt explicito (mantem visual sincronizado)
+      if (curLeadingPt !== undefined && curLeadingPt !== null) {
+        obj.set({ lineHeight: ((obj as any).leadingPt) / newFontSize })
+      }
+      if (obj.initDimensions) obj.initDimensions()
+      // Re-mede height efetivo apos initDimensions pra centralizar corretamente
+      const effW = (obj.width ?? newWidth)
+      const effH = (obj.height ?? newFontSize)
+      obj.set({ left: (cw - effW) / 2, top: (ch - effH) / 2 })
+    } else {
+      // Imagens/shapes: scaleX/scaleY sao legitimos (Fabric resampla a imagem)
+      const newW = ow * scale
+      const newH = oh * scale
+      const left = (cw - newW) / 2
+      const top = (ch - newH) / 2
+      obj.set({ scaleX: scale, scaleY: scale, left, top, angle: 0 })
+    }
     obj.setCoords()
     fc.renderAll()
     setSelectedTick(t => t + 1)
