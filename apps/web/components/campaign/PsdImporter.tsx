@@ -148,10 +148,44 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           const textWidth = bbox ? Math.round(bbox.right - bbox.left) : Math.max(width, 200)
           const textHeight = bbox ? Math.round(bbox.bottom - bbox.top) : height
 
+          // Monta lastOverride: BOX (width/height) + CHARACTER (cor, fonte, etc).
+          // Se ha multiplos spans, gera styles per-caractere pra preservar formatacao
+          // original do PSD ate ao ultimo caractere.
+          const lastOverride: any = {
+            width: textWidth,
+            height: textHeight,
+            fontFamily: defFontName,
+            fontSize: Math.round(defFontSize),
+            fontWeight: defWeight,
+            fill: defColor,
+            charSpacing: 0,
+            lineHeight: 1.16,
+            textAlign: "left",
+          }
+          if (spans.length > 1) {
+            const styles: any = { 0: {} }
+            let charIdx = 0
+            for (const span of spans) {
+              const txt = span.text
+              for (let i = 0; i < txt.length; i++) {
+                if (txt[i] === "\n") { charIdx++; continue }
+                styles[0][String(charIdx)] = {
+                  fill: span.style.color,
+                  fontSize: span.style.fontSize,
+                  fontFamily: span.style.fontFamily,
+                  fontWeight: span.style.fontWeight,
+                }
+                charIdx++
+              }
+            }
+            lastOverride.styles = styles
+          }
+
           assets.push({
             label: name, type: "TEXT",
             content: spans,
             posX: left, posY: top, width: textWidth, height: textHeight, zIndex,
+            lastOverride,
           })
         } else if (layer.canvas) {
           try {

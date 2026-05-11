@@ -44,6 +44,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       width: number
       height: number
       zIndex: number
+      lastOverride?: any
     }>
 
     const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
@@ -153,6 +154,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           scaleX: 1,
           scaleY: 1,
           rotation: 0,
+          // BOX (width/height) + CHARACTER overrides extraidos do PSD.
+          // Permite que swap e re-add do asset preservem a config original do PSD.
+          lastOverride: asset.lastOverride ?? null,
         }
       })
       created.push(record)
