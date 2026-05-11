@@ -1950,6 +1950,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if ((obj as any).leadingPt !== undefined && (obj as any).leadingPt !== null) {
       lastOverride.leadingPt = (obj as any).leadingPt
     }
+    // Styles per-caractere (cores/tamanhos por letra). Sem salvar isso, swap perderia
+    // a config quando usuario pinta letras individuais via duplo-clique + selecao.
+    if (obj.styles && typeof obj.styles === "object" && Object.keys(obj.styles).length > 0) {
+      lastOverride.styles = obj.styles
+    }
     // Atualiza tambem o cache local pra swap funcionar dentro da mesma sessao
     const c = campaignRef.current
     if (c?.assets) {
