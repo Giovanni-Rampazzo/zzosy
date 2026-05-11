@@ -1249,9 +1249,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   /**
-   * Escala o layer pra ocupar uma porcentagem do canvas (mantendo proporcao).
-   * Usa o mesmo criterio do fit (menor lado limita pra caber inteiro), aplicando
-   * a porcentagem em cima. Centraliza no canvas. percent = 0.2, 0.4, 0.6, 0.8.
+   * Escala o layer pra que sua MAIOR dimensao ocupe N% da MENOR dimensao da peca.
+   * E uma operacao ABSOLUTA: clicar 20% duas vezes da o mesmo resultado.
+   * Isso evita "pulos cumulativos" e bate com o comportamento intuitivo (Photoshop:
+   * o usuario quer um tamanho-alvo, nao um delta).
+   *
+   * percent: 0.2 = 20%, 0.4 = 40%, ..., 1.0 = 100% (caber inteiro - menor lado limita).
    */
   function scaleLayerToCanvas(percent: number) {
     const fc = fabricRef.current
@@ -1261,51 +1264,61 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const ow = obj.width ?? 100
     const oh = obj.height ?? 100
     if (!ow || !oh) return
-    const scale = Math.min(cw / ow, ch / oh) * percent
     const isText = obj.type === "textbox" || obj.type === "i-text"
 
+    // CALCULO ABSOLUTO: pega o tamanho fisico atual do objeto (incluindo scale),
+    // descobre o tamanho-alvo, depois aplica.
+    // Tamanho atual fisico:
+    const curScaleX = obj.scaleX ?? 1
+    const curScaleY = obj.scaleY ?? 1
+    const curPhysW = ow * curScaleX
+    const curPhysH = oh * curScaleY
+    // Tamanho-alvo: a maior dimensao do objeto vai ocupar `percent` da menor dimensao da peca.
+    // (igual Photoshop Image Size com Constrain Proportions ligado.)
+    const minCanvas = Math.min(cw, ch)
+    const maxObj = Math.max(curPhysW, curPhysH)
+    if (maxObj < 0.001) return
+    // Fator que faz maxObj virar minCanvas * percent.
+    const factor = (minCanvas * percent) / maxObj
+
     if (isText) {
-      // Textbox: NUNCA usar scaleX/scaleY. Consolidar direto em fontSize, width
-      // e styles per-char (Photoshop-style). Sem isso, o textbox fica com
-      // scaleY=0.2 + height pequeno + fontSize grande, e o handler object:modified
-      // ao primeiro clique consolida scaleY em height (deixando texto vazar),
-      // dando a sensacao de que o tamanho "saltou".
+      // Textbox: NUNCA usar scaleX/scaleY no objeto Fabric pra mudar tamanho.
+      // Consolida em fontSize + width + styles per-char + leadingPt direto.
+      // Sem isso, o handler object:modified ao primeiro clique consolidava
+      // scaleY em height (texto vazava) ou Fabric perdia a referencia.
       const curFontSize = obj.fontSize ?? 48
-      const curWidth = ow
-      const newFontSize = curFontSize * scale
-      const newWidth = curWidth * scale
-      // Escala leadingPt junto (mesma regra do object:scaling cantos)
+      const newFontSize = curFontSize * factor
+      const newWidth = ow * factor
       const curLeadingPt: number | undefined | null = (obj as any).leadingPt
       if (curLeadingPt !== undefined && curLeadingPt !== null) {
-        ;(obj as any).leadingPt = curLeadingPt * scale
+        ;(obj as any).leadingPt = curLeadingPt * factor
       }
-      // Escala styles per-char (cada caractere com fontSize proprio)
       if (obj.styles && typeof obj.styles === "object") {
         for (const lineKey of Object.keys(obj.styles)) {
           const line = obj.styles[lineKey]
           for (const colKey of Object.keys(line)) {
             const cs = line[colKey]
-            if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
+            if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * factor
           }
         }
       }
       obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1, angle: 0 })
-      // Recalcula lineHeight se leadingPt explicito (mantem visual sincronizado)
       if (curLeadingPt !== undefined && curLeadingPt !== null) {
         obj.set({ lineHeight: ((obj as any).leadingPt) / newFontSize })
       }
       if (obj.initDimensions) obj.initDimensions()
-      // Re-mede height efetivo apos initDimensions pra centralizar corretamente
       const effW = (obj.width ?? newWidth)
       const effH = (obj.height ?? newFontSize)
       obj.set({ left: (cw - effW) / 2, top: (ch - effH) / 2 })
     } else {
-      // Imagens/shapes: scaleX/scaleY sao legitimos (Fabric resampla a imagem)
-      const newW = ow * scale
-      const newH = oh * scale
-      const left = (cw - newW) / 2
-      const top = (ch - newH) / 2
-      obj.set({ scaleX: scale, scaleY: scale, left, top, angle: 0 })
+      // Imagens/shapes: scaleX/scaleY legitimos. Aplica factor por cima do scale atual.
+      const newScaleX = curScaleX * factor
+      const newScaleY = curScaleY * factor
+      const newPhysW = ow * newScaleX
+      const newPhysH = oh * newScaleY
+      const left = (cw - newPhysW) / 2
+      const top = (ch - newPhysH) / 2
+      obj.set({ scaleX: newScaleX, scaleY: newScaleY, left, top, angle: 0 })
     }
     obj.setCoords()
     fc.renderAll()
