@@ -312,7 +312,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // (__assetId pra link com CampaignAsset; __assetLabel pra rotulo;
         //  leadingPt pra entrelinhas em pt; styles pra formatacao per-char).
         const json = active.toObject([
-          "__assetId", "__assetLabel", "__isBg", "leadingPt",
+          "__assetId", "__assetLabel", "__isBg", "leadingPt", "__maskData",
         ])
         setClipboard({ campaignId, json, copiedAt: Date.now() })
         return
@@ -340,6 +340,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           if (cb.json.__assetId) (cloned as any).__assetId = cb.json.__assetId
           if (cb.json.__assetLabel) (cloned as any).__assetLabel = cb.json.__assetLabel
           if (cb.json.leadingPt !== undefined) (cloned as any).leadingPt = cb.json.leadingPt
+          // Mascara: re-aplicar a partir do __maskData (clipPath serializado e parcial)
+          if (cb.json.__maskData) {
+            (cloned as any).__maskData = cb.json.__maskData
+            const { Image: FabImage, Path } = await import("fabric")
+            ;(cloned as any).clipPath = null
+            await applyMaskToFabricObject({ Image: FabImage, Path }, cloned, cb.json.__maskData)
+          }
           // Offset visivel pra nao ficar exatamente em cima do original
           cloned.set({
             left: (cloned.left ?? 0) + 20,
@@ -1021,7 +1028,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -1084,7 +1091,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         console.warn("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
         for (const orphan of orphans) fc.remove(orphan)
       }
-      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"]))
+      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -1149,6 +1156,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
           obj.set("styles", src.styles)
           if (obj.initDimensions) obj.initDimensions()
+        }
+        // Restaurar mascara: clipPath reconstruido pelo loadFromJSON pode estar
+        // quebrado (e.g. Image clipPath nao re-carrega o dataUrl). Re-aplicamos
+        // do __maskData original — fonte da verdade do LayerMask.
+        if (src.__maskData) {
+          obj.__maskData = src.__maskData
+          const { Image: FabImage, Path } = await import("fabric")
+          // Limpa clipPath antigo que possa ter sido restaurado parcialmente
+          obj.clipPath = null
+          await applyMaskToFabricObject({ Image: FabImage, Path }, obj, src.__maskData)
         }
       }
 
@@ -2335,10 +2352,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // addAssetToCanvas faz fc.add(newObj) — nao retorna referencia.
     // Pego o ultimo objeto adicionado pra selecionar como ativo.
     const beforeIds = new Set(fc.getObjects())
+    // Preserva a mascara antes de remover (move pra o novo objeto).
+    const preservedMask = (currentObj as any).__maskData
     fc.remove(currentObj)
     await addAssetToCanvas(fc, newAsset, layerSpec)
 
     const newObj = fc.getObjects().find((o: any) => !beforeIds.has(o))
+
+    // Re-aplica mascara no novo objeto. Modelo: mascara segue o LAYER (posicao no canvas),
+    // nao o asset — entao swap de conteudo preserva o efeito visual.
+    if (newObj && preservedMask) {
+      ;(newObj as any).__maskData = preservedMask
+      const { Image: FabImage, Path } = await import("fabric")
+      ;(newObj as any).clipPath = null
+      await applyMaskToFabricObject({ Image: FabImage, Path }, newObj, preservedMask)
+    }
 
     fc.requestRenderAll()
     if (newObj) {
