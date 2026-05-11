@@ -1365,12 +1365,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         ? (asset as any).lastOverride
         : null
       const ov: any = layerOv ?? assetTpl ?? null
-      // Texto: PECA pode ter override.content (conteudo editado localmente).
-      // MATRIZ ignora overrides.content e sempre usa data.text (texto do asset).
-      // Modelo: caracteres do texto sao fonte da verdade no ASSET; matriz so guarda
-      // styles/posicao. Sem isso, mudancas em /assets nao propagavam pra matriz
-      // (overrides.content era stale e travava o texto antigo).
-      const initialText = (pieceId && ov && typeof ov.content === "string") ? ov.content : data.text
+      // Texto SEMPRE vem do asset.content (data.text), tanto na matriz quanto na peca.
+      // Modelo: caracteres do texto sao fonte da verdade no ASSET. Layer (matriz ou peca)
+      // so guarda BOX e CHARACTER overrides (cor/fonte/styles per-char), nunca o texto.
+      // Sem isso, editar em /assets nao propagava pras pecas apos o primeiro save da peca
+      // (que congelava o texto em overrides.content).
+      const initialText = data.text
 
       // Back-compat: pecas antigas geradas com scaleX!=1 (antes do fix da geracao). Consolida
       // scale no fontSize/width na hora de criar pra evitar que Fabric "salte" o tamanho ao
@@ -1517,8 +1517,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             overrides: {},
           }
           if (o.type === "textbox" || o.type === "i-text") {
-            // Conteudo do texto da peca (independente do asset). Overrides locais.
-            layer.overrides.content = o.text
+            // PECA: NAO salva overrides.content. Caracteres sao fonte da verdade
+            // no ASSET (sempre lidos do asset.content). Salvar texto aqui congelava
+            // o conteudo e impedia edicao em /assets de propagar pra peca apos o
+            // primeiro save. Modelo: peca tem overrides LOCAIS (cor, fonte, box,
+            // styles per-char) mas NAO mexe no texto cru.
             layer.overrides.fill = o.fill
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
@@ -1684,8 +1687,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             }
             // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
             if (o.type === "textbox" || o.type === "i-text") {
-              // Conteudo do texto da peca (independente do asset). Override local.
-              layer.overrides.content = o.text
+              // PECA: NAO salva overrides.content (caracteres vem do asset).
+              // Modelo: peca tem overrides LOCAIS (styles, cor, fonte, box) mas
+              // texto cru sempre vem de asset.content. Sem isso, edicoes em
+              // /assets nao propagavam apos primeiro save da peca.
               layer.overrides.fill = o.fill
               layer.overrides.fontSize = o.fontSize
               layer.overrides.fontFamily = o.fontFamily
