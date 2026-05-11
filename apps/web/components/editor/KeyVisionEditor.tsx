@@ -166,6 +166,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   // de qualquer await.
   const isInitInProgress = useRef(false)
   const pendingTextPropagation = useRef(false)
+  // Trava de reentrada do saveNow. Se save anterior ainda esta rodando, novo
+  // saveNow aborta. Previne PATCHes simultaneos que poderiam corromper estado.
+  const savingInFlightRef = useRef(false)
   const [confirmExit, setConfirmExit] = useState<null | (() => void)>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPieces, setExportPieces] = useState<any[]>([])
@@ -1641,12 +1644,35 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
   async function saveNow() {
     clearTimeout(saveTimer.current)
+    // Guards: nao salva durante apply de historico, nem antes do init terminar.
+    // Sem isso, fechar a aba durante remount podia gravar layers em estado
+    // transitorio (sem __assetId restaurados) -> KV vazia/quebrada.
+    if (isApplyingHistory.current) {
+      console.warn("[saveNow] abortado — undo/redo em andamento")
+      return
+    }
+    if (!isInitialized.current) {
+      console.warn("[saveNow] abortado — init nao terminou")
+      return
+    }
+    // Trava de reentrada: se outro saveNow ja esta rodando, espera. Sem isso,
+    // chamadas em sequencia (e.g. Cmd+S apertado 2x) podiam corromper estado
+    // do pieceRef ou disparar 2 PATCH simultaneos.
+    if (savingInFlightRef.current) {
+      console.warn("[saveNow] abortado — save anterior ainda rodando")
+      return
+    }
+    savingInFlightRef.current = true
     setSaving(true)
+    // Snapshot dos refs ALVO desta operacao. Se o user navegar pra outra peca
+    // no meio, este save ainda persistira a peca onde a edicao foi feita
+    // (em vez de gravar dados antigos sobre a peca nova).
+    const targetPieceId = pieceId
+    const targetPiece = pieceRef.current
     const fc = fabricRef.current
-    if (!fc) { setSaving(false); return }
-
-    if (pieceId && pieceRef.current) {
-      const p = pieceRef.current
+    if (!fc) { savingInFlightRef.current = false; setSaving(false); return }
+    if (targetPieceId && targetPiece) {
+      const p = targetPiece
       const oldData = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
       const newLayers = fc.getObjects()
         .filter((o: any) => {
@@ -1701,10 +1727,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           return layer
         })
       const newData = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, layers: newLayers }
-      await fetch(`/api/pieces/${pieceId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: JSON.stringify(newData) }) })
-      await uploadPieceThumb(fc, pieceId)
-      isDirtyRef.current = false
-      setIsDirty(false)
+      try {
+        // Fix #12: marca isDirty=false APENAS apos o PATCH ter sucesso. Se o usuario
+        // fechar a aba durante o upload, ainda mostra "salvando" e nao perde o
+        // estado "dirty" silenciosamente.
+        await fetch(`/api/pieces/${targetPieceId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: JSON.stringify(newData) }) })
+        // Upload do thumb e best-effort; falha nao deve marcar como dirty de novo
+        // mas o save da peca em si ja persistiu.
+        try { await uploadPieceThumb(fc, targetPieceId) } catch (e) { console.warn("thumb fail:", e) }
+        isDirtyRef.current = false
+        setIsDirty(false)
+      } catch (e) {
+        console.warn("[saveNow PECA] falha no PATCH:", e)
+        // Mantem isDirty=true pro user saber que nao salvou
+      }
     } else {
       const layersToSave: Layer[] = fc.getObjects()
         .filter((o: any) => {
@@ -1763,6 +1799,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           isDirtyRef.current = false
           setIsDirty(false)
           setSaving(false)
+          savingInFlightRef.current = false
           return
         }
       }
@@ -1779,6 +1816,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     isDirtyRef.current = false
     setIsDirty(false)
     setSaving(false)
+    savingInFlightRef.current = false
   }
 
   function doSave() {
