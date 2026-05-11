@@ -1955,6 +1955,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (obj.styles && typeof obj.styles === "object" && Object.keys(obj.styles).length > 0) {
       lastOverride.styles = obj.styles
     }
+    // BOX overrides: largura e altura da caixa de texto. Importante pra reset textos
+    // ao swap (Photoshop-style: cada texto tem sua propria largura/altura de caixa).
+    if (obj.width !== undefined) lastOverride.width = obj.width
+    if (obj.height !== undefined) lastOverride.height = obj.height
     // Atualiza tambem o cache local pra swap funcionar dentro da mesma sessao
     const c = campaignRef.current
     if (c?.assets) {
@@ -2138,11 +2142,36 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       }
     }
 
+    // Box (width/height) do novo asset: usa lastOverride.width/height se existir,
+    // escalado pela proporcao atual da peca. Senao mantem o width/height do textbox
+    // atual (current). Modelo: cada asset texto tem sua propria caixa.
+    let swapWidth = currentObj.width ?? 400
+    let swapHeight = currentObj.height ?? 100
+    if (pieceId) {
+      const cAssets = campaignRef.current?.assets ?? []
+      const curAsset = cAssets.find((a: Asset) => a.id === currentObj.__assetId)
+      const curTplW = (curAsset as any)?.lastOverride?.width
+      const curObjW = currentObj.width
+      // ratio baseado em width (BOX): peca_w / matriz_w. Aplica em newAsset.lastOverride.width.
+      const wRatio = (typeof curTplW === "number" && curTplW > 0 && typeof curObjW === "number")
+        ? curObjW / curTplW : null
+      const newTplW = (newAsset.lastOverride as any)?.width
+      const newTplH = (newAsset.lastOverride as any)?.height
+      if (typeof newTplW === "number" && wRatio !== null) swapWidth = newTplW * wRatio
+      if (typeof newTplH === "number" && wRatio !== null) swapHeight = newTplH * wRatio
+    } else {
+      // Matriz: usa direto o lastOverride.width/height do novo asset (se existir)
+      const newTplW = (newAsset.lastOverride as any)?.width
+      const newTplH = (newAsset.lastOverride as any)?.height
+      if (typeof newTplW === "number") swapWidth = newTplW
+      if (typeof newTplH === "number") swapHeight = newTplH
+    }
+
     const layerSpec = {
       posX: currentObj.left ?? 0,
       posY: currentObj.top ?? 0,
-      width: currentObj.width ?? 400,
-      height: currentObj.height ?? 100,
+      width: swapWidth,
+      height: swapHeight,
       // Mantem o transform fisico (posicao/scale/angulo) — so o conteudo + estilos trocam
       scaleX: currentObj.scaleX ?? 1,
       scaleY: currentObj.scaleY ?? 1,
