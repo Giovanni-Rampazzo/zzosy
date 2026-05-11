@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button"
 
 interface MediaFormat {
   id: string; vehicle: string; media: string; format: string
-  width: number; height: number; dpi: number; category: "DIGITAL"|"OFFLINE"; isDefault: boolean
+  width: number; height: number; dpi: number; category: string; isDefault: boolean
 }
 
 type FormState = {
@@ -13,7 +13,7 @@ type FormState = {
   width: string; height: string; dpi: string; category: string;
 }
 
-const emptyForm: FormState = {vehicle:"",media:"",format:"",width:"",height:"",dpi:"72",category:"DIGITAL"}
+const emptyForm: FormState = {vehicle:"",media:"",format:"",width:"",height:"",dpi:"72",category:""}
 
 export default function MediasPage() {
   const [formats, setFormats] = useState<MediaFormat[]>([])
@@ -102,8 +102,15 @@ export default function MediasPage() {
     setEditingId(null)
   }
 
-  const digital = formats.filter(f => f.category === "DIGITAL")
-  const offline = formats.filter(f => f.category === "OFFLINE")
+  // Agrupa formatos pelos valores unicos de category (texto livre).
+  // Formatos sem categoria sao agrupados em "Sem categoria".
+  const categories = Array.from(new Set(formats.map(f => f.category || "Sem categoria"))).sort()
+  const groupedFormats: Record<string, MediaFormat[]> = {}
+  for (const f of formats) {
+    const k = f.category || "Sem categoria"
+    if (!groupedFormats[k]) groupedFormats[k] = []
+    groupedFormats[k].push(f)
+  }
   const inp = {width:"100%",padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:5,fontSize:12,outline:"none",fontFamily:"inherit"} as React.CSSProperties
 
   return (
@@ -119,12 +126,17 @@ export default function MediasPage() {
 
         {loading ? <div style={{textAlign:"center",padding:"64px 0",color:"#888"}}>Carregando...</div> : (
           <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
-            {[{label:"Digital",data:digital},{label:"Offline",data:offline}].map(({label,data}) => (
-              <div key={label}>
-                <div style={{padding:"10px 20px",background:"#F5F5F0",borderBottom:"1px solid #E0E0E0"}}>
-                  <span style={{fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.8px",color:"#888"}}>{label}</span>
-                </div>
-                {data.map(f => (
+            {categories.length === 0 ? (
+              <div style={{padding:"32px 20px",textAlign:"center",color:"#888",fontSize:13}}>
+                Nenhum formato cadastrado. Clique em "+ Novo formato" pra criar.
+              </div>
+            ) : (
+              categories.map(label => (
+                <div key={label}>
+                  <div style={{padding:"10px 20px",background:"#F5F5F0",borderBottom:"1px solid #E0E0E0"}}>
+                    <span style={{fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.8px",color:"#888"}}>{label}</span>
+                  </div>
+                  {groupedFormats[label].map(f => (
                   <div key={f.id} style={{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid #f0f0f0"}}>
                     <div style={{flex:1,fontWeight:600,fontSize:13}}>{f.vehicle}</div>
                     <div style={{width:140,fontSize:12,color:"#888"}}>{f.media}</div>
@@ -147,8 +159,9 @@ export default function MediasPage() {
                     </div>
                   </div>
                 ))}
-              </div>
-            ))}
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -172,10 +185,20 @@ export default function MediasPage() {
                 ))}
                 <div style={{display:"flex",flexDirection:"column",gap:5}}>
                   <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>Categoria</label>
-                  <select value={form.category} onChange={e => setForm(f => ({...f,category:e.target.value}))} style={inp}>
-                    <option value="DIGITAL">Digital</option>
-                    <option value="OFFLINE">Offline</option>
-                  </select>
+                  <input
+                    type="text"
+                    value={form.category}
+                    onChange={e => setForm(f => ({...f,category:e.target.value}))}
+                    placeholder="Ex: Digital, Offline, Vídeo..."
+                    list="media-category-suggestions"
+                    required
+                    style={inp}
+                  />
+                  <datalist id="media-category-suggestions">
+                    {categories.filter(c => c !== "Sem categoria").map(c => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>

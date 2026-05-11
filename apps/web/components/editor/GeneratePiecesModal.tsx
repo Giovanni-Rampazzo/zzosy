@@ -10,7 +10,7 @@ interface MediaFormat {
   width: number
   height: number
   dpi: number
-  category: "DIGITAL" | "OFFLINE"
+  category: string
 }
 
 interface Props {
@@ -96,26 +96,17 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState("")
-  // Categoria organizacional pra agrupar as pecas geradas (ex: 'online', 'offline').
-  // Default "online". Existing categories da campanha sao sugeridas via datalist.
-  const [pieceCategory, setPieceCategory] = useState("online")
-  const [existingCategories, setExistingCategories] = useState<string[]>([])
 
   useEffect(() => {
     fetch("/api/medias").then(r => r.json()).then(d => { setFormats(d); setLoading(false) })
-    // Carrega categorias ja usadas nessa campanha pra autocomplete
-    fetch(`/api/pieces?campaignId=${campaignId}`).then(r => r.json()).then((pieces: any[]) => {
-      const cats = Array.from(new Set(pieces.map((p: any) => p.category).filter(Boolean))) as string[]
-      setExistingCategories(cats)
-    }).catch(() => {})
   }, [campaignId])
 
   function isSelected(id: string) { return selected.includes(id) }
   function toggle(id: string) {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
-  function toggleAll(category: "DIGITAL" | "OFFLINE") {
-    const ids = formats.filter(f => f.category === category).map(f => f.id)
+  function toggleAll(category: string) {
+    const ids = formats.filter(f => (f.category || "Sem categoria") === category).map(f => f.id)
     const allSelected = ids.every(id => selected.includes(id))
     if (allSelected) setSelected(prev => prev.filter(id => !ids.includes(id)))
     else setSelected(prev => [...prev, ...ids.filter(id => !prev.includes(id))])
@@ -240,7 +231,6 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
           mediaFormatId: f.id,
           data: pieceData,
           status: "STANDBY",
-          category: pieceCategory.trim() || "online",
         }),
       })
       const piece = await res.json()
@@ -259,8 +249,15 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
     onGenerated()
   }
 
-  const digital = formats.filter(f => f.category === "DIGITAL")
-  const offline = formats.filter(f => f.category === "OFFLINE")
+  // Agrupa formatos dinamicamente por valores unicos de category.
+  // Formatos sem categoria caem em "Sem categoria".
+  const categoryGroups = formats.reduce<Record<string, MediaFormat[]>>((acc, f) => {
+    const k = f.category || "Sem categoria"
+    if (!acc[k]) acc[k] = []
+    acc[k].push(f)
+    return acc
+  }, {})
+  const categoryNames = Object.keys(categoryGroups).sort()
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
@@ -270,39 +267,19 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
           <button onClick={onClose} className="text-[#555555] hover:text-white bg-transparent border-0 text-xl cursor-pointer">✕</button>
         </div>
 
-        {/* Campo de categoria organizacional. Texto livre com autocomplete das
-            categorias ja usadas nessa campanha. Default "online". */}
-        <div className="px-6 py-3 border-b border-[#333333]">
-          <label className="text-xs font-bold uppercase tracking-wider text-[#555555] block mb-2">
-            Categoria das peças
-          </label>
-          <input
-            type="text"
-            value={pieceCategory}
-            onChange={e => setPieceCategory(e.target.value)}
-            placeholder="online"
-            list="piece-category-suggestions"
-            className="w-full bg-[#222] text-white border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#F5C400]"
-          />
-          <datalist id="piece-category-suggestions">
-            {existingCategories.map(c => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-          <div className="text-[10px] text-[#555] mt-1">
-            Agrupa as peças geradas. Ex: online, offline, video. Sugestões aparecem ao digitar.
-          </div>
-        </div>
-
         <div className="overflow-y-auto flex-1 px-6 py-4">
           {loading ? (
             <div className="text-center py-8 text-[#555555]">Carregando formatos...</div>
+          ) : categoryNames.length === 0 ? (
+            <div className="text-center py-8 text-[#555555]">Nenhum formato cadastrado.</div>
           ) : (
             <>
-              {[{ label: "Digital", data: digital, cat: "DIGITAL" as const }, { label: "Offline", data: offline, cat: "OFFLINE" as const }].map(({ label, data, cat }) => (
+              {categoryNames.map((cat) => {
+                const data = categoryGroups[cat]
+                return (
                 <div key={cat} className="mb-6">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold uppercase tracking-wider text-[#555555]">{label}</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#555555]">{cat}</span>
                     <button onClick={() => toggleAll(cat)} className="text-xs text-[#F5C400] bg-transparent border-0 cursor-pointer">
                       {data.every(f => selected.includes(f.id)) ? "Desmarcar todos" : "Selecionar todos"}
                     </button>
@@ -315,7 +292,8 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
                     </label>
                   ))}
                 </div>
-              ))}
+                )
+              })}
             </>
           )}
         </div>

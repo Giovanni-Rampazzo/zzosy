@@ -20,7 +20,7 @@ interface Piece {
   height: number
   dpi: number
   status: string
-  category?: string
+  mediaFormatCategory?: string
   createdAt: string
   updatedAt?: string
   campaignId: string
@@ -68,34 +68,25 @@ function PiecesContent() {
 
   // Aplica filtros (status + categoria) e ordenacao
   const afterStatus = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
-  const afterCategory = categoryFilter === "ALL" ? afterStatus : afterStatus.filter(p => (p.category ?? "online") === categoryFilter)
+  const afterCategory = categoryFilter === "ALL" ? afterStatus : afterStatus.filter(p => (p.mediaFormatCategory ?? "Sem categoria") === categoryFilter)
   const filteredRaw = afterCategory
   const filtered = sort ? sortPieces(filteredRaw, sort.col, sort.dir) : filteredRaw
   const counts: Record<string, number> = { ALL: pieces.length }
   for (const s of PIECE_STATUS_LIST) counts[s] = pieces.filter(p => p.status === s).length
 
-  // Lista de categorias unicas (pra filtro no topo). Sempre inclui "online".
-  const allCategories = Array.from(new Set(pieces.map(p => p.category ?? "online"))).sort()
+  // Lista de categorias unicas vindas do MediaFormat associado (pra filtro no topo).
+  const allCategories = Array.from(new Set(pieces.map(p => p.mediaFormatCategory ?? "Sem categoria"))).sort()
 
-  // Agrupa pecas filtradas por categoria (pra exibicao em sections com header)
+  // Agrupa pecas filtradas por categoria (pra exibicao em sections com header).
+  // Categoria vem do MediaFormat de cada peca. Editar a categoria de uma peca
+  // significa editar o MediaFormat dela em /medias.
   const grouped: Record<string, Piece[]> = {}
   for (const p of filtered) {
-    const cat = p.category ?? "online"
+    const cat = p.mediaFormatCategory ?? "Sem categoria"
     if (!grouped[cat]) grouped[cat] = []
     grouped[cat].push(p)
   }
   const groupedKeys = Object.keys(grouped).sort()
-
-  // Editar categoria de uma peca individual
-  async function changePieceCategory(pieceId: string, newCategory: string) {
-    const trimmed = newCategory.trim() || "online"
-    await fetch(`/api/pieces/${pieceId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ category: trimmed }),
-    })
-    setPieces(prev => prev.map(p => p.id === pieceId ? { ...p, category: trimmed } : p))
-  }
 
   return (
     <PageShell>
@@ -177,7 +168,7 @@ function PiecesContent() {
                 accentBg="#F5F5F5"
                 accentText="#111111"
               >
-                {c} <span style={{ opacity: 0.7, fontWeight: 400 }}>({pieces.filter(p => (p.category ?? "online") === c).length})</span>
+                {c} <span style={{ opacity: 0.7, fontWeight: 400 }}>({pieces.filter(p => (p.mediaFormatCategory ?? "Sem categoria") === c).length})</span>
               </FilterPill>
             ))}
           </div>
@@ -236,14 +227,6 @@ function PiecesContent() {
                       status={p.status ?? "STANDBY"}
                       size="sm"
                       onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))}
-                    />
-                  </div>
-                  {/* Editar categoria inline (clique pra editar). Mostra ' · categoria' depois da resolucao */}
-                  <div className="text-[10px] text-[#aaa] mt-1">
-                    <EditableText
-                      value={p.category ?? "online"}
-                      variant="inline"
-                      onSave={async (v) => { await changePieceCategory(p.id, v) }}
                     />
                   </div>
                 </div>

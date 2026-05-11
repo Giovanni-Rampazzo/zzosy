@@ -43,8 +43,10 @@ export async function GET(req: NextRequest) {
 
     const mf = p.mediaFormatId ? mfMap.get(p.mediaFormatId) : null
     const media = mf?.vehicle || mf?.media || inferMediaFromName(p.name)
+    // Categoria vem do MediaFormat associado. Pecas sem mediaFormat caem em "Sem categoria".
+    const mfCategory = mf?.category || "Sem categoria"
 
-    return { ...p, width, height, format, dpi, media }
+    return { ...p, width, height, format, dpi, media, mediaFormatCategory: mfCategory }
   })
   return NextResponse.json(enriched)
 }
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const tenantId = (session.user as any).tenantId
-  const { campaignId, name, mediaFormatId, data, status, category } = await req.json()
+  const { campaignId, name, mediaFormatId, data, status } = await req.json()
   const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, client: { tenantId } } })
   if (!campaign) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   const piece = await prisma.piece.create({
@@ -61,8 +63,6 @@ export async function POST(req: NextRequest) {
       campaignId, name, mediaFormatId,
       data: data ? JSON.stringify(data) : null,
       status: status ?? "STANDBY",
-      // Categoria organizacional. Default "online" se nao informada.
-      category: (typeof category === "string" && category.trim()) ? category.trim() : "online",
     }
   })
   return NextResponse.json(piece)
