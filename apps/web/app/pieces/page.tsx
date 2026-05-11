@@ -20,6 +20,7 @@ interface Piece {
   height: number
   dpi: number
   status: string
+  category?: string
   createdAt: string
   updatedAt?: string
   campaignId: string
@@ -36,6 +37,7 @@ function PiecesContent() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<"grid" | "list">("grid")
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  const [categoryFilter, setCategoryFilter] = useState<string>("ALL")
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [campaignName, setCampaignName] = useState<string | undefined>(undefined)
@@ -64,10 +66,36 @@ function PiecesContent() {
     setSelected([])
   }
 
-  const filteredRaw = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+  // Aplica filtros (status + categoria) e ordenacao
+  const afterStatus = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
+  const afterCategory = categoryFilter === "ALL" ? afterStatus : afterStatus.filter(p => (p.category ?? "online") === categoryFilter)
+  const filteredRaw = afterCategory
   const filtered = sort ? sortPieces(filteredRaw, sort.col, sort.dir) : filteredRaw
   const counts: Record<string, number> = { ALL: pieces.length }
   for (const s of PIECE_STATUS_LIST) counts[s] = pieces.filter(p => p.status === s).length
+
+  // Lista de categorias unicas (pra filtro no topo). Sempre inclui "online".
+  const allCategories = Array.from(new Set(pieces.map(p => p.category ?? "online"))).sort()
+
+  // Agrupa pecas filtradas por categoria (pra exibicao em sections com header)
+  const grouped: Record<string, Piece[]> = {}
+  for (const p of filtered) {
+    const cat = p.category ?? "online"
+    if (!grouped[cat]) grouped[cat] = []
+    grouped[cat].push(p)
+  }
+  const groupedKeys = Object.keys(grouped).sort()
+
+  // Editar categoria de uma peca individual
+  async function changePieceCategory(pieceId: string, newCategory: string) {
+    const trimmed = newCategory.trim() || "online"
+    await fetch(`/api/pieces/${pieceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category: trimmed }),
+    })
+    setPieces(prev => prev.map(p => p.id === pieceId ? { ...p, category: trimmed } : p))
+  }
 
   return (
     <PageShell>
@@ -100,7 +128,7 @@ function PiecesContent() {
         </div>
 
         {/* Filtro por status */}
-        <div className="flex flex-wrap gap-2 mb-5">
+        <div className="flex flex-wrap gap-2 mb-3">
           <FilterPill
             active={statusFilter === "ALL"}
             onClick={() => setStatusFilter("ALL")}
@@ -127,6 +155,34 @@ function PiecesContent() {
           })}
         </div>
 
+        {/* Filtro por categoria — so aparece se ha mais de 1 categoria */}
+        {allCategories.length > 1 && (
+          <div className="flex flex-wrap gap-2 mb-5 items-center">
+            <span className="text-xs text-[#555] uppercase tracking-wider font-bold mr-1">Categoria:</span>
+            <FilterPill
+              active={categoryFilter === "ALL"}
+              onClick={() => setCategoryFilter("ALL")}
+              accent="#111111"
+              accentBg="#F5F5F5"
+              accentText="#111111"
+            >
+              Todas
+            </FilterPill>
+            {allCategories.map(c => (
+              <FilterPill
+                key={c}
+                active={categoryFilter === c}
+                onClick={() => setCategoryFilter(c)}
+                accent="#111111"
+                accentBg="#F5F5F5"
+                accentText="#111111"
+              >
+                {c} <span style={{ opacity: 0.7, fontWeight: 400 }}>({pieces.filter(p => (p.category ?? "online") === c).length})</span>
+              </FilterPill>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div className="text-center py-16 text-[#888888]">Carregando...</div>
         ) : pieces.length === 0 ? (
@@ -134,8 +190,15 @@ function PiecesContent() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-[#888888]">Nenhuma peça com esse status</div>
         ) : view === "grid" ? (
-          <div className="grid grid-cols-4 gap-4">
-            {filtered.map((p) => (
+          // Agrupado por categoria. Cada grupo tem header com o nome da categoria.
+          <div className="space-y-6">
+            {groupedKeys.map(cat => (
+              <div key={cat}>
+                <div className="text-xs font-bold uppercase tracking-wider text-[#555] mb-3 pb-2 border-b border-[#E0E0E0]">
+                  {cat} <span className="text-[#aaa] font-normal">({grouped[cat].length})</span>
+                </div>
+                <div className="grid grid-cols-4 gap-4">
+                  {grouped[cat].map((p) => (
               <div
                 key={p.id}
                 className={`bg-white rounded-lg border transition-all ${isSelected(p.id) ? "border-[#F5C400] shadow-md" : "border-[#E0E0E0] hover:border-[#F5C400]"}`}
@@ -175,6 +238,17 @@ function PiecesContent() {
                       onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))}
                     />
                   </div>
+                  {/* Editar categoria inline (clique pra editar). Mostra ' · categoria' depois da resolucao */}
+                  <div className="text-[10px] text-[#aaa] mt-1">
+                    <EditableText
+                      value={p.category ?? "online"}
+                      variant="inline"
+                      onSave={async (v) => { await changePieceCategory(p.id, v) }}
+                    />
+                  </div>
+                </div>
+              </div>
+                  ))}
                 </div>
               </div>
             ))}

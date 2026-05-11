@@ -168,6 +168,9 @@ model Piece {
   campaignId    String
   mediaFormatId String?
   name          String?
+  // Categoria organizacional da peca (online, offline, video, etc). User-defined,
+  // texto livre. Default "online" pra back-compat com pecas antigas.
+  category      String         @default("online") @db.VarChar(100)
   segment       String?        @db.VarChar(255)
   copy          String?        @db.LongText
   status        String         @default("STANDBY")

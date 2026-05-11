@@ -96,10 +96,19 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState("")
+  // Categoria organizacional pra agrupar as pecas geradas (ex: 'online', 'offline').
+  // Default "online". Existing categories da campanha sao sugeridas via datalist.
+  const [pieceCategory, setPieceCategory] = useState("online")
+  const [existingCategories, setExistingCategories] = useState<string[]>([])
 
   useEffect(() => {
     fetch("/api/medias").then(r => r.json()).then(d => { setFormats(d); setLoading(false) })
-  }, [])
+    // Carrega categorias ja usadas nessa campanha pra autocomplete
+    fetch(`/api/pieces?campaignId=${campaignId}`).then(r => r.json()).then((pieces: any[]) => {
+      const cats = Array.from(new Set(pieces.map((p: any) => p.category).filter(Boolean))) as string[]
+      setExistingCategories(cats)
+    }).catch(() => {})
+  }, [campaignId])
 
   function isSelected(id: string) { return selected.includes(id) }
   function toggle(id: string) {
@@ -231,6 +240,7 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
           mediaFormatId: f.id,
           data: pieceData,
           status: "STANDBY",
+          category: pieceCategory.trim() || "online",
         }),
       })
       const piece = await res.json()
@@ -258,6 +268,30 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#333333]">
           <span className="font-bold text-white text-base">Selecionar formatos</span>
           <button onClick={onClose} className="text-[#555555] hover:text-white bg-transparent border-0 text-xl cursor-pointer">✕</button>
+        </div>
+
+        {/* Campo de categoria organizacional. Texto livre com autocomplete das
+            categorias ja usadas nessa campanha. Default "online". */}
+        <div className="px-6 py-3 border-b border-[#333333]">
+          <label className="text-xs font-bold uppercase tracking-wider text-[#555555] block mb-2">
+            Categoria das peças
+          </label>
+          <input
+            type="text"
+            value={pieceCategory}
+            onChange={e => setPieceCategory(e.target.value)}
+            placeholder="online"
+            list="piece-category-suggestions"
+            className="w-full bg-[#222] text-white border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#F5C400]"
+          />
+          <datalist id="piece-category-suggestions">
+            {existingCategories.map(c => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+          <div className="text-[10px] text-[#555] mt-1">
+            Agrupa as peças geradas. Ex: online, offline, video. Sugestões aparecem ao digitar.
+          </div>
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-4">
