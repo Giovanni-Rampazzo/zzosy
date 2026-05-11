@@ -9,6 +9,15 @@ import { migrateStyles } from "@/lib/migrateStyles"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
 
+// Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
+// poluem o console sem valor pro user final. Em dev, sao essenciais pra diagnostico.
+// editorLog encapsula isso — silenciamos em prod mas mantemos warnings reais
+// (falhas de upload, erros de PATCH) via console.warn direto.
+const isDev = process.env.NODE_ENV !== "production"
+function editorLog(...args: any[]) {
+  if (isDev) console.warn(...args)
+}
+
 interface TextSpan {
   text: string
   style: { color?: string; fontSize?: number; fontWeight?: string; fontFamily?: string }
@@ -615,8 +624,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       bgRef.current = bg
       fc.add(bg)
 
-      fc.on("selection:created", (e: any) => setSelected(e.selected?.[0] ?? null))
-      fc.on("selection:updated", (e: any) => setSelected(e.selected?.[0] ?? null))
+      fc.on("selection:created", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
+      fc.on("selection:updated", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
       // Salva seleção de texto via mouse:up e keyup no canvas (text:selection:changed
       // nao dispara no Fabric v7). Intervalo de polling enquanto objeto esta em edicao.
       let selPollTimer: any = null
@@ -632,7 +641,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       fc.on("text:editing:exited", () => {
         clearInterval(selPollTimer)
       })
-      fc.on("selection:cleared", () => setSelected(null))
+      // Limpa interval pendente no cleanup pro caso de unmount durante edicao.
+      cleanupFns.push(() => { if (selPollTimer) clearInterval(selPollTimer) })
+      fc.on("selection:cleared", () => { if (alive) setSelected(null) })
       fc.on("object:modified", () => { if (alive) doSave() })
       // Quando o usuario muda a selecao DENTRO de um textbox em modo edicao (cursor moveu,
       // selecao expandida, palavra selecionada), forca re-render do painel pra ler estilos
@@ -640,6 +651,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // quando texto tem estilos per-char.
       // Fabric dispara mouseup/keyup nesses casos. Usamos uma checagem leve no proprio canvas.
       const onCanvasInteract = () => {
+        if (!alive) return
         const active = fc.getActiveObject() as any
         if (active?.isEditing) setSelectedTick(t => t + 1)
       }
@@ -734,7 +746,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         fc.requestRenderAll()
       })
       // Tambem captura quando teclas (Shift+Arrow etc) mudam a selecao
-      const onKeyUp = (e: KeyboardEvent) => {
+      const onKeyUp = (_e: KeyboardEvent) => {
+        if (!alive) return
         const active = fc.getActiveObject() as any
         if (active?.isEditing) setSelectedTick(t => t + 1)
       }
@@ -979,9 +992,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             if (!asset) {
               skippedCount++
               if (!layer.assetId) {
-                console.warn("[LOAD-MATRIX] layer com assetId vazio (campanha pode ter dados corrompidos antigos):", layer)
+                editorLog("[LOAD-MATRIX] layer com assetId vazio (campanha pode ter dados corrompidos antigos):", layer)
               } else {
-                console.warn("[LOAD-MATRIX] layer aponta pra asset inexistente:", layer.assetId)
+                editorLog("[LOAD-MATRIX] layer aponta pra asset inexistente:", layer.assetId)
               }
               continue
             }
@@ -1024,7 +1037,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // Limpar aqui evita que entrem no undoStack e causem desync no undo/redo.
       const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
       if (orphans.length > 0) {
-        console.warn("[INIT-CLEAN]", pieceId ? "peca" : "matriz", "tinha", orphans.length, "objetos orfaos no canvas. Removendo.")
+        editorLog("[INIT-CLEAN]", pieceId ? "peca" : "matriz", "tinha", orphans.length, "objetos orfaos no canvas. Removendo.")
         for (const orphan of orphans) fc.remove(orphan)
         fc.renderAll()
         if (alive) refreshLayers(fc)
@@ -1091,7 +1104,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // capturar snapshot pra manter undoStack consistente.
       const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
       if (orphans.length > 0) {
-        console.warn("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
+        editorLog("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
         for (const orphan of orphans) fc.remove(orphan)
       }
       const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask"]))
@@ -1177,7 +1190,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // Remove pra manter canvas saudavel — esses objetos nunca persistem mesmo.
       const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
       if (orphansAfterRestore.length > 0) {
-        console.warn("[UNDO-CLEAN] applySnapshot: removendo", orphansAfterRestore.length, "objetos orfaos pos-restore")
+        editorLog("[UNDO-CLEAN] applySnapshot: removendo", orphansAfterRestore.length, "objetos orfaos pos-restore")
         for (const orphan of orphansAfterRestore) fc.remove(orphan)
       }
 
@@ -1648,18 +1661,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // Sem isso, fechar a aba durante remount podia gravar layers em estado
     // transitorio (sem __assetId restaurados) -> KV vazia/quebrada.
     if (isApplyingHistory.current) {
-      console.warn("[saveNow] abortado — undo/redo em andamento")
+      editorLog("[saveNow] abortado — undo/redo em andamento")
       return
     }
     if (!isInitialized.current) {
-      console.warn("[saveNow] abortado — init nao terminou")
+      editorLog("[saveNow] abortado — init nao terminou")
       return
     }
     // Trava de reentrada: se outro saveNow ja esta rodando, espera. Sem isso,
     // chamadas em sequencia (e.g. Cmd+S apertado 2x) podiam corromper estado
     // do pieceRef ou disparar 2 PATCH simultaneos.
     if (savingInFlightRef.current) {
-      console.warn("[saveNow] abortado — save anterior ainda rodando")
+      editorLog("[saveNow] abortado — save anterior ainda rodando")
       return
     }
     savingInFlightRef.current = true
@@ -1678,7 +1691,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         .filter((o: any) => {
           if (o.__isBg) return false
           if (!o.__assetId) {
-            console.warn("[PIECE-SAVE-NOW] objeto sem __assetId BLOQUEADO:", {
+            editorLog("[PIECE-SAVE-NOW] objeto sem __assetId BLOQUEADO:", {
               type: o.type, text: (o as any).text?.slice(0, 30),
               left: o.left, top: o.top,
             })
@@ -1749,7 +1762,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           // descartava silenciosamente, fazendo o canvas voltar vazio (bug grave de
           // perda de conteudo). Se acontecer, logamos pra detectar a causa-raiz.
           if (!o.__assetId) {
-            console.warn("[SAVE-MATRIX] objeto sem __assetId ignorado no save:", o.type, { left: o.left, top: o.top, text: (o as any).text })
+            editorLog("[SAVE-MATRIX] objeto sem __assetId ignorado no save:", o.type, { left: o.left, top: o.top, text: (o as any).text })
             return false
           }
           return true
@@ -1795,7 +1808,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const previousLayers = (campaignRef.current?.keyVision?.layers as any) ?? []
         const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
         if (hadLayers) {
-          console.warn("[saveNow MATRIX] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
+          editorLog("[saveNow MATRIX] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
           isDirtyRef.current = false
           setIsDirty(false)
           setSaving(false)
@@ -1826,14 +1839,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // object:added/modified que poderiam acionar saves com canvas em estado
       // transitorio (sem __assetId restaurados, sem bg, etc).
       if (isApplyingHistory.current) {
-        console.warn("[doSave] abortado — undo/redo em andamento")
+        editorLog("[doSave] abortado — undo/redo em andamento")
         return
       }
       // Guard 1: se o init nao terminou (ou se o cleanup ja rodou), aborta.
       // Sem isso, um timer que ficou pendurado dispara depois que o useEffect re-rodou
       // mas antes do init recarregar todos os layers, gravando layers: [] no banco.
       if (!isInitialized.current) {
-        console.warn("[doSave] abortado — init nao terminou (canvas em re-mount)")
+        editorLog("[doSave] abortado — init nao terminou (canvas em re-mount)")
         return
       }
       // Se há propagação de texto em curso (PUT asset migrando styles em todos escopos),
@@ -1861,7 +1874,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             // criar objetos sem __assetId: copy/paste mal feito, drag-from-asset com
             // bug, manipulacao manual via DevTools. Loga warning pra detectar.
             if (!o.__assetId) {
-              console.warn("[PIECE-SAVE] objeto sem __assetId BLOQUEADO:", {
+              editorLog("[PIECE-SAVE] objeto sem __assetId BLOQUEADO:", {
                 type: o.type, text: (o as any).text?.slice(0, 30),
                 left: o.left, top: o.top,
               })
@@ -1932,7 +1945,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           .filter((o: any) => {
             if (o.__isBg) return false
             if (!o.__assetId) {
-              console.warn("[SAVE-MATRIX-2] objeto sem __assetId ignorado:", o.type, { left: o.left, top: o.top })
+              editorLog("[SAVE-MATRIX-2] objeto sem __assetId ignorado:", o.type, { left: o.left, top: o.top })
               return false
             }
             return true
@@ -1979,7 +1992,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           const previousLayers = (campaignRef.current?.keyVision?.layers as any) ?? []
           const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
           if (hadLayers) {
-            console.warn("[SAVE-MATRIX-2] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
+            editorLog("[SAVE-MATRIX-2] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
             setSaving(false)
             return
           }
@@ -2653,8 +2666,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                     onContextMenu={e => {
                       e.preventDefault()
                       e.stopPropagation()
+                      // Photoshop-style: botao direito no thumb da mascara remove direto.
+                      // Sem confirm — destrutivo intencional, e undo (em breve) reverte.
                       ;(async () => {
-                        if (!confirm("Remover máscara?")) return
                         delete (layer.obj as any).__maskData
                         ;(layer.obj as any).clipPath = null
                         ;(layer.obj as any).dirty = true
