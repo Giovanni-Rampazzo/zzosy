@@ -6,6 +6,7 @@ import { FontPicker, WeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
+import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
 
 interface TextSpan {
   text: string
@@ -903,6 +904,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             } else if (created) {
               ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
             }
+            // Aplica mascara se o layer tiver. Acontece DEPOIS do objeto estar
+            // criado e com overrides aplicados pra que a mascara use bounds
+            // corretos. Async porque mascara raster precisa carregar Image.
+            if (created && layer.mask) {
+              const { Image: FabImage, Path } = await import("fabric")
+              await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+            }
           }
           fc.renderAll()
         } else if (pdata?.canvasData) {
@@ -1527,6 +1535,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             width: Math.round(o.width ?? 400), height: Math.round(o.height ?? 100),
             overrides: {},
           }
+          // Mascara: preservada via __maskData (anotacao guardada no objeto Fabric).
+          // Fabric nao serializa nosso LayerMask original (so o clipPath aplicado),
+          // entao mantemos o objeto LayerMask anexado pro round-trip do save.
+          if ((o as any).__maskData) {
+            layer.mask = (o as any).__maskData
+          }
           if (o.type === "textbox" || o.type === "i-text") {
             // PECA: NAO salva overrides.content. Caracteres sao fonte da verdade
             // no ASSET (sempre lidos do asset.content). Salvar texto aqui congelava
@@ -1695,6 +1709,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               width: Math.round(o.width ?? 400),
               height: Math.round(o.height ?? 100),
               overrides: {},
+            }
+            // Mascara (raster/vector/clipping) preservada via __maskData.
+            // Round-trip do PSD ate o re-export sem perder a mascara.
+            if ((o as any).__maskData) {
+              layer.mask = (o as any).__maskData
             }
             // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
             if (o.type === "textbox" || o.type === "i-text") {

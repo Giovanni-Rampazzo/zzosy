@@ -112,6 +112,74 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         const width = Math.max((layer.right ?? left + 200) - left, 10)
         const height = Math.max((layer.bottom ?? top + 50) - top, 10)
 
+        // === EXTRAI MASCARA (raster, vector, clipping) ===
+        // ag-psd expoe: layer.mask (raster) com canvas+left+top+right+bottom,
+        // layer.vectorMask com paths, e layer.clipping=true pra clipping mask.
+        // Salvamos no formato LayerMask pra reproduzir no editor e re-exportar.
+        let assetMask: any = null
+        // Raster mask: layer.mask.canvas tem o grayscale (preto = transparente).
+        if (layer.mask?.canvas) {
+          try {
+            const mLeft = layer.mask.left ?? 0
+            const mTop = layer.mask.top ?? 0
+            const mRight = layer.mask.right ?? (mLeft + (layer.mask.canvas as HTMLCanvasElement).width)
+            const mBottom = layer.mask.bottom ?? (mTop + (layer.mask.canvas as HTMLCanvasElement).height)
+            const mWidth = mRight - mLeft
+            const mHeight = mBottom - mTop
+            const dataUrl = (layer.mask.canvas as HTMLCanvasElement).toDataURL("image/png")
+            assetMask = {
+              type: "raster" as const,
+              enabled: !layer.mask.disabled,
+              raster: { dataUrl, posX: mLeft, posY: mTop, width: mWidth, height: mHeight },
+            }
+          } catch (e) { console.warn("[psd-mask] falha lendo raster mask de", name, e) }
+        }
+        // Vector mask: layer.vectorMask tem paths (objetos com knots/curves).
+        // Por enquanto extraimos o bounding box como retangulo. Suporte completo
+        // a paths arbitrarios sera adicionado depois.
+        if (!assetMask && (layer as any).vectorMask?.paths?.length) {
+          try {
+            const vm = (layer as any).vectorMask
+            // Compute bounding box dos paths
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+            for (const p of vm.paths) {
+              const knots = p.knots ?? []
+              for (const k of knots) {
+                const pt = k.anchor ?? k.points?.[0] ?? null
+                if (pt && Array.isArray(pt) && pt.length >= 2) {
+                  // ag-psd retorna coords como fracoes 0..1 do canvas
+                  const x = pt[0] * psd.width
+                  const y = pt[1] * psd.height
+                  if (x < minX) minX = x
+                  if (y < minY) minY = y
+                  if (x > maxX) maxX = x
+                  if (y > maxY) maxY = y
+                }
+              }
+            }
+            if (isFinite(minX) && isFinite(minY)) {
+              const vWidth = Math.max(maxX - minX, 1)
+              const vHeight = Math.max(maxY - minY, 1)
+              // SVG path retangular pra bounding box (path completo virá em V2)
+              const pathStr = `M ${minX} ${minY} L ${minX + vWidth} ${minY} L ${minX + vWidth} ${minY + vHeight} L ${minX} ${minY + vHeight} Z`
+              assetMask = {
+                type: "vector" as const,
+                enabled: !vm.disabled,
+                vector: { path: pathStr, posX: minX, posY: minY, width: vWidth, height: vHeight },
+              }
+            }
+          } catch (e) { console.warn("[psd-mask] falha lendo vector mask de", name, e) }
+        }
+        // Clipping mask: layer.clipping === true significa "este layer recorta
+        // o layer abaixo". Nao tem dados proprios, so a flag.
+        if (!assetMask && (layer as any).clipping === true) {
+          assetMask = {
+            type: "clipping" as const,
+            enabled: true,
+            clipping: true,
+          }
+        }
+
         if (layer.text) {
           const td = layer.text
           const rawText = String(td.text ?? name).split("\r\n").join("\n").split("\r").join("\n")
@@ -186,6 +254,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             content: spans,
             posX: left, posY: top, width: textWidth, height: textHeight, zIndex,
             lastOverride,
+            mask: assetMask,
           })
         } else if (layer.canvas) {
           try {
@@ -202,6 +271,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               imageIndex,
               linkedIndex,           // index no linkedBlobs (se for smart object)
               posX: left, posY: top, width, height, zIndex,
+              mask: assetMask,
             })
           } catch (e) {
             console.warn("Falha ao extrair imagem do layer", name, e)

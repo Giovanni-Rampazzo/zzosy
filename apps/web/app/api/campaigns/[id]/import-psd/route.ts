@@ -52,6 +52,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       height: number
       zIndex: number
       lastOverride?: any
+      mask?: any
     }>
 
     const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
@@ -182,6 +183,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       height: assets[i].height || 100,
       scaleX: 1, scaleY: 1, rotation: 0,
       zIndex: assets[i].zIndex,
+      // Mask extraida do PSD: raster (canvas grayscale), vector (path) ou clipping.
+      // Vai no override do layer pra que cada peca possa ter mascara diferente
+      // (na importacao inicial todos os layers da matriz herdam a do PSD).
+      ...(assets[i].mask ? { mask: assets[i].mask } : {}),
     }))
 
     // KeyVision (Matriz)

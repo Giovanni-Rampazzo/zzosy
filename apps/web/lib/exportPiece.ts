@@ -152,6 +152,7 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
         }
         ;(t as any).__assetId = asset.id
         ;(t as any).__assetLabel = asset.label
+        if (layer.mask) (t as any).__maskData = layer.mask
         fc.add(t)
       } else if (asset.type === "IMAGE") {
         if (asset.imageUrl) {
@@ -206,6 +207,8 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
             })
             ;(img as any).__assetId = asset.id
             ;(img as any).__assetLabel = asset.label
+            // Preserva mask do layer pro export PSD reproduzi-la no arquivo.
+            if (layer.mask) (img as any).__maskData = layer.mask
             fc.add(img)
           } catch (e) { console.warn("img load fail:", asset.label, e) }
         } else {
@@ -900,6 +903,27 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
 
       // Fallback: imagem raster comum (PNG/JPG ou SVG que nao deu pra embeddar)
       psdLayers.push({ name, top, left, bottom, right, canvas: layerCanvas })
+    }
+  }
+
+  // === APLICA MASCARAS (raster / vector / clipping) NOS LAYERS DO PSD ===
+  // Percorre os objects do canvas (em mesma ordem dos psdLayers) e injeta a
+  // mascara salva em __maskData no psdLayer correspondente. Background nao
+  // tem mascara entao comeca em index 1 dos psdLayers (index 0 = background).
+  {
+    const { maskToAgPsd, normalizeVectorMaskCoords } = await import("@/lib/maskToAgPsd")
+    let psdLayerIdx = 1 // pula o background
+    for (const obj of objects) {
+      if ((obj as any).__isBg) continue
+      const maskData = (obj as any).__maskData
+      const psdLayer = psdLayers[psdLayerIdx]
+      if (maskData && psdLayer) {
+        const agpsdMask = await maskToAgPsd(maskData)
+        if (agpsdMask.mask) psdLayer.mask = agpsdMask.mask
+        if (agpsdMask.vectorMask) psdLayer.vectorMask = normalizeVectorMaskCoords(agpsdMask.vectorMask, W, H)
+        if (agpsdMask.clipping) psdLayer.clipping = true
+      }
+      psdLayerIdx++
     }
   }
 
