@@ -552,9 +552,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     }
     // Guard sincrono: previne double-init em Strict Mode quando useEffect roda 2x.
     // Setamos a flag ANTES de qualquer await, e zeramos no cleanup.
-    console.warn("[useEffect-init] start, isInitInProgress=", isInitInProgress.current, "campaign?", !!campaign, "pieceId=", pieceId)
     if (isInitInProgress.current) {
-      console.warn("[init] ABORTADO: init ja em progresso (strict mode double-run)")
       return
     }
     isInitInProgress.current = true
@@ -873,16 +871,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             const objs = fc.getObjects()
             const created = objs[objs.length - 1] as any
             if (created && (created.type === "textbox" || created.type === "i-text") && layer.overrides) {
-              // DEBUG: log antes/depois do override pra investigar bug "config zera"
-              console.log("[PIECE-LOAD-TEXT] before override", {
-                assetLabel: asset.label,
-                assetId: asset.id,
-                fontSize_obj: created.fontSize,
-                fontFamily_obj: created.fontFamily,
-                fontWeight_obj: created.fontWeight,
-                fill_obj: created.fill,
-                overrides: layer.overrides,
-              })
               if (layer.overrides.fill !== undefined) created.set("fill", layer.overrides.fill)
               if (layer.overrides.fontSize !== undefined) created.set("fontSize", layer.overrides.fontSize)
               if (layer.overrides.fontFamily !== undefined) created.set("fontFamily", layer.overrides.fontFamily)
@@ -901,13 +889,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 if (created.initDimensions) created.initDimensions()
               }
               ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
-              console.log("[PIECE-LOAD-TEXT] after override", {
-                assetLabel: asset.label,
-                fontSize_final: created.fontSize,
-                fontFamily_final: created.fontFamily,
-                fill_final: created.fill,
-                styles_count: Object.keys(created.styles ?? {}).length,
-              })
               // Em modo peca, deixa editavel pra permitir seleção de caracteres,
               // mas o key handler abaixo bloqueia digitacao real
             } else if (created) {
@@ -1016,7 +997,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
     init()
     return () => {
-      console.warn("[useEffect-cleanup] disposing")
       alive = false
       // Bloqueia saves apos cleanup. Sem isso, um saveTimer pendente (debounce 800ms)
       // dispararia depois do dispose, e poderia salvar sobre um canvas em meio de re-init
@@ -1732,20 +1712,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           bgColor: bgColorRef.current,
           layers: newLayers,
         }
-        console.log("[PIECE-SAVE]", {
-          pieceId,
-          layersCount: newLayers.length,
-          textLayers: newLayers
-            .filter((l: any) => l.overrides && (l.overrides.fontSize !== undefined || l.overrides.fontFamily !== undefined))
-            .map((l: any) => ({
-              assetId: l.assetId,
-              fontSize: l.overrides.fontSize,
-              fontFamily: l.overrides.fontFamily,
-              fontWeight: l.overrides.fontWeight,
-              fill: l.overrides.fill,
-              hasStyles: !!l.overrides.styles && Object.keys(l.overrides.styles).length > 0,
-            })),
-        })
         await fetch(`/api/pieces/${pieceId}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data: JSON.stringify(newData) })
@@ -2121,7 +2087,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
     // Flush de qualquer save pendente antes de trocar — garante que overrides atuais estão no banco
     clearTimeout(saveTimer.current)
-    console.log("[SWAP] currentObj:", { type: currentObj.type, fill: currentObj.fill, fontSize: currentObj.fontSize, fontFamily: currentObj.fontFamily, assetId: currentObj.__assetId })
 
     // MODELO FINAL: cada asset tem seu lastOverride (template visual). Ao swap,
     // o novo asset vem com SEU lastOverride — nao herda os styles do asset
@@ -2188,8 +2153,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     await addAssetToCanvas(fc, newAsset, layerSpec)
 
     const newObj = fc.getObjects().find((o: any) => !beforeIds.has(o))
-    console.log("[SWAP] newAsset.lastOverride aplicado:", newAssetOverrides)
-    console.log("[SWAP] newObj:", newObj ? { type: newObj.type, fill: newObj.fill, fontSize: newObj.fontSize } : null)
 
     fc.requestRenderAll()
     if (newObj) {

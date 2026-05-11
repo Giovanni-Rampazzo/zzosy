@@ -149,7 +149,6 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
         const ov = l.overrides ?? {}
         const assetForLayer = (camp?.assets ?? []).find((a: any) => a.id === l.assetId)
         const isTextLayer = (assetForLayer?.type === "TEXT") || (typeof ov.fontSize === "number")
-        console.warn("[GEN-PIECE-LAYER]", { assetId: l.assetId, isTextLayer, assetType: assetForLayer?.type, ovFontSize: ov.fontSize, scale, lScaleX: l.scaleX })
 
         const base: any = {
           assetId: l.assetId,
@@ -189,7 +188,6 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
             }
             newOverrides.styles = newStyles
           }
-          console.warn("[GEN-PIECE-TEXT-OUTPUT]", { assetId: l.assetId, originalFontSize: baseFontSize, scaledFontSize: newOverrides.fontSize, scale, width: Math.round((l.width ?? 400) * scale) })
           return {
             ...base,
             scaleX: 1,
