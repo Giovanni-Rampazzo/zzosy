@@ -50,7 +50,10 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       }
 
       const buffer = await file.arrayBuffer()
-      const psd = readPsd(buffer, { skipLayerImageData: false, skipCompositeImageData: true, skipThumbnail: true })
+      // skipCompositeImageData: false — precisamos do canvas composto pra gerar
+      // o thumbnail da matriz no card de entrada. Custa um pouco mais de memoria
+      // (composite do PSD) mas evita preview vazio apos o import.
+      const psd = readPsd(buffer, { skipLayerImageData: false, skipCompositeImageData: false, skipThumbnail: true })
 
       setProgress("Extraindo layers...")
       const allLayers = collectAllLayers(psd.children ?? [])
@@ -320,6 +323,41 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       const res = await fetch(`/api/campaigns/${campaignId}/import-psd`, { method: "POST", body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? "Falha ao importar")
+
+      // Gera e envia o thumbnail da matriz a partir do composite do PSD.
+      // Sem isso, o card 'Key Vision (Matriz)' fica vazio depois do import
+      // (so com fallback do tamanho em texto). Faz best-effort: falha aqui nao
+      // bloqueia o import.
+      try {
+        if (psd.canvas) {
+          setProgress("Gerando preview...")
+          const TARGET = 480 // mesmo target que o editor usa pro KV thumb
+          const sw = (psd.canvas as HTMLCanvasElement).width
+          const sh = (psd.canvas as HTMLCanvasElement).height
+          const scale = Math.min(TARGET / sw, TARGET / sh, 1)
+          const tw = Math.max(1, Math.round(sw * scale))
+          const th = Math.max(1, Math.round(sh * scale))
+          const thumbCanvas = document.createElement("canvas")
+          thumbCanvas.width = tw
+          thumbCanvas.height = th
+          const ctx = thumbCanvas.getContext("2d")
+          if (ctx) {
+            ctx.fillStyle = "#ffffff"
+            ctx.fillRect(0, 0, tw, th)
+            ctx.drawImage(psd.canvas as HTMLCanvasElement, 0, 0, tw, th)
+            const thumbBlob: Blob | null = await new Promise(resolve => {
+              thumbCanvas.toBlob(b => resolve(b), "image/jpeg", 0.85)
+            })
+            if (thumbBlob) {
+              const tfd = new FormData()
+              tfd.append("thumbnail", thumbBlob, "kv-thumb.jpg")
+              await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: tfd })
+            }
+          }
+        }
+      } catch (thumbErr) {
+        console.warn("KV thumb post-import upload failed:", thumbErr)
+      }
 
       onImported()
     } catch (e: any) {

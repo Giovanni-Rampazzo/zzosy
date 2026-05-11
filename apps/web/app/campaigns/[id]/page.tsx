@@ -255,7 +255,6 @@ export default function CampaignOverviewPage() {
         {/* Preview KV + botões */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, marginBottom: 28, display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, marginBottom: 12 }}>Key Vision (Matriz) — clique para editar</div>
             <div
               onClick={() => router.push(`/editor?campaignId=${id}`)}
               title="Abrir editor da matriz"
@@ -287,6 +286,7 @@ export default function CampaignOverviewPage() {
                 </div>
               )}
             </div>
+            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, marginTop: 12, textAlign: "center" }}>Key Vision (Matriz)</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <PsdImporter campaignId={id} onImported={loadAll} />
