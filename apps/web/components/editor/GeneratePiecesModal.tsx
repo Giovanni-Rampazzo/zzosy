@@ -143,9 +143,13 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
       const offsetY = (f.height - matrixH * scale) / 2
 
       const pieceLayers = matrixLayers.map((l: any) => {
-        // Detecta se layer e de TEXTO (tem fontSize override)
+        // Detecta se layer e de TEXTO. Antes detectava via ov.fontSize, mas isso
+        // falhava quando o user adicionava asset texto mas nao mudava style nenhum.
+        // Solucao mais robusta: olhar o asset.type.
         const ov = l.overrides ?? {}
-        const isTextLayer = typeof ov.fontSize === "number"
+        const assetForLayer = (camp?.assets ?? []).find((a: any) => a.id === l.assetId)
+        const isTextLayer = (assetForLayer?.type === "TEXT") || (typeof ov.fontSize === "number")
+        console.warn("[GEN-PIECE-LAYER]", { assetId: l.assetId, isTextLayer, assetType: assetForLayer?.type, ovFontSize: ov.fontSize, scale, lScaleX: l.scaleX })
 
         const base: any = {
           assetId: l.assetId,
@@ -160,25 +164,32 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
           // Sem isso, ao clicar no texto na peca o Fabric consolida sozinho e o tamanho
           // 'salta' — efeito ruim pro usuario. Photoshop-style: fontSize sempre representa
           // o tamanho real renderizado, scale fica em 1.
-          const newOverrides: any = { ...ov }
-          newOverrides.fontSize = (ov.fontSize ?? 48) * scale
-          if (typeof ov.leadingPt === "number") {
-            newOverrides.leadingPt = ov.leadingPt * scale
+          //
+          // Fallback chain pra cada campo: layer.overrides (matriz user-edited) ->
+          // asset.lastOverride (template visual do asset) -> default.
+          const tpl: any = (assetForLayer as any)?.lastOverride ?? {}
+          const merged: any = { ...tpl, ...ov }  // ov sobrescreve tpl quando definido
+          const baseFontSize = typeof merged.fontSize === "number" ? merged.fontSize : 80
+          const newOverrides: any = { ...merged }
+          newOverrides.fontSize = baseFontSize * scale
+          if (typeof merged.leadingPt === "number") {
+            newOverrides.leadingPt = merged.leadingPt * scale
           }
           // Aplica scale tambem nos styles per-char (cada char com fontSize override
           // tambem precisa escalar pra preservar proporcoes).
-          if (ov.styles && typeof ov.styles === "object") {
+          if (merged.styles && typeof merged.styles === "object") {
             const newStyles: any = {}
-            for (const lineKey of Object.keys(ov.styles)) {
+            for (const lineKey of Object.keys(merged.styles)) {
               newStyles[lineKey] = {}
-              for (const colKey of Object.keys(ov.styles[lineKey])) {
-                const cs = { ...ov.styles[lineKey][colKey] }
+              for (const colKey of Object.keys(merged.styles[lineKey])) {
+                const cs = { ...merged.styles[lineKey][colKey] }
                 if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
                 newStyles[lineKey][colKey] = cs
               }
             }
             newOverrides.styles = newStyles
           }
+          console.warn("[GEN-PIECE-TEXT-OUTPUT]", { assetId: l.assetId, originalFontSize: baseFontSize, scaledFontSize: newOverrides.fontSize, scale, width: Math.round((l.width ?? 400) * scale) })
           return {
             ...base,
             scaleX: 1,
