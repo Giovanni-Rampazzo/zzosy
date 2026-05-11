@@ -984,6 +984,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 if (created.initDimensions) created.initDimensions()
               }
             }
+            // Aplica mascara em layer da matriz tambem (estava so na peca antes).
+            if (created && (layer as any).mask) {
+              const { Image: FabImage, Path } = await import("fabric")
+              await applyMaskToFabricObject({ Image: FabImage, Path }, created, (layer as any).mask)
+            }
           }
         }
       }

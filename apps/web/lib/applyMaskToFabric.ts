@@ -25,9 +25,8 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
       // (nao relativas ao objeto). Assim a mascara fica onde estava no PSD.
       const clipPath = new fabric.Path(mask.vector.path, {
         absolutePositioned: true,
-        fill: mask.inverted ? "rgba(0,0,0,0)" : "white",
-        // Se inverted, inverte o sentido do clip (fora do path = visivel)
-        inverse: !!mask.inverted,
+        // 'inverted' (Fabric v7) inverte o clipPath - fora do path = visivel.
+        inverted: !!mask.inverted,
       })
       obj.clipPath = clipPath
       obj.dirty = true
@@ -45,8 +44,10 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
             const fImg = new fabric.Image(img, {
               left: mask.raster!.posX,
               top: mask.raster!.posY,
+              originX: "left",
+              originY: "top",
               absolutePositioned: true,
-              inverse: !!mask.inverted,
+              inverted: !!mask.inverted,
               scaleX: mask.raster!.width / img.width,
               scaleY: mask.raster!.height / img.height,
             })
