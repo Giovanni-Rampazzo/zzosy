@@ -28,9 +28,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     // Smart objects: arquivos linkados originais + metadados (mesmo index)
     const linkedFilesUploaded = formData.getAll("linked") as File[]
     const linkedMetaJson = formData.get("linkedMeta") as string | null
+    // Flag pra pular salvar o PSD master (quando PSD eh muito grande pra
+    // vir no mesmo FormData; upload chunked acontecera em seguida).
+    const skipMaster = formData.get("skipMaster") === "1"
+    const psdNameOnly = formData.get("psdName") as string | null
 
-    if (!psdFile || !assetsJson) {
-      return NextResponse.json({ error: "PSD e assets sao obrigatorios" }, { status: 400 })
+    if (!assetsJson) {
+      return NextResponse.json({ error: "Assets sao obrigatorios" }, { status: 400 })
+    }
+    if (!skipMaster && !psdFile) {
+      return NextResponse.json({ error: "PSD eh obrigatorio (ou envie skipMaster=1)" }, { status: 400 })
     }
 
     const assets = JSON.parse(assetsJson) as Array<{
@@ -57,13 +64,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       await mkdir(uploadDir, { recursive: true })
     }
 
-    // Salvar PSD original
-    console.log("[import-psd] iniciando upload, images:", images.length, "assets:", assets.length)
-    const psdBuffer = Buffer.from(await psdFile.arrayBuffer())
-    const psdFilename = `master-${randomUUID()}.psd`
-    const psdPath = path.join(uploadDir, psdFilename)
-    await writeFile(psdPath, psdBuffer)
-    const psdUrl = `/uploads/campaigns/${id}/${psdFilename}`
+    // Salvar PSD original (se enviado inline). Se skipMaster, psdUrl fica null
+    // e sera preenchido depois via upload chunked.
+    console.log("[import-psd] iniciando upload, images:", images.length, "assets:", assets.length, "skipMaster:", skipMaster)
+    let psdUrl: string | null = null
+    if (!skipMaster && psdFile) {
+      const psdBuffer = Buffer.from(await psdFile.arrayBuffer())
+      const psdFilename = `master-${randomUUID()}.psd`
+      const psdPath = path.join(uploadDir, psdFilename)
+      await writeFile(psdPath, psdBuffer)
+      psdUrl = `/uploads/campaigns/${id}/${psdFilename}`
+    }
 
     // Salvar imagens dos layers
     const imageUrls: string[] = []
@@ -192,10 +203,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       },
     })
 
-    // Atualizar Campaign com PSD master
+    // Atualizar Campaign com PSD master (se foi salvo).
+    // psdName preservado mesmo sem psdUrl (pra UI mostrar o nome do arquivo
+    // original ate o chunked upload terminar).
+    const campaignUpdate: any = { psdName: psdFile?.name ?? psdNameOnly ?? null }
+    if (psdUrl) campaignUpdate.psdUrl = psdUrl
     await prisma.campaign.update({
       where: { id },
-      data: { psdUrl, psdName: psdFile.name },
+      data: campaignUpdate,
     })
 
     console.log("[import-psd] concluido, assets criados:", created.length, "imageUrls:", imageUrls)
@@ -204,6 +219,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       assetsCreated: created.length,
       smartObjectsCreated: smartObjectIds.filter(Boolean).length,
       psdUrl,
+      masterPending: skipMaster, // sinaliza pro cliente que precisa fazer upload chunked
     })
   } catch (err: any) {
     console.error("import-psd error:", err)

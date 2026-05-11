@@ -215,10 +215,26 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         return
       }
 
-      setProgress(`Enviando ${assets.length} assets, ${imageBlobs.length} imagens, ${linkedBlobs.length} smart objects...`)
+      // Threshold: se o PSD for maior que 50MB, NAO envia o arquivo original
+      // no mesmo request (estouraria limite de FormData do Next/Node, dando
+      // 'Failed to parse body as FormData'). Os assets+imagens decompostas
+      // sao pequenas e sobem normal. Upload do master PSD original vai ser
+      // implementado em chunked upload posteriormente.
+      const PSD_INLINE_LIMIT = 50 * 1024 * 1024 // 50MB
+      const skipMasterPsd = file.size > PSD_INLINE_LIMIT
+
+      setProgress(`Enviando ${assets.length} assets, ${imageBlobs.length} imagens, ${linkedBlobs.length} smart objects...${skipMasterPsd ? " (PSD master sera uploadado em seguida)" : ""}`)
 
       const fd = new FormData()
-      fd.append("psd", file)
+      if (!skipMasterPsd) {
+        fd.append("psd", file)
+      } else {
+        // Avisa o backend que o PSD master sera uploadado depois (via chunked).
+        // Por enquanto so registramos o nome original.
+        fd.append("psdName", file.name)
+        fd.append("psdSize", String(file.size))
+        fd.append("skipMaster", "1")
+      }
       fd.append("assets", JSON.stringify(assets))
       fd.append("canvasWidth", String(psd.width))
       fd.append("canvasHeight", String(psd.height))
