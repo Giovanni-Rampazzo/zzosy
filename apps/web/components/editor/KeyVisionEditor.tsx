@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { FontPicker, WeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
+import { MaskPanel } from "./MaskPanel"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
@@ -372,6 +373,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         fc?.renderAll()
         // dispara o mesmo evento que o painel escuta pra reflitir a mudanca
         fc?.fire("object:modified", { target: active })
+      }
+      // Cmd+Opt+G (Mac) / Ctrl+Alt+G (Win) — Create/Release Clipping Mask (Photoshop)
+      // Liga/desliga clipping mask no objeto selecionado.
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === "g") {
+        if (!active) return
+        e.preventDefault()
+        const hasMask = !!(active as any).__maskData
+        if (hasMask && (active as any).__maskData.type === "clipping") {
+          // Release clipping mask
+          removeMaskFromObject(active)
+        } else {
+          addClippingMaskToSelected()
+        }
       }
     }
     window.addEventListener("keydown", onKey)
@@ -1480,6 +1494,104 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     doSave()
   }
 
+  // ============= MASK HELPERS =============
+  // Adiciona/remove/inverte/toggle mascara no objeto Fabric selecionado.
+  // Os 3 tipos suportados: raster, vector (path SVG), clipping (recorta layer abaixo).
+
+  async function applyMaskAndPersist(obj: any, mask: any) {
+    const fc = fabricRef.current
+    if (!fc) return
+    ;(obj as any).__maskData = mask
+    if (mask) {
+      const { Image: FabImage, Path } = await import("fabric")
+      await applyMaskToFabricObject({ Image: FabImage, Path }, obj, mask)
+    } else {
+      obj.clipPath = null
+      delete (obj as any).__clippingMask
+      obj.dirty = true
+    }
+    fc.requestRenderAll()
+    refreshLayers(fc)
+    doSave()
+  }
+
+  async function addClippingMaskToSelected() {
+    const fc = fabricRef.current
+    const obj = fc?.getActiveObject()
+    if (!fc || !obj) return
+    await applyMaskAndPersist(obj, { type: "clipping", enabled: true, clipping: true })
+  }
+
+  // Cria vector mask retangular (Reveal All do Photoshop: caixa = todo bounding box,
+  // texto/imagem visivel inteiro). Reveal Selection seria menor.
+  async function addRectVectorMaskToSelected(revealAll: boolean = true) {
+    const fc = fabricRef.current
+    const obj = fc?.getActiveObject()
+    if (!fc || !obj) return
+    const x = obj.left ?? 0
+    const y = obj.top ?? 0
+    const w = (obj.width ?? 200) * (obj.scaleX ?? 1)
+    const h = (obj.height ?? 200) * (obj.scaleY ?? 1)
+    // Reveal All: mascara cobre tudo. Hide All: mascara invertida (esconde tudo).
+    const path = `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`
+    const mask = {
+      type: "vector" as const,
+      enabled: true,
+      inverted: !revealAll,
+      vector: { path, posX: x, posY: y, width: w, height: h },
+    }
+    await applyMaskAndPersist(obj, mask)
+  }
+
+  // Cria vector mask eliptica no bounding box do objeto.
+  async function addEllipseVectorMaskToSelected(revealAll: boolean = true) {
+    const fc = fabricRef.current
+    const obj = fc?.getActiveObject()
+    if (!fc || !obj) return
+    const x = obj.left ?? 0
+    const y = obj.top ?? 0
+    const w = (obj.width ?? 200) * (obj.scaleX ?? 1)
+    const h = (obj.height ?? 200) * (obj.scaleY ?? 1)
+    const cx = x + w / 2
+    const cy = y + h / 2
+    const rx = w / 2
+    const ry = h / 2
+    // SVG path eliptico usando 2 arcos.
+    const path = `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx - rx} ${cy} Z`
+    const mask = {
+      type: "vector" as const,
+      enabled: true,
+      inverted: !revealAll,
+      vector: { path, posX: x, posY: y, width: w, height: h },
+    }
+    await applyMaskAndPersist(obj, mask)
+  }
+
+  // Toggle: mascara enabled/disabled (Shift+clique no Photoshop).
+  async function toggleMaskEnabled(obj: any) {
+    if (!obj?.__maskData) return
+    const mask = { ...(obj as any).__maskData, enabled: !(obj as any).__maskData.enabled }
+    await applyMaskAndPersist(obj, mask)
+  }
+
+  async function toggleMaskInverted(obj: any) {
+    if (!obj?.__maskData) return
+    const mask = { ...(obj as any).__maskData, inverted: !(obj as any).__maskData.inverted }
+    await applyMaskAndPersist(obj, mask)
+  }
+
+  async function removeMaskFromObject(obj: any) {
+    if (!obj?.__maskData) return
+    delete (obj as any).__maskData
+    await applyMaskAndPersist(obj, null)
+  }
+
+  function getMaskOfSelected(): any | null {
+    const fc = fabricRef.current
+    const obj = fc?.getActiveObject()
+    return (obj as any)?.__maskData ?? null
+  }
+
   async function uploadPieceThumb(fc: any, pId: string) {
     try {
       const w = canvasWRef.current
@@ -2426,10 +2538,87 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             const isSel = selected === layer.obj
             const layerAssetId = layer.obj?.__assetId
             const isEditingThis = editingLayerAssetId && layerAssetId === editingLayerAssetId
+            const maskData = (layer.obj as any)?.__maskData
+            const hasMask = !!maskData
             return (
               <div key={i} onClick={() => { if (isEditingThis) return; fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
                 style={{ display: "flex", alignItems: "center", gap: 4, padding: "8px 8px 8px 12px", cursor: isEditingThis ? "default" : "pointer", borderLeft: isSel ? "2px solid #F5C400" : "2px solid transparent", background: isSel ? "rgba(245,196,0,0.08)" : "transparent" }}>
+                {/* Thumb do layer (cor por tipo) */}
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: layer.type === "textbox" ? "#F5C400" : "#86efac", flexShrink: 0 }} />
+                {/* Thumb da mascara (so aparece quando ha mascara). Igual Photoshop: */}
+                {/* clique = seleciona; Shift+clique = toggle enabled; Alt+clique = invert. */}
+                {/* Botao direito (oncontextmenu) = remover. */}
+                {hasMask && (
+                  <div
+                    title={`${maskData.type} mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove`}
+                    onClick={e => {
+                      e.stopPropagation()
+                      if (e.shiftKey) {
+                        // Toggle enabled (Photoshop: Shift+clique no mask thumb)
+                        ;(async () => {
+                          const m = { ...maskData, enabled: !maskData.enabled }
+                          ;(layer.obj as any).__maskData = m
+                          const { Image: FabImage, Path } = await import("fabric")
+                          ;(layer.obj as any).clipPath = null
+                          await applyMaskToFabricObject({ Image: FabImage, Path }, layer.obj, m)
+                          fabricRef.current?.requestRenderAll()
+                          refreshLayers(fabricRef.current!)
+                          doSave()
+                        })()
+                      } else if (e.altKey && maskData.type !== "clipping") {
+                        // Alt+clique: invert
+                        ;(async () => {
+                          const m = { ...maskData, inverted: !maskData.inverted }
+                          ;(layer.obj as any).__maskData = m
+                          const { Image: FabImage, Path } = await import("fabric")
+                          ;(layer.obj as any).clipPath = null
+                          await applyMaskToFabricObject({ Image: FabImage, Path }, layer.obj, m)
+                          fabricRef.current?.requestRenderAll()
+                          refreshLayers(fabricRef.current!)
+                          doSave()
+                        })()
+                      } else {
+                        // Clique normal: seleciona o layer (no PS seleciona a mascara
+                        // pra editar; aqui apenas selecionamos por enquanto).
+                        fabricRef.current?.setActiveObject(layer.obj)
+                        setSelected(layer.obj)
+                      }
+                    }}
+                    onContextMenu={e => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      ;(async () => {
+                        if (!confirm("Remover máscara?")) return
+                        delete (layer.obj as any).__maskData
+                        ;(layer.obj as any).clipPath = null
+                        ;(layer.obj as any).dirty = true
+                        fabricRef.current?.requestRenderAll()
+                        refreshLayers(fabricRef.current!)
+                        doSave()
+                      })()
+                    }}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: 2,
+                      flexShrink: 0,
+                      border: maskData.enabled ? "1.5px solid #F5C400" : "1.5px solid #555",
+                      background: maskData.enabled ? "#1a1a1a" : "#0d0d0d",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 9,
+                      color: maskData.enabled ? "#F5C400" : "#555",
+                      cursor: "pointer",
+                      position: "relative",
+                    }}
+                  >
+                    {maskData.type === "raster" ? "▦" : maskData.type === "vector" ? "▭" : "⌐"}
+                    {!maskData.enabled && (
+                      <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "#d33", pointerEvents: "none" }}>⊘</span>
+                    )}
+                  </div>
+                )}
                 {isEditingThis ? (
                   <input
                     autoFocus
@@ -2790,6 +2979,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 ))}
               </div>
             </div>
+
+            {/* ===== MÁSCARA (Photoshop-style) ===== */}
+            <MaskPanel
+              selected={selected}
+              onAddClipping={addClippingMaskToSelected}
+              onAddRectVector={(reveal) => addRectVectorMaskToSelected(reveal)}
+              onAddEllipseVector={(reveal) => addEllipseVectorMaskToSelected(reveal)}
+              onToggleEnabled={() => toggleMaskEnabled(selected)}
+              onToggleInverted={() => toggleMaskInverted(selected)}
+              onRemove={() => removeMaskFromObject(selected)}
+              secS={secS}
+            />
           </div>
             )
           })()
@@ -2838,6 +3039,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               title="Escala e centraliza o layer dentro da peça (100%)">
               Encaixar no canvas
             </button>
+
+            {/* ===== MÁSCARA (Photoshop-style) ===== */}
+            <MaskPanel
+              selected={selected}
+              onAddClipping={addClippingMaskToSelected}
+              onAddRectVector={(reveal) => addRectVectorMaskToSelected(reveal)}
+              onAddEllipseVector={(reveal) => addEllipseVectorMaskToSelected(reveal)}
+              onToggleEnabled={() => toggleMaskEnabled(selected)}
+              onToggleInverted={() => toggleMaskInverted(selected)}
+              onRemove={() => removeMaskFromObject(selected)}
+              secS={secS}
+            />
           </div>
         )}
       </div>

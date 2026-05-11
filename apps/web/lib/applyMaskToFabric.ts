@@ -63,9 +63,39 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
     }
 
     if (mask.type === "clipping" && mask.clipping) {
-      // Clipping mask precisa de tratamento no nivel do renderer (referencia o
-      // layer abaixo). Aqui apenas marca uma flag pra o renderer reagir.
+      // Clipping mask: este layer recorta o layer ABAIXO (zIndex menor).
+      // Aplicacao: pegamos o objeto Fabric do layer abaixo, clonamos como clipPath.
+      // Marcamos __clippingMask + __clippingTargetIndex pra round-trip do save.
       ;(obj as any).__clippingMask = true
+      try {
+        const canvas = (obj as any).canvas
+        if (canvas) {
+          const objs = canvas.getObjects()
+          const idx = objs.indexOf(obj)
+          // Procura o layer imediatamente abaixo (com zIndex menor) que nao seja bg.
+          let target: any = null
+          for (let i = idx - 1; i >= 0; i--) {
+            const candidate = objs[i]
+            if (!(candidate as any).__isBg) { target = candidate; break }
+          }
+          if (target) {
+            // Cria um Rect com bbox do target como clipPath. Idealmente seria o
+            // outline real do target, mas isso requer clone profundo (path/textbox).
+            // Pra retangulo basico funciona; pra outline preciso de mais trabalho.
+            const tx = target.left ?? 0
+            const ty = target.top ?? 0
+            const tw = (target.width ?? 100) * (target.scaleX ?? 1)
+            const th = (target.height ?? 100) * (target.scaleY ?? 1)
+            const path = `M ${tx} ${ty} L ${tx + tw} ${ty} L ${tx + tw} ${ty + th} L ${tx} ${ty + th} Z`
+            const clipPath = new fabric.Path(path, {
+              absolutePositioned: true,
+              inverted: false,
+            })
+            obj.clipPath = clipPath
+            obj.dirty = true
+          }
+        }
+      } catch (e) { console.warn("[clipping-mask] falha:", e) }
       return
     }
   } catch (e) {
