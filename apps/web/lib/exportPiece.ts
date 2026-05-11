@@ -245,7 +245,7 @@ async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; asse
   return { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
 }
 
-async function renderToCanvas(pieceLite: { id?: string; name: string; data: any; width: number; height: number }): Promise<HTMLCanvasElement> {
+async function renderToCanvas(pieceLite: { id?: string; name: string; data: any; width: number; height: number }): Promise<{ canvas: HTMLCanvasElement; dpi: number }> {
   // Sempre busca peça + assets do servidor (sync) caso tenha id
   let piece: any = pieceLite
   let assets: Asset[] = []
@@ -269,6 +269,9 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
   const W = data?.width ?? pieceLite.width
   const H = data?.height ?? pieceLite.height
+  // DPI vem do data.dpi (salvo no momento da geracao a partir do MediaFormat).
+  // Fallback 72 (tela) se nao definido.
+  const dpi = Math.round(Number(data?.dpi)) || 72
 
   const out = document.createElement("canvas")
   out.width = W; out.height = H
@@ -277,32 +280,141 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
   ctx.fillRect(0, 0, W, H)
   ctx.drawImage(fc.getElement() as HTMLCanvasElement, 0, 0)
   fc.dispose()
+  return { canvas: out, dpi }
+}
+
+/**
+ * Injeta um chunk pHYs no PNG com a resolucao em pixels-per-meter.
+ * Photoshop e visualizadores leem isso pra mostrar o DPI correto.
+ *  Padrao do pHYs: 9 bytes de dados + 4 bytes CRC.
+ *  ppX (4 bytes) | ppY (4 bytes) | unit (1 byte, 1 = meter)
+ *  ppm = round(dpi / 0.0254) (1 inch = 0.0254 m)
+ */
+function injectPngDpi(pngBytes: Uint8Array, dpi: number): Uint8Array {
+  const ppm = Math.round(dpi / 0.0254)
+  // Sinatura PNG (8 bytes) + IHDR (que tem length 13 bytes + type + data + crc).
+  // O IHDR comeca em offset 8. Tamanho total IHDR: 4 (length) + 4 (type) + 13 (data) + 4 (crc) = 25 bytes.
+  // Quero inserir o pHYs LOGO APOS o IHDR. Offset de insercao = 8 + 25 = 33.
+  const insertAt = 33
+
+  // Monta o chunk pHYs:
+  //   length (4 bytes BE) = 9
+  //   type (4 bytes ASCII) = "pHYs"
+  //   data (9 bytes) = ppX(4) + ppY(4) + unit(1)
+  //   crc (4 bytes BE) = CRC32 de (type + data)
+  const chunkData = new Uint8Array(9)
+  const dv = new DataView(chunkData.buffer)
+  dv.setUint32(0, ppm, false)
+  dv.setUint32(4, ppm, false)
+  chunkData[8] = 1 // unit = meter
+
+  const typeAndData = new Uint8Array(4 + 9)
+  typeAndData[0] = 0x70 // 'p'
+  typeAndData[1] = 0x48 // 'H'
+  typeAndData[2] = 0x59 // 'Y'
+  typeAndData[3] = 0x73 // 's'
+  typeAndData.set(chunkData, 4)
+
+  const crc = crc32(typeAndData)
+
+  const chunk = new Uint8Array(4 + 4 + 9 + 4)
+  const cdv = new DataView(chunk.buffer)
+  cdv.setUint32(0, 9, false)         // length
+  chunk.set(typeAndData, 4)          // type + data
+  cdv.setUint32(4 + 4 + 9, crc, false) // crc
+
+  // Cola: [PNG bytes ate insertAt] + [pHYs chunk] + [PNG bytes apos insertAt]
+  const out = new Uint8Array(pngBytes.length + chunk.length)
+  out.set(pngBytes.subarray(0, insertAt), 0)
+  out.set(chunk, insertAt)
+  out.set(pngBytes.subarray(insertAt), insertAt + chunk.length)
+  return out
+}
+
+/** CRC32 (polynomio PNG/zlib). Usado pra chunk pHYs. */
+const _crc32Table = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1)
+    t[n] = c >>> 0
+  }
+  return t
+})()
+function crc32(bytes: Uint8Array): number {
+  let c = 0xffffffff
+  for (let i = 0; i < bytes.length; i++) c = (_crc32Table[(c ^ bytes[i]) & 0xff] ^ (c >>> 8)) >>> 0
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/**
+ * Injeta DPI no header APP0/JFIF do JPG. O Canvas API gera JPG com JFIF
+ * default em 72 dpi — vamos sobrescrever pro DPI da peca.
+ *
+ * Estrutura JPG: SOI(FFD8) + APP0 (FFE0 ... JFIF\0 ... density)
+ * O APP0 esta sempre logo apos SOI nos JPGs do Canvas. Tamanho: 18 bytes total.
+ * Offset do density unit dentro do APP0:
+ *   - 0: marker (FFE0)
+ *   - 2: length (2 bytes)
+ *   - 4: "JFIF\0" (5 bytes)
+ *   - 9: version major (1 byte)
+ *   - 10: version minor (1 byte)
+ *   - 11: density units (1 byte) - 1=DPI, 2=DPcm
+ *   - 12: x density (2 bytes BE)
+ *   - 14: y density (2 bytes BE)
+ */
+function injectJpgDpi(jpgBytes: Uint8Array, dpi: number): Uint8Array {
+  const out = new Uint8Array(jpgBytes)
+  // Procura APP0 logo apos SOI (offset 2-3 deve ser 0xFFE0)
+  if (out[0] !== 0xFF || out[1] !== 0xD8) return out
+  if (out[2] !== 0xFF || out[3] !== 0xE0) return out
+  // Verifica "JFIF\0" em offset 6-10
+  if (out[6] !== 0x4A || out[7] !== 0x46 || out[8] !== 0x49 || out[9] !== 0x46 || out[10] !== 0x00) return out
+  out[13] = 1                    // density units = DPI
+  out[14] = (dpi >> 8) & 0xff    // x density high
+  out[15] = dpi & 0xff           // x density low
+  out[16] = (dpi >> 8) & 0xff    // y density high
+  out[17] = dpi & 0xff           // y density low
   return out
 }
 
 export async function exportPNGBlob(piece: { id?: string; name: string; data: any; width: number; height: number }): Promise<Blob> {
-  const c = await renderToCanvas(piece)
-  return await new Promise<Blob>((resolve, reject) => {
-    c.toBlob(b => b ? resolve(b) : reject(new Error("toBlob PNG falhou")), "image/png")
+  const { canvas, dpi } = await renderToCanvas(piece)
+  const rawBlob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob PNG falhou")), "image/png")
   })
+  // Injeta DPI no chunk pHYs do PNG. Canvas API nao define DPI por padrao.
+  const bytes = new Uint8Array(await rawBlob.arrayBuffer())
+  const withDpi = injectPngDpi(bytes, dpi)
+  return new Blob([withDpi.buffer as ArrayBuffer], { type: "image/png" })
 }
 
 export async function exportJPGBlob(piece: { id?: string; name: string; data: any; width: number; height: number }): Promise<Blob> {
-  const c = await renderToCanvas(piece)
-  return await new Promise<Blob>((resolve, reject) => {
-    c.toBlob(b => b ? resolve(b) : reject(new Error("toBlob JPG falhou")), "image/jpeg", 0.92)
+  const { canvas, dpi } = await renderToCanvas(piece)
+  const rawBlob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob JPG falhou")), "image/jpeg", 0.92)
   })
+  // Sobrescreve density no header JFIF do JPG. Canvas API usa 72 dpi por padrao.
+  const bytes = new Uint8Array(await rawBlob.arrayBuffer())
+  const withDpi = injectJpgDpi(bytes, dpi)
+  return new Blob([withDpi.buffer as ArrayBuffer], { type: "image/jpeg" })
 }
 
 export async function exportPDFBlob(piece: { id?: string; name: string; data: any; width: number; height: number }): Promise<Blob> {
-  const c = await renderToCanvas(piece)
+  const { canvas: c, dpi } = await renderToCanvas(piece)
   const jpegDataUrl = c.toDataURL("image/jpeg", 0.92)
   const jpegBase64 = jpegDataUrl.split(",")[1]
   const jpegBytes = atob(jpegBase64)
   const jpegBuf = new Uint8Array(jpegBytes.length)
   for (let i = 0; i < jpegBytes.length; i++) jpegBuf[i] = jpegBytes.charCodeAt(i)
 
-  const W = c.width, H = c.height
+  // PDF MediaBox e' em PONTOS (1 inch = 72 pt). Pra que o PDF abra com o
+  // tamanho fisico correto, converte W/H (px) pra pt: pt = px * 72 / dpi.
+  // Se dpi=300 e img=3000x3000 px, o PDF fica 720x720 pt (= 10 inch = 25.4 cm),
+  // que e o tamanho fisico real do desenho.
+  const Wpx = c.width, Hpx = c.height
+  const Wpt = Math.round((Wpx * 72) / dpi * 1000) / 1000
+  const Hpt = Math.round((Hpx * 72) / dpi * 1000) / 1000
   const enc = new TextEncoder()
   const parts: Array<Uint8Array> = []
   const offsets: number[] = []
@@ -317,13 +429,17 @@ export async function exportPDFBlob(piece: { id?: string; name: string; data: an
   push("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
   startObj(1); push("<< /Type /Catalog /Pages 2 0 R >>"); endObj()
   startObj(2); push("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"); endObj()
-  startObj(3); push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 4 0 R >> /ProcSet [/PDF /ImageC] >> /Contents 5 0 R >>`); endObj()
+  // MediaBox em PONTOS (1/72 inch). PDF mostra o documento no tamanho fisico
+  // correto baseado no dpi da peca. Imagem fica nos pixels originais (Wpx/Hpx),
+  // mas escalada pra Wpt/Hpt pontos via matriz 'cm'.
+  startObj(3); push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${Wpt} ${Hpt}] /Resources << /XObject << /Im0 4 0 R >> /ProcSet [/PDF /ImageC] >> /Contents 5 0 R >>`); endObj()
   startObj(4)
-  push(`<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBuf.length} >>\nstream\n`)
+  push(`<< /Type /XObject /Subtype /Image /Width ${Wpx} /Height ${Hpx} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBuf.length} >>\nstream\n`)
   push(jpegBuf)
   push("\nendstream")
   endObj()
-  const content = `q\n${W} 0 0 ${H} 0 0 cm\n/Im0 Do\nQ\n`
+  // Matriz 'cm' escala a imagem (1x1 unit no espaco do XObject) pra Wpt x Hpt no MediaBox.
+  const content = `q\n${Wpt} 0 0 ${Hpt} 0 0 cm\n/Im0 Do\nQ\n`
   startObj(5)
   push(`<< /Length ${content.length} >>\nstream\n${content}endstream`)
   endObj()
@@ -483,6 +599,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
   const W = data?.width ?? pieceLite.width
   const H = data?.height ?? pieceLite.height
+  // DPI da peca (salvo no momento da geracao a partir do MediaFormat). Default 72.
+  const dpi = Math.round(Number(data?.dpi)) || 72
 
   const objects = fc.getObjects()
   const agpsd = await import("ag-psd") as any
@@ -807,7 +925,21 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     width: W, height: H,
     canvas: compositeCanvas,
     children: psdLayers,
-    imageResources: { thumbnail: thumbCanvas },
+    imageResources: {
+      thumbnail: thumbCanvas,
+      // resolutionInfo grava o DPI no PSD. Photoshop le isso ao abrir o arquivo
+      // e mostra Image Size > Resolution com o valor correto.
+      // displayUnit / widthUnit: PscMt = mm. Mais comum no Photoshop seria
+      // PscCm/PscIn — ag-psd aceita ambos. Usamos PscCm pra metric.
+      resolutionInfo: {
+        horizontalResolution: dpi,
+        horizontalResolutionUnit: "PPI",
+        widthUnit: "Centimeters",
+        verticalResolution: dpi,
+        verticalResolutionUnit: "PPI",
+        heightUnit: "Centimeters",
+      },
+    },
     // Smart objects embeddados: cada SVG vira um linkedFile referenciado pelos placedLayers.
     // ag-psd serializa esses bytes dentro do PSD; Photoshop reconhece como SO.
     linkedFiles: linkedFiles.length > 0 ? linkedFiles : undefined,
