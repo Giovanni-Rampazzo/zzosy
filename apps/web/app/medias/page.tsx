@@ -2,18 +2,37 @@
 import { useEffect, useState } from "react"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
+import { UNITS, toPx, Unit } from "@/lib/unitConversion"
 
 interface MediaFormat {
   id: string; vehicle: string; media: string; format: string
-  width: number; height: number; dpi: number; category: string; isDefault: boolean
+  width: number; height: number; dpi: number
+  widthValue?: number | null; heightValue?: number | null
+  widthUnit?: string | null; heightUnit?: string | null
+  category: string; isDefault: boolean
 }
 
 type FormState = {
   vehicle: string; media: string; format: string;
-  width: string; height: string; dpi: string; category: string;
+  // Valores na unidade escolhida (NAO em px).
+  widthValue: string; heightValue: string;
+  widthUnit: Unit; heightUnit: Unit;
+  dpi: string; category: string;
 }
 
-const emptyForm: FormState = {vehicle:"",media:"",format:"",width:"",height:"",dpi:"72",category:""}
+const emptyForm: FormState = {
+  vehicle: "", media: "", format: "",
+  widthValue: "", heightValue: "",
+  widthUnit: "px", heightUnit: "px",
+  dpi: "72", category: "",
+}
+
+/** Formata numero pra exibicao: inteiro sem decimais, decimal com 2 casas. */
+function formatNum(v: number | string): string {
+  const n = typeof v === "number" ? v : Number(v)
+  if (!isFinite(n)) return String(v)
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "")
+}
 
 export default function MediasPage() {
   const [formats, setFormats] = useState<MediaFormat[]>([])
@@ -34,14 +53,23 @@ export default function MediasPage() {
   }
 
   function openEdit(f: MediaFormat) {
+    // Se o formato tem widthValue/widthUnit salvos, usa eles direto.
+    // Senao (formatos antigos cadastrados antes do refactor), assume px.
+    const dpiNum = f.dpi ?? 72
+    const widthUnit = (f.widthUnit as Unit) ?? "px"
+    const heightUnit = (f.heightUnit as Unit) ?? "px"
+    const widthVal = (f.widthValue != null) ? f.widthValue : f.width
+    const heightVal = (f.heightValue != null) ? f.heightValue : f.height
     setForm({
       vehicle: f.vehicle ?? "",
       media: f.media ?? "",
       format: f.format ?? "",
-      width: String(f.width),
-      height: String(f.height),
-      dpi: String(f.dpi),
-      category: f.category,
+      widthValue: String(widthVal),
+      heightValue: String(heightVal),
+      widthUnit,
+      heightUnit,
+      dpi: String(dpiNum),
+      category: f.category ?? "",
     })
     setEditingId(f.id)
     setShowModal(true)
@@ -49,7 +77,18 @@ export default function MediasPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const payload = { ...form, width: +form.width, height: +form.height, dpi: +form.dpi }
+    // Envia widthValue/heightValue + units + dpi. Backend calcula width/height (px).
+    const payload = {
+      vehicle: form.vehicle,
+      media: form.media,
+      format: form.format,
+      widthValue: +form.widthValue,
+      heightValue: +form.heightValue,
+      widthUnit: form.widthUnit,
+      heightUnit: form.heightUnit,
+      dpi: +form.dpi,
+      category: form.category,
+    }
     if (isEditing) {
       const res = await fetch(`/api/medias/${editingId}`, {
         method: "PUT",
@@ -73,13 +112,19 @@ export default function MediasPage() {
   }
 
   async function handleDuplicate(f: MediaFormat) {
+    const dpiNum = f.dpi ?? 72
+    const widthUnit = (f.widthUnit as Unit) ?? "px"
+    const heightUnit = (f.heightUnit as Unit) ?? "px"
+    const widthVal = (f.widthValue != null) ? f.widthValue : f.width
+    const heightVal = (f.heightValue != null) ? f.heightValue : f.height
     const payload = {
       vehicle: f.vehicle,
       media: f.media,
       format: `${f.format} (cópia)`,
-      width: f.width,
-      height: f.height,
-      dpi: f.dpi,
+      widthValue: widthVal,
+      heightValue: heightVal,
+      widthUnit, heightUnit,
+      dpi: dpiNum,
       category: f.category,
     }
     const res = await fetch("/api/medias", {
@@ -136,12 +181,22 @@ export default function MediasPage() {
                   <div style={{padding:"10px 20px",background:"#F5F5F0",borderBottom:"1px solid #E0E0E0"}}>
                     <span style={{fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.8px",color:"#888"}}>{label}</span>
                   </div>
-                  {groupedFormats[label].map(f => (
+                  {groupedFormats[label].map(f => {
+                    // Exibicao: se o formato tem widthValue+unit salvos, mostra na unidade
+                    // original com (px) entre parenteses. Senao mostra so px.
+                    const wU = (f.widthUnit as Unit) ?? "px"
+                    const hU = (f.heightUnit as Unit) ?? "px"
+                    const wV = f.widthValue ?? f.width
+                    const hV = f.heightValue ?? f.height
+                    const dimText = (wU === "px" && hU === "px")
+                      ? `${f.width}×${f.height} px`
+                      : `${formatNum(wV)} ${wU} × ${formatNum(hV)} ${hU}`
+                    return (
                   <div key={f.id} style={{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid #f0f0f0"}}>
                     <div style={{flex:1,fontWeight:600,fontSize:13}}>{f.vehicle}</div>
                     <div style={{width:140,fontSize:12,color:"#888"}}>{f.media}</div>
                     <div style={{width:150,fontSize:12,color:"#888"}}>{f.format}</div>
-                    <div style={{width:110,fontSize:12,color:"#888"}}>{f.width}×{f.height}</div>
+                    <div style={{width:170,fontSize:12,color:"#888"}}>{dimText}</div>
                     <div style={{width:70,fontSize:12,color:"#888"}}>{f.dpi}dpi</div>
                     <div style={{display:"flex",gap:6,alignItems:"center"}}>
                       {!f.isDefault ? (
@@ -158,7 +213,8 @@ export default function MediasPage() {
                       )}
                     </div>
                   </div>
-                ))}
+                    )
+                  })}
                 </div>
               ))
             )}
@@ -201,13 +257,69 @@ export default function MediasPage() {
                   </datalist>
                 </div>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-                {([["width","Largura (px)"],["height","Altura (px)"],["dpi","DPI"]] as [string,string][]).map(([k,l]) => (
-                  <div key={k} style={{display:"flex",flexDirection:"column",gap:5}}>
-                    <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>{l}</label>
-                    <input type="number" value={(form as any)[k]} onChange={e => setForm(f => ({...f,[k]:e.target.value}))} required style={inp} />
+              {/* Largura + unidade. Photoshop-style: valor numerico + dropdown de unidade. */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>Largura</label>
+                  <div style={{display:"flex",gap:6}}>
+                    <input
+                      type="number"
+                      step="any"
+                      value={form.widthValue}
+                      onChange={e => setForm(f => ({...f,widthValue:e.target.value}))}
+                      required
+                      style={{...inp,flex:1}}
+                    />
+                    <select
+                      value={form.widthUnit}
+                      onChange={e => setForm(f => ({...f,widthUnit:e.target.value as Unit}))}
+                      style={{...inp,width:110}}
+                    >
+                      {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                    </select>
                   </div>
-                ))}
+                  {form.widthUnit !== "px" && form.widthValue && !isNaN(+form.widthValue) && (
+                    <span style={{fontSize:10,color:"#aaa"}}>= {toPx(+form.widthValue, form.widthUnit, +form.dpi || 72)} px</span>
+                  )}
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>Altura</label>
+                  <div style={{display:"flex",gap:6}}>
+                    <input
+                      type="number"
+                      step="any"
+                      value={form.heightValue}
+                      onChange={e => setForm(f => ({...f,heightValue:e.target.value}))}
+                      required
+                      style={{...inp,flex:1}}
+                    />
+                    <select
+                      value={form.heightUnit}
+                      onChange={e => setForm(f => ({...f,heightUnit:e.target.value as Unit}))}
+                      style={{...inp,width:110}}
+                    >
+                      {UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                    </select>
+                  </div>
+                  {form.heightUnit !== "px" && form.heightValue && !isNaN(+form.heightValue) && (
+                    <span style={{fontSize:10,color:"#aaa"}}>= {toPx(+form.heightValue, form.heightUnit, +form.dpi || 72)} px</span>
+                  )}
+                </div>
+              </div>
+              {/* DPI: Photoshop-style "Resolution: 300 Pixels/Inch" */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10}}>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>Resolução (DPI)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={form.dpi}
+                    onChange={e => setForm(f => ({...f,dpi:e.target.value}))}
+                    required
+                    style={inp}
+                  />
+                  <span style={{fontSize:10,color:"#aaa"}}>72 = tela / 300 = impressão</span>
+                </div>
               </div>
               <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>
                 <Button type="button" variant="secondary" onClick={closeModal}>Cancelar</Button>

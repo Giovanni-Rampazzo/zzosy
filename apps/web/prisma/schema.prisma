@@ -223,8 +223,17 @@ model MediaFormat {
   vehicle   String?
   media     String?
   format    String?
+  // width/height em PX (calculado a partir de widthValue/heightValue + unit + dpi).
+  // Mantido em px pra compatibilidade com geracao de pecas, canvas, etc.
   width     Int
   height    Int
+  // Valores originais na unidade escolhida (cm, mm, inch, pt, pc, px).
+  // Sem isso, ao editar um formato cadastrado em cm, teriamos que adivinhar
+  // a unidade original a partir do px.
+  widthValue  Float?
+  heightValue Float?
+  widthUnit   String? @default("px") @db.VarChar(8)
+  heightUnit  String? @default("px") @db.VarChar(8)
   dpi       Int?
   category  String?
   isDefault Boolean  @default(false)
