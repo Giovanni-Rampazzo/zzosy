@@ -2127,9 +2127,46 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // o novo asset vem com SEU lastOverride — nao herda os styles do asset
     // anterior. Isso permite swap de ida e volta entre ABC (amarelo) e DEF (azul).
     // Se o novo asset nunca foi configurado, vem default.
-    const newAssetOverrides: any = (newAsset.lastOverride && typeof newAsset.lastOverride === "object")
+    //
+    // IMPORTANTE: lastOverride guarda os valores da MATRIZ (ex: fontSize 80). Se
+    // estamos numa PECA menor (ex: fontSize 40 = matriz_80 * 0.5), aplicar
+    // lastOverride direto cresceria o texto. Calcular a proporcao atual da peca
+    // a partir do currentObj e aplicar no newOverrides.
+    const newAssetOverridesRaw: any = (newAsset.lastOverride && typeof newAsset.lastOverride === "object")
       ? { ...newAsset.lastOverride }
       : {}
+    const newAssetOverrides: any = { ...newAssetOverridesRaw }
+
+    // Descobre a proporcao atual: currentObj.fontSize / currentAsset.lastOverride.fontSize.
+    // Se currentAsset tem lastOverride com fontSize, isso da a escala usada pra renderizar.
+    // Aplicamos a mesma escala no fontSize do novo asset (se ele tem lastOverride.fontSize).
+    if (pieceId) {
+      const c = campaignRef.current
+      const currentAsset = c?.assets.find((a: Asset) => a.id === currentObj.__assetId)
+      const curTplFontSize = (currentAsset as any)?.lastOverride?.fontSize
+      const curObjFontSize = currentObj.fontSize
+      if (typeof curTplFontSize === "number" && curTplFontSize > 0 && typeof curObjFontSize === "number") {
+        const ratio = curObjFontSize / curTplFontSize
+        if (typeof newAssetOverrides.fontSize === "number") {
+          newAssetOverrides.fontSize = newAssetOverrides.fontSize * ratio
+        }
+        if (typeof newAssetOverrides.leadingPt === "number") {
+          newAssetOverrides.leadingPt = newAssetOverrides.leadingPt * ratio
+        }
+        if (newAssetOverrides.styles && typeof newAssetOverrides.styles === "object") {
+          const scaledStyles: any = {}
+          for (const lineKey of Object.keys(newAssetOverrides.styles)) {
+            scaledStyles[lineKey] = {}
+            for (const colKey of Object.keys(newAssetOverrides.styles[lineKey])) {
+              const cs = { ...newAssetOverrides.styles[lineKey][colKey] }
+              if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * ratio
+              scaledStyles[lineKey][colKey] = cs
+            }
+          }
+          newAssetOverrides.styles = scaledStyles
+        }
+      }
+    }
 
     const layerSpec = {
       posX: currentObj.left ?? 0,
