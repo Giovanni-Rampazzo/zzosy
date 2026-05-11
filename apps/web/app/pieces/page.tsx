@@ -21,6 +21,7 @@ interface Piece {
   dpi: number
   status: string
   createdAt: string
+  updatedAt?: string
   campaignId: string
   imageUrl?: string | null
   data?: any
@@ -144,7 +145,7 @@ function PiecesContent() {
                   onClick={() => router.push(`/editor?campaignId=${p.campaignId}&pieceId=${p.id}`)}
                 >
                   {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.name} className="w-full h-full object-contain" />
+                    <img src={`${p.imageUrl}?t=${new Date(p.updatedAt ?? Date.now()).getTime()}`} alt={p.name} className="w-full h-full object-contain" />
                   ) : (
                     <>
                       <div className="text-xs font-semibold text-[#888888] mb-1">{p.format}</div>
@@ -218,7 +219,7 @@ function PiecesContent() {
                       </div>
                     </td>
                     <td className="px-2 py-2 w-16 cursor-pointer" onClick={() => router.push(`/pieces/${p.id}`)}>
-                      <RowThumb src={p.imageUrl} alt={p.name} fallbackText={p.format} />
+                      <RowThumb src={p.imageUrl ? `${p.imageUrl}?t=${new Date(p.updatedAt ?? Date.now()).getTime()}` : null} alt={p.name} fallbackText={p.format} />
                     </td>
                     <td className="px-4 py-3 font-semibold text-sm" onClick={e => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
                       const res = await fetch(`/api/pieces/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })

@@ -86,11 +86,17 @@ export async function PUT(req: Request, ctx: Ctx) {
   }
 
   const pieceUpdates: Array<{ id: string; data: string }> = []
+  // Pecas a invalidar thumbnail (imageUrl = null) — todas que usam esse asset.
+  // Sem isso, lista de pecas mostra thumb stale com texto antigo apos editar /assets.
+  const pieceInvalidateThumb: Array<string> = []
   if (textChanged) {
     for (const p of pieces) {
       let pdata: any = null
       try { pdata = typeof p.data === "string" ? JSON.parse(p.data as string) : p.data } catch {}
       if (!pdata || !Array.isArray(pdata.layers)) continue
+      // Se a peca usa esse asset (em qualquer layer), invalida o thumb
+      const usesAsset = pdata.layers.some((l: any) => l?.assetId === assetId)
+      if (usesAsset) pieceInvalidateThumb.push(p.id)
       let touched = false
       const newLayers = pdata.layers.map((l: any) => {
         if (l?.assetId === assetId && l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
@@ -112,6 +118,20 @@ export async function PUT(req: Request, ctx: Ctx) {
   if (kvUpdate) ops.push(prisma.keyVision.update({ where: { campaignId }, data: kvUpdate }))
   for (const u of pieceUpdates) {
     ops.push(prisma.piece.update({ where: { id: u.id }, data: { data: u.data } }))
+  }
+  // Invalida thumb (imageUrl = null) das pecas afetadas. So da update se ainda
+  // nao foi atualizada por pieceUpdates (pra nao duplicar). Lista de pecas vai
+  // mostrar placeholder ate user abrir a peca (que re-gera o thumb).
+  const updatedIds = new Set(pieceUpdates.map(u => u.id))
+  for (const pid of pieceInvalidateThumb) {
+    if (updatedIds.has(pid)) {
+      // Ja vai atualizar 'data' — adicionar imageUrl: null junto
+      const existing = ops.find((op: any) => op?.args?.where?.id === pid)
+      // Simplificacao: faz update separado pra clareza
+      ops.push(prisma.piece.update({ where: { id: pid }, data: { imageUrl: null } }))
+    } else {
+      ops.push(prisma.piece.update({ where: { id: pid }, data: { imageUrl: null } }))
+    }
   }
 
   try {
