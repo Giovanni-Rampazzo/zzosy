@@ -136,12 +136,46 @@ interface PieceSlideProps {
   imageUrl: string | null
   copy?: string | null
   onClick?: () => void
+  /** ID da peca pra permitir auto-save da legenda via PATCH /api/pieces/[id]. Quando omitido, legenda fica read-only. */
+  pieceId?: string
+  /** Callback opcional pra propagar mudanca no copy pro state pai imediatamente. */
+  onCopyChange?: (next: string) => void
 }
 
-export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: PieceSlideProps) {
+export function SlidePiece({ name, width, height, imageUrl, copy, onClick, pieceId, onCopyChange }: PieceSlideProps) {
   const dims = (width && height) ? `${width} x ${height} px` : "—"
   const clickable = !!onClick
-  const hasCopy = !!(copy && copy.trim().length > 0)
+  // copyLocal: estado interno editavel. Sincroniza com prop copy ao mudar
+  // a peca (re-render externo). Auto-save com debounce.
+  const [copyLocal, setCopyLocal] = React.useState(copy ?? "")
+  const [editing, setEditing] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
+  const saveTimerRef = React.useRef<any>(null)
+  React.useEffect(() => { setCopyLocal(copy ?? "") }, [copy, pieceId])
+
+  const hasCopy = copyLocal.trim().length > 0
+  const editable = !!pieceId
+  // Card aparece quando: ja tem copy OU usuario clicou em '+ Legenda'
+  const showCard = hasCopy || editing
+
+  function handleCopyChange(next: string) {
+    setCopyLocal(next)
+    onCopyChange?.(next)
+    if (!pieceId) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      setSaving(true)
+      try {
+        await fetch(`/api/pieces/${pieceId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ copy: next || null }),
+        })
+      } catch (e) { console.warn("[slide copy] save fail:", e) }
+      finally { setSaving(false) }
+    }, 600)
+  }
+
   return (
     <div
       onClick={onClick}
@@ -196,8 +230,8 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
         background: YELLOW, zIndex: 2,
       }} />
 
-      {/* CONTEUDO: imagem (e legenda, se houver) */}
-      {hasCopy ? (
+      {/* CONTEUDO: imagem (e legenda, se houver ou se usuario adicionar) */}
+      {showCard ? (
         // Layout split: peca a esquerda 55%, copy a direita 45%
         <div style={{
           position: "absolute", inset: 0,
@@ -237,33 +271,60 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
             maxHeight: "80%",
             overflow: "hidden",
             display: "flex", flexDirection: "column", gap: "1.2cqw",
-          }}>
+            position: "relative",
+          }}
+          onClick={(e) => { if (editable) e.stopPropagation() }}
+          >
             <div style={{
               fontSize: "1.05cqw", fontWeight: 700,
               color: TEXT_DARK, textTransform: "uppercase",
               letterSpacing: "0.05em",
               fontFamily: "system-ui, -apple-system, sans-serif",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
-              Legenda
+              <span>Legenda</span>
+              {saving && <span style={{ fontSize: "0.85cqw", color: TEXT_GRAY, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>salvando…</span>}
             </div>
-            <div style={{
-              fontSize: "1.25cqw",
-              lineHeight: 1.5,
-              color: TEXT_DARK,
-              fontFamily: "system-ui, -apple-system, sans-serif",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              overflow: "hidden",
-            }}>
-              {copy}
-            </div>
+            {editable ? (
+              <textarea
+                value={copyLocal}
+                onChange={(e) => handleCopyChange(e.target.value)}
+                placeholder="Digite a legenda da peca…"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                style={{
+                  flex: 1,
+                  fontSize: "1.25cqw",
+                  lineHeight: 1.5,
+                  color: TEXT_DARK,
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  resize: "none",
+                  padding: 0,
+                  width: "100%",
+                  minHeight: "1em",
+                }}
+              />
+            ) : (
+              <div style={{
+                fontSize: "1.25cqw",
+                lineHeight: 1.5,
+                color: TEXT_DARK,
+                fontFamily: "system-ui, -apple-system, sans-serif",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                overflow: "hidden",
+              }}>
+                {copyLocal}
+              </div>
+            )}
           </div>
         </div>
       ) : (
-        // Layout original: peca centralizada.
-        // Sem padding generoso (era 8% 12%) — perdia muita area com aspect extremo.
-        // Sem borderRadius na peca — peca renderiza fielmente, designer nao quer
-        // bordas arredondadas adulterando o trabalho.
+        // Layout sem legenda: peca centralizada.
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -286,6 +347,26 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
             }}>
               (Imagem não disponível)
             </div>
+          )}
+          {/* Botao '+ Legenda' aparece no canto inferior direito quando a peca
+              tem pieceId (editavel) e ainda nao tem legenda. Clicar abre o card
+              de legenda vazio pronto pra editar. */}
+          {editable && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setEditing(true) }}
+              style={{
+                position: "absolute", bottom: "4%", right: "4%",
+                background: YELLOW, color: TEXT_DARK,
+                border: "none", borderRadius: RADIUS,
+                padding: "0.6% 1.4%",
+                fontSize: "1cqw", fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "system-ui, -apple-system, sans-serif",
+                zIndex: 3,
+              }}
+              title="Adicionar legenda a esta peca">
+              + Legenda
+            </button>
           )}
         </div>
       )}

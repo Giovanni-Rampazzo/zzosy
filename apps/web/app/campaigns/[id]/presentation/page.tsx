@@ -191,6 +191,8 @@ export default function PresentationPage() {
                     height={p.height}
                     imageUrl={p.imageUrl ?? null}
                     copy={p.copy ?? null}
+                    pieceId={p.id}
+                    onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
                     onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
                   />
                 </SlideRow>
