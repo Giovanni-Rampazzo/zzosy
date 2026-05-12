@@ -2290,6 +2290,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             return layer
           })
 
+        // Circuit breaker: nao grava layers: [] sobre piece.data que tinha layers.
+        // Race condition tipica: load do PSD importado retorna layer com schema
+        // antigo, addAssetToCanvas/addEmbeddedLayer falham, canvas fica vazio,
+        // doSave dispara e sobrescreve o data original com [] -> peca destruida.
+        if (newLayers.length === 0) {
+          const previousLayers = (oldData?.layers as any) ?? []
+          const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
+          if (hadLayers) {
+            editorLog("[doSave PIECE] abortado — tentaria gravar layers:[] sobre piece.data que tinha", previousLayers.length, "layers. Provavel race no load.")
+            isDirtyRef.current = false
+            setIsDirty(false)
+            setSaving(false)
+            return
+          }
+        }
+
         const newData = {
           ...oldData,
           version: 2,

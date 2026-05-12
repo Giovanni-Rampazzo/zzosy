@@ -169,9 +169,11 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
           styles: Object.keys(styles).length > 0 ? styles : undefined,
         }
 
-        // LINK ou EMBEDDED
+        // LINK ou EMBEDDED. IMPORTANTE: o campo persistido eh `assetId`
+        // (sem prefixo __). O `__assetId` so existe no objeto Fabric runtime
+        // dentro do editor (custom prop nao serializada).
         if (matchedAsset && matchedAsset.type === "TEXT") {
-          layerData.__assetId = matchedAsset.id
+          layerData.assetId = matchedAsset.id
           linked++
         } else {
           layerData.__embedded = true
@@ -199,7 +201,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
 
           if (matchedAsset && matchedAsset.type === "IMAGE") {
             // Linkado: usa imageUrl do asset (referencia)
-            layerData.__assetId = matchedAsset.id
+            layerData.assetId = matchedAsset.id
             linked++
           } else {
             // Embedded: grava dataUrl direto (peso adicional mas permite peca avulsa)
