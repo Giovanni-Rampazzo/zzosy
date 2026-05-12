@@ -163,25 +163,25 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
       }) : undefined}
       title={clickable ? "Abrir no editor" : undefined}
     >
-      {/* Box amarelo nome */}
+      {/* Box amarelo nome — 60% do tamanho original. Posicao top-left mantida. */}
       <div style={{
         position: "absolute", top: "4%", left: "3%",
         background: YELLOW, borderRadius: RADIUS,
-        padding: "0.9% 1.8%",
+        padding: "0.54% 1.08%",
         fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "1.6cqw", fontWeight: 700, color: TEXT_DARK,
+        fontSize: "0.96cqw", fontWeight: 700, color: TEXT_DARK,
         maxWidth: "60%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         zIndex: 2,
       }}>
         {name}
       </div>
-      {/* Box amarelo dimensao */}
+      {/* Box amarelo dimensao — 60% do tamanho original */}
       <div style={{
-        position: "absolute", top: "12.5%", left: "3%",
+        position: "absolute", top: "8.5%", left: "3%",
         background: YELLOW, borderRadius: RADIUS,
-        padding: "0.6% 1.4%",
+        padding: "0.36% 0.84%",
         fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "1.2cqw", fontWeight: 500, color: TEXT_DARK,
+        fontSize: "0.72cqw", fontWeight: 500, color: TEXT_DARK,
         zIndex: 2,
       }}>
         {dims}

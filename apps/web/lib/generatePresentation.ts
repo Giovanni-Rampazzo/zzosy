@@ -181,27 +181,27 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   const name = piece.name ?? "Peça sem nome"
   const dims = piece.width && piece.height ? `${piece.width} x ${piece.height} px` : "—"
 
-  // Box amarelo nome (top-left) — radius 12pt = ~0.166" em pptxgenjs
+  // Box amarelo nome (top-left) — 60% do tamanho original. radius proporcional.
   slide.addShape("roundRect", {
-    x: 0.3, y: 0.3, w: Math.min(5.0, name.length * 0.16 + 0.5), h: 0.5,
+    x: 0.3, y: 0.3, w: Math.min(3.0, name.length * 0.096 + 0.3), h: 0.3,
     fill: { color: YELLOW }, line: { color: YELLOW },
-    rectRadius: 0.12,
+    rectRadius: 0.072,
   })
   slide.addText(name, {
-    x: 0.4, y: 0.3, w: Math.min(4.9, name.length * 0.16 + 0.4), h: 0.5,
-    fontFace: "Calibri", fontSize: 14, bold: true,
+    x: 0.36, y: 0.3, w: Math.min(2.94, name.length * 0.096 + 0.24), h: 0.3,
+    fontFace: "Calibri", fontSize: 8, bold: true,
     color: TEXT_DARK, valign: "middle", align: "left",
   })
 
-  // Box amarelo dimensao (abaixo)
+  // Box amarelo dimensao — 60% do tamanho original.
   slide.addShape("roundRect", {
-    x: 0.3, y: 0.85, w: Math.min(3.0, dims.length * 0.13 + 0.4), h: 0.4,
+    x: 0.3, y: 0.66, w: Math.min(1.8, dims.length * 0.078 + 0.24), h: 0.24,
     fill: { color: YELLOW }, line: { color: YELLOW },
-    rectRadius: 0.10,
+    rectRadius: 0.06,
   })
   slide.addText(dims, {
-    x: 0.4, y: 0.85, w: Math.min(2.9, dims.length * 0.13 + 0.3), h: 0.4,
-    fontFace: "Calibri", fontSize: 11, bold: false,
+    x: 0.36, y: 0.66, w: Math.min(1.74, dims.length * 0.078 + 0.18), h: 0.24,
+    fontFace: "Calibri", fontSize: 7, bold: false,
     color: TEXT_DARK, valign: "middle", align: "left",
   })
 
