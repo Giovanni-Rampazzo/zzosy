@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react"
+import { Button } from "@/components/ui/Button"
 
 interface Props {
   campaignId: string
@@ -369,32 +370,18 @@ export function PsdImporter({ campaignId, onImported }: Props) {
     }
   }
 
-  // Padrão: <label> envolvendo <input> SEM disabled no input.
-  // O `loading` controla só o visual (cursor/opacity) e o guard interno em handleFile.
-  // Isso evita que o input fique travado caso loading fique preso em true por algum bug.
   return (
     <>
-      <label
-        style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          background: "#F5C400", border: "none", color: "#111111",
-          padding: "10px 24px", borderRadius: 6, fontSize: 16, fontWeight: 600,
-          cursor: loading ? "wait" : "pointer",
-          opacity: loading ? 0.6 : 1,
-          userSelect: "none",
-          height: "fit-content",
-          transition: "background 0.15s",
-        }}
-        onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLLabelElement).style.background = "#e0b000" }}
-        onMouseLeave={e => { (e.currentTarget as HTMLLabelElement).style.background = "#F5C400" }}>
+      <Button
+        variant="primary"
+        size="md"
+        accept=".psd"
+        onFileSelect={(f) => handleFile(f)}
+        loading={loading}
+        title="Importar arquivo PSD"
+      >
         {loading ? (progress || "Processando...") : "Importar PSD"}
-        <input
-          type="file"
-          accept=".psd"
-          style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
-          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = "" }}
-        />
-      </label>
+      </Button>
       {error && <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>{error}</div>}
     </>
   )

@@ -53,8 +53,11 @@ export async function POST(req: Request, context: { params: Promise<Params> }) {
     await writeFile(path.join(dir, filename), buf)
     const imageUrl = `/uploads/campaigns/${id}/${filename}`
 
-    const lastOrder = await prisma.campaignAsset.findFirst({
-      where: { campaignId: id }, orderBy: { order: "desc" }, select: { order: true }
+    // Asset novo vai no TOPO da lista (order minimo - 1). Ordenacao asc na UI
+    // entao quem tem order menor aparece primeiro. Sem isso, asset recem-criado
+    // ia parar no final e o usuario teria que rolar pra ver.
+    const firstOrder = await prisma.campaignAsset.findFirst({
+      where: { campaignId: id }, orderBy: { order: "asc" }, select: { order: true }
     })
     const asset = await prisma.campaignAsset.create({
       data: {
@@ -62,7 +65,7 @@ export async function POST(req: Request, context: { params: Promise<Params> }) {
         type: "IMAGE",
         label,
         imageUrl,
-        order: (lastOrder?.order ?? 0) + 1,
+        order: (firstOrder?.order ?? 0) - 1,
       }
     })
     return NextResponse.json(asset)
@@ -70,10 +73,11 @@ export async function POST(req: Request, context: { params: Promise<Params> }) {
 
   // Caso 2: criar asset genérico via JSON (texto, principalmente)
   const body = await req.json()
-  const lastOrder = await prisma.campaignAsset.findFirst({
-    where: { campaignId: id }, orderBy: { order: "desc" }, select: { order: true }
+  // Mesma logica: texto novo vai no topo da lista.
+  const firstOrder = await prisma.campaignAsset.findFirst({
+    where: { campaignId: id }, orderBy: { order: "asc" }, select: { order: true }
   })
-  const order = body.order ?? (lastOrder?.order ?? 0) + 1
+  const order = body.order ?? (firstOrder?.order ?? 0) - 1
   const data: any = { campaignId: id, order, ...body }
   // Garantir que content seja string se for objeto
   if (data.content && typeof data.content !== "string") {

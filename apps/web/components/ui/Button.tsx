@@ -28,9 +28,17 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "dark" | "danger" | "success" | "warning" | "info" | "ghost" | "link"
   size?: "sm" | "md" | "lg"
   loading?: boolean
+  /**
+   * Quando definido, o botao vira <label> envolvendo um <input type="file"> escondido.
+   * Click no botao abre o file picker; arquivo selecionado vai pro onFileSelect.
+   * Use junto com `accept` pra restringir tipos. NAO use onClick simultaneamente.
+   */
+  onFileSelect?: (file: File) => void
+  /** MIME/extension filter pro file input (ex: ".psd", "image/png,image/jpeg"). */
+  accept?: string
 }
 
-export function Button({ variant = "secondary", size = "md", loading, className, children, disabled, ...props }: ButtonProps) {
+export function Button({ variant = "secondary", size = "md", loading, className, children, disabled, onFileSelect, accept, ...props }: ButtonProps) {
   const base = "inline-flex items-center justify-center font-semibold rounded-md transition-all cursor-pointer font-['DM_Sans',sans-serif] whitespace-nowrap"
 
   // Outline style por padrao — todos com fundo branco precisam de stroke visivel.
@@ -50,9 +58,33 @@ export function Button({ variant = "secondary", size = "md", loading, className,
     md: "px-4 py-2 text-sm",
     lg: "px-6 py-2.5 text-base",
   }
+  const cls = clsx(base, variants[variant], sizes[size], (disabled || loading) && "opacity-50 cursor-not-allowed", className)
+
+  // Modo file input: renderiza <label> envolvendo input. Mesma aparencia, mas
+  // clique abre o file picker do browser em vez de disparar onClick.
+  if (onFileSelect) {
+    return (
+      <label className={cls} title={(props.title as string) || undefined} style={{ ...(props.style || {}) }}>
+        {loading ? <span className="animate-spin">⟳</span> : children}
+        <input
+          type="file"
+          accept={accept}
+          disabled={disabled || loading}
+          style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }}
+          tabIndex={-1}
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) onFileSelect(f)
+            e.target.value = ""
+          }}
+        />
+      </label>
+    )
+  }
+
   return (
     <button
-      className={clsx(base, variants[variant], sizes[size], (disabled || loading) && "opacity-50 cursor-not-allowed", className)}
+      className={cls}
       disabled={disabled || loading}
       {...props}
     >
