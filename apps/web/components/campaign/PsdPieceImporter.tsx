@@ -234,13 +234,13 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
         } catch (e) {
           console.warn("Falha ao extrair imagem do layer", layerName, e)
         }
-      } else if (layer.placedLayer && matchedAsset && matchedAsset.type === "IMAGE") {
-        // === SMART OBJECT linkado a asset IMAGE existente ===
-        // ag-psd nao rasteriza smart objects (placedLayer), retorna canvas=undefined.
-        // MAS: se o nome do layer bate com um asset IMAGE da campanha, nao precisamos
-        // do pixel — o asset ja tem a imagem original. Linka pelo nome.
-        // Caso tipico: peca exportada pra PSD vira smart object; reimporta e linka
-        // de volta aos assets originais da matriz.
+      } else if (matchedAsset && matchedAsset.type === "IMAGE") {
+        // === LAYER SEM PIXEL EXTRAIVEL mas com nome batendo asset IMAGE ===
+        // Casos: smart objects (placedLayer), vector shapes, layers de ajuste.
+        // ag-psd nao rasteriza esses (canvas=undefined). Mas se o nome bate com
+        // um asset IMAGE existente, nao precisamos do pixel — o asset ja tem a
+        // imagem original. Caso tipico: peca exportada pra PSD vira smart
+        // object; reimporta -> linka de volta aos assets da matriz.
         const layerData: any = {
           type: "IMAGE",
           posX: left, posY: top, width, height, zIndex,
@@ -248,10 +248,9 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
         }
         dataLayers.push(layerData)
         linked++
-      } else if (layer.placedLayer) {
-        // Smart object SEM match: nao temos pixel nem asset pra linkar. Ignora
-        // com warning. Usuario precisa rasterizar no PS antes ou ter o asset.
-        console.warn("[psd-import] Smart object sem match ignorado:", layerName)
+      } else if (layer.placedLayer || layer.canvas !== null) {
+        // Layer especial sem pixel E sem match: avisa o usuario
+        console.warn("[psd-import] Layer sem pixel e sem match ignorado:", layerName)
       }
       zIndex++
     }

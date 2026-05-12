@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       }
       dataLayers.push(layerData)
     } else if (layer.canvas) {
-      // Image - simplificado: marca embedded sem extrair imagem
+      // Image raster - simplificado: marca embedded sem extrair imagem
       const layerData: any = {
         type: "IMAGE",
         posX: left, posY: top, width, height, zIndex,
@@ -129,8 +129,20 @@ export async function POST(req: NextRequest) {
         trace.push({ name: layerName, action: "IMAGE embedded (no match)" })
       }
       dataLayers.push(layerData)
+    } else if (matchedAsset && matchedAsset.type === "IMAGE") {
+      // Sem canvas (smart object, vector shape, adjustment) MAS com nome
+      // que bate com asset IMAGE existente. Linka pelo nome — nao precisa pixel,
+      // o asset ja tem a imagem.
+      const layerData: any = {
+        type: "IMAGE",
+        posX: left, posY: top, width, height, zIndex,
+        assetId: matchedAsset.id,
+      }
+      const reason = layer.placedLayer ? "SMART_OBJECT" : "VECTOR_OR_OTHER"
+      trace.push({ name: layerName, action: `${reason} linked to asset`, assetId: matchedAsset.id, assetLabel: matchedAsset.label })
+      dataLayers.push(layerData)
     } else {
-      trace.push({ name: layerName, action: "IGNORED (no text, no canvas)", layerKeys: Object.keys(layer) })
+      trace.push({ name: layerName, action: "IGNORED (no text, no canvas, no asset match)", normalizedKey: matchKey, layerKeys: Object.keys(layer) })
     }
     zIndex++
   }
