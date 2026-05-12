@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const agPsd = await import("ag-psd")
     psd = agPsd.readPsd(
       buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
-      { skipLayerImageData: false, skipCompositeImageData: false, skipThumbnail: true }
+      { skipLayerImageData: true, skipCompositeImageData: true, skipThumbnail: true }
     )
   } catch (e: any) { return NextResponse.json({ error: "falha psd", detail: e?.message }, { status: 500 }) }
 
