@@ -143,30 +143,47 @@ function spansToTextboxData(spans: TextSpan[]) {
 }
 
 /**
- * Cria 4 retangulos overlay que mascaram a area do "bleed" (fora da peca)
- * com a cor de fundo do editor. Mostra objetos somente dentro da area da
- * peca (cw x ch a partir de 0,0), enquanto a parte que extende pro bleed
- * fica oculta visualmente. Handles de selecao do Fabric (controls) sao
- * desenhados ACIMA dos overlays — usuario continua agarrando cantos pra
- * escalar mesmo com o objeto parcialmente fora.
+ * Cria 4 retangulos overlay que mascaram TUDO fora da peca dentro do
+ * canvas visivel. A peca (cw x ch) renderiza centralizada no canvas;
+ * os overlays cobrem a area cinza/escura ao redor.
+ *
+ * Em coords do mundo Fabric (zoom-independente):
+ *   peca: (0,0) -> (cw, ch)
+ *   canvas DOM em mundo: (-offsetX/z, -offsetY/z) -> ((fullW - offsetX)/z, (fullH - offsetY)/z)
+ *
+ * Os 4 overlays cobrem o complemento da peca dentro do canvas.
  *
  * Marca cada overlay com __isBleedOverlay = true e excludeFromExport=true.
  * Filtros em refreshLayers, save, undo, etc usam essa flag pra ignorar.
  *
- * Reutilizado em: init do canvas + applySnapshot (loadFromJSON limpa tudo
- * e precisa recriar os overlays apos restore).
+ * Reutilizado em: init do canvas, applySnapshot (loadFromJSON limpa o
+ * canvas), e applyZoom/resize (overlays redimensionam com zoom).
  */
-function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, BLEED: number) {
+function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: number, fullH: number, z: number) {
   const BLEED_FILL = "#1e1e1e" // mesmo background do wrapper do editor
+  // Em coords do mundo Fabric. Canvas DOM tem largura fullW em px DOM,
+  // mas com zoom z aplicado, o canvas "ve" fullW/z unidades de mundo.
+  // Como a peca esta centralizada via viewportTransform offset, o "0,0" do
+  // mundo esta em (offsetX, offsetY) no DOM. Em mundo, isso significa que
+  // o canvas mostra de (-offsetX/z) a ((fullW - offsetX)/z) em X.
+  const worldW = fullW / z
+  const worldH = fullH / z
+  const offsetX = (fullW - cw * z) / 2
+  const offsetY = (fullH - ch * z) / 2
+  const worldLeft = -offsetX / z   // ex.: -100 unidades de mundo se offset for 100 e zoom 1
+  const worldTop = -offsetY / z
+  const worldRight = worldLeft + worldW   // ex.: + worldW pra direita
+  const worldBottom = worldTop + worldH
+
   const overlays = [
-    // Top: cobre do top do canvas ao top da peca
-    new Rect({ left: -BLEED, top: -BLEED, width: cw + BLEED * 2, height: BLEED }),
-    // Bottom: do bottom da peca ao bottom do canvas
-    new Rect({ left: -BLEED, top: ch, width: cw + BLEED * 2, height: BLEED }),
-    // Left: lateral esquerda entre top/bottom da peca
-    new Rect({ left: -BLEED, top: 0, width: BLEED, height: ch }),
-    // Right: lateral direita
-    new Rect({ left: cw, top: 0, width: BLEED, height: ch }),
+    // Top: do top do canvas ate o top da peca
+    new Rect({ left: worldLeft, top: worldTop, width: worldW, height: -worldTop }),
+    // Bottom: do bottom da peca ate o bottom do canvas
+    new Rect({ left: worldLeft, top: ch, width: worldW, height: worldBottom - ch }),
+    // Left: do left do canvas ate o left da peca, entre top e bottom da peca
+    new Rect({ left: worldLeft, top: 0, width: -worldLeft, height: ch }),
+    // Right: do right da peca ate o right do canvas
+    new Rect({ left: cw, top: 0, width: worldRight - cw, height: ch }),
   ]
   for (const o of overlays) {
     o.set({
@@ -649,44 +666,43 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       zoomRef.current = z
       setZoom(z)
 
-      // CANVAS BLEED: area extra ao redor da peca pra que handles de
-      // selecao (corner controls) fiquem clicaveis mesmo quando o objeto
-      // sai da area da peca. Sem isso, scaling/repositionar de imagens
-      // posicionadas fora do canvas e impossivel — handles invisiveis e
-      // mortos.
+      // CANVAS PHOTOSHOP-STYLE: o canvas DOM ocupa toda a area visivel
+      // disponivel (entre painel esquerdo, painel direito, topbar e footer).
+      // A "peca" (artboard) renderiza centralizada como um Rect bg de
+      // dimensoes cw x ch em coords do mundo Fabric.
       //
-      // Implementacao: canvas HTML maior que a peca (+ BLEED em cada lado).
-      // Bg branco da peca renderiza centralizado dentro do canvas, mantendo
-      // a relacao visual. Objetos podem estar parcialmente/totalmente fora
-      // do bg e continuam interativos.
+      // Vantagens vs canvas justinho-na-peca:
+      //  - Handles de selecao funcionam em qualquer lugar da area visivel,
+      //    nao so dentro da peca. Mesmo modelo de Photoshop/Figma/Illustrator.
+      //  - Objetos fora da peca ficam interativos (clicar, arrastar, escalar).
+      //  - Overlays "passe-partout" mascaram o que esta fora da peca pra UI
+      //    nao ficar poluida.
       //
-      // BLEED em px de canvas (nao de peca) — definido como % do menor lado
-      // do canvas final pra escalar bem entre formatos diferentes (story
-      // vertical, leaderboard horizontal, etc).
-      const bleedPct = 0.1 // 10% do tamanho da peca em cada lado (folga suficiente pra agarrar handles sem dominar visualmente)
-      const BLEED = Math.round(Math.min(cw, ch) * bleedPct)
-      const fullW = cw + BLEED * 2
-      const fullH = ch + BLEED * 2
+      // viewportTransform[4,5] centraliza a peca no canvas. Os bleed
+      // overlays cobrem TUDO fora da regiao (0,0)->(cw,ch) no mundo Fabric.
+      const fullW = Math.max(1, availW)
+      const fullH = Math.max(1, availH)
 
       const fc = new Canvas(canvasRef.current, {
-        width: Math.round(fullW * z),
-        height: Math.round(fullH * z),
+        width: Math.round(fullW),
+        height: Math.round(fullH),
         selection: true,
         preserveObjectStacking: true,
       })
       fc.setZoom(z)
-      // viewportTransform offset: desloca o "0,0" do mundo Fabric pra dentro
-      // do canvas com BLEED de margem. Assim a peca (que esta em 0,0 no
-      // espaco Fabric) renderiza dentro do canvas com o BLEED como margem
-      // ao redor, e objetos com left/top negativo ou maior que cw/ch ficam
-      // visiveis e clicaveis.
+      // Offset pra centralizar a peca no canvas grande. Em coords do canvas DOM:
+      //   peca renderiza em [(fullW - cw*z)/2, (fullH - ch*z)/2] -> [+ cw*z, + ch*z]
+      const offsetX = (fullW - cw * z) / 2
+      const offsetY = (fullH - ch * z) / 2
       const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
-      vt[4] = BLEED * z
-      vt[5] = BLEED * z
+      vt[0] = z; vt[3] = z
+      vt[4] = offsetX
+      vt[5] = offsetY
       fc.setViewportTransform(vt)
       fabricRef.current = fc
-      // Guarda BLEED em ref pra outros lugares (zoom, fit-to-screen, etc)
-      ;(fabricRef as any).__bleed = BLEED
+      // Guarda dimensoes do canvas pra applyZoom/resize calcularem offset novo.
+      ;(fabricRef as any).__canvasFullW = fullW
+      ;(fabricRef as any).__canvasFullH = fullH
 
       const bg = new Rect({
         left: 0, top: 0, width: cw, height: ch,
@@ -697,9 +713,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       bgRef.current = bg
       fc.add(bg)
 
-      // BLEED MASK: cria os 4 overlays que mascaram a area fora da peca.
-      // Funcao auxiliar pra reaplicar apos undo/redo (loadFromJSON limpa o canvas).
-      createBleedOverlays(fc, Rect, cw, ch, BLEED)
+      // BLEED MASK dinamico: 4 overlays cobrindo tudo fora da peca dentro
+      // do canvas. Tamanho deles depende do zoom e do espaco disponivel.
+      createBleedOverlays(fc, Rect, cw, ch, fullW, fullH, z)
 
       fc.on("selection:created", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
       fc.on("selection:updated", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
@@ -915,6 +931,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       }
       if (wrapper) wrapper.addEventListener("wheel", onWheel, { passive: false })
       cleanupFns.push(() => { if (wrapper) wrapper.removeEventListener("wheel", onWheel) })
+
+      // Resize da janela: recalcula tamanho do canvas DOM e recentraliza a peca.
+      // Sem isso, se o user redimensiona a janela, a peca fica desencaixada do
+      // centro e a area visivel nao cresce/diminui. Debounce de 150ms pra evitar
+      // disparos durante drag de resize.
+      let resizeTimer: any = null
+      const onResize = () => {
+        if (resizeTimer) clearTimeout(resizeTimer)
+        resizeTimer = setTimeout(() => {
+          if (!alive || !fabricRef.current) return
+          const newAvailW = window.innerWidth - LW - PW - 80
+          const newAvailH = window.innerHeight - TH - BH - 80
+          const fcRef = fabricRef.current
+          ;(fabricRef as any).__canvasFullW = Math.max(1, newAvailW)
+          ;(fabricRef as any).__canvasFullH = Math.max(1, newAvailH)
+          fcRef.setDimensions({ width: Math.round(newAvailW), height: Math.round(newAvailH) })
+          // applyZoom recalcula offset + overlays
+          applyZoom(fcRef, zoomRef.current)
+        }, 150)
+      }
+      window.addEventListener("resize", onResize)
+      cleanupFns.push(() => {
+        window.removeEventListener("resize", onResize)
+        if (resizeTimer) clearTimeout(resizeTimer)
+      })
 
       // Delete key remove selected
       const onKey = (e: KeyboardEvent) => {
@@ -1303,10 +1344,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       fc.sendObjectToBack(newBg)
       // Recria os bleed overlays — tambem ficam fora do snapshot (excludeFromExport)
       // e precisam ser re-adicionados no topo do z-stack apos restore.
-      const bleed = (fabricRef as any).__bleed ?? 0
-      if (bleed > 0) {
-        createBleedOverlays(fc, Rect, canvasWRef.current, canvasHRef.current, bleed)
-      }
+      const fc2 = fc
+      const fullW = (fabricRef as any).__canvasFullW ?? fc2.getWidth()
+      const fullH = (fabricRef as any).__canvasFullH ?? fc2.getHeight()
+      createBleedOverlays(fc, Rect, canvasWRef.current, canvasHRef.current, fullW, fullH, zoomRef.current || 1)
       fc.renderAll()
       refreshLayers(fc)
     } catch (e) { console.warn("applySnapshot fail:", e) }
@@ -1479,20 +1520,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     setZoom(z)
     try {
       fc.setZoom(z)
-      // BLEED: respeita a margem extra ao redor da peca pra handles
-      // continuarem clicaveis quando objetos saem do bg. Recalcula em px
-      // (era guardado em px de peca; multiplicar pelo zoom novo).
-      const bleed = (fabricRef as any).__bleed ?? 0
-      const fullW = canvasWRef.current + bleed * 2
-      const fullH = canvasHRef.current + bleed * 2
-      fc.setDimensions({ width: Math.round(fullW * z), height: Math.round(fullH * z) })
-      // Re-aplica viewport transform pra manter o offset do bleed (sem isso,
-      // setDimensions reseta pra 0,0 e a peca desencaixa do centro).
+      // Canvas DOM mantem o tamanho fixo (toda area visivel). Mudanca de zoom
+      // recentraliza a peca via viewportTransform e redimensiona overlays.
+      const fullW = (fabricRef as any).__canvasFullW ?? fc.getWidth()
+      const fullH = (fabricRef as any).__canvasFullH ?? fc.getHeight()
+      const cw = canvasWRef.current
+      const ch = canvasHRef.current
+      const offsetX = (fullW - cw * z) / 2
+      const offsetY = (fullH - ch * z) / 2
       const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
       vt[0] = z; vt[3] = z
-      vt[4] = bleed * z
-      vt[5] = bleed * z
+      vt[4] = offsetX
+      vt[5] = offsetY
       fc.setViewportTransform(vt)
+      // Re-dimensiona os overlays pra cobrirem a nova area fora da peca.
+      // Mais simples: remove e recria com novos parametros.
+      const existingOverlays = (fc as any).__bleedOverlays as any[] | undefined
+      if (existingOverlays) {
+        for (const o of existingOverlays) fc.remove(o)
+      }
+      ;(async () => {
+        const { Rect } = await import("fabric")
+        createBleedOverlays(fc, Rect, cw, ch, fullW, fullH, z)
+        fc.renderAll()
+      })()
       fc.renderAll()
     } catch (e) { console.warn("applyZoom fail:", e) }
   }
@@ -2010,18 +2061,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
         const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
-        // CROP da area da peca (sem bleed). toDataURL aceita left/top/width/height
-        // em coords do CANVAS DOM (em pixels do canvas HTML, ja considerando o
-        // viewportTransform). Com o bleed ativo, o canvas DOM e maior que a peca
-        // e a peca renderiza com offset BLEED*z desde o canto. Sem somar o offset,
-        // o crop captura a area do bleed (cinza/preto) no topo+esquerda.
-        const bleed = (fabricRef as any).__bleed ?? 0
+        // CROP da area da peca. toDataURL aceita left/top/width/height em
+        // coords do CANVAS DOM (px do canvas HTML). A peca renderiza
+        // centralizada via viewportTransform[4,5] (offset). Le o offset real
+        // pra cortar exatamente a regiao da peca.
         const z = zoomRef.current || 1
+        const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+        const offsetX = vt[4] ?? 0
+        const offsetY = vt[5] ?? 0
         const dataUrl = fc.toDataURL({
           format: "jpeg", quality: 0.85,
           multiplier: thumbScale / z,
-          left: bleed * z,
-          top: bleed * z,
+          left: offsetX,
+          top: offsetY,
           width: canvasWRef.current * z,
           height: canvasHRef.current * z,
         })
@@ -2213,14 +2265,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // Gerar e enviar thumbnail do KV (max 480px maior lado, JPEG 0.85)
         try {
           const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
-          // CROP da peca (ignora bleed extra ao redor)
-          const bleed = (fabricRef as any).__bleed ?? 0
+          // CROP da area da peca. Le offset real do viewportTransform pra
+          // cortar exatamente onde a peca renderiza no canvas DOM.
           const z = zoomRef.current || 1
+          const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+          const offsetX = vt[4] ?? 0
+          const offsetY = vt[5] ?? 0
           const dataUrl = fc.toDataURL({
             format: "jpeg", quality: 0.85,
             multiplier: thumbScale / z,
-            left: bleed * z,
-            top: bleed * z,
+            left: offsetX,
+            top: offsetY,
             width: canvasWRef.current * z,
             height: canvasHRef.current * z,
           })
@@ -2658,7 +2713,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       <div style={{
         position: "absolute",
         left: LW, top: TH + BH, right: PW, bottom: 0,
-        overflow: "auto",
+        overflow: "hidden",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         <div style={{ lineHeight: 0, flexShrink: 0 }}>
