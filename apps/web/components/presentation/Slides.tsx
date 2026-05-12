@@ -236,7 +236,7 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
         <div style={{
           position: "absolute", inset: 0,
           display: "grid", gridTemplateColumns: "2fr 1fr",
-          padding: "10% 3% 6% 3%",
+          padding: "10% 3% 8% 3%",
           gap: "2.5%",
           alignItems: "center",
         }}>
@@ -331,10 +331,12 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
         </div>
       ) : (
         // Layout sem legenda: peca centralizada.
+        // padding top maior pra nao colidir com header (nome+dim em y 4%-7%).
+        // padding bottom maior pra nao colidir com Footer (bottom 2.2% + fonte 1.1cqw).
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "5% 5%",
+          padding: "10% 5% 8% 5%",
         }}>
           {imageUrl ? (
             <img
