@@ -422,7 +422,7 @@ export default function CampaignOverviewPage() {
                     title="Editar peça"
                     style={{ height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer", borderRadius: "10px 10px 0 0" }}>
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      <img src={`${p.imageUrl}?v=${loadTs}`} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     ) : (
                       <div style={{ textAlign: "center", color: "#aaa", fontSize: 11 }}>
                         <div style={{ fontWeight: 600 }}>{p.format}</div>
@@ -500,7 +500,7 @@ export default function CampaignOverviewPage() {
                       </td>
                       <td style={{ padding: "8px 8px", cursor: "pointer" }}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
-                        <RowThumb src={p.imageUrl} alt={p.name} fallbackText={p.format} />
+                        <RowThumb src={p.imageUrl ? `${p.imageUrl}?v=${loadTs}` : null} alt={p.name} fallbackText={p.format} />
                       </td>
                       <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
