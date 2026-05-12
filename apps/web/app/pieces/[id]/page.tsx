@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
@@ -33,6 +33,12 @@ export default function PiecePage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  // Refs pra auto-save com debounce. Sem isso, cada keystroke dispararia
+  // uma chamada PATCH separada — sobrecarrega backend + concorrencia bagunca
+  // a ordem das atualizacoes no servidor.
+  const saveTimerRef = useRef<any>(null)
+  const isMountedRef = useRef(false)
+  const savingInFlightRef = useRef(false)
 
   useEffect(() => {
     fetch(`/api/pieces/${id}`).then(r => r.json()).then(d => {
@@ -42,6 +48,9 @@ export default function PiecePage() {
       setSegment(d.segment ?? "")
       setCopy(d.copy ?? "")
       setStatus(d.status ?? "STANDBY")
+      // Marca como montado apos load inicial. O auto-save abaixo so dispara
+      // depois disso pra nao salvar os valores vazios durante o setState do load.
+      isMountedRef.current = true
     })
   }, [id])
 
@@ -53,21 +62,55 @@ export default function PiecePage() {
       .catch(() => {})
   }, [])
 
+  // Auto-save: dispara 600ms apos qualquer mudanca nos campos editaveis.
+  // Sem isso, o usuario precisa clicar 'Salvar' explicitamente — o que vai
+  // contra o padrao do app (editor, copy inline, etc).
+  useEffect(() => {
+    if (!isMountedRef.current) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => { save() }, 600)
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, segment, copy, status])
+
   async function save() {
+    if (savingInFlightRef.current) return // evita PATCH concorrente
+    savingInFlightRef.current = true
     setSaving(true)
-    await fetch(`/api/pieces/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        status,
-        segment: segment.trim() || null,
-        copy: copy.trim() || null,
-      }),
-    })
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    try {
+      await fetch(`/api/pieces/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          status,
+          segment: segment.trim() || null,
+          copy: copy.trim() || null,
+        }),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) { console.warn("[piece save] fail:", e) }
+    finally {
+      setSaving(false)
+      savingInFlightRef.current = false
+    }
+  }
+
+  // Volta pra campanha da peca, esperando save pendente terminar primeiro.
+  async function safeBack() {
+    // Cancela debounce e forca save imediato se ha algo pra salvar
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+      await save()
+    }
+    // Aguarda qualquer save em flight terminar (max 3s)
+    const start = Date.now()
+    while (savingInFlightRef.current && Date.now() - start < 3000) {
+      await new Promise(r => setTimeout(r, 50))
+    }
+    router.push(piece?.campaignId ? `/campaigns/${piece.campaignId}` : "/pieces")
   }
 
   async function deletePiece(skipConfirm = false) {
@@ -122,10 +165,12 @@ export default function PiecePage() {
             </button>
             <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Editar Peça</h1>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {saving && <span style={{ fontSize: 11, color: "#888" }}>Salvando…</span>}
+            {!saving && saved && <span style={{ fontSize: 11, color: "#15803d" }}>✓ Salvo</span>}
             <Button variant="danger" onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
             <Button variant="info" onClick={duplicatePiece} loading={duplicating}>Duplicar</Button>
-            <Button variant="primary" onClick={save} loading={saving}>{saving ? "Salvando..." : saved ? "Salvo" : "Salvar"}</Button>
+            <Button variant="primary" onClick={safeBack} title="Voltar para a campanha (salva alteracoes pendentes antes)">← Voltar</Button>
           </div>
         </div>
 
