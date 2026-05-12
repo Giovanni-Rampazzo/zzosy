@@ -142,6 +142,49 @@ function spansToTextboxData(spans: TextSpan[]) {
   return { text: fullText, styles, defaultStyle }
 }
 
+/**
+ * Cria 4 retangulos overlay que mascaram a area do "bleed" (fora da peca)
+ * com a cor de fundo do editor. Mostra objetos somente dentro da area da
+ * peca (cw x ch a partir de 0,0), enquanto a parte que extende pro bleed
+ * fica oculta visualmente. Handles de selecao do Fabric (controls) sao
+ * desenhados ACIMA dos overlays — usuario continua agarrando cantos pra
+ * escalar mesmo com o objeto parcialmente fora.
+ *
+ * Marca cada overlay com __isBleedOverlay = true e excludeFromExport=true.
+ * Filtros em refreshLayers, save, undo, etc usam essa flag pra ignorar.
+ *
+ * Reutilizado em: init do canvas + applySnapshot (loadFromJSON limpa tudo
+ * e precisa recriar os overlays apos restore).
+ */
+function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, BLEED: number) {
+  const BLEED_FILL = "#1e1e1e" // mesmo background do wrapper do editor
+  const overlays = [
+    // Top: cobre do top do canvas ao top da peca
+    new Rect({ left: -BLEED, top: -BLEED, width: cw + BLEED * 2, height: BLEED }),
+    // Bottom: do bottom da peca ao bottom do canvas
+    new Rect({ left: -BLEED, top: ch, width: cw + BLEED * 2, height: BLEED }),
+    // Left: lateral esquerda entre top/bottom da peca
+    new Rect({ left: -BLEED, top: 0, width: BLEED, height: ch }),
+    // Right: lateral direita
+    new Rect({ left: cw, top: 0, width: BLEED, height: ch }),
+  ]
+  for (const o of overlays) {
+    o.set({
+      fill: BLEED_FILL,
+      selectable: false, evented: false, excludeFromExport: true,
+      hoverCursor: "default",
+    })
+    ;(o as any).__isBleedOverlay = true
+    fc.add(o)
+  }
+  // Garante z-stack: overlays no topo (acima de objetos de conteudo).
+  for (const o of overlays) {
+    try { (fc as any).bringObjectToFront ? (fc as any).bringObjectToFront(o) : fc.bringToFront(o) } catch {}
+  }
+  ;(fc as any).__bleedOverlays = overlays
+  return overlays
+}
+
 
 export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: string; pieceId?: string; from?: string }) {
   const router = useRouter()
@@ -654,6 +697,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       bgRef.current = bg
       fc.add(bg)
 
+      // BLEED MASK: cria os 4 overlays que mascaram a area fora da peca.
+      // Funcao auxiliar pra reaplicar apos undo/redo (loadFromJSON limpa o canvas).
+      createBleedOverlays(fc, Rect, cw, ch, BLEED)
+
       fc.on("selection:created", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
       fc.on("selection:updated", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
       // Salva seleção de texto via mouse:up e keyup no canvas (text:selection:changed
@@ -816,6 +863,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       fc.on("object:added", () => { if (!isApplyingHistory.current) pushHistory() })
       fc.on("object:removed", () => { if (!isApplyingHistory.current) pushHistory() })
       // text:changed nao chama pushHistory - text:editing:exited cobre o flush final
+
+      // Re-eleva os overlays do bleed ao topo do z-stack sempre que objetos
+      // novos sao adicionados (addAssetToCanvas, paste, etc). Sem isso, novos
+      // objetos ficariam ACIMA dos overlays e voltariam a vazar pra area do
+      // bleed visualmente.
+      fc.on("object:added", (e: any) => {
+        if (!alive) return
+        const added = e?.target
+        // Nao re-eleva se o objeto adicionado e um dos proprios overlays
+        if (added && (added as any).__isBleedOverlay) return
+        const overlays = (fc as any).__bleedOverlays as any[] | undefined
+        if (!overlays) return
+        for (const o of overlays) {
+          try { (fc as any).bringObjectToFront ? (fc as any).bringObjectToFront(o) : (fc as any).bringToFront(o) } catch {}
+        }
+      })
 
       // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior)
       fc.on("text:editing:entered", (e: any) => {
@@ -1065,7 +1128,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // SAUDE: remove objetos orfaos (sem __assetId) que possam ter vindo do banco
       // ou de bugs antigos. Tanto em PECA quanto em MATRIZ todo objeto deve ter __assetId.
       // Limpar aqui evita que entrem no undoStack e causem desync no undo/redo.
-      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId)
       if (orphans.length > 0) {
         editorLog("[INIT-CLEAN]", pieceId ? "peca" : "matriz", "tinha", orphans.length, "objetos orfaos no canvas. Removendo.")
         for (const orphan of orphans) fc.remove(orphan)
@@ -1132,7 +1195,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // Eles nao se persistem (save filtra), mas confundem o undo (entram em
       // snapshots e voltam ao canvas em estado quebrado). Limpa antes de
       // capturar snapshot pra manter undoStack consistente.
-      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId)
       if (orphans.length > 0) {
         editorLog("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
         for (const orphan of orphans) fc.remove(orphan)
@@ -1191,8 +1254,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // CRITICO 3 (bug fix): filtramos BG dos restored, MAS snapObjects pode incluir o BG.
       // Isso desalinha os indices (restored[0] eh o 1o nao-BG, mas snapObjects[0] pode ser BG).
       // Solucao: filtra BG dos snapObjects tambem antes de iterar.
-      const restored = fc.getObjects().filter((o: any) => !o.__isBg)
-      const snapObjectsNoBg = snapObjects.filter((s: any) => !s?.__isBg)
+      const restored = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+      const snapObjectsNoBg = snapObjects.filter((s: any) => !s?.__isBg && !s?.__isBleedOverlay)
       for (let i = 0; i < restored.length; i++) {
         const obj: any = restored[i]
         const src = snapObjectsNoBg[i]
@@ -1221,7 +1284,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // SAUDE pos-restore: qualquer objeto sem __assetId restaurado e fantasma
       // (snap continha objeto com __assetId undefined, ou houve race no restore).
       // Remove pra manter canvas saudavel — esses objetos nunca persistem mesmo.
-      const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__assetId)
+      const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId)
       if (orphansAfterRestore.length > 0) {
         editorLog("[UNDO-CLEAN] applySnapshot: removendo", orphansAfterRestore.length, "objetos orfaos pos-restore")
         for (const orphan of orphansAfterRestore) fc.remove(orphan)
@@ -1238,6 +1301,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       bgRef.current = newBg
       fc.add(newBg)
       fc.sendObjectToBack(newBg)
+      // Recria os bleed overlays — tambem ficam fora do snapshot (excludeFromExport)
+      // e precisam ser re-adicionados no topo do z-stack apos restore.
+      const bleed = (fabricRef as any).__bleed ?? 0
+      if (bleed > 0) {
+        createBleedOverlays(fc, Rect, canvasWRef.current, canvasHRef.current, bleed)
+      }
       fc.renderAll()
       refreshLayers(fc)
     } catch (e) { console.warn("applySnapshot fail:", e) }
@@ -1600,7 +1669,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   function refreshLayers(fc: any) {
     setLayers(
       fc.getObjects()
-        .filter((o: any) => !o.__isBg)
+        .filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
         .map((o: any, i: number) => ({ id: i, label: o.__assetLabel ?? o.type, type: o.type, obj: o }))
         .reverse()
     )
@@ -1728,7 +1797,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const thumbEl = document.createElement("canvas")
       thumbEl.width = tw; thumbEl.height = th
       const thumbFc = new _ThumbSC(thumbEl, { width: tw, height: th, enableRetinaScaling: false, backgroundColor: bgColorRef.current })
-      await Promise.all(fc.getObjects().map(async (obj: any) => {
+      await Promise.all(fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay).map(async (obj: any) => {
         const cloned = await obj.clone()
         cloned.set({ left: (obj.left ?? 0) * thumbScale, top: (obj.top ?? 0) * thumbScale, scaleX: (obj.scaleX ?? 1) * thumbScale, scaleY: (obj.scaleY ?? 1) * thumbScale })
         thumbFc.add(cloned)
