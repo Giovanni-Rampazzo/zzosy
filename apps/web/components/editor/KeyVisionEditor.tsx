@@ -606,14 +606,44 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       zoomRef.current = z
       setZoom(z)
 
+      // CANVAS BLEED: area extra ao redor da peca pra que handles de
+      // selecao (corner controls) fiquem clicaveis mesmo quando o objeto
+      // sai da area da peca. Sem isso, scaling/repositionar de imagens
+      // posicionadas fora do canvas e impossivel — handles invisiveis e
+      // mortos.
+      //
+      // Implementacao: canvas HTML maior que a peca (+ BLEED em cada lado).
+      // Bg branco da peca renderiza centralizado dentro do canvas, mantendo
+      // a relacao visual. Objetos podem estar parcialmente/totalmente fora
+      // do bg e continuam interativos.
+      //
+      // BLEED em px de canvas (nao de peca) — definido como % do menor lado
+      // do canvas final pra escalar bem entre formatos diferentes (story
+      // vertical, leaderboard horizontal, etc).
+      const bleedPct = 0.2 // 20% do tamanho da peca em cada lado
+      const BLEED = Math.round(Math.min(cw, ch) * bleedPct)
+      const fullW = cw + BLEED * 2
+      const fullH = ch + BLEED * 2
+
       const fc = new Canvas(canvasRef.current, {
-        width: Math.round(cw * z),
-        height: Math.round(ch * z),
+        width: Math.round(fullW * z),
+        height: Math.round(fullH * z),
         selection: true,
         preserveObjectStacking: true,
       })
       fc.setZoom(z)
+      // viewportTransform offset: desloca o "0,0" do mundo Fabric pra dentro
+      // do canvas com BLEED de margem. Assim a peca (que esta em 0,0 no
+      // espaco Fabric) renderiza dentro do canvas com o BLEED como margem
+      // ao redor, e objetos com left/top negativo ou maior que cw/ch ficam
+      // visiveis e clicaveis.
+      const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+      vt[4] = BLEED * z
+      vt[5] = BLEED * z
+      fc.setViewportTransform(vt)
       fabricRef.current = fc
+      // Guarda BLEED em ref pra outros lugares (zoom, fit-to-screen, etc)
+      ;(fabricRef as any).__bleed = BLEED
 
       const bg = new Rect({
         left: 0, top: 0, width: cw, height: ch,
@@ -1146,8 +1176,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         if (r && typeof r.then === "function") r.then(() => resolve())
       })
 
-      // Reforca a cor (algumas versoes do Fabric ignoram `background` no JSON)
-      ;(fc as any).backgroundColor = bgColorRef.current
+      // backgroundColor TRANSPARENT pra que a area de bleed (extra ao redor
+      // da peca, pra handles ficarem clicaveis) mostre o fundo escuro do
+      // editor por baixo, e nao a cor da peca. A cor real da peca e pintada
+      // pelo Rect bgRef (do tamanho exato cw x ch) que adicionamos depois.
+      ;(fc as any).backgroundColor = "transparent"
       ;(fc as any).backgroundImage = null
       ;(fc as any).overlayImage = null
       fc.renderAll() // render imediato com bg setado, antes de qualquer outro processamento
@@ -1377,7 +1410,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     setZoom(z)
     try {
       fc.setZoom(z)
-      fc.setDimensions({ width: Math.round(canvasWRef.current * z), height: Math.round(canvasHRef.current * z) })
+      // BLEED: respeita a margem extra ao redor da peca pra handles
+      // continuarem clicaveis quando objetos saem do bg. Recalcula em px
+      // (era guardado em px de peca; multiplicar pelo zoom novo).
+      const bleed = (fabricRef as any).__bleed ?? 0
+      const fullW = canvasWRef.current + bleed * 2
+      const fullH = canvasHRef.current + bleed * 2
+      fc.setDimensions({ width: Math.round(fullW * z), height: Math.round(fullH * z) })
+      // Re-aplica viewport transform pra manter o offset do bleed (sem isso,
+      // setDimensions reseta pra 0,0 e a peca desencaixa do centro).
+      const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+      vt[0] = z; vt[3] = z
+      vt[4] = bleed * z
+      vt[5] = bleed * z
+      fc.setViewportTransform(vt)
       fc.renderAll()
     } catch (e) { console.warn("applyZoom fail:", e) }
   }
@@ -1862,7 +1908,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
         const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
-        const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.85, multiplier: thumbScale / (zoomRef.current || 1) })
+        // CROP da area da peca (sem bleed). toDataURL aceita left/top/width/height
+        // em coords do mundo Fabric (nao do canvas DOM). Peca esta em 0,0
+        // -> cw,ch — independente do bleed/viewportTransform do canvas DOM.
+        const dataUrl = fc.toDataURL({
+          format: "jpeg", quality: 0.85,
+          multiplier: thumbScale / (zoomRef.current || 1),
+          left: 0, top: 0,
+          width: canvasWRef.current * (zoomRef.current || 1),
+          height: canvasHRef.current * (zoomRef.current || 1),
+        })
         const blob = await (await fetch(dataUrl)).blob()
         const fd = new FormData()
         fd.append("thumbnail", blob, "kv-thumb.jpg")
@@ -2051,7 +2106,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // Gerar e enviar thumbnail do KV (max 480px maior lado, JPEG 0.85)
         try {
           const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
-          const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.85, multiplier: thumbScale / (zoomRef.current || 1) })
+          // CROP da peca (ignora bleed extra ao redor)
+          const dataUrl = fc.toDataURL({
+            format: "jpeg", quality: 0.85,
+            multiplier: thumbScale / (zoomRef.current || 1),
+            left: 0, top: 0,
+            width: canvasWRef.current * (zoomRef.current || 1),
+            height: canvasHRef.current * (zoomRef.current || 1),
+          })
           const blob = await (await fetch(dataUrl)).blob()
           const fd = new FormData()
           fd.append("thumbnail", blob, "kv-thumb.jpg")
