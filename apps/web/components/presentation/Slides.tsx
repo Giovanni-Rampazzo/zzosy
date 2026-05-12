@@ -197,28 +197,28 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
       }) : undefined}
       title={clickable ? "Abrir no editor" : undefined}
     >
-      {/* Header: nome + dimensao na MESMA linha em cima, alinhada a esquerda. */}
+      {/* Header: box amarelo com nome + dimensao em texto puro ao lado.
+          Estilo referencia visual: pequeno, discreto, top-left, dimensao
+          sem fundo. */}
       <div style={{
         position: "absolute", top: "4%", left: "3%",
-        display: "flex", alignItems: "center", gap: "0.8%",
+        display: "flex", alignItems: "center", gap: "1.2cqw",
         zIndex: 2,
       }}>
         {/* Box amarelo nome */}
         <div style={{
           background: YELLOW, borderRadius: RADIUS,
-          padding: "0.54% 1.08%",
+          padding: "0.54% 1.4%",
           fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "0.96cqw", fontWeight: 700, color: TEXT_DARK,
-          maxWidth: "60cqw", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          fontSize: "1cqw", fontWeight: 700, color: TEXT_DARK,
+          maxWidth: "40cqw", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
           {name}
         </div>
-        {/* Box amarelo dimensao */}
+        {/* Dimensao em texto puro (sem fundo amarelo) */}
         <div style={{
-          background: YELLOW, borderRadius: RADIUS,
-          padding: "0.36% 0.84%",
           fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "0.72cqw", fontWeight: 500, color: TEXT_DARK,
+          fontSize: "0.9cqw", fontWeight: 500, color: TEXT_DARK,
         }}>
           {dims}
         </div>
@@ -232,12 +232,12 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
 
       {/* CONTEUDO: imagem (e legenda, se houver ou se usuario adicionar) */}
       {showCard ? (
-        // Layout split: peca a esquerda 55%, copy a direita 45%
+        // Layout split: peca a esquerda ~2/3, legenda a direita ~1/3
         <div style={{
           position: "absolute", inset: 0,
-          display: "grid", gridTemplateColumns: "55% 45%",
-          padding: "6% 3% 6% 3%",
-          gap: "2%",
+          display: "grid", gridTemplateColumns: "2fr 1fr",
+          padding: "10% 3% 6% 3%",
+          gap: "2.5%",
           alignItems: "center",
         }}>
           {/* Peca */}
@@ -252,7 +252,6 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
                 style={{
                   maxWidth: "100%", maxHeight: "100%",
                   objectFit: "contain",
-                  boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
                 }}
               />
             ) : (
@@ -261,66 +260,73 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
               </div>
             )}
           </div>
-          {/* Card legenda */}
+          {/* Card legenda — header amarelo cheio em cima, corpo branco embaixo */}
           <div style={{
             background: "white",
             borderRadius: RADIUS,
-            padding: "3.5% 3.5%",
             boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
             border: "1px solid rgba(0,0,0,0.05)",
-            maxHeight: "80%",
+            maxHeight: "100%",
             overflow: "hidden",
-            display: "flex", flexDirection: "column", gap: "1.2cqw",
+            display: "flex", flexDirection: "column",
             position: "relative",
           }}
           onClick={(e) => { if (editable) e.stopPropagation() }}
           >
+            {/* Header amarelo cheio: 'Legenda:' */}
             <div style={{
-              fontSize: "1.05cqw", fontWeight: 700,
-              color: TEXT_DARK, textTransform: "uppercase",
-              letterSpacing: "0.05em",
+              background: YELLOW,
+              padding: "1.1cqw 1.6cqw",
               fontFamily: "system-ui, -apple-system, sans-serif",
+              fontSize: "1.05cqw", fontWeight: 700,
+              color: TEXT_DARK,
+              fontStyle: "italic",
               display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
-              <span>Legenda</span>
-              {saving && <span style={{ fontSize: "0.85cqw", color: TEXT_GRAY, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>salvando…</span>}
+              <span>Legenda:</span>
+              {saving && <span style={{ fontSize: "0.85cqw", fontWeight: 500, fontStyle: "normal", opacity: 0.7 }}>salvando…</span>}
             </div>
-            {editable ? (
-              <textarea
-                value={copyLocal}
-                onChange={(e) => handleCopyChange(e.target.value)}
-                placeholder="Digite a legenda da peca…"
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-                style={{
-                  flex: 1,
-                  fontSize: "1.25cqw",
+            {/* Corpo */}
+            <div style={{
+              flex: 1,
+              padding: "1.6cqw 1.6cqw",
+              overflow: "auto",
+            }}>
+              {editable ? (
+                <textarea
+                  value={copyLocal}
+                  onChange={(e) => handleCopyChange(e.target.value)}
+                  placeholder="Digite a legenda da peca…"
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  style={{
+                    width: "100%",
+                    minHeight: "100%",
+                    fontSize: "1.05cqw",
+                    lineHeight: 1.5,
+                    color: TEXT_DARK,
+                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    resize: "none",
+                    padding: 0,
+                  }}
+                />
+              ) : (
+                <div style={{
+                  fontSize: "1.05cqw",
                   lineHeight: 1.5,
                   color: TEXT_DARK,
                   fontFamily: "system-ui, -apple-system, sans-serif",
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  resize: "none",
-                  padding: 0,
-                  width: "100%",
-                  minHeight: "1em",
-                }}
-              />
-            ) : (
-              <div style={{
-                fontSize: "1.25cqw",
-                lineHeight: 1.5,
-                color: TEXT_DARK,
-                fontFamily: "system-ui, -apple-system, sans-serif",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                overflow: "hidden",
-              }}>
-                {copyLocal}
-              </div>
-            )}
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}>
+                  {copyLocal}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : (

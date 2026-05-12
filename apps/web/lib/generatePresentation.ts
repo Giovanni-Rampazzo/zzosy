@@ -181,14 +181,10 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   const name = piece.name ?? "Peça sem nome"
   const dims = piece.width && piece.height ? `${piece.width} x ${piece.height} px` : "—"
 
-  // Header: nome + dimensao na MESMA linha, em cima. Posicao fixa em
-  // top-left, com gap pequeno entre eles.
+  // Header: box amarelo com nome + dimensao em texto puro ao lado (sem fundo).
   const nameW = Math.min(3.0, name.length * 0.096 + 0.3)
   const nameH = 0.3
-  const dimsW = Math.min(1.8, dims.length * 0.078 + 0.24)
-  const dimsH = 0.24
-  // dim alinhada verticalmente com nome (baseline um pouco abaixo do top do nome)
-  const gap = 0.12
+  const gap = 0.18
   // Box amarelo nome (top-left)
   slide.addShape("roundRect", {
     x: 0.3, y: 0.3, w: nameW, h: nameH,
@@ -200,17 +196,11 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
     fontFace: "Calibri", fontSize: 8, bold: true,
     color: TEXT_DARK, valign: "middle", align: "left",
   })
-  // Box amarelo dimensao — ao lado do nome, mesma linha
+  // Dimensao em texto puro (sem fundo amarelo), ao lado do nome
   const dimsX = 0.3 + nameW + gap
-  const dimsY = 0.3 + (nameH - dimsH) / 2 // centraliza verticalmente com o nome
-  slide.addShape("roundRect", {
-    x: dimsX, y: dimsY, w: dimsW, h: dimsH,
-    fill: { color: YELLOW }, line: { color: YELLOW },
-    rectRadius: 0.06,
-  })
   slide.addText(dims, {
-    x: dimsX + 0.06, y: dimsY, w: dimsW - 0.06, h: dimsH,
-    fontFace: "Calibri", fontSize: 7, bold: false,
+    x: dimsX, y: 0.3, w: 2.0, h: nameH,
+    fontFace: "Calibri", fontSize: 8, bold: false,
     color: TEXT_DARK, valign: "middle", align: "left",
   })
 
@@ -241,48 +231,64 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   const AREA_H = 6.2
 
   if (hasCopy) {
-    // Layout split: peca a esquerda, copy a direita. Reduz area da peca.
-    // Area peca: x 0.3 -> 7.4 (w 7.1), y 1.0 -> 7.2 (h 6.2)
-    // Area copy: x 7.6 -> 13.03 (w 5.43), y 1.0 -> 7.2 (h 6.2)
-    const SPLIT_AREA_W = 7.1
+    // Layout 2/3 + 1/3: peca a esquerda (8.49"), gap (0.25"), legenda direita (4.0")
+    // Total: 0.3 + 8.49 + 0.25 + 4.0 + 0.3 = 13.34 (~ slide w 13.333)
+    const PIECE_AREA_W = 8.49
+    const PIECE_AREA_X = 0.3
     const SPLIT_AREA_H = 6.2
+    const CARD_X = 0.3 + PIECE_AREA_W + 0.25
+    const CARD_W = 4.0
+
     if (imgDataUri && piece.width > 0 && piece.height > 0) {
       // Tamanho ideal a 100% (72 DPI)
       const idealW = piece.width / PX_PER_INCH
       const idealH = piece.height / PX_PER_INCH
-      // Se cabe na area split, usa tamanho real. Senao reduz proporcional.
-      const ratio = Math.min(1, SPLIT_AREA_W / idealW, SPLIT_AREA_H / idealH)
+      // Se cabe na area, usa tamanho real. Senao reduz proporcional.
+      const ratio = Math.min(1, PIECE_AREA_W / idealW, SPLIT_AREA_H / idealH)
       const w = idealW * ratio
       const h = idealH * ratio
-      // Centralizada na area split
-      const x = 0.3 + (SPLIT_AREA_W - w) / 2
+      // Centralizada na area da peca
+      const x = PIECE_AREA_X + (PIECE_AREA_W - w) / 2
       const y = AREA_Y + (SPLIT_AREA_H - h) / 2
       slide.addImage({ data: imgDataUri, x, y, w, h })
     } else if (imgDataUri) {
-      slide.addImage({ data: imgDataUri, x: 0.7, y: 1.5, w: 6.4, h: 5.0 })
+      slide.addImage({ data: imgDataUri, x: 0.7, y: 1.5, w: 7.5, h: 5.0 })
     } else {
       slide.addText("(Imagem não disponível)", {
-        x: 0.3, y: 3.7, w: 7.1, h: 0.6,
+        x: PIECE_AREA_X, y: 3.7, w: PIECE_AREA_W, h: 0.6,
         fontFace: "Calibri", fontSize: 14, color: TEXT_GRAY, align: "center",
       })
     }
 
-    // Card legenda (background branco arredondado)
+    // Card legenda — corpo branco com header amarelo cheio em cima.
+    // Estrutura: bg branco geral + faixa amarela superior + texto da copy embaixo.
     slide.addShape("roundRect", {
-      x: 7.6, y: 1.0, w: 5.43, h: 6.2,
+      x: CARD_X, y: AREA_Y, w: CARD_W, h: SPLIT_AREA_H,
       fill: { color: "FFFFFF" }, line: { color: "EEEEEE", width: 1 },
       rectRadius: 0.10,
     })
-    // Label "LEGENDA"
-    slide.addText("LEGENDA", {
-      x: 7.85, y: 1.2, w: 4.93, h: 0.3,
-      fontFace: "Calibri", fontSize: 9, bold: true,
-      color: TEXT_DARK, charSpacing: 1, valign: "top",
+    // Faixa amarela em cima (header "Legenda:")
+    slide.addShape("roundRect", {
+      x: CARD_X, y: AREA_Y, w: CARD_W, h: 0.4,
+      fill: { color: YELLOW }, line: { color: YELLOW },
+      rectRadius: 0.10,
     })
-    // Texto da copy
+    // Pequeno rect amarelo embaixo da faixa pra "cortar" os cantos arredondados
+    // de baixo (gambiarra do pptxgenjs que nao suporta border-radius parcial).
+    slide.addShape("rect", {
+      x: CARD_X, y: AREA_Y + 0.2, w: CARD_W, h: 0.2,
+      fill: { color: YELLOW }, line: { color: YELLOW, width: 0 },
+    })
+    // Texto "Legenda:" italico no header amarelo
+    slide.addText("Legenda:", {
+      x: CARD_X + 0.18, y: AREA_Y, w: CARD_W - 0.36, h: 0.4,
+      fontFace: "Calibri", fontSize: 11, bold: true, italic: true,
+      color: TEXT_DARK, valign: "middle", align: "left",
+    })
+    // Texto da copy (corpo)
     slide.addText(piece.copy!.trim(), {
-      x: 7.85, y: 1.6, w: 4.93, h: 5.4,
-      fontFace: "Calibri", fontSize: 11,
+      x: CARD_X + 0.18, y: AREA_Y + 0.55, w: CARD_W - 0.36, h: SPLIT_AREA_H - 0.7,
+      fontFace: "Calibri", fontSize: 10,
       color: TEXT_DARK, valign: "top", align: "left",
     })
   } else {
