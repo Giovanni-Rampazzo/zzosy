@@ -663,7 +663,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // BLEED em px de canvas (nao de peca) — definido como % do menor lado
       // do canvas final pra escalar bem entre formatos diferentes (story
       // vertical, leaderboard horizontal, etc).
-      const bleedPct = 0.2 // 20% do tamanho da peca em cada lado
+      const bleedPct = 0.1 // 10% do tamanho da peca em cada lado (folga suficiente pra agarrar handles sem dominar visualmente)
       const BLEED = Math.round(Math.min(cw, ch) * bleedPct)
       const fullW = cw + BLEED * 2
       const fullH = ch + BLEED * 2
@@ -1978,14 +1978,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       try {
         const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
         // CROP da area da peca (sem bleed). toDataURL aceita left/top/width/height
-        // em coords do mundo Fabric (nao do canvas DOM). Peca esta em 0,0
-        // -> cw,ch — independente do bleed/viewportTransform do canvas DOM.
+        // em coords do CANVAS DOM (em pixels do canvas HTML, ja considerando o
+        // viewportTransform). Com o bleed ativo, o canvas DOM e maior que a peca
+        // e a peca renderiza com offset BLEED*z desde o canto. Sem somar o offset,
+        // o crop captura a area do bleed (cinza/preto) no topo+esquerda.
+        const bleed = (fabricRef as any).__bleed ?? 0
+        const z = zoomRef.current || 1
         const dataUrl = fc.toDataURL({
           format: "jpeg", quality: 0.85,
-          multiplier: thumbScale / (zoomRef.current || 1),
-          left: 0, top: 0,
-          width: canvasWRef.current * (zoomRef.current || 1),
-          height: canvasHRef.current * (zoomRef.current || 1),
+          multiplier: thumbScale / z,
+          left: bleed * z,
+          top: bleed * z,
+          width: canvasWRef.current * z,
+          height: canvasHRef.current * z,
         })
         const blob = await (await fetch(dataUrl)).blob()
         const fd = new FormData()
@@ -2176,12 +2181,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         try {
           const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
           // CROP da peca (ignora bleed extra ao redor)
+          const bleed = (fabricRef as any).__bleed ?? 0
+          const z = zoomRef.current || 1
           const dataUrl = fc.toDataURL({
             format: "jpeg", quality: 0.85,
-            multiplier: thumbScale / (zoomRef.current || 1),
-            left: 0, top: 0,
-            width: canvasWRef.current * (zoomRef.current || 1),
-            height: canvasHRef.current * (zoomRef.current || 1),
+            multiplier: thumbScale / z,
+            left: bleed * z,
+            top: bleed * z,
+            width: canvasWRef.current * z,
+            height: canvasHRef.current * z,
           })
           const blob = await (await fetch(dataUrl)).blob()
           const fd = new FormData()
