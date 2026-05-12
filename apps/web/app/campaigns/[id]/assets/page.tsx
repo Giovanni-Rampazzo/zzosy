@@ -45,12 +45,10 @@ export default function CampaignAssetsPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({})
-  const [showAddMenu, setShowAddMenu] = useState(false)
   const newImageInputRef = useRef<HTMLInputElement>(null)
   const saveTimers = useRef<Record<string, any>>({})
 
   async function addTextAsset() {
-    setShowAddMenu(false)
     const defaultText = "Novo texto"
     const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: "Arial" } }
     const res = await fetch(`/api/campaigns/${id}/assets`, {
@@ -71,7 +69,6 @@ export default function CampaignAssetsPage() {
   }
 
   async function addImageAsset(file: File) {
-    setShowAddMenu(false)
     const fd = new FormData()
     fd.append("image", file)
     fd.append("label", file.name.replace(/\.[^.]+$/, ""))
@@ -222,18 +219,15 @@ export default function CampaignAssetsPage() {
         </div>
 
         {/* Sub-nav contextual da campanha. Linha 1: ← Cliente + Peças (amarelo).
-            Linha 2 (actions): Adicionar asset + Importar PSD + Editar Matriz. */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative", marginBottom: 4 }}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) setShowAddMenu(false)
-          }}
-          tabIndex={-1}>
+            Linha 2 (actions): + Texto + Imagem + Importar PSD + Editar Matriz. */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative", marginBottom: 4 }}>
           <CampaignSubnav
             campaignId={id}
             clientId={campaign.client?.id}
             actions={
               <>
-                <Button variant="secondary" size="md" onClick={() => setShowAddMenu(s => !s)}>+ Adicionar asset</Button>
+                <Button variant="secondary" size="md" onClick={addTextAsset}>+ Texto</Button>
+                <Button variant="secondary" size="md" onClick={() => newImageInputRef.current?.click()}>+ Imagem</Button>
                 <PsdImporter campaignId={id} onImported={load} />
                 {campaign.assets.length > 0 && (
                   <Button variant="primary" size="md" onClick={() => router.push(`/editor?campaignId=${id}`)}>Editar Matriz (KV)</Button>
@@ -241,24 +235,6 @@ export default function CampaignAssetsPage() {
               </>
             }
           />
-          {showAddMenu && (
-            <div style={{ position: "absolute", top: 96, left: 0, background: "#fff", border: "1px solid #E0E0E0", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 20, minWidth: 240 }}>
-              <button onClick={addTextAsset} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
-                onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                Texto
-              </button>
-              <button onClick={() => { setShowAddMenu(false); newImageInputRef.current?.click() }} style={{ display: "block", width: "100%", padding: "10px 14px", border: "none", background: "transparent", textAlign: "left", fontSize: 13, cursor: "pointer" }}
-                onMouseEnter={e => (e.currentTarget.style.background = "#f5f5f5")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                Imagem <span style={{ fontSize: 11, color: "#aaa" }}>(PNG, JPG, SVG…)</span>
-              </button>
-              <div style={{ borderTop: "1px solid #f0f0f0", padding: "8px 14px", fontSize: 11, color: "#888", lineHeight: 1.5, background: "#fafafa", borderRadius: "0 0 6px 6px" }}>
-                Para vetor: exporte como <strong>SVG</strong> do Illustrator<br/>
-                <span style={{ color: "#aaa" }}>(File → Export → SVG)</span>
-              </div>
-            </div>
-          )}
           <input ref={newImageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
             onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
         </div>
