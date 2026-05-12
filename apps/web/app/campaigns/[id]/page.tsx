@@ -254,6 +254,7 @@ export default function CampaignOverviewPage() {
         <CampaignSubnav
           campaignId={id}
           clientId={campaign.client?.id}
+          activeTab="campaign"
         />
 
         {/* Preview KV + botões */}

@@ -224,6 +224,7 @@ export default function CampaignAssetsPage() {
           <CampaignSubnav
             campaignId={id}
             clientId={campaign.client?.id}
+            activeTab="assets"
             actions={
               <>
                 <Button variant="secondary" size="md" onClick={addTextAsset}>+ Texto</Button>

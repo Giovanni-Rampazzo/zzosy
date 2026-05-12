@@ -4,14 +4,17 @@
  * /campaigns/[id], /campaigns/[id]/assets, /campaigns/[id]/pieces, etc.
  *
  * Linha 1 (navegacao):
- *   - "← Cliente" (volta pro pai)
- *   - "Peças" (vai pra /campaigns/[id]/pieces)
+ *   - "← Cliente" (volta pro cliente)
+ *   - "Campanha" (vai pra /campaigns/[id]) — escondido se ja estamos na campanha
+ *   - "Peças" (vai pra /pieces?campaignId=X) — escondido se ja estamos em pecas
  *
  * Linha 2 (acoes da pagina atual, opcional):
  *   - configuravel via prop `actions`
- *   - botoes lado a lado, mesma altura, alinhados a esquerda
  *
- * Padrao de estilos seguido: ver docs/UI_BUTTONS.md
+ * Padrao: TODA navegacao secundaria fica ALINHADA A DIREITA da tela.
+ * O conteudo da pagina (titulo, body) flui da esquerda, mas a barra de
+ * navegacao das paginas filhas fica colada na direita pra criar um lugar
+ * consistente onde o user procura voltar/navegar.
  */
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/Button"
@@ -21,19 +24,18 @@ interface Props {
   campaignId: string
   clientId?: string
   // Acoes da pagina atual (opcional). Cada acao vira um Button na linha 2.
-  // Permite cada pagina decidir suas proprias acoes mantendo o estilo consistente.
   actions?: React.ReactNode
-  // Marca o botao "Peças" como ativo (highlight). Util quando ja estamos
-  // dentro da pagina de pecas e queremos sinalizar.
-  activeTab?: "pieces" | null
+  // Marca a aba ativa (escondendo o respectivo botao da barra de nav, ja
+  // que clicar nele seria no-op).
+  activeTab?: "campaign" | "pieces" | "assets" | null
 }
 
 export function CampaignSubnav({ campaignId, clientId, actions, activeTab }: Props) {
   const router = useRouter()
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-      {/* Linha 1: navegacao */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      {/* Linha 1: navegacao — alinhada a DIREITA da tela */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
         <Button
           variant="secondary"
           size="md"
@@ -42,20 +44,31 @@ export function CampaignSubnav({ campaignId, clientId, actions, activeTab }: Pro
         >
           ← Cliente
         </Button>
-        <Button
-          variant={activeTab === "pieces" ? "dark" : "primary"}
-          size="md"
-          onClick={() => router.push(`/campaigns/${campaignId}/pieces`)}
-          title="Ver pecas desta campanha"
-          disabled={activeTab === "pieces"}
-        >
-          Peças
-        </Button>
+        {activeTab !== "campaign" && (
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => router.push(`/campaigns/${campaignId}`)}
+            title="Ir para a pagina da campanha"
+          >
+            Campanha
+          </Button>
+        )}
+        {activeTab !== "pieces" && (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => router.push(`/pieces?campaignId=${campaignId}`)}
+            title="Ver pecas desta campanha"
+          >
+            Peças
+          </Button>
+        )}
       </div>
 
-      {/* Linha 2: acoes da pagina (opcional) */}
+      {/* Linha 2: acoes da pagina (opcional) — tambem alinhada a direita */}
       {actions && (
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {actions}
         </div>
       )}
