@@ -40,9 +40,13 @@ export async function POST(req: NextRequest) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } })
   if (!campaign) return NextResponse.json({ error: "Campanha nao encontrada" }, { status: 404 })
 
-  // Grava data como string JSON (schema Piece.data e LongText, nao Json)
+  // Grava data como string JSON (schema Piece.data e LongText, nao Json).
+  // CRITICO: precisa ter version: 2 pra que o editor entre no branch v2 (loop
+  // de layers). Sem version, o load procura canvasData (formato v1 legacy) e
+  // a peca abre vazia.
   const dataPayload = JSON.stringify({
     ...data,
+    version: 2,
     width,
     height,
   })

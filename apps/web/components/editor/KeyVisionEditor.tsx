@@ -1039,14 +1039,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         if (pdata?.version === 2 && Array.isArray(pdata?.layers)) {
           // Renderiza cada layer da peca
           const sorted = [...pdata.layers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
-          console.log("[LOAD-PIECE] inicio. layers no piece.data:", sorted.length, "assets na campanha:", Object.keys(assetMap).length)
-          let linkedCount = 0, embeddedCount = 0, skippedCount = 0
           for (const layer of sorted) {
             // Layer LINKADO a um asset (peca gerada ou linkada do PSD)
             const asset = assetMap[layer.assetId] as Asset
             if (asset) {
-              linkedCount++
-              console.log("[LOAD-PIECE] LINKADO:", { assetId: layer.assetId, assetType: asset.type, label: asset.label, posX: layer.posX, posY: layer.posY })
               // Aplica overrides ao layer base
               const layerWithOverrides = {
                 ...layer,
@@ -1092,12 +1088,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             // Layer EMBEDDED (peca importada PSD avulsa). Conteudo cru no proprio
             // layer.data. Cria objeto Fabric direto sem asset.
             if (layer.__embedded) {
-              embeddedCount++
-              console.log("[LOAD-PIECE] EMBEDDED:", { type: layer.type, posX: layer.posX, posY: layer.posY, hasImageData: !!layer.imageDataUrl, text: layer.text?.slice(0, 40) })
               await addEmbeddedLayer(fc, layer)
               const objs = fc.getObjects()
               const created = objs[objs.length - 1] as any
-              console.log("[LOAD-PIECE] EMBEDDED criado?", !!created, "total objs no canvas:", objs.length)
               if (created && layer.mask) {
                 const { Image: FabImage, Path } = await import("fabric")
                 await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
@@ -1105,10 +1098,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               continue
             }
             // Layer orfao (nem asset valido nem embedded): pula com warning
-            skippedCount++
-            console.warn("[LOAD-PIECE] layer IGNORADO (sem asset valido nem __embedded):", layer)
+            editorLog("[LOAD-PIECE] layer ignorado (sem asset valido nem __embedded):", layer)
           }
-          console.log("[LOAD-PIECE] FIM. linkados:", linkedCount, "embedded:", embeddedCount, "skipados:", skippedCount, "objs no canvas:", fc.getObjects().length)
           fc.renderAll()
         } else if (pdata?.canvasData) {
           // LEGACY (v1): peca antiga com canvasData direto - mantem compatibilidade
@@ -1585,7 +1576,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
    * Marca o objeto com __embedded = true pra survive ao save/load.
    */
   async function addEmbeddedLayer(fc: any, layer: any) {
-    console.log("[addEmbeddedLayer] chamado com layer:", { type: layer.type, posX: layer.posX, posY: layer.posY, w: layer.width, h: layer.height, hasImageData: !!layer.imageDataUrl })
     const { Textbox, FabricImage } = await import("fabric")
     const posX = layer?.posX ?? 100
     const posY = layer?.posY ?? 100
