@@ -2735,6 +2735,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
           {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
         </button>
+        <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
+        <div style={{ flex: 1 }} />
+        {saving && <span style={{ fontSize: 11, color: "#555" }}>Salvando...</span>}
+        <span style={{ fontSize: 11, color: "#555" }}>{canvasW} × {canvasH}</span>
+        {/* Acoes secundarias alinhadas a direita: Assets sempre, Legendas so em modo peca */}
         <button onClick={() => {
           const go = () => router.push(`/campaigns/${campaignId}/assets`)
           if (isDirtyRef.current) setConfirmExit(() => go)
@@ -2743,10 +2748,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           title="Ir para a pagina de assets desta campanha">
           Assets
         </button>
-        <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
-        <div style={{ flex: 1 }} />
-        {saving && <span style={{ fontSize: 11, color: "#555" }}>Salvando...</span>}
-        <span style={{ fontSize: 11, color: "#555" }}>{canvasW} × {canvasH}</span>
+        {isPieceMode && pieceId && (
+          <button onClick={() => {
+            const go = () => router.push(`/pieces/${pieceId}`)
+            if (isDirtyRef.current) setConfirmExit(() => go)
+            else go()
+          }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
+            title="Editar legendas/copy desta peca">
+            Legendas
+          </button>
+        )}
         <button
           onClick={undo}
           title="Desfazer (Cmd+Z)"

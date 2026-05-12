@@ -443,7 +443,7 @@ export default function CampaignOverviewPage() {
                       onChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
                     />
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", gap: 6 }}>
-                      <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina dedicada da peca (legenda, copy, detalhes)">Copy</Button>
+                      <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina dedicada da peca (legenda, copy, detalhes)">Legendas</Button>
                       <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                     </div>
                   </div>
@@ -520,7 +520,7 @@ export default function CampaignOverviewPage() {
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
                         <div style={{ display: "inline-flex", gap: 6 }}>
-                          <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina dedicada da peca (legenda, copy, detalhes)">Copy</Button>
+                          <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina dedicada da peca (legenda, copy, detalhes)">Legendas</Button>
                           <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                         </div>
                       </td>
@@ -593,7 +593,7 @@ function CopyEditor({ pieceId, initial, onChange }: { pieceId: string; initial: 
       <textarea
         value={value}
         onChange={(e) => handleChange(e.target.value)}
-        placeholder="Texto de apoio, legenda, copy…"
+        placeholder="Legenda, texto de apoio…"
         rows={2}
         style={{
           width: "100%", padding: "6px 8px", borderRadius: 4,

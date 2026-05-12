@@ -129,7 +129,54 @@ export default function PiecePage() {
           </div>
         </div>
 
-        {/* Form */}
+        {/* PREVIEW DA PEÇA — em cima, mesma altura/visual da pagina de assets (h 240px) */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 16, marginBottom: 20 }}>
+          <div style={{
+            height: 240, background: "#F5F5F0", borderRadius: 6,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            overflow: "hidden",
+          }}>
+            {piece.imageUrl ? (
+              <img src={`${piece.imageUrl}?v=${Date.now()}`} alt={piece.name ?? "Peça"}
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            ) : (
+              <div style={{ color: "#aaa", fontSize: 13 }}>Sem preview gerado ainda</div>
+            )}
+          </div>
+        </div>
+
+        {/* CAMPO LEGENDAS — destaque logo abaixo do preview */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, marginBottom: 20 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            Legenda / Copy
+            <span style={{ fontSize: 10, color: "#bbb", fontWeight: 500, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
+              {copy.length} {copy.length === 1 ? "caractere" : "caracteres"}
+            </span>
+          </label>
+          <textarea
+            value={copy}
+            onChange={e => setCopy(e.target.value)}
+            placeholder="Ex: Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black"
+            rows={8}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              border: "1px solid #E0E0E0",
+              borderRadius: 6,
+              fontSize: 14,
+              outline: "none",
+              boxSizing: "border-box",
+              fontFamily: "inherit",
+              resize: "vertical",
+              minHeight: 140,
+            }}
+          />
+          <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
+            Texto pra redes sociais. Aparece na apresentação ao lado da peça e vai num arquivo .txt na entrega.
+          </div>
+        </div>
+
+        {/* Outros campos (nome, status, segmento) */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Nome da peça</label>
@@ -166,36 +213,6 @@ export default function PiecePage() {
             </datalist>
             <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
               Usado pra agrupar peças na apresentação. Peças com mesmo segmento ficam juntas.
-            </div>
-          </div>
-
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Legenda / Copy
-              <span style={{ fontSize: 10, color: "#bbb", fontWeight: 500, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
-                {copy.length} {copy.length === 1 ? "caractere" : "caracteres"}
-              </span>
-            </label>
-            <textarea
-              value={copy}
-              onChange={e => setCopy(e.target.value)}
-              placeholder="Ex: Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black"
-              rows={6}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "1px solid #E0E0E0",
-                borderRadius: 6,
-                fontSize: 14,
-                outline: "none",
-                boxSizing: "border-box",
-                fontFamily: "inherit",
-                resize: "vertical",
-                minHeight: 100,
-              }}
-            />
-            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
-              Texto pra redes sociais. Aparece na apresentação ao lado da peça e vai num arquivo .txt na entrega.
             </div>
           </div>
 
