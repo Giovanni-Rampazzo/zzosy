@@ -88,8 +88,10 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
     setProgress(`(${index + 1}/${total}) Extraindo ${allLayers.length} layers…`)
 
     const dataLayers: any[] = []
+    const newTextAssetsList: any[] = []  // texts sem match -> sera criado asset TEXT novo
     let linked = 0
     let embedded = 0
+    let newAssetCreated = 0
     let zIndex = 0
 
     for (const layer of allLayers) {
@@ -157,27 +159,46 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
           }
         }
 
-        const layerData: any = {
-          type: "TEXT",
-          posX: left, posY: top, width, height, zIndex,
-          text: rawText,
-          fontFamily: defFontName,
-          fontSize: Math.round(defFontSize),
-          fontWeight: defWeight,
+        // Overrides extraidos do PSD (cor, fonte, tamanho, estilos per-char).
+        // Comuns aos 2 caminhos (linkado e novo asset): a peca importada SEMPRE
+        // preserva o look do PSD que o designer ajustou. Texto cru (caracteres)
+        // pode vir do asset (caminho A) ou ser usado pra criar asset (caminho B).
+        const overrides: any = {
           fill: defColor,
+          fontSize: Math.round(defFontSize),
+          fontFamily: defFontName,
+          fontWeight: defWeight,
           textAlign: "left",
-          styles: Object.keys(styles).length > 0 ? styles : undefined,
+        }
+        if (Object.keys(styles).length > 0) overrides.styles = styles
+
+        // Layer base — posicao/dimensao SEMPRE vem do PSD (designer ajustou no PS)
+        const layerData: any = {
+          posX: left, posY: top, width, height, zIndex,
+          overrides,
         }
 
-        // LINK ou EMBEDDED. IMPORTANTE: o campo persistido eh `assetId`
-        // (sem prefixo __). O `__assetId` so existe no objeto Fabric runtime
-        // dentro do editor (custom prop nao serializada).
         if (matchedAsset && matchedAsset.type === "TEXT") {
+          // CAMINHO A: layer com nome igual a asset TEXT existente.
+          // texto cru vem do asset, NAO do PSD. Posicao/overrides do PSD.
           layerData.assetId = matchedAsset.id
           linked++
         } else {
-          layerData.__embedded = true
-          embedded++
+          // CAMINHO B: layer sem match -> cria asset TEXT novo.
+          // Marca com __pendingNewAssetKey; o endpoint vai criar o asset e
+          // trocar pela assetId real antes de gravar a peca.
+          // Acumula em newTextAssetsList pra mandar pro endpoint.
+          const assetKey = `new-text-${newTextAssetsList.length}`
+          // content do asset = TextSpan[] (cada span = porcao com cor/fonte)
+          newTextAssetsList.push({
+            label: layerName,
+            type: "TEXT",
+            content: spans, // TextSpan[] no formato esperado por CampaignAsset.content
+            layerKeysToLink: [assetKey],
+          })
+          // Marca o layer com a chave que o endpoint vai resolver
+          layerData.__pendingNewAssetKey = assetKey
+          newAssetCreated++
         }
         dataLayers.push(layerData)
 
@@ -221,7 +242,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
       throw new Error(`Nenhum layer extraido de ${file.name}`)
     }
 
-    setProgress(`(${index + 1}/${total}) Criando peça (${linked} linkados, ${embedded} embedded)…`)
+    setProgress(`(${index + 1}/${total}) Criando peça (${linked} linkados, ${newAssetCreated} novos textos, ${embedded} imagens embedded)…`)
 
     // Cria a peca via endpoint dedicado
     const pieceRes = await fetch("/api/pieces/import-psd", {
@@ -237,6 +258,9 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
           width: pieceW,
           height: pieceH,
         },
+        // Textos sem match na matriz: o endpoint cria assets TEXT novos e
+        // troca __pendingNewAssetKey -> assetId real nos layers correspondentes
+        newTextAssets: newTextAssetsList,
       }),
     })
     if (!pieceRes.ok) {

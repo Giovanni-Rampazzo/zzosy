@@ -2,29 +2,36 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { normalizeName } from "@/lib/normalize"
 
 /**
  * POST /api/pieces/import-psd
  *
- * Cria uma peça avulsa a partir de um PSD importado. Distinto de:
- *  - /api/pieces (criacao via "Gerar Peças": usa MediaFormat + matriz)
- *  - /api/campaigns/[id]/key-vision (importa PSD COMO matriz)
+ * Cria uma peça avulsa a partir de um PSD importado.
  *
- * Body: { campaignId, name, width, height, data: { layers: [...] } }
+ * Body: {
+ *   campaignId, name, width, height,
+ *   data: { layers: [...] },
+ *   newTextAssets?: [{ label, content, type: 'TEXT', layerKeysToLink }]
+ *      // assets de TEXT a criar antes da peca; layerKeysToLink lista
+ *      // chaves no array de layers que apontam pro asset criado.
+ * }
  *
  * Layers podem ter:
- *  - __assetId: vinculado a um CampaignAsset existente (match por nome normalizado)
- *  - __embedded: true + conteudo cru (imageDataUrl pra IMAGE, text+styles pra TEXT)
+ *  - assetId: vinculado a um CampaignAsset existente
+ *  - __embedded + imageDataUrl: imagem cru gravada no piece.data
+ *  - __pendingNewAssetKey: chave temporaria que aponta pra um newTextAssets
+ *    (esses sao TEXTOS sem match — o endpoint cria o asset e troca
+ *    __pendingNewAssetKey por assetId)
  *
  * status default: STANDBY
- * imageUrl: setado depois via POST /api/pieces/[id]/thumbnail
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const { campaignId, name, width, height, data } = body || {}
+  const { campaignId, name, width, height, data, newTextAssets } = body || {}
 
   if (!campaignId || typeof campaignId !== "string") {
     return NextResponse.json({ error: "campaignId obrigatorio" }, { status: 400 })
@@ -40,12 +47,70 @@ export async function POST(req: NextRequest) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } })
   if (!campaign) return NextResponse.json({ error: "Campanha nao encontrada" }, { status: 404 })
 
-  // Grava data como string JSON (schema Piece.data e LongText, nao Json).
-  // CRITICO: precisa ter version: 2 pra que o editor entre no branch v2 (loop
-  // de layers). Sem version, o load procura canvasData (formato v1 legacy) e
-  // a peca abre vazia.
+  // PASSO 1: cria assets TEXT novos (se houver) e mapeia label normalizado -> assetId.
+  // Pode ter sido criado por outra importacao previa — re-checamos no banco.
+  const keyToAssetId: Record<string, string> = {}
+  if (Array.isArray(newTextAssets) && newTextAssets.length > 0) {
+    // Le assets existentes da campanha pra deduplicar pelo label normalizado
+    const existing = await prisma.campaignAsset.findMany({
+      where: { campaignId, type: "TEXT" },
+      select: { id: true, label: true, order: true },
+    })
+    const existingByKey = new Map<string, string>()
+    for (const a of existing) {
+      const k = normalizeName(a.label)
+      if (k) existingByKey.set(k, a.id)
+    }
+
+    // Pega proximo order disponivel (asset novo vai no topo: min - 1)
+    const firstOrder = await prisma.campaignAsset.findFirst({
+      where: { campaignId }, orderBy: { order: "asc" }, select: { order: true }
+    })
+    let nextOrder = (firstOrder?.order ?? 0) - 1
+
+    for (const newAsset of newTextAssets) {
+      const { label, content, layerKeysToLink } = newAsset || {}
+      if (!label || !Array.isArray(layerKeysToLink) || layerKeysToLink.length === 0) continue
+
+      const normKey = normalizeName(label)
+      let assetId = existingByKey.get(normKey)
+
+      if (!assetId) {
+        // Cria asset novo. content deve ser JSON string (TextSpan[])
+        const contentStr = typeof content === "string" ? content : JSON.stringify(content ?? [])
+        const created = await prisma.campaignAsset.create({
+          data: {
+            campaignId,
+            type: "TEXT",
+            label,
+            content: contentStr,
+            order: nextOrder--,
+          },
+        })
+        assetId = created.id
+        existingByKey.set(normKey, assetId)
+      }
+
+      // Mapeia as chaves temporarias dos layers pra esse assetId
+      for (const k of layerKeysToLink) {
+        keyToAssetId[k] = assetId
+      }
+    }
+  }
+
+  // PASSO 2: substitui __pendingNewAssetKey por assetId nos layers
+  const layers = (data.layers as any[]).map((l: any) => {
+    if (l.__pendingNewAssetKey && keyToAssetId[l.__pendingNewAssetKey]) {
+      const { __pendingNewAssetKey, ...rest } = l
+      return { ...rest, assetId: keyToAssetId[__pendingNewAssetKey] }
+    }
+    return l
+  })
+
+  // Grava data como string JSON. CRITICO: precisa version:2 pro editor entender.
   const dataPayload = JSON.stringify({
     ...data,
+    layers,
     version: 2,
     width,
     height,
