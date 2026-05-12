@@ -181,26 +181,35 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   const name = piece.name ?? "Peça sem nome"
   const dims = piece.width && piece.height ? `${piece.width} x ${piece.height} px` : "—"
 
-  // Box amarelo nome (top-left) — 60% do tamanho original. radius proporcional.
+  // Header: nome + dimensao na MESMA linha, em cima. Posicao fixa em
+  // top-left, com gap pequeno entre eles.
+  const nameW = Math.min(3.0, name.length * 0.096 + 0.3)
+  const nameH = 0.3
+  const dimsW = Math.min(1.8, dims.length * 0.078 + 0.24)
+  const dimsH = 0.24
+  // dim alinhada verticalmente com nome (baseline um pouco abaixo do top do nome)
+  const gap = 0.12
+  // Box amarelo nome (top-left)
   slide.addShape("roundRect", {
-    x: 0.3, y: 0.3, w: Math.min(3.0, name.length * 0.096 + 0.3), h: 0.3,
+    x: 0.3, y: 0.3, w: nameW, h: nameH,
     fill: { color: YELLOW }, line: { color: YELLOW },
     rectRadius: 0.072,
   })
   slide.addText(name, {
-    x: 0.36, y: 0.3, w: Math.min(2.94, name.length * 0.096 + 0.24), h: 0.3,
+    x: 0.36, y: 0.3, w: nameW - 0.06, h: nameH,
     fontFace: "Calibri", fontSize: 8, bold: true,
     color: TEXT_DARK, valign: "middle", align: "left",
   })
-
-  // Box amarelo dimensao — 60% do tamanho original.
+  // Box amarelo dimensao — ao lado do nome, mesma linha
+  const dimsX = 0.3 + nameW + gap
+  const dimsY = 0.3 + (nameH - dimsH) / 2 // centraliza verticalmente com o nome
   slide.addShape("roundRect", {
-    x: 0.3, y: 0.66, w: Math.min(1.8, dims.length * 0.078 + 0.24), h: 0.24,
+    x: dimsX, y: dimsY, w: dimsW, h: dimsH,
     fill: { color: YELLOW }, line: { color: YELLOW },
     rectRadius: 0.06,
   })
   slide.addText(dims, {
-    x: 0.36, y: 0.66, w: Math.min(1.74, dims.length * 0.078 + 0.18), h: 0.24,
+    x: dimsX + 0.06, y: dimsY, w: dimsW - 0.06, h: dimsH,
     fontFace: "Calibri", fontSize: 7, bold: false,
     color: TEXT_DARK, valign: "middle", align: "left",
   })
@@ -215,59 +224,83 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   // Slide: 13.333 x 7.5
   const hasCopy = !!(piece.copy && piece.copy.trim().length > 0)
 
+  // PEÇA A 100% (72 DPI): regra do usuario — peca aparece no tamanho real
+  // a 72 DPI sempre que couber na area util do slide. Se for maior que a
+  // area, reduz proporcionalmente. PPTX usa polegadas; 1 inch = 72 px a 72 DPI.
+  // Slide 13.333" x 7.5" = 960 x 540 px @ 72 DPI.
+  //
+  // Area util definida pra nao encostar nos boxes amarelos em cima:
+  //   header (nome+dim) vai ate y ~0.7" -> area util y 1.0 -> 7.2 (h 6.2")
+  //   largura inteira do slide com margem lateral pequena: x 0.3 -> 13.03 (w 12.73")
+  //
+  // px -> inches @ 72 DPI: divide por 72.
+  const PX_PER_INCH = 72
+  const AREA_X = 0.3
+  const AREA_Y = 1.0
+  const AREA_W = 12.73
+  const AREA_H = 6.2
+
   if (hasCopy) {
-    // Layout split: peca a esquerda 55%, copy a direita 45%
-    // Area peca: x 0.4 -> 7.4 (w 7.0), y 1.5 -> 6.5 (h 5.0)
-    // Area copy: x 7.6 -> 12.9 (w 5.3), y 1.5 -> 6.5 (h 5.0)
+    // Layout split: peca a esquerda, copy a direita. Reduz area da peca.
+    // Area peca: x 0.3 -> 7.4 (w 7.1), y 1.0 -> 7.2 (h 6.2)
+    // Area copy: x 7.6 -> 13.03 (w 5.43), y 1.0 -> 7.2 (h 6.2)
+    const SPLIT_AREA_W = 7.1
+    const SPLIT_AREA_H = 6.2
     if (imgDataUri && piece.width > 0 && piece.height > 0) {
-      const maxW = 7.0, maxH = 5.0
-      const ratio = Math.min(maxW / piece.width, maxH / piece.height)
-      const w = piece.width * ratio
-      const h = piece.height * ratio
-      const x = 0.4 + (maxW - w) / 2
-      const y = 1.5 + (maxH - h) / 2
+      // Tamanho ideal a 100% (72 DPI)
+      const idealW = piece.width / PX_PER_INCH
+      const idealH = piece.height / PX_PER_INCH
+      // Se cabe na area split, usa tamanho real. Senao reduz proporcional.
+      const ratio = Math.min(1, SPLIT_AREA_W / idealW, SPLIT_AREA_H / idealH)
+      const w = idealW * ratio
+      const h = idealH * ratio
+      // Centralizada na area split
+      const x = 0.3 + (SPLIT_AREA_W - w) / 2
+      const y = AREA_Y + (SPLIT_AREA_H - h) / 2
       slide.addImage({ data: imgDataUri, x, y, w, h })
     } else if (imgDataUri) {
       slide.addImage({ data: imgDataUri, x: 0.7, y: 1.5, w: 6.4, h: 5.0 })
     } else {
       slide.addText("(Imagem não disponível)", {
-        x: 0.4, y: 3.7, w: 7.0, h: 0.6,
+        x: 0.3, y: 3.7, w: 7.1, h: 0.6,
         fontFace: "Calibri", fontSize: 14, color: TEXT_GRAY, align: "center",
       })
     }
 
     // Card legenda (background branco arredondado)
     slide.addShape("roundRect", {
-      x: 7.6, y: 1.5, w: 5.3, h: 5.0,
+      x: 7.6, y: 1.0, w: 5.43, h: 6.2,
       fill: { color: "FFFFFF" }, line: { color: "EEEEEE", width: 1 },
       rectRadius: 0.10,
     })
     // Label "LEGENDA"
     slide.addText("LEGENDA", {
-      x: 7.85, y: 1.7, w: 4.8, h: 0.3,
+      x: 7.85, y: 1.2, w: 4.93, h: 0.3,
       fontFace: "Calibri", fontSize: 9, bold: true,
       color: TEXT_DARK, charSpacing: 1, valign: "top",
     })
     // Texto da copy
     slide.addText(piece.copy!.trim(), {
-      x: 7.85, y: 2.1, w: 4.8, h: 4.2,
+      x: 7.85, y: 1.6, w: 4.93, h: 5.4,
       fontFace: "Calibri", fontSize: 11,
       color: TEXT_DARK, valign: "top", align: "left",
     })
   } else {
-    // Layout original: imagem centralizada.
-    // Area util aumentada (era 11.0x5.7 = 47.5% da area; agora 12.0x6.0 = 54%)
-    // pra peca aproveitar mais espaço do slide.
+    // Layout sem copy: peca centralizada na area util inteira.
     if (imgDataUri && piece.width > 0 && piece.height > 0) {
-      const maxW = 12.0, maxH = 6.0
-      const ratio = Math.min(maxW / piece.width, maxH / piece.height)
-      const w = (piece.width * ratio)
-      const h = (piece.height * ratio)
-      const x = (13.333 - w) / 2
-      const y = (7.5 - h) / 2
+      // Tamanho ideal a 100% (72 DPI)
+      const idealW = piece.width / PX_PER_INCH
+      const idealH = piece.height / PX_PER_INCH
+      // Reduz so se nao couber. ratio <= 1 sempre.
+      const ratio = Math.min(1, AREA_W / idealW, AREA_H / idealH)
+      const w = idealW * ratio
+      const h = idealH * ratio
+      // Centralizada na area util
+      const x = AREA_X + (AREA_W - w) / 2
+      const y = AREA_Y + (AREA_H - h) / 2
       slide.addImage({ data: imgDataUri, x, y, w, h })
     } else if (imgDataUri) {
-      slide.addImage({ data: imgDataUri, x: 0.7, y: 0.75, w: 11.9, h: 6.0 })
+      slide.addImage({ data: imgDataUri, x: 0.7, y: 1.0, w: 11.9, h: 6.2 })
     } else {
       slide.addText("(Imagem não disponível)", {
         x: 1.9, y: 3.5, w: 9.5, h: 0.6,

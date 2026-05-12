@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
@@ -32,6 +32,7 @@ interface Piece {
   height: number
   status: string
   imageUrl?: string | null
+  copy?: string | null
   data?: any
   createdAt: string
 }
@@ -436,6 +437,11 @@ export default function CampaignOverviewPage() {
                       <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>{p.width} × {p.height}</div>
                       <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                     </div>
+                    <CopyEditor
+                      pieceId={p.id}
+                      initial={p.copy ?? ""}
+                      onChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
+                    />
                     <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "auto" }}>
                       <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                     </div>
@@ -541,6 +547,61 @@ export default function CampaignOverviewPage() {
           campaignName={campaign.name}
           onClose={() => setExportOpen(false)}
         />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Editor inline pra campo copy da peca. Auto-save com debounce de 600ms,
+ * sem botao explicito. Vai pra /api/pieces/[id] PATCH e atualiza state local
+ * pra refletir a mudanca em tempo real.
+ *
+ * Usado tanto no grid quanto na lista de pecas em /campaigns/[id].
+ */
+function CopyEditor({ pieceId, initial, onChange }: { pieceId: string; initial: string; onChange: (next: string) => void }) {
+  const [value, setValue] = useState(initial)
+  const [saving, setSaving] = useState(false)
+  const timerRef = useRef<any>(null)
+
+  // Sincroniza state local quando initial muda (ex: ao mudar de peca por re-render)
+  useEffect(() => { setValue(initial) }, [initial, pieceId])
+
+  function handleChange(next: string) {
+    setValue(next)
+    onChange(next) // atualiza state pai imediatamente pra ver no preview
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      setSaving(true)
+      try {
+        await fetch(`/api/pieces/${pieceId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ copy: next }),
+        })
+      } catch (e) { console.warn("[CopyEditor] save fail:", e) }
+      finally { setSaving(false) }
+    }, 600)
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <textarea
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder="Texto de apoio, legenda, copy…"
+        rows={2}
+        style={{
+          width: "100%", padding: "6px 8px", borderRadius: 4,
+          border: "1px solid #E0E0E0", fontSize: 11, fontFamily: "inherit",
+          resize: "vertical", minHeight: 36, color: "#555",
+          outline: "none",
+        }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = "#F5C400" }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = "#E0E0E0" }}
+      />
+      {saving && (
+        <span style={{ position: "absolute", right: 8, top: 8, fontSize: 9, color: "#aaa" }}>salvando…</span>
       )}
     </div>
   )

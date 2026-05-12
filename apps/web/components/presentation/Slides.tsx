@@ -163,28 +163,31 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick }: Pie
       }) : undefined}
       title={clickable ? "Abrir no editor" : undefined}
     >
-      {/* Box amarelo nome — 60% do tamanho original. Posicao top-left mantida. */}
+      {/* Header: nome + dimensao na MESMA linha em cima, alinhada a esquerda. */}
       <div style={{
         position: "absolute", top: "4%", left: "3%",
-        background: YELLOW, borderRadius: RADIUS,
-        padding: "0.54% 1.08%",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "0.96cqw", fontWeight: 700, color: TEXT_DARK,
-        maxWidth: "60%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        display: "flex", alignItems: "center", gap: "0.8%",
         zIndex: 2,
       }}>
-        {name}
-      </div>
-      {/* Box amarelo dimensao — 60% do tamanho original */}
-      <div style={{
-        position: "absolute", top: "8.5%", left: "3%",
-        background: YELLOW, borderRadius: RADIUS,
-        padding: "0.36% 0.84%",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "0.72cqw", fontWeight: 500, color: TEXT_DARK,
-        zIndex: 2,
-      }}>
-        {dims}
+        {/* Box amarelo nome */}
+        <div style={{
+          background: YELLOW, borderRadius: RADIUS,
+          padding: "0.54% 1.08%",
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontSize: "0.96cqw", fontWeight: 700, color: TEXT_DARK,
+          maxWidth: "60cqw", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>
+          {name}
+        </div>
+        {/* Box amarelo dimensao */}
+        <div style={{
+          background: YELLOW, borderRadius: RADIUS,
+          padding: "0.36% 0.84%",
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontSize: "0.72cqw", fontWeight: 500, color: TEXT_DARK,
+        }}>
+          {dims}
+        </div>
       </div>
       {/* Bolinha amarela top-right */}
       <div style={{
