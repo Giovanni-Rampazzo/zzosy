@@ -1787,28 +1787,61 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     try {
       const w = canvasWRef.current
       const h = canvasHRef.current
-      // Thumbnail: render num StaticCanvas offscreen no tamanho real da peça
-      // para garantir nitidez na apresentação (sem depender do zoom do editor).
-      const TARGET = 1600
+      // Thumbnail: render num StaticCanvas offscreen pra garantir nitidez
+      // na apresentacao (sem depender do zoom do editor).
+      // PNG 2400px lossless. Pesa mais que JPEG mas mantem textos vetoriais
+      // e bordas finas perfeitas mesmo em telas 4K.
+      const TARGET = 2400
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
       const tw = Math.round(w * thumbScale)
       const th = Math.round(h * thumbScale)
-      const { StaticCanvas: _ThumbSC } = await import("fabric") as any
+      const { StaticCanvas: _ThumbSC, Image: _FabImage, Path: _Path } = await import("fabric") as any
       const thumbEl = document.createElement("canvas")
       thumbEl.width = tw; thumbEl.height = th
       const thumbFc = new _ThumbSC(thumbEl, { width: tw, height: th, enableRetinaScaling: false, backgroundColor: bgColorRef.current })
-      await Promise.all(fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay).map(async (obj: any) => {
+
+      const objectsToClone = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+
+      // CRITICO: usa for...of (sequencial) em vez de Promise.all+map (paralelo).
+      // Promise.all nao garante ordem de adicao ao thumbFc — clones lentos
+      // (imagens) acabavam adicionadas DEPOIS de clones rapidos (texto), e
+      // como Fabric usa ordem-de-insercao = z-index, a imagem ficava POR CIMA
+      // do texto no thumb (texto invisivel). Sequencial preserva a ordem
+      // original do canvas exatamente.
+      for (const obj of objectsToClone) {
         const cloned = await obj.clone()
-        cloned.set({ left: (obj.left ?? 0) * thumbScale, top: (obj.top ?? 0) * thumbScale, scaleX: (obj.scaleX ?? 1) * thumbScale, scaleY: (obj.scaleY ?? 1) * thumbScale })
+        const isText = obj.type === "textbox" || obj.type === "i-text"
+        // Reaplica styles per-char manualmente (Fabric v7 .clone() ignora
+        // o map styles em Textbox). Sem isso, cores/fontes por letra somem.
+        if (isText && obj.styles && Object.keys(obj.styles).length > 0) {
+          cloned.set("styles", JSON.parse(JSON.stringify(obj.styles)))
+          if (cloned.initDimensions) cloned.initDimensions()
+        }
+        cloned.set({
+          left: (obj.left ?? 0) * thumbScale,
+          top: (obj.top ?? 0) * thumbScale,
+          scaleX: (obj.scaleX ?? 1) * thumbScale,
+          scaleY: (obj.scaleY ?? 1) * thumbScale,
+        })
+        // Re-aplica mascara a partir do __maskData — clipPath nao e clonado
+        // corretamente em alguns casos (Image clipPath com dataUrl).
+        if ((obj as any).__maskData) {
+          ;(cloned as any).__maskData = (obj as any).__maskData
+          try {
+            cloned.clipPath = null
+            await applyMaskToFabricObject({ Image: _FabImage, Path: _Path }, cloned, (obj as any).__maskData)
+          } catch (e) { console.warn("[uploadPieceThumb] mask clone failed:", e) }
+        }
         thumbFc.add(cloned)
-      }))
+      }
       thumbFc.renderAll()
-      await new Promise(r => setTimeout(r, 100))
-      const dataUrl = thumbFc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: 1 })
+      // Aguarda render assincrono (FabricImage com lazy loading, etc).
+      await new Promise(r => setTimeout(r, 200))
+      const dataUrl = thumbFc.toDataURL({ format: "png", multiplier: 1 })
       thumbFc.dispose()
       const blob = await (await fetch(dataUrl)).blob()
       const fd = new FormData()
-      fd.append("thumbnail", blob, "thumb.jpg")
+      fd.append("thumbnail", blob, "thumb.png")
       await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd })
     } catch (e) { console.warn("piece thumb upload failed:", e) }
   }
@@ -2628,7 +2661,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         overflow: "auto",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
-        <div style={{ boxShadow: "0 8px 64px rgba(0,0,0,0.8)", lineHeight: 0, flexShrink: 0 }}>
+        <div style={{ lineHeight: 0, flexShrink: 0 }}>
           <canvas ref={canvasRef} style={{ display: "block" }} />
         </div>
       </div>
