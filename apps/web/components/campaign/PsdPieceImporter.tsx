@@ -94,18 +94,6 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
     let newAssetCreated = 0
     let zIndex = 0
 
-    // DEBUG: lista cada layer com o que ag-psd retornou (text? canvas?)
-    console.log("[psd-import] PSD tem", allLayers.length, "layers:")
-    for (const l of allLayers) {
-      console.log("  -", JSON.stringify({
-        name: l.name,
-        hasText: !!l.text,
-        textContent: l.text?.text?.slice(0, 50),
-        hasCanvas: !!l.canvas,
-        hasChildren: !!l.children?.length,
-      }))
-    }
-
     for (const layer of allLayers) {
       const layerName = (layer.name ?? "").trim()
       if (!layerName || layerName === "Background") { zIndex++; continue }
