@@ -11,6 +11,7 @@ import { FilterPill } from "@/components/ui/FilterPill"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
+import { PsdPieceImporter } from "@/components/campaign/PsdPieceImporter"
 import { Button } from "@/components/ui/Button"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 
@@ -295,6 +296,13 @@ export default function CampaignOverviewPage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <PsdImporter campaignId={id} onImported={loadAll} />
+            {campaign.assets && campaign.assets.length > 0 && (
+              <PsdPieceImporter
+                campaignId={id}
+                campaignAssets={campaign.assets}
+                onImported={loadAll}
+              />
+            )}
             <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
             <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/presentation`)} disabled={pieces.length === 0}>
               Apresentação

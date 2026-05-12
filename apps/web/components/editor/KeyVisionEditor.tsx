@@ -1040,48 +1040,65 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           // Renderiza cada layer da peca
           const sorted = [...pdata.layers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
           for (const layer of sorted) {
+            // Layer LINKADO a um asset (peca gerada ou linkada do PSD)
             const asset = assetMap[layer.assetId] as Asset
-            if (!asset) continue
-            // Aplica overrides ao layer base
-            const layerWithOverrides = {
-              ...layer,
-              ...(layer.overrides ?? {}),
-            }
-            await addAssetToCanvas(fc, asset, layerWithOverrides)
-            // Aplicar overrides especificos de TEXTO depois do textbox criado
-            const objs = fc.getObjects()
-            const created = objs[objs.length - 1] as any
-            if (created && (created.type === "textbox" || created.type === "i-text") && layer.overrides) {
-              if (layer.overrides.fill !== undefined) created.set("fill", layer.overrides.fill)
-              if (layer.overrides.fontSize !== undefined) created.set("fontSize", layer.overrides.fontSize)
-              if (layer.overrides.fontFamily !== undefined) created.set("fontFamily", layer.overrides.fontFamily)
-              if (layer.overrides.fontWeight !== undefined) created.set("fontWeight", layer.overrides.fontWeight)
-              if (layer.overrides.charSpacing !== undefined) created.set("charSpacing", layer.overrides.charSpacing)
-              if (layer.overrides.lineHeight !== undefined) created.set("lineHeight", layer.overrides.lineHeight)
-              if (layer.overrides.textAlign !== undefined) created.set("textAlign", layer.overrides.textAlign)
-              // Adobe-style leading: leadingPt e a fonte da verdade. lineHeight e derivado
-              // (recomputado aqui pra garantir consistencia com o fontSize atual).
-              if (layer.overrides.leadingPt !== undefined && layer.overrides.leadingPt !== null) {
-                ;(created as any).leadingPt = layer.overrides.leadingPt
-                syncLineHeightFromLeading(created)
+            if (asset) {
+              // Aplica overrides ao layer base
+              const layerWithOverrides = {
+                ...layer,
+                ...(layer.overrides ?? {}),
               }
-              if (layer.overrides.styles !== undefined) {
-                created.set("styles", layer.overrides.styles)
-                if (created.initDimensions) created.initDimensions()
+              await addAssetToCanvas(fc, asset, layerWithOverrides)
+              // Aplicar overrides especificos de TEXTO depois do textbox criado
+              const objs = fc.getObjects()
+              const created = objs[objs.length - 1] as any
+              if (created && (created.type === "textbox" || created.type === "i-text") && layer.overrides) {
+                if (layer.overrides.fill !== undefined) created.set("fill", layer.overrides.fill)
+                if (layer.overrides.fontSize !== undefined) created.set("fontSize", layer.overrides.fontSize)
+                if (layer.overrides.fontFamily !== undefined) created.set("fontFamily", layer.overrides.fontFamily)
+                if (layer.overrides.fontWeight !== undefined) created.set("fontWeight", layer.overrides.fontWeight)
+                if (layer.overrides.charSpacing !== undefined) created.set("charSpacing", layer.overrides.charSpacing)
+                if (layer.overrides.lineHeight !== undefined) created.set("lineHeight", layer.overrides.lineHeight)
+                if (layer.overrides.textAlign !== undefined) created.set("textAlign", layer.overrides.textAlign)
+                // Adobe-style leading: leadingPt e a fonte da verdade. lineHeight e derivado
+                // (recomputado aqui pra garantir consistencia com o fontSize atual).
+                if (layer.overrides.leadingPt !== undefined && layer.overrides.leadingPt !== null) {
+                  ;(created as any).leadingPt = layer.overrides.leadingPt
+                  syncLineHeightFromLeading(created)
+                }
+                if (layer.overrides.styles !== undefined) {
+                  created.set("styles", layer.overrides.styles)
+                  if (created.initDimensions) created.initDimensions()
+                }
+                ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
+                // Em modo peca, deixa editavel pra permitir seleção de caracteres,
+                // mas o key handler abaixo bloqueia digitacao real
+              } else if (created) {
+                ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
               }
-              ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
-              // Em modo peca, deixa editavel pra permitir seleção de caracteres,
-              // mas o key handler abaixo bloqueia digitacao real
-            } else if (created) {
-              ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
+              // Aplica mascara se o layer tiver. Acontece DEPOIS do objeto estar
+              // criado e com overrides aplicados pra que a mascara use bounds
+              // corretos. Async porque mascara raster precisa carregar Image.
+              if (created && layer.mask) {
+                const { Image: FabImage, Path } = await import("fabric")
+                await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+              }
+              continue
             }
-            // Aplica mascara se o layer tiver. Acontece DEPOIS do objeto estar
-            // criado e com overrides aplicados pra que a mascara use bounds
-            // corretos. Async porque mascara raster precisa carregar Image.
-            if (created && layer.mask) {
-              const { Image: FabImage, Path } = await import("fabric")
-              await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+            // Layer EMBEDDED (peca importada PSD avulsa). Conteudo cru no proprio
+            // layer.data. Cria objeto Fabric direto sem asset.
+            if (layer.__embedded) {
+              await addEmbeddedLayer(fc, layer)
+              const objs = fc.getObjects()
+              const created = objs[objs.length - 1] as any
+              if (created && layer.mask) {
+                const { Image: FabImage, Path } = await import("fabric")
+                await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+              }
+              continue
             }
+            // Layer orfao (nem asset valido nem embedded): pula com warning
+            editorLog("[LOAD-PIECE] layer ignorado (sem asset valido nem __embedded):", layer)
           }
           fc.renderAll()
         } else if (pdata?.canvasData) {
@@ -1166,10 +1183,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
       fc.renderAll()
       if (alive) refreshLayers(fc)
-      // SAUDE: remove objetos orfaos (sem __assetId) que possam ter vindo do banco
-      // ou de bugs antigos. Tanto em PECA quanto em MATRIZ todo objeto deve ter __assetId.
+      // SAUDE: remove objetos orfaos (sem __assetId nem __embedded) que possam
+      // ter vindo do banco ou de bugs antigos. Layers validos:
+      //  - __assetId: linkado a um CampaignAsset (peca gerada ou linkada do PSD)
+      //  - __embedded: conteudo cru gravado no piece.data (peca importada PSD avulsa)
       // Limpar aqui evita que entrem no undoStack e causem desync no undo/redo.
-      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId)
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
       if (orphans.length > 0) {
         editorLog("[INIT-CLEAN]", pieceId ? "peca" : "matriz", "tinha", orphans.length, "objetos orfaos no canvas. Removendo.")
         for (const orphan of orphans) fc.remove(orphan)
@@ -1178,7 +1197,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask"]))
+        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -1231,17 +1250,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const fc = fabricRef.current
     if (!fc) return
     try {
-      // SAUDE: detecta objetos orfaos (sem __assetId) no canvas. Esses sao
-      // "fantasmas" criados por bugs de paste antigos ou caminhos quebrados.
-      // Eles nao se persistem (save filtra), mas confundem o undo (entram em
-      // snapshots e voltam ao canvas em estado quebrado). Limpa antes de
-      // capturar snapshot pra manter undoStack consistente.
-      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId)
+      // SAUDE: detecta objetos orfaos (sem __assetId nem __embedded) no canvas.
+      // Esses sao "fantasmas" criados por bugs de paste antigos ou caminhos quebrados.
+      // Layers validos tem __assetId (linkado) OU __embedded (peca importada PSD avulsa).
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
       if (orphans.length > 0) {
         editorLog("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
         for (const orphan of orphans) fc.remove(orphan)
       }
-      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask"]))
+      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -1291,7 +1308,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
       // CRITICO 1: Fabric Textbox ignora `styles` no construtor. Apos loadFromJSON,
       // os textboxes restaurados perdem styles per-char. Reaplica manualmente do snapshot.
-      // CRITICO 2: __assetId / __assetLabel podem se perder na reconstrucao - garante.
+      // CRITICO 2: __assetId / __assetLabel / __embedded podem se perder na reconstrucao - garante.
       // CRITICO 3 (bug fix): filtramos BG dos restored, MAS snapObjects pode incluir o BG.
       // Isso desalinha os indices (restored[0] eh o 1o nao-BG, mas snapObjects[0] pode ser BG).
       // Solucao: filtra BG dos snapObjects tambem antes de iterar.
@@ -1305,6 +1322,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         if (src.__assetId) obj.__assetId = src.__assetId
         if (src.__assetLabel) obj.__assetLabel = src.__assetLabel
         if (src.__isImage !== undefined) obj.__isImage = src.__isImage
+        // Layers embedded (PSD avulso importado): preserva flag + dataUrl da imagem
+        if (src.__embedded) obj.__embedded = true
+        if (src.imageDataUrl) obj.imageDataUrl = src.imageDataUrl
         // Restaurar styles per-char em textboxes
         if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
           obj.set("styles", src.styles)
@@ -1322,10 +1342,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         }
       }
 
-      // SAUDE pos-restore: qualquer objeto sem __assetId restaurado e fantasma
-      // (snap continha objeto com __assetId undefined, ou houve race no restore).
+      // SAUDE pos-restore: qualquer objeto sem __assetId nem __embedded restaurado eh fantasma.
       // Remove pra manter canvas saudavel — esses objetos nunca persistem mesmo.
-      const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId)
+      const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
       if (orphansAfterRestore.length > 0) {
         editorLog("[UNDO-CLEAN] applySnapshot: removendo", orphansAfterRestore.length, "objetos orfaos pos-restore")
         for (const orphan of orphansAfterRestore) fc.remove(orphan)
@@ -1546,6 +1565,75 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       })()
       fc.renderAll()
     } catch (e) { console.warn("applyZoom fail:", e) }
+  }
+
+  /**
+   * Cria um objeto Fabric a partir de um layer EMBEDDED (sem asset vinculado).
+   * Usado em pecas importadas de PSD avulso onde o layer nao tem match com
+   * nenhum CampaignAsset. Conteudo cru vem direto do proprio layer:
+   *  - TEXT: text, fontFamily, fontSize, fontWeight, fill, textAlign, styles
+   *  - IMAGE: imageDataUrl (base64 data URL gravado no piece.data)
+   * Marca o objeto com __embedded = true pra survive ao save/load.
+   */
+  async function addEmbeddedLayer(fc: any, layer: any) {
+    const { Textbox, FabricImage } = await import("fabric")
+    const posX = layer?.posX ?? 100
+    const posY = layer?.posY ?? 100
+    const width = layer?.width ?? 400
+    const height = layer?.height ?? 200
+    const scaleX = layer?.scaleX ?? 1
+    const scaleY = layer?.scaleY ?? 1
+
+    if (layer.type === "TEXT") {
+      const tb = new Textbox(layer.text ?? "", {
+        left: posX, top: posY,
+        width,
+        fontFamily: layer.fontFamily ?? "Arial",
+        fontSize: layer.fontSize ?? 48,
+        fontWeight: layer.fontWeight ?? "normal",
+        fill: layer.fill ?? "#111111",
+        textAlign: layer.textAlign ?? "left",
+        scaleX, scaleY,
+        angle: layer.rotation ?? 0,
+      })
+      if (layer.styles && Object.keys(layer.styles).length > 0) {
+        tb.set("styles", layer.styles)
+        if (tb.initDimensions) tb.initDimensions()
+      }
+      ;(tb as any).__embedded = true
+      ;(tb as any).__assetLabel = "(embedded)"
+      fc.add(tb)
+    } else if (layer.type === "IMAGE") {
+      const dataUrl = layer.imageDataUrl
+      if (!dataUrl) {
+        editorLog("[addEmbeddedLayer] IMAGE sem imageDataUrl, ignorando:", layer)
+        return
+      }
+      // Carrega via HTMLImageElement (FabricImage.fromURL pode falhar silenciosamente com base64)
+      await new Promise<void>((resolve) => {
+        const htmlImg = new Image()
+        htmlImg.crossOrigin = "anonymous"
+        htmlImg.onload = () => {
+          const fabImg = new FabricImage(htmlImg, {
+            left: posX, top: posY,
+            scaleX, scaleY,
+            angle: layer.rotation ?? 0,
+          })
+          // Mantem dataUrl original pra round-trip ao salvar (a FabricImage perde
+          // o src embedded em algumas conversoes; gravamos a parte na prop custom).
+          ;(fabImg as any).imageDataUrl = dataUrl
+          ;(fabImg as any).__embedded = true
+          ;(fabImg as any).__assetLabel = "(embedded)"
+          fc.add(fabImg)
+          resolve()
+        }
+        htmlImg.onerror = () => {
+          editorLog("[addEmbeddedLayer] falha ao carregar imagem embedded")
+          resolve()
+        }
+        htmlImg.src = dataUrl
+      })
+    }
   }
 
   async function addAssetToCanvas(fc: any, asset: Asset, layer: any) {
@@ -2125,13 +2213,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const newLayers = fc.getObjects()
           .filter((o: any) => {
             if (o.__isBg) return false
-            // CRITICO (defesa em profundidade): bloqueia salvar objetos sem __assetId
-            // no banco. Sem o vinculo com Asset, no proximo load assetMap[null]=undefined
-            // e o layer e PULADO -> texto "desaparece" da peca. Caminhos que poderiam
-            // criar objetos sem __assetId: copy/paste mal feito, drag-from-asset com
-            // bug, manipulacao manual via DevTools. Loga warning pra detectar.
-            if (!o.__assetId) {
-              editorLog("[PIECE-SAVE] objeto sem __assetId BLOQUEADO:", {
+            if (o.__isBleedOverlay) return false
+            // Layer valido: __assetId (linkado) ou __embedded (PSD avulso importado).
+            // Sem essas flags eh fantasma. Loga warning pra detectar caminhos
+            // problematicos (paste mal feito, drag-from-asset com bug, etc).
+            if (!o.__assetId && !o.__embedded) {
+              editorLog("[PIECE-SAVE] objeto sem __assetId nem __embedded BLOQUEADO:", {
                 type: o.type, text: (o as any).text?.slice(0, 30),
                 left: o.left, top: o.top,
               })
@@ -2141,7 +2228,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           })
           .map((o: any, i: number) => {
             const layer: any = {
-              assetId: o.__assetId,
               posX: Math.round(o.left ?? 0),
               posY: Math.round(o.top ?? 0),
               scaleX: o.scaleX ?? 1,
@@ -2151,6 +2237,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               width: Math.round(o.width ?? 400),
               height: Math.round(o.height ?? 100),
               overrides: {},
+            }
+            // Linkado a um asset: grava assetId.
+            if (o.__assetId) layer.assetId = o.__assetId
+            // Embedded: grava flag + conteudo cru (sem asset).
+            if (o.__embedded) {
+              layer.__embedded = true
+              if (o.type === "textbox" || o.type === "i-text") {
+                layer.type = "TEXT"
+                layer.text = o.text ?? ""
+                layer.fontFamily = o.fontFamily
+                layer.fontSize = o.fontSize
+                layer.fontWeight = o.fontWeight
+                layer.fill = o.fill
+                if (o.textAlign) layer.textAlign = o.textAlign
+              } else if (o.type === "image") {
+                layer.type = "IMAGE"
+                if ((o as any).imageDataUrl) {
+                  layer.imageDataUrl = (o as any).imageDataUrl
+                } else if ((o as any).getSrc) {
+                  // Fallback: pega src atual da imagem (pode ser blob: ou data: URL)
+                  try { layer.imageDataUrl = (o as any).getSrc() } catch {}
+                }
+              }
             }
             // Mascara (raster/vector/clipping) preservada via __maskData.
             // Round-trip do PSD ate o re-export sem perder a mascara.
