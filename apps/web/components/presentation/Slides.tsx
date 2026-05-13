@@ -204,7 +204,11 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           alignItems: "center",
         }}>
           {steps!.map((s, i) => {
-            const src = s.imageUrl ?? s.thumbnailUrl ?? null
+            // Cache-bust: o nome do arquivo ja tem timestamp, mas o navegador
+            // pode cachear baseado na URL. Adiciona ?_t pra forcar re-fetch
+            // quando o thumb eh atualizado.
+            const rawSrc = s.imageUrl ?? s.thumbnailUrl ?? null
+            const src = rawSrc ? `${rawSrc}?_t=${Date.now()}` : null
             return (
               <div key={i} style={{
                 // Label e imagem alinhadas a esquerda — label fica colado
