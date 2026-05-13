@@ -234,13 +234,16 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
               <div key={i} style={{
                 // Container do step: ocupa altura total e centraliza
                 // verticalmente o conteudo (label+peca) como um bloco.
-                // Sem isso, a peca centralizava sozinha e o label ficava
-                // longe no topo.
                 display: "flex", flexDirection: "column",
                 alignItems: "flex-start",
                 justifyContent: "center",
                 height: "100%",
-                width: total === 1 ? "50%" : total === 2 ? "40%" : "100%",
+                // 1 ou 2 steps: width AUTO. A peca dentro define o tamanho
+                // e o flex parent centraliza perfeito (sem espaco vazio
+                // assimetrico nas cells 50%/40% fixo).
+                // 3+ steps: width 100% pra preencher a celula do grid.
+                width: total <= 2 ? "auto" : "100%",
+                maxWidth: total <= 2 ? "50%" : "100%",
                 minHeight: 0, minWidth: 0,
               }}>
                 {/* Wrapper compacto: label + imagem como um bloco unico
@@ -249,7 +252,10 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                   display: "flex", flexDirection: "column",
                   alignItems: "flex-start",
                   gap: "0.3cqw",
-                  width: "100%",
+                  // Width segue o conteudo (imagem) quando 1/2 steps;
+                  // ocupa toda a cell quando 3+.
+                  width: total <= 2 ? "auto" : "100%",
+                  maxWidth: "100%",
                   maxHeight: "100%",
                   minHeight: 0,
                 }}>
