@@ -2561,7 +2561,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
   // Serializa o canvas ATUAL no formato {layers, bgColor} pra salvar como
   // snapshot em inactiveStepsRef. Replica a logica do performSave modo peca.
-  function serializeCurrentStep(): { layers: any[]; bgColor: string } {
+  function serializeCurrentStep(): { layers: any[]; bgColor: string; imageUrl?: string | null; thumbnailUrl?: string | null } {
     const fc = fabricRef.current
     if (!fc) return { layers: [], bgColor: bgColorRef.current }
     const layers = fc.getObjects()
@@ -2600,7 +2600,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         if (o.__mask) layer.mask = o.__mask
         return layer
       })
-    return { layers, bgColor: bgColorRef.current }
+    // CRITICO: preserva imageUrl/thumbnailUrl do banco pro step ATIVO. Sem isso,
+    // toda vez que o user troca de step, o snapshot do step que era ativo
+    // entra no buffer dos inativos SEM imageUrl. O save depois persiste null
+    // -> preview some na apresentacao.
+    const p = pieceRef.current
+    const pdata = p?.data ? (typeof p.data === "string" ? JSON.parse(p.data) : p.data) : {}
+    const oldSteps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
+    const oldActive = oldSteps[activeStepIndexRef.current] ?? {}
+    return {
+      layers,
+      bgColor: bgColorRef.current,
+      imageUrl: oldActive.imageUrl ?? null,
+      thumbnailUrl: oldActive.thumbnailUrl ?? null,
+    }
   }
 
   // Aplica um step {layers, bgColor} no canvas: limpa tudo e re-cria.
