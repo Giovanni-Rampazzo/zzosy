@@ -2561,6 +2561,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     await doSaveNow()
   }
 
+  // Percorre todos os steps gerando thumbnail individual pra cada um.
+  // Util pra pecas multi-step antigas que tem steps sem preview (criados
+  // antes do fix de auto-thumb-on-add). Visualmente eh ruim — pisca entre
+  // os steps — mas eh a forma confiavel sem render server-side.
+  const [regeneratingThumbs, setRegeneratingThumbs] = useState(false)
+  async function regenerateAllStepThumbs() {
+    if (!pieceId) return
+    if (stepCountRef.current <= 1) return
+    setRegeneratingThumbs(true)
+    const originalActive = activeStepIndexRef.current
+    try {
+      for (let i = 0; i < stepCountRef.current; i++) {
+        if (i !== activeStepIndexRef.current) {
+          await switchToStep(i)  // ja faz upload do thumb via doSaveNow
+        }
+      }
+      // Volta pro step original que o user estava editando.
+      if (originalActive !== activeStepIndexRef.current) {
+        await switchToStep(originalActive)
+      }
+    } finally {
+      setRegeneratingThumbs(false)
+    }
+  }
+
   // ============================================================
   // FIM STEPS MANAGEMENT
   // ============================================================
@@ -3331,13 +3356,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               + Step
             </button>
             {stepCount > 1 && (
-              <button
-                onClick={(e) => removeStep(activeStepIndex, e.altKey)}
-                title="Apagar este step (Option+click pula confirmacao)"
-                style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-              >
-                🗑
-              </button>
+              <>
+                <button
+                  onClick={(e) => removeStep(activeStepIndex, e.altKey)}
+                  title="Apagar este step (Option+click pula confirmacao)"
+                  style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+                >
+                  🗑
+                </button>
+                <button
+                  onClick={regenerateAllStepThumbs}
+                  disabled={regeneratingThumbs}
+                  title="Gera previews pra todos os steps (necessario quando aparecem 'sem preview' na apresentacao)"
+                  style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: regeneratingThumbs ? "#555" : "#aaa", cursor: regeneratingThumbs ? "wait" : "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+                >
+                  {regeneratingThumbs ? "…" : "🔄 Previews"}
+                </button>
+              </>
             )}
           </div>
         )}
