@@ -1277,6 +1277,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       isInitialized.current = true
       // Auto-gera thumbnails pra steps inativos sem preview (background).
       // Renderiza offscreen — nao mexe no canvas principal. User nao vê piscar.
+      // RESET do flag pra rodar de novo nesta peca (cada init = nova oportunidade).
+      autoGenDoneRef.current = false
       if (pieceId) {
         autoGenerateMissingStepThumbs().catch(e => console.warn("[auto-thumbs] erro:", e))
       }
@@ -2211,31 +2213,55 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (!p) return
     const pdata = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
     const allSteps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
+    console.log("[autoGen] iniciando. stepCount:", allSteps.length, "isDirty:", isDirtyRef.current)
     if (allSteps.length < 2) return
     const activeIdx = pdata.activeStepIndex ?? 0
     for (let i = 0; i < allSteps.length; i++) {
       // Pula o step ativo — o thumb dele eh gerado pelo uploadPieceThumb
       // normal (a partir do canvas atual). Aqui soh interessam os inativos.
-      if (i === activeIdx) continue
+      if (i === activeIdx) {
+        console.log("[autoGen] step", i, "= ativo, pulando")
+        continue
+      }
       const step = allSteps[i]
       // Soh gera quem nao tem thumb. Steps que ja tem ficam quietos.
-      if (step?.imageUrl) continue
+      if (step?.imageUrl) {
+        console.log("[autoGen] step", i, "ja tem thumb")
+        continue
+      }
       // Guard: se o user comecou a editar, aborta autoGen pra nao competir
       // com saves manuais que estao prestes a rodar.
       if (isDirtyRef.current) {
-        editorLog("[autoGen] abortado — user comecou a editar")
+        console.log("[autoGen] abortado — isDirty=true antes do step", i)
         return
       }
+      console.log("[autoGen] gerando thumb pro step", i)
       const blob = await renderStepOffscreenToBlob({
         layers: step.layers ?? [],
         bgColor: step.bgColor ?? bgColorRef.current,
       })
-      if (!blob) continue
+      if (!blob) {
+        console.log("[autoGen] blob vazio pro step", i)
+        continue
+      }
       // Re-check: usuario pode ter editado durante o render offscreen
       if (isDirtyRef.current) {
-        editorLog("[autoGen] abortado durante render — user editou")
+        console.log("[autoGen] abortado durante render — isDirty agora true")
         return
       }
+      // CRITICO: re-busca o estado atual do banco JUSTAMENTE antes do upload.
+      // Outro save (do user) pode ter gerado um thumb melhor pra este step.
+      // Se ja tem imageUrl agora, NAO sobrescreve.
+      try {
+        const freshRes = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
+        const freshPiece = await freshRes.json()
+        const freshData = typeof freshPiece.data === "string" ? JSON.parse(freshPiece.data) : (freshPiece.data ?? {})
+        const freshStep = Array.isArray(freshData.steps) ? freshData.steps[i] : null
+        if (freshStep?.imageUrl) {
+          console.log("[autoGen] step", i, "ja tem thumb no banco (gerado por outro save) — pulando")
+          continue
+        }
+      } catch (e) { /* segue mesmo se a checagem falhar */ }
       const fd = new FormData()
       fd.append("thumbnail", blob, `step${i}.png`)
       try {

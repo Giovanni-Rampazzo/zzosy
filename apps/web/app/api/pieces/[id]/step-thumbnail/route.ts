@@ -44,8 +44,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const publicUrl = `/uploads/step-thumbs/${filename}`
 
   // Atualiza piece.data.steps[index].imageUrl + thumbnailUrl.
-  // Cria array steps se nao existir (caso o step esteja em piece.data.layers).
-  const data: any = piece.data ? JSON.parse(piece.data) : {}
+  // CRITICO: re-le piece JUSTAMENTE antes do update pra pegar a versao mais
+  // recente do banco. Sem isso, outro save concorrente (ex: editor salvando
+  // data.steps inteiro) poderia sobrescrever as edicoes do user com um
+  // snapshot velho. Aqui queremos apenas adicionar imageUrl/thumbnailUrl
+  // ao step especifico, NAO sobrescrever layers/bgColor.
+  const fresh = await prisma.piece.findUnique({ where: { id } })
+  if (!fresh) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  const data: any = fresh.data ? JSON.parse(fresh.data) : {}
   if (!Array.isArray(data.steps)) data.steps = []
   while (data.steps.length <= index) data.steps.push({ layers: [], bgColor: data.bgColor ?? "#ffffff" })
   data.steps[index] = {
