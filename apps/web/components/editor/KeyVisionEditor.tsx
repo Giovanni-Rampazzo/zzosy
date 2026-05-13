@@ -2262,7 +2262,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           }
           return layer
         })
-      const newData = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, layers: newLayers }
+      const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, layers: newLayers }
+      // STEPS: mesmo tratamento do performSave. Sem isso, "Salvar e sair"
+      // gravaria a peca SEM o campo steps, destruindo todos os steps inativos.
+      if (stepCountRef.current > 1) {
+        const fullSteps: any[] = []
+        let inactiveCursor = 0
+        for (let i = 0; i < stepCountRef.current; i++) {
+          if (i === activeStepIndexRef.current) {
+            fullSteps.push({ layers: newLayers, bgColor: bgColorRef.current })
+          } else {
+            fullSteps.push(inactiveStepsRef.current[inactiveCursor] ?? { layers: [], bgColor: "#ffffff" })
+            inactiveCursor++
+          }
+        }
+        newData.steps = fullSteps
+        newData.activeStepIndex = activeStepIndexRef.current
+      } else {
+        delete newData.steps
+        delete newData.activeStepIndex
+      }
       try {
         // Fix #12: marca isDirty=false APENAS apos o PATCH ter sucesso. Se o usuario
         // fechar a aba durante o upload, ainda mostra "salvando" e nao perde o
@@ -4103,7 +4122,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "8px 14px", color: "#888", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
               <button onClick={() => { const go = confirmExit; setConfirmExit(null); if (go) go() }}
                 style={{ background: "transparent", border: "1px solid #d33", borderRadius: 6, padding: "8px 14px", color: "#d33", fontSize: 13, cursor: "pointer" }}>Descartar</button>
-              <button onClick={async () => { const go = confirmExit; setConfirmExit(null); await saveNow(); if (go) go() }}
+              <button onClick={async () => {
+                const go = confirmExit
+                setConfirmExit(null)
+                try {
+                  await saveNow()
+                  console.log("[ConfirmExit] save completo, navegando…")
+                } catch (e) {
+                  console.warn("[ConfirmExit] saveNow falhou:", e)
+                }
+                if (go) {
+                  try { go() } catch (e) { console.warn("[ConfirmExit] go() falhou:", e) }
+                }
+              }}
                 style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 14px", color: "#111", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Salvar e sair</button>
             </div>
           </div>
