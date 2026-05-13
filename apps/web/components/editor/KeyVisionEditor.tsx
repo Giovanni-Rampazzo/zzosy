@@ -2317,11 +2317,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // keepalive: o request sobrevive a navegacao do user (ex: clicar
     // em 'Voltar pra campanha' logo apos um save). Sem isso, o fetch
     // eh cancelado e o thumb fica desatualizado.
-    await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
+    // try/catch porque "Failed to fetch" pode aparecer quando o user
+    // navega ou hot-reload derruba a conexao — nao deve quebrar o save.
+    try {
+      await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
+    } catch (e) { console.warn("[uploadPieceThumb] main thumb failed:", e) }
     // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
-    // Assim a apresentacao consegue mostrar cada step com seu preview real.
-    // CRITICO: usa REF pra ler valores atuais (state pode estar stale se essa
-    // funcao foi chamada de dentro de uma cadeia async como addStep -> doSaveNow).
     if (stepCountRef.current > 1) {
       const fd2 = new FormData()
       fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
