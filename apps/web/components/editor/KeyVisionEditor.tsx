@@ -2080,14 +2080,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     return (obj as any)?.__maskData ?? null
   }
 
-  async function uploadPieceThumb(fc: any, pId: string) {
+  // Gera o blob de thumbnail do canvas atual (PNG 2400px max).
+  // Separado de uploadPieceThumb pra reuso (upload de step thumb tambem).
+  async function generateCurrentThumbBlob(fc: any): Promise<Blob | null> {
     try {
       const w = canvasWRef.current
       const h = canvasHRef.current
-      // Thumbnail: render num StaticCanvas offscreen pra garantir nitidez
-      // na apresentacao (sem depender do zoom do editor).
-      // PNG 2400px lossless. Pesa mais que JPEG mas mantem textos vetoriais
-      // e bordas finas perfeitas mesmo em telas 4K.
       const TARGET = 2400
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
       const tw = Math.round(w * thumbScale)
@@ -2098,18 +2096,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const thumbFc = new _ThumbSC(thumbEl, { width: tw, height: th, enableRetinaScaling: false, backgroundColor: bgColorRef.current })
 
       const objectsToClone = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
-
-      // CRITICO: usa for...of (sequencial) em vez de Promise.all+map (paralelo).
-      // Promise.all nao garante ordem de adicao ao thumbFc — clones lentos
-      // (imagens) acabavam adicionadas DEPOIS de clones rapidos (texto), e
-      // como Fabric usa ordem-de-insercao = z-index, a imagem ficava POR CIMA
-      // do texto no thumb (texto invisivel). Sequencial preserva a ordem
-      // original do canvas exatamente.
       for (const obj of objectsToClone) {
         const cloned = await obj.clone()
         const isText = obj.type === "textbox" || obj.type === "i-text"
-        // Reaplica styles per-char manualmente (Fabric v7 .clone() ignora
-        // o map styles em Textbox). Sem isso, cores/fontes por letra somem.
         if (isText && obj.styles && Object.keys(obj.styles).length > 0) {
           cloned.set("styles", JSON.parse(JSON.stringify(obj.styles)))
           if (cloned.initDimensions) cloned.initDimensions()
@@ -2120,27 +2109,41 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           scaleX: (obj.scaleX ?? 1) * thumbScale,
           scaleY: (obj.scaleY ?? 1) * thumbScale,
         })
-        // Re-aplica mascara a partir do __maskData — clipPath nao e clonado
-        // corretamente em alguns casos (Image clipPath com dataUrl).
         if ((obj as any).__maskData) {
           ;(cloned as any).__maskData = (obj as any).__maskData
           try {
             cloned.clipPath = null
             await applyMaskToFabricObject({ Image: _FabImage, Path: _Path }, cloned, (obj as any).__maskData)
-          } catch (e) { console.warn("[uploadPieceThumb] mask clone failed:", e) }
+          } catch (e) { console.warn("[thumb] mask clone failed:", e) }
         }
         thumbFc.add(cloned)
       }
       thumbFc.renderAll()
-      // Aguarda render assincrono (FabricImage com lazy loading, etc).
       await new Promise(r => setTimeout(r, 200))
       const dataUrl = thumbFc.toDataURL({ format: "png", multiplier: 1 })
       thumbFc.dispose()
-      const blob = await (await fetch(dataUrl)).blob()
-      const fd = new FormData()
-      fd.append("thumbnail", blob, "thumb.png")
-      await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd })
-    } catch (e) { console.warn("piece thumb upload failed:", e) }
+      return await (await fetch(dataUrl)).blob()
+    } catch (e) {
+      console.warn("[generateCurrentThumbBlob] fail:", e)
+      return null
+    }
+  }
+
+  async function uploadPieceThumb(fc: any, pId: string) {
+    const blob = await generateCurrentThumbBlob(fc)
+    if (!blob) return
+    const fd = new FormData()
+    fd.append("thumbnail", blob, "thumb.png")
+    await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd })
+    // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
+    // Assim a apresentacao consegue mostrar cada step com seu preview real.
+    if (stepCount > 1) {
+      const fd2 = new FormData()
+      fd2.append("thumbnail", blob, `step${activeStepIndex}.png`)
+      try {
+        await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndex}`, { method: "POST", body: fd2 })
+      } catch (e) { console.warn("[uploadPieceThumb] step thumb failed:", e) }
+    }
   }
 
   async function saveNow() {
