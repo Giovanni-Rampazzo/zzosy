@@ -307,11 +307,12 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
       fontFace: "Calibri", fontSize: 11, bold: true, italic: true,
       color: TEXT_DARK, valign: "middle", align: "left",
     })
-    // Texto da copy (corpo)
+    // Texto da copy (corpo) — fontSize 11, centralizado verticalmente
+    // (mesmo look da apresentacao web: legenda alinhada no centro do card)
     slide.addText(piece.copy!.trim(), {
       x: CARD_X + 0.18, y: AREA_Y + 0.55, w: CARD_W - 0.36, h: SPLIT_AREA_H - 0.7,
-      fontFace: "Calibri", fontSize: 10,
-      color: TEXT_DARK, valign: "top", align: "left",
+      fontFace: "Calibri", fontSize: 11,
+      color: TEXT_DARK, valign: "middle", align: "left",
     })
   } else {
     // Layout sem copy: peca centralizada na area util inteira.
