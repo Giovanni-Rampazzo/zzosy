@@ -1893,6 +1893,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (!fc || !obj) return
     const locked = !(obj.__locked === true)
     obj.__locked = locked
+    console.log("[TOGGLE-LOCK] novo estado:", locked, "label:", obj?.__assetLabel)
     // Lock = nao move, nao redimensiona, nao rotaciona, nao seleciona via clique
     obj.set({
       selectable: !locked,
@@ -1914,6 +1915,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   // Aplica flags __hidden/__locked vindas do JSON salvo no objeto Fabric criado.
   // Chamado depois de addAssetToCanvas/addEmbeddedLayer pra restaurar estado.
   function applyHiddenLockedToObject(obj: any, layer: any) {
+    // DEBUG
+    console.log("[LOAD] applyHiddenLockedToObject — layer.hidden:", layer?.hidden, "layer.locked:", layer?.locked, "label:", obj?.__assetLabel)
     if (layer?.hidden === true) {
       obj.__hidden = true
       obj.set("visible", false)
@@ -2217,6 +2220,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           }
           if (o.__hidden === true) layer.hidden = true
           if (o.__locked === true) layer.locked = true
+          // DEBUG: log do que tah indo pra matriz
+          console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "__hidden:", o.__hidden, "__locked:", o.__locked, "-> hidden:", layer.hidden, "locked:", layer.locked)
           // Espelha a logica do modo PECA: salva overrides per-instancia (fill,
           // fontSize, styles per-char, leadingPt, etc) pra preservar formatacao
           // ao alternar entre KV/Assets/Campanha. Sem isso, recarregar o KV
@@ -2366,6 +2371,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           // Visibilidade e lock: persiste se diferente do default.
           if (o.__hidden === true) layer.hidden = true
           if (o.__locked === true) layer.locked = true
+          // DEBUG: log do que tah indo pra peca
+          console.log("[SAVE-PIECE] layer", i, "type:", o.type, "__hidden:", o.__hidden, "__locked:", o.__locked, "-> hidden:", layer.hidden, "locked:", layer.locked)
           // Embedded: grava flag + conteudo cru (sem asset).
           if (o.__embedded) {
             layer.__embedded = true
