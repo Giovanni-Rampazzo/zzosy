@@ -1,16 +1,18 @@
 "use client"
 import { useState } from "react"
-import { signIn } from "next-auth/react"
+import { signIn, signOut, useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/Button"
 
 export default function LoginPage() {
   const router = useRouter()
+  const { data: session, status } = useSession()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -25,6 +27,13 @@ export default function LoginPage() {
     }
   }
 
+  async function handleLogout() {
+    setLoggingOut(true)
+    // redirect: false pra ficar na pagina /login depois de deslogar
+    await signOut({ redirect: false })
+    setLoggingOut(false)
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#111]">
       <div className="w-[400px]">
@@ -32,6 +41,17 @@ export default function LoginPage() {
           <div className="text-[#F5C400] text-3xl font-bold tracking-[3px]">ZZOSY</div>
           <div className="text-[#555] text-[13px] mt-2">Sistema de automação de campanhas</div>
         </div>
+        {status === "authenticated" && session?.user && (
+          <div className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a] mb-4 flex items-center justify-between">
+            <div className="text-[12px]">
+              <span className="text-[#666]">Sessão ativa: </span>
+              <span className="text-white">{session.user.email}</span>
+            </div>
+            <Button onClick={handleLogout} variant="secondary" size="sm" loading={loggingOut}>
+              {loggingOut ? "Saindo..." : "Sair"}
+            </Button>
+          </div>
+        )}
         <div className="bg-[#1a1a1a] rounded-xl p-8 border border-[#2a2a2a]">
           <div className="text-white text-lg font-bold mb-6">Entrar</div>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
