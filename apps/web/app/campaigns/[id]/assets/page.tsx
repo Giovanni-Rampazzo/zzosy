@@ -419,7 +419,15 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
       </div>
 
       {/* Acoes */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end", gap: 6, flexWrap: "wrap" }}>
+        <Button variant="secondary" size="sm" onClick={async () => {
+          const { exportAsset } = await import("@/lib/exportAsset")
+          try { await exportAsset(asset as any, "original") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
+        }} title="Baixar arquivo original do asset">Original</Button>
+        <Button variant="secondary" size="sm" onClick={async () => {
+          const { exportAsset } = await import("@/lib/exportAsset")
+          try { await exportAsset(asset as any, "psd") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
+        }} title="Baixar PSD com 1 layer (texto editavel ou imagem)">PSD</Button>
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     </div>
