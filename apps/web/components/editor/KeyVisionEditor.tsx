@@ -1883,7 +1883,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     obj.set("visible", !hidden)
     fc.renderAll()
     refreshLayers(fc)
-    doSave()
+    isDirtyRef.current = true
+    doSave(true)  // immediate: a\u00e7\u00e3o deliberada, sem debounce, pra n\u00e3o perder se user sair da p\u00e1gina
   }
 
   function toggleLayerLock(obj: any) {
@@ -1904,7 +1905,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (locked && fc.getActiveObject() === obj) fc.discardActiveObject()
     fc.renderAll()
     refreshLayers(fc)
-    doSave()
+    isDirtyRef.current = true
+    doSave(true)  // immediate: a\u00e7\u00e3o deliberada, sem debounce, pra n\u00e3o perder se user sair da p\u00e1gina
   }
 
   // Aplica flags __hidden/__locked vindas do JSON salvo no objeto Fabric criado.
@@ -2283,7 +2285,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     savingInFlightRef.current = false
   }
 
-  function doSave() {
+  function doSave(immediate = false) {
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       // Guard 0: durante apply de undo/redo, NUNCA salva. loadFromJSON dispara
@@ -2522,7 +2524,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         setIsDirty(false)
       }
       setSaving(false)
-    }, 800)
+    }, immediate ? 0 : 800)
   }
 
   async function addLayer() {
