@@ -2199,7 +2199,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   // Detecta steps sem thumbnail no piece.data e os gera offscreen.
   // Chamado ao abrir uma peca multi-step no editor. Roda em background
   // — nao trava o user.
+  // Flag de controle: autoGenerate so roda uma vez por carregamento e nunca em
+  // paralelo com saves. Sem isso, race condition entre autoGen (lendo dados
+  // antigos) e save (escrevendo dados novos) podia restaurar thumbs antigos.
+  const autoGenDoneRef = useRef(false)
   async function autoGenerateMissingStepThumbs() {
+    if (autoGenDoneRef.current) return
+    autoGenDoneRef.current = true
     if (!pieceId) return
     const p = pieceRef.current
     if (!p) return
@@ -2214,11 +2220,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const step = allSteps[i]
       // Soh gera quem nao tem thumb. Steps que ja tem ficam quietos.
       if (step?.imageUrl) continue
+      // Guard: se o user comecou a editar, aborta autoGen pra nao competir
+      // com saves manuais que estao prestes a rodar.
+      if (isDirtyRef.current) {
+        editorLog("[autoGen] abortado — user comecou a editar")
+        return
+      }
       const blob = await renderStepOffscreenToBlob({
         layers: step.layers ?? [],
         bgColor: step.bgColor ?? bgColorRef.current,
       })
       if (!blob) continue
+      // Re-check: usuario pode ter editado durante o render offscreen
+      if (isDirtyRef.current) {
+        editorLog("[autoGen] abortado durante render — user editou")
+        return
+      }
       const fd = new FormData()
       fd.append("thumbnail", blob, `step${i}.png`)
       try {

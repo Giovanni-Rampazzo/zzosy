@@ -64,9 +64,12 @@ export default function PresentationPage() {
   useEffect(() => {
     async function load() {
       try {
+        // Cache-bust: timestamp na URL forca fetch fresco mesmo se Next cachear
+        // o componente no client-side router (router.push do editor pra presentation).
+        const ts = Date.now()
         const [c, p] = await Promise.all([
-          fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
-          fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
+          fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
+          fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
         ])
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
@@ -79,20 +82,23 @@ export default function PresentationPage() {
     // em outra aba, volta pra apresentacao). Sem isso, thumbs gerados em
     // background no editor nao apareceriam na presentation ate F5.
     function refetch() {
+      const ts = Date.now()
       Promise.all([
-        fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
-        fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
+        fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
+        fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
       ]).then(([c, p]) => {
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
       }).catch(() => {})
     }
-    window.addEventListener("focus", refetch)
-    document.addEventListener("visibilitychange", () => {
+    function onVisibilityChange() {
       if (document.visibilityState === "visible") refetch()
-    })
+    }
+    window.addEventListener("focus", refetch)
+    document.addEventListener("visibilitychange", onVisibilityChange)
     return () => {
       window.removeEventListener("focus", refetch)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
     }
   }, [id])
 
