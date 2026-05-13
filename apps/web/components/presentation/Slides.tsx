@@ -216,11 +216,9 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
       return (
         <div style={containerStyle}>
           {steps!.map((s, i) => {
-            // Cache-bust: o nome do arquivo ja tem timestamp, mas o navegador
-            // pode cachear baseado na URL. Adiciona ?_t pra forcar re-fetch
-            // quando o thumb eh atualizado.
-            const rawSrc = s.imageUrl ?? s.thumbnailUrl ?? null
-            const src = rawSrc ? `${rawSrc}?_t=${Date.now()}` : null
+            // A URL ja vem versionada do API (?v=updatedAt). Sem cache-bust
+            // adicional aqui pra evitar re-fetch desnecessario a cada render.
+            const src = s.imageUrl ?? s.thumbnailUrl ?? null
             return (
               <div key={i} style={{
                 // Container do step: inline-flex pra ter width baseada em

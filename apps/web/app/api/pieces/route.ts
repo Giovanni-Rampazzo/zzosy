@@ -37,32 +37,35 @@ export async function GET(req: NextRequest) {
   const enriched = pieces.map(p => {
     let width = 0, height = 0, format = "", dpi = 72
     let steps: any[] | null = null
+    let stepCount = 1
+    // Versionador: timestamp da ultima edicao da peca. Quando muda, navegador
+    // re-baixa as imagens (sem mais cache stale).
+    const v = new Date(p.updatedAt).getTime()
+    const stamp = (url: string | null) => url ? `${url}${url.includes("?") ? "&" : "?"}v=${v}` : null
     try {
       const d = p.data ? JSON.parse(p.data) : null
       if (d) { width = d.width ?? 0; height = d.height ?? 0; format = d.format ?? ""; dpi = d.dpi ?? 72 }
-      // Steps: array de {layers, bgColor, thumbnailUrl?, imageUrl?} no piece.data.
-      // Quando >= 2 steps, presentation/export sabem que eh carrossel.
       if (d && Array.isArray(d.steps) && d.steps.length >= 2) {
+        stepCount = d.steps.length
         steps = d.steps.map((s: any, i: number) => ({
           index: i,
-          thumbnailUrl: s.thumbnailUrl ?? null,
-          imageUrl: s.imageUrl ?? null,
+          thumbnailUrl: stamp(s.thumbnailUrl ?? null),
+          imageUrl: stamp(s.imageUrl ?? null),
         }))
       }
     } catch {}
 
     const mf = p.mediaFormatId ? mfMap.get(p.mediaFormatId) : null
     const media = mf?.vehicle || mf?.media || inferMediaFromName(p.name)
-    // Categoria vem do MediaFormat associado. Pecas sem mediaFormat caem em "Sem categoria".
     const mfCategory = mf?.category || "Sem categoria"
-    // Unidade original da pe\u00e7a: vem do MediaFormat. Pe\u00e7as sem MF (importadas
-    // via PSD por exemplo) caem em px.
     const widthValue = mf?.widthValue ?? width
     const heightValue = mf?.heightValue ?? height
     const widthUnit = mf?.widthUnit ?? "px"
     const heightUnit = mf?.heightUnit ?? "px"
 
-    return { ...p, width, height, format, dpi, media, mediaFormatCategory: mfCategory, widthValue, heightValue, widthUnit, heightUnit, steps }
+    // imageUrl da peca tambem versionado
+    const stampedImageUrl = stamp(p.imageUrl as any)
+    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
   })
   return NextResponse.json(enriched)
 }

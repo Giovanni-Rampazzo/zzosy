@@ -37,6 +37,7 @@ interface Piece {
   copy?: string | null
   data?: any
   createdAt: string
+  stepCount?: number
 }
 
 export default function CampaignOverviewPage() {
@@ -440,13 +441,26 @@ export default function CampaignOverviewPage() {
                   <div
                     onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}
                     title="Editar peça"
-                    style={{ height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer", borderRadius: "10px 10px 0 0" }}>
+                    style={{ position: "relative", height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer", borderRadius: "10px 10px 0 0" }}>
                     {p.imageUrl ? (
-                      <img src={`${p.imageUrl}?v=${loadTs}`} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     ) : (
                       <div style={{ textAlign: "center", color: "#aaa", fontSize: 11 }}>
                         <div style={{ fontWeight: 600 }}>{p.format}</div>
                         <div>{p.width} × {p.height}</div>
+                      </div>
+                    )}
+                    {/* Badge de steps: peca multi-step mostra "N steps" no canto */}
+                    {(p.stepCount ?? 1) > 1 && (
+                      <div style={{
+                        position: "absolute", top: 6, right: 6,
+                        background: "rgba(0,0,0,0.75)", color: "#fff",
+                        fontSize: 10, fontWeight: 700,
+                        padding: "3px 7px", borderRadius: 4,
+                        letterSpacing: 0.3,
+                        fontFamily: "system-ui, -apple-system, sans-serif",
+                      }}>
+                        {p.stepCount} steps
                       </div>
                     )}
                   </div>
@@ -538,7 +552,7 @@ export default function CampaignOverviewPage() {
                       </td>
                       <td style={{ padding: "8px 8px", cursor: "pointer" }}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
-                        <RowThumb src={p.imageUrl ? `${p.imageUrl}?v=${loadTs}` : null} alt={p.name} fallbackText={p.format} />
+                        <RowThumb src={p.imageUrl ?? null} alt={p.name} fallbackText={p.format} />
                       </td>
                       <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
