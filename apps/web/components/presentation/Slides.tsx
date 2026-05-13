@@ -201,26 +201,17 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
   function renderPieceVisual(opts?: { withShadow?: boolean }) {
     if (hasMultiStep) {
       const total = steps!.length
-      // 1 step (chunk final de peca quebrada): peca centralizada em ~50% largura.
-      // 2 steps: flex centralizado.
-      // 3+ steps: grid uniforme.
-      const containerStyle: React.CSSProperties = total === 1 ? {
+      // Layout unificado: flex centralizado pra todos os casos.
+      // Cada peca tem width:auto (segue a propria proporcao) com maxWidth
+      // limitada por total. Gap ajustado pelo numero de pecas.
+      // Isso garante centralizacao horizontal perfeita independente do
+      // numero de steps — sem espaco vazio assimetrico nas extremidades.
+      const containerStyle: React.CSSProperties = {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
+        gap: total === 2 ? "4%" : total === 3 ? "2.5%" : "1.8%",
         width: "100%", height: "100%",
-      } : total === 2 ? {
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        gap: "4%",
-        width: "100%", height: "100%",
-      } : {
-        display: "grid",
-        gridTemplateColumns: `repeat(${total}, 1fr)`,
-        gap: "1.5%",
-        width: "100%", height: "100%",
-        alignItems: "center",
       }
       return (
         <div style={containerStyle}>
@@ -238,12 +229,12 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 alignItems: "flex-start",
                 justifyContent: "center",
                 height: "100%",
-                // 1 ou 2 steps: width AUTO. A peca dentro define o tamanho
-                // e o flex parent centraliza perfeito (sem espaco vazio
-                // assimetrico nas cells 50%/40% fixo).
-                // 3+ steps: width 100% pra preencher a celula do grid.
-                width: total <= 2 ? "auto" : "100%",
-                maxWidth: total <= 2 ? "50%" : "100%",
+                // Width auto pra TODOS os casos: a peca dentro define a
+                // largura final do bloco. MaxWidth proporcional ao numero
+                // de steps pra evitar uma peca ocupar mais do que sua
+                // 'fatia justa'.
+                width: "auto",
+                maxWidth: `${100 / total}%`,
                 minHeight: 0, minWidth: 0,
               }}>
                 {/* Wrapper compacto: label + imagem como um bloco unico
@@ -252,9 +243,8 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                   display: "flex", flexDirection: "column",
                   alignItems: "flex-start",
                   gap: "0.3cqw",
-                  // Width segue o conteudo (imagem) quando 1/2 steps;
-                  // ocupa toda a cell quando 3+.
-                  width: total <= 2 ? "auto" : "100%",
+                  // Width segue o conteudo (imagem)
+                  width: "auto",
                   maxWidth: "100%",
                   maxHeight: "100%",
                   minHeight: 0,
