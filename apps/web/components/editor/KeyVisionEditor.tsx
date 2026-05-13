@@ -3445,6 +3445,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     </div>
   )
 
+  // Sem assets cadastrados: nao da pra editar nada (o canvas precisa de pelo
+  // menos 1 asset pra arrastar). Mostra orientacao + link pra pagina de assets.
+  if (!Array.isArray(campaign.assets) || campaign.assets.length === 0) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a1a", color: "#aaa", fontSize: 14, gap: 16, padding: 20, textAlign: "center" }}>
+      <div style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>Esta campanha ainda não tem assets.</div>
+      <div style={{ maxWidth: 420 }}>Para editar a peça, cadastre ao menos um asset (imagem, logo, ou texto) na campanha.</div>
+      <button
+        onClick={() => router.push(`/campaigns/${campaignId}/assets`)}
+        style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
+      >Cadastrar assets</button>
+      <button
+        onClick={() => router.push(`/campaigns/${campaignId}`)}
+        style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
+      >← Voltar para a campanha</button>
+    </div>
+  )
+
   const isText = selected && (selected.type === "textbox" || selected.type === "i-text")
   const pS = { position: "fixed" as const, top: 0, bottom: 0, background: "rgba(18,18,18,0.97)", backdropFilter: "blur(12px)", zIndex: 100, display: "flex", flexDirection: "column" as const, overflowY: "auto" as const }
   const bS = { background: "transparent", border: "none", cursor: "pointer", color: "#aaa", fontSize: 18, padding: "0 4px" } as React.CSSProperties
@@ -3642,12 +3659,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         <span style={{ fontSize: 11, color: "#555", fontWeight: 600, flexShrink: 0 }}>Asset:</span>
         <select value={assetId} onChange={e => { setAssetId(e.target.value); assetIdRef.current = e.target.value }}
           style={{ background: "#222", color: "white", border: "1px solid #333", borderRadius: 4, padding: "4px 8px", fontSize: 12, maxWidth: 260 }}>
-          {campaign.assets.map((a: Asset) => <option key={a.id} value={a.id}>{a.label}</option>)}
+          {(campaign.assets ?? []).map((a: Asset) => <option key={a.id} value={a.id}>{a.label}</option>)}
         </select>
         {(() => {
           // Regra: asset TEXTO so pode aparecer 1x no canvas (matriz ou peca).
           // Se ja existe layer com esse assetId E o asset eh TEXT, desabilita o botao.
-          const currentAsset = campaign.assets.find((a: Asset) => a.id === assetId)
+          const currentAsset = (campaign.assets ?? []).find((a: Asset) => a.id === assetId)
           const isText = currentAsset?.type === "TEXT"
           const fc = fabricRef.current
           const alreadyOnCanvas = isText && fc
