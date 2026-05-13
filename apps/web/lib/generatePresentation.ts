@@ -308,12 +308,16 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
       color: TEXT_DARK, valign: "middle", align: "left",
     })
     // Texto da copy (corpo) — fontSize 11, centralizado verticalmente
-    // (mesmo look da apresentacao web: legenda alinhada no centro do card)
+    // (mesmo look da apresentacao web: legenda alinhada no centro do card).
+    // autoFit:'none' (default seria 'normal' em algumas versoes do pptxgenjs,
+    // que reduz a fonte se o texto nao couber — quebra o tamanho exato pedido).
     slide.addText(piece.copy!.trim(), {
       x: CARD_X + 0.18, y: AREA_Y + 0.55, w: CARD_W - 0.36, h: SPLIT_AREA_H - 0.7,
       fontFace: "Calibri", fontSize: 11,
       color: TEXT_DARK, valign: "middle", align: "left",
-    })
+      autoFit: false,
+      shrinkText: false,
+    } as any)
   } else {
     // Layout sem copy: peca centralizada na area util inteira.
     if (imgDataUri && piece.width > 0 && piece.height > 0) {
