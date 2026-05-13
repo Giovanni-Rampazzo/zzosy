@@ -76,6 +76,21 @@ export default function PresentationPage() {
     load()
   }, [id])
 
+  // Scroll automatico pro slide indicado no hash (#piece-{id}).
+  // Acontece DEPOIS de pieces serem renderizadas (loading=false), pois antes
+  // o elemento alvo nao existe no DOM. requestAnimationFrame garante que o
+  // layout ja foi calculado antes do scroll.
+  useEffect(() => {
+    if (loading) return
+    if (typeof window === "undefined") return
+    const hash = window.location.hash
+    if (!hash || hash.length < 2) return
+    requestAnimationFrame(() => {
+      const el = document.getElementById(hash.slice(1))
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }, [loading])
+
   // Ordena peças por formato + createdAt dentro de cada grupo
   const orderedPieces = [...pieces].sort((a, b) => {
     const fa = a.format || ""
@@ -188,7 +203,7 @@ export default function PresentationPage() {
                 </SlideRow>
               )}
               {group.pieces.map(p => (
-                <SlideRow key={p.id} num={++slideNum} total={totalSlides} label={p.name || "Peça"}>
+                <SlideRow key={p.id} id={`piece-${p.id}`} num={++slideNum} total={totalSlides} label={p.name || "Peça"}>
                   <SlidePiece
                     name={p.name || "Peça sem nome"}
                     width={p.width}
@@ -217,9 +232,9 @@ export default function PresentationPage() {
   )
 }
 
-function SlideRow({ num, total, label, children }: { num: number; total: number; label: string; children: React.ReactNode }) {
+function SlideRow({ id, num, total, label, children }: { id?: string; num: number; total: number; label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div id={id} style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 80 }}>
       <div style={{
         display: "flex", alignItems: "baseline", gap: 8,
         fontSize: 12, color: "#888",

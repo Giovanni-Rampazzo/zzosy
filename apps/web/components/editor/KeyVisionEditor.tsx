@@ -2959,8 +2959,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         <button onClick={() => {
           // Quando o editor foi aberto a partir da apresentacao (?from=presentation),
           // o botao volta pra apresentacao em vez da pagina geral da campanha.
+          // Anexa #piece-{id} pra que a pagina role automaticamente ate o slide
+          // de origem (visualmente mais claro: user volta exatamente onde estava).
           const dest = from === "presentation"
-            ? `/campaigns/${campaignId}/presentation`
+            ? `/campaigns/${campaignId}/presentation${isPieceMode && pieceId ? `#piece-${pieceId}` : ""}`
             : `/campaigns/${campaignId}`
           const go = () => router.push(dest)
           if (isDirtyRef.current) setConfirmExit(() => go)
