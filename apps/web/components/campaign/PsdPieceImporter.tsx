@@ -334,23 +334,20 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
 
   return (
     <>
-      <label style={{ display: "inline-flex" }}>
-        <Button
-          variant="primary"
-          size="lg"
-          loading={loading}
-          title="Reimportar PSD como peca (mantem dimensoes originais, linka layers com nomes iguais aos assets)"
-          // O <Button> nao expoe diretamente file picker multiple, entao usamos um input
-          // file separado embaixo. O label do <Button> nao captura clique de file input.
-          // Aqui o Button so dispara o click no input via ref.
-          onClick={() => {
-            const input = document.getElementById(`psd-piece-import-${campaignId}`) as HTMLInputElement | null
-            input?.click()
-          }}
-        >
-          {loading ? (progress || "Importando…") : "Reimportar PSD"}
-        </Button>
-      </label>
+      <Button
+        variant="primary"
+        size="lg"
+        loading={loading}
+        title="Reimportar PSD como peca (mantem dimensoes originais, linka layers com nomes iguais aos assets)"
+        // O <Button> nao expoe diretamente file picker multiple, entao usamos um input
+        // file separado embaixo. Aqui o Button so dispara o click no input via id.
+        onClick={() => {
+          const input = document.getElementById(`psd-piece-import-${campaignId}`) as HTMLInputElement | null
+          input?.click()
+        }}
+      >
+        {loading ? (progress || "Importando…") : "Reimportar PSD"}
+      </Button>
       <input
         id={`psd-piece-import-${campaignId}`}
         type="file"
