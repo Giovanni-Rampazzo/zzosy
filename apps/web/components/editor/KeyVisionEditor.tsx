@@ -2446,8 +2446,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   function addStep() {
-    // Adiciona novo step VAZIO no fim. Activo continua sendo o atual.
-    inactiveStepsRef.current = [...inactiveStepsRef.current, { layers: [], bgColor: bgColorRef.current }]
+    // Adiciona novo step no fim, copiando o conteudo do ATIVO atual.
+    // Assim o user nao precisa rebuildar a "casca" da peca (logo, dimensoes,
+    // background) — soh ajusta o conteudo especifico de cada step.
+    const copyOfCurrent = serializeCurrentStep()
+    inactiveStepsRef.current = [...inactiveStepsRef.current, copyOfCurrent]
     setStepCount(c => c + 1)
     isDirtyRef.current = true
     doSaveNow()
