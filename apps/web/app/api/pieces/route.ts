@@ -45,8 +45,14 @@ export async function GET(req: NextRequest) {
     const media = mf?.vehicle || mf?.media || inferMediaFromName(p.name)
     // Categoria vem do MediaFormat associado. Pecas sem mediaFormat caem em "Sem categoria".
     const mfCategory = mf?.category || "Sem categoria"
+    // Unidade original da pe\u00e7a: vem do MediaFormat. Pe\u00e7as sem MF (importadas
+    // via PSD por exemplo) caem em px.
+    const widthValue = mf?.widthValue ?? width
+    const heightValue = mf?.heightValue ?? height
+    const widthUnit = mf?.widthUnit ?? "px"
+    const heightUnit = mf?.heightUnit ?? "px"
 
-    return { ...p, width, height, format, dpi, media, mediaFormatCategory: mfCategory }
+    return { ...p, width, height, format, dpi, media, mediaFormatCategory: mfCategory, widthValue, heightValue, widthUnit, heightUnit }
   })
   return NextResponse.json(enriched)
 }

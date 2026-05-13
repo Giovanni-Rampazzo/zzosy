@@ -13,6 +13,10 @@ interface Piece {
   copy?: string | null
   width: number
   height: number
+  widthValue?: number | null
+  heightValue?: number | null
+  widthUnit?: string | null
+  heightUnit?: string | null
   imageUrl?: string | null
   createdAt: string
 }
@@ -189,6 +193,10 @@ export default function PresentationPage() {
                     name={p.name || "Peça sem nome"}
                     width={p.width}
                     height={p.height}
+                    widthValue={p.widthValue}
+                    heightValue={p.heightValue}
+                    widthUnit={p.widthUnit}
+                    heightUnit={p.heightUnit}
                     imageUrl={p.imageUrl ?? null}
                     copy={p.copy ?? null}
                     pieceId={p.id}

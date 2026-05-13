@@ -22,6 +22,10 @@ interface Piece {
   imageUrl: string | null
   width: number
   height: number
+  widthValue?: number | null
+  heightValue?: number | null
+  widthUnit?: string | null
+  heightUnit?: string | null
 }
 
 interface CampaignData {
@@ -179,7 +183,16 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   slide.background = { color: BG_LIGHT }
 
   const name = piece.name ?? "Peça sem nome"
-  const dims = piece.width && piece.height ? `${piece.width} x ${piece.height} px` : "—"
+  // Formata dimensao na unidade original (cm, mm, etc) quando o MediaFormat
+  // foi cadastrado com unidade nao-px. Fallback: width/height em px.
+  const wV = (piece.widthValue != null && piece.widthValue > 0) ? piece.widthValue : piece.width
+  const hV = (piece.heightValue != null && piece.heightValue > 0) ? piece.heightValue : piece.height
+  const wU = piece.widthUnit || "px"
+  const hU = piece.heightUnit || "px"
+  const fmt = (n: number) => Number.isInteger(n) ? String(n) : (Math.round(n * 10) / 10).toString()
+  const dims = (piece.width && piece.height)
+    ? (wU === hU ? `${fmt(wV)} x ${fmt(hV)} ${wU}` : `${fmt(wV)} ${wU} x ${fmt(hV)} ${hU}`)
+    : "—"
 
   // Header: box amarelo com nome + dimensao em texto puro ao lado (sem fundo).
   // Replica look da apresentacao web: fonte ~12px equivalente (9pt em PPT),

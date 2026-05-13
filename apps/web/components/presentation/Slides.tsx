@@ -133,6 +133,11 @@ interface PieceSlideProps {
   name: string
   width: number
   height: number
+  /** Valor na unidade original (cm, mm, etc). Se nao passado, mostra width/height em px. */
+  widthValue?: number | null
+  heightValue?: number | null
+  widthUnit?: string | null
+  heightUnit?: string | null
   imageUrl: string | null
   copy?: string | null
   onClick?: () => void
@@ -142,8 +147,27 @@ interface PieceSlideProps {
   onCopyChange?: (next: string) => void
 }
 
-export function SlidePiece({ name, width, height, imageUrl, copy, onClick, pieceId, onCopyChange }: PieceSlideProps) {
-  const dims = (width && height) ? `${width} x ${height} px` : "—"
+// Formata "100 x 50 cm" / "1920 x 1080 px" etc. Quando largura e altura
+// estao em unidades diferentes (raro mas possivel), mostra cada uma com
+// sua unidade: "100 cm x 50 mm".
+function formatDims(
+  width: number, height: number,
+  widthValue?: number | null, heightValue?: number | null,
+  widthUnit?: string | null, heightUnit?: string | null,
+): string {
+  if (!width || !height) return "—"
+  const wV = (widthValue != null && widthValue > 0) ? widthValue : width
+  const hV = (heightValue != null && heightValue > 0) ? heightValue : height
+  const wU = widthUnit || "px"
+  const hU = heightUnit || "px"
+  // Formata numero: integer se .0, senao 1 casa decimal
+  const fmt = (n: number) => Number.isInteger(n) ? String(n) : (Math.round(n * 10) / 10).toString()
+  if (wU === hU) return `${fmt(wV)} x ${fmt(hV)} ${wU}`
+  return `${fmt(wV)} ${wU} x ${fmt(hV)} ${hU}`
+}
+
+export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, copy, onClick, pieceId, onCopyChange }: PieceSlideProps) {
+  const dims = formatDims(width, height, widthValue, heightValue, widthUnit, heightUnit)
   const clickable = !!onClick
   // copyLocal: estado interno editavel. Sincroniza com prop copy ao mudar
   // a peca (re-render externo). Auto-save com debounce.
@@ -240,12 +264,12 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
           display: "grid", gridTemplateColumns: "2fr 1fr",
           padding: "10% 3% 8% 3%",
           gap: "2.5%",
-          alignItems: "center",
+          alignItems: "stretch",
         }}>
           {/* Peca */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "center",
-            height: "100%",
+            height: "100%", minHeight: 0,
           }}>
             {imageUrl ? (
               <img
@@ -262,16 +286,17 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
               </div>
             )}
           </div>
-          {/* Card legenda — header amarelo cheio em cima, corpo branco embaixo */}
+          {/* Card legenda — header amarelo cheio em cima, corpo branco embaixo.
+              Ocupa altura inteira disponivel. Texto centralizado verticalmente
+              no body. */}
           <div style={{
             background: "white",
             borderRadius: RADIUS,
             boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
             border: "1px solid rgba(0,0,0,0.05)",
-            maxHeight: "100%",
-            overflow: "hidden",
             display: "flex", flexDirection: "column",
             position: "relative",
+            minHeight: 0,
           }}
           onClick={(e) => { if (editable) e.stopPropagation() }}
           >
@@ -284,15 +309,19 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
               color: TEXT_DARK,
               fontStyle: "italic",
               display: "flex", justifyContent: "space-between", alignItems: "center",
+              flexShrink: 0,
             }}>
               <span>Legenda:</span>
               {saving && <span style={{ fontSize: "0.85cqw", fontWeight: 500, fontStyle: "normal", opacity: 0.7 }}>salvando…</span>}
             </div>
-            {/* Corpo */}
+            {/* Corpo — texto centralizado verticalmente, expande pra mostrar
+                a legenda inteira sem truncar. */}
             <div style={{
               flex: 1,
               padding: "1.6cqw 1.6cqw",
-              overflow: "auto",
+              display: "flex",
+              alignItems: "center",
+              minHeight: 0,
             }}>
               {editable ? (
                 <textarea
@@ -304,7 +333,6 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
                   onKeyDown={(e) => e.stopPropagation()}
                   style={{
                     width: "100%",
-                    minHeight: "100%",
                     fontSize: "1.05cqw",
                     lineHeight: 1.5,
                     color: TEXT_DARK,
@@ -314,10 +342,15 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
                     outline: "none",
                     resize: "none",
                     padding: 0,
+                    minHeight: "1.05cqw",
+                    // Auto-resize via field-sizing-content (Chrome 123+). Cresce ate
+                    // a altura disponivel; fallback nativo do textarea pra outros.
+                    fieldSizing: "content" as any,
                   }}
                 />
               ) : (
                 <div style={{
+                  width: "100%",
                   fontSize: "1.05cqw",
                   lineHeight: 1.5,
                   color: TEXT_DARK,
