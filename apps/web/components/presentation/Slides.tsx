@@ -195,14 +195,25 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
   function renderPieceVisual(opts?: { withShadow?: boolean }) {
     if (hasMultiStep) {
       const total = steps!.length
+      // Com 2 steps, grid 50/50 deixa as pecas desbalanceadas (uma colada
+      // na esquerda, outra no meio-esquerda). Usa flex com justify-center
+      // pra elas ficarem proximas e centralizadas. 3+ steps mantem grid
+      // (distribuicao uniforme funciona melhor).
+      const containerStyle: React.CSSProperties = total === 2 ? {
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: "4%",
+        width: "100%", height: "100%",
+      } : {
+        display: "grid",
+        gridTemplateColumns: `repeat(${total}, 1fr)`,
+        gap: "1.5%",
+        width: "100%", height: "100%",
+        alignItems: "center",
+      }
       return (
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${total}, 1fr)`,
-          gap: "1.5%",
-          width: "100%", height: "100%",
-          alignItems: "center",
-        }}>
+        <div style={containerStyle}>
           {steps!.map((s, i) => {
             // Cache-bust: o nome do arquivo ja tem timestamp, mas o navegador
             // pode cachear baseado na URL. Adiciona ?_t pra forcar re-fetch
@@ -214,7 +225,11 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 // Label e imagem alinhadas a esquerda — label fica colado
                 // na peca (mesma referencia visual de referencia mockup).
                 display: "flex", flexDirection: "column", alignItems: "flex-start",
-                gap: "0.4cqw", width: "100%", height: "100%",
+                gap: "0.4cqw", height: "100%",
+                // 2 steps: layout flex, cada peca pega ~45% pra ficar
+                // proxima sem esticar. 3+: grid, cada celula ja eh fixa
+                // entao width:100% preenche a coluna.
+                width: total === 2 ? "45%" : "100%",
                 minHeight: 0, minWidth: 0,
               }}>
                 {/* Label do step — alinhado a esquerda, colado na peca */}
