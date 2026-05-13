@@ -241,9 +241,13 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
 }
 
 async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; assets: Asset[] }> {
-  const pres = await fetch(`/api/pieces/${pieceId}`)
+  // cache: "no-store" eh CRITICO. Sem ele, o navegador serve respostas
+  // cacheadas de GETs anteriores. Resultado: o user edita uma peca no editor,
+  // exporta — e o export usa a versao VELHA (cache). Bug "exporta layout
+  // antigo" mesmo com a peca editada no banco.
+  const pres = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
   const piece = await pres.json()
-  const cres = await fetch(`/api/campaigns/${piece.campaignId}`)
+  const cres = await fetch(`/api/campaigns/${piece.campaignId}`, { cache: "no-store" })
   const camp = await cres.json()
   return { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
 }
