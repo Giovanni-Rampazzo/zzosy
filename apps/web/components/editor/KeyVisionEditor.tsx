@@ -1279,6 +1279,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // Renderiza offscreen — nao mexe no canvas principal. User nao vê piscar.
       // RESET do flag pra rodar de novo nesta peca (cada init = nova oportunidade).
       autoGenDoneRef.current = false
+      console.log("[init] terminou. pieceId:", pieceId, "vai chamar autoGen:", !!pieceId)
       if (pieceId) {
         autoGenerateMissingStepThumbs().catch(e => console.warn("[auto-thumbs] erro:", e))
       }
@@ -2175,12 +2176,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           const spans = Array.isArray(content) ? content : []
           const text = spans.map((s: any) => s.text ?? "").join("")
           const firstStyle = spans[0]?.style ?? {}
+          // CRITICO: width DO TEXTO precisa ser escalada pelo mesmo 'scale' do
+          // canvas offscreen. Sem isso, o textbox excede o canvas e fica cortado.
+          // fontSize idem.
+          const baseFontSize = overrides.fontSize ?? firstStyle.fontSize ?? 80
           const tb = new Textbox(text || asset.label, {
-            left, top, scaleX: sx, scaleY: sy, angle,
+            left, top, angle,
             fontFamily: overrides.fontFamily ?? firstStyle.fontFamily ?? "Arial",
-            fontSize: overrides.fontSize ?? firstStyle.fontSize ?? 80,
+            fontSize: baseFontSize * scale,
             fill: overrides.fill ?? firstStyle.color ?? "#111111",
-            width: layer.width ?? 400,
+            width: (layer.width ?? 400) * scale,
             textAlign: overrides.textAlign ?? "left",
           })
           if (overrides.styles) tb.set("styles", overrides.styles)
@@ -2221,18 +2226,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         console.log("[autoGen] step", i, "ja tem thumb")
         continue
       }
-      // Para o step ATIVO sem thumb, usa o canvas atual em vez do offscreen
-      // (mais preciso, ja tem todos os layers prontos com fontes carregadas).
-      if (i === activeIdx) {
-        const fc = fabricRef.current
-        if (!fc) continue
-        console.log("[autoGen] gerando thumb pro step ATIVO", i, "via canvas")
-        try {
-          await uploadPieceThumb(fc, pieceId)
-        } catch (e) { console.warn("[auto thumb] uploadPieceThumb falhou:", e) }
-        continue
-      }
-      console.log("[autoGen] gerando thumb pro step", i)
+      // Renderiza offscreen pra todos os steps sem thumb (inclusive o ativo).
+      // Antes usavamos uploadPieceThumb pro ativo, mas isso le do canvas que
+      // pode estar vazio durante o init.
+      console.log("[autoGen] gerando thumb pro step", i, i === activeIdx ? "(ATIVO)" : "")
       const blob = await renderStepOffscreenToBlob({
         layers: step.layers ?? [],
         bgColor: step.bgColor ?? bgColorRef.current,
