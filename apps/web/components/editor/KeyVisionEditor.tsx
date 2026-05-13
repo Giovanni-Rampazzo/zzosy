@@ -2707,8 +2707,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       if (indexToRemove < activeStepIndexRef.current) setActiveStepIndexSync(activeStepIndexRef.current - 1)
     }
     setStepCountSync(c => c - 1)
+    // CRITICO: apagar um step renumera todos depois dele. Os imageUrl ficam
+    // apontando pros thumbs ANTIGOS (do indice errado agora). Limpa todos os
+    // imageUrl/thumbnailUrl dos steps no buffer pra forcar autoGen rodar.
+    inactiveStepsRef.current = inactiveStepsRef.current.map(s => ({
+      layers: s.layers,
+      bgColor: s.bgColor,
+      // remove imageUrl e thumbnailUrl
+    }))
     isDirtyRef.current = true
     await doSaveNow()
+    // Re-dispara autoGen pra gerar novos thumbs com os indices corretos.
+    autoGenDoneRef.current = false
+    autoGenerateMissingStepThumbs().catch(e => console.warn("[removeStep] autoGen erro:", e))
   }
 
   // Percorre todos os steps gerando thumbnail individual pra cada um.
