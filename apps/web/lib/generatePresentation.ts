@@ -182,26 +182,35 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
   const dims = piece.width && piece.height ? `${piece.width} x ${piece.height} px` : "—"
 
   // Header: box amarelo com nome + dimensao em texto puro ao lado (sem fundo).
-  const nameW = Math.min(3.0, name.length * 0.096 + 0.3)
-  const nameH = 0.3
-  const gap = 0.18
+  // Replica look da apresentacao web: fonte ~12px equivalente (9pt em PPT),
+  // padding lateral confortavel (~0.2"), altura suficiente pra nao apertar.
+  // Slide PPTX = 13.333 x 7.5 in. 9pt Calibri bold ~0.063" por char em media.
+  const FONT_SIZE = 9
+  const PAD_X = 0.2  // padding lateral interno (~5mm, ~20px no web)
+  const CHAR_W = 0.067 // largura media de char Calibri 9pt bold em inches
+  const nameH = 0.4
+  // Calcula largura proporcional ao texto + padding dos 2 lados
+  const nameW = name.length * CHAR_W + (PAD_X * 2)
+  const gap = 0.2
   // Box amarelo nome (top-left)
   slide.addShape("roundRect", {
     x: 0.3, y: 0.3, w: nameW, h: nameH,
     fill: { color: YELLOW }, line: { color: YELLOW },
-    rectRadius: 0.072,
+    rectRadius: 0.08,
   })
   slide.addText(name, {
-    x: 0.36, y: 0.3, w: nameW - 0.06, h: nameH,
-    fontFace: "Calibri", fontSize: 8, bold: true,
-    color: TEXT_DARK, valign: "middle", align: "left",
+    x: 0.3, y: 0.3, w: nameW, h: nameH,
+    fontFace: "Calibri", fontSize: FONT_SIZE, bold: true,
+    color: TEXT_DARK, valign: "middle", align: "center",
+    margin: 0,
   })
   // Dimensao em texto puro (sem fundo amarelo), ao lado do nome
   const dimsX = 0.3 + nameW + gap
   slide.addText(dims, {
-    x: dimsX, y: 0.3, w: 2.0, h: nameH,
-    fontFace: "Calibri", fontSize: 8, bold: false,
+    x: dimsX, y: 0.3, w: 2.5, h: nameH,
+    fontFace: "Calibri", fontSize: FONT_SIZE, bold: false,
     color: TEXT_DARK, valign: "middle", align: "left",
+    margin: 0,
   })
 
   // Bolinha amarela top-right
