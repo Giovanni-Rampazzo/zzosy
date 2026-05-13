@@ -223,61 +223,44 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             const src = rawSrc ? `${rawSrc}?_t=${Date.now()}` : null
             return (
               <div key={i} style={{
-                // Container do step: ocupa altura total e centraliza
-                // verticalmente o conteudo (label+peca) como um bloco.
-                display: "flex", flexDirection: "column",
+                // Container do step: inline-flex pra ter width baseada em
+                // conteudo. Empilha label + imagem verticalmente.
+                display: "inline-flex", flexDirection: "column",
                 alignItems: "flex-start",
                 justifyContent: "center",
                 height: "100%",
-                // Width auto pra TODOS os casos: a peca dentro define a
-                // largura final do bloco. MaxWidth proporcional ao numero
-                // de steps pra evitar uma peca ocupar mais do que sua
-                // 'fatia justa'.
-                width: "auto",
-                maxWidth: `${100 / total}%`,
+                // maxWidth limita pra cada peca caber na sua 'fatia'.
+                // maxHeight indireto: a imagem usa height calculada.
+                maxWidth: `calc(${100 / total}% - ${total > 1 ? "2%" : "0%"})`,
                 minHeight: 0, minWidth: 0,
               }}>
-                {/* Wrapper compacto: label + imagem como um bloco unico
-                    que se centraliza verticalmente. Label colado na peca. */}
+                {/* Label do step — alinhado a esquerda, colado na peca */}
                 <div style={{
-                  display: "flex", flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: "0.3cqw",
-                  // Width segue o conteudo (imagem)
-                  width: "auto",
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  minHeight: 0,
+                  fontSize: "0.75cqw", fontWeight: 700,
+                  color: TEXT_DARK, opacity: 0.6,
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                  textTransform: "uppercase", letterSpacing: 0.5,
+                  marginBottom: "0.4cqw",
                 }}>
-                  {/* Label do step — alinhado a esquerda, colado na peca */}
-                  <div style={{
-                    fontSize: "0.75cqw", fontWeight: 700,
-                    color: TEXT_DARK, opacity: 0.6,
-                    fontFamily: "system-ui, -apple-system, sans-serif",
-                    textTransform: "uppercase", letterSpacing: 0.5,
-                    flexShrink: 0,
-                  }}>
-                    Step {(s.index ?? i) + 1}
-                  </div>
-                  {/* Imagem do step. flex-start a esquerda, sem flex:1 pra
-                      nao esticar verticalmente — label fica colado em cima. */}
-                  <div style={{
-                    width: "100%",
-                    minHeight: 0,
-                    display: "flex", alignItems: "flex-start", justifyContent: "flex-start",
-                  }}>
-                    {src ? (
-                      <img src={src} alt={`${name} Step ${(s.index ?? i) + 1}`}
-                        style={{
-                          maxWidth: "100%", maxHeight: "100%",
-                          objectFit: "contain",
-                          boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
-                        }} />
-                    ) : (
-                      <div style={{ color: TEXT_GRAY, fontSize: "0.9cqw" }}>(sem preview)</div>
-                    )}
-                  </div>
+                  Step {(s.index ?? i) + 1}
                 </div>
+                {/* Imagem com altura calculada (deixa espaco pro label).
+                    width:auto deriva pela aspect ratio. */}
+                {src ? (
+                  <img src={src} alt={`${name} Step ${(s.index ?? i) + 1}`}
+                    style={{
+                      // Altura: max ate caber no container (descontando label+gap).
+                      // Width: auto pra preservar aspect ratio.
+                      maxWidth: "100%",
+                      maxHeight: "calc(100% - 2.5cqw)", // 2.5cqw reserva pro label
+                      width: "auto", height: "auto",
+                      objectFit: "contain",
+                      display: "block",
+                      boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
+                    }} />
+                ) : (
+                  <div style={{ color: TEXT_GRAY, fontSize: "0.9cqw" }}>(sem preview)</div>
+                )}
               </div>
             )
           })}

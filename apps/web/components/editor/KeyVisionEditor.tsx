@@ -2706,20 +2706,43 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
 
   async function addStep() {
     // Adiciona novo step no fim, copiando o conteudo do ATIVO atual.
-    // Assim o user nao precisa rebuildar a "casca" da peca — soh ajusta
-    // o conteudo especifico de cada step.
+    const newStepIndex = stepCountRef.current // 0-indexed
+    console.log("[addStep] inicio. stepCount atual:", stepCountRef.current, "newStepIndex:", newStepIndex)
+    // CRITICO: gera thumb do canvas ATUAL ANTES de qualquer state change.
+    // Esse thumb sera usado pro novo step E (se necessario) pro step que era
+    // ativo. Sem isso, dependiamos de fallbacks indiretos que falham em pecas
+    // novas ainda sem piece.imageUrl gravado.
+    const fc = fabricRef.current
+    let currentBlob: Blob | null = null
+    if (fc) {
+      currentBlob = await generateCurrentThumbBlob(fc)
+      console.log("[addStep] blob gerado:", currentBlob ? `${currentBlob.size} bytes` : "null")
+    }
     const copyOfCurrent = serializeCurrentStep()
-    // serializeCurrentStep ja preserva imageUrl do step ativo. Como o novo
-    // step eh uma COPIA EXATA, herda o mesmo thumb. Sem isso, ate o user
-    // ativar o novo step pela primeira vez, a apresentacao mostra '(sem preview)'.
-    const newStepIndex = stepCountRef.current // 0-indexed; novo step ocupa esse indice
     inactiveStepsRef.current = [...inactiveStepsRef.current, copyOfCurrent]
     setStepCountSync(c => c + 1)
     isDirtyRef.current = true
-    // AGUARDA o save terminar — agora o data.steps[newIndex] ja tem imageUrl
-    // herdado do step copiado, entao a apresentacao pode mostrar o preview
-    // mesmo se o user sair imediatamente.
     await doSaveNow()
+    console.log("[addStep] save terminou. Subindo thumb pro novo step:", newStepIndex)
+    // Sobe thumb pro NOVO step (cópia visual do ativo). Best-effort.
+    if (currentBlob && pieceId) {
+      const fd = new FormData()
+      fd.append("thumbnail", currentBlob, `step${newStepIndex}.png`)
+      try {
+        const r = await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${newStepIndex}`, {
+          method: "POST", body: fd, keepalive: true,
+        })
+        console.log("[addStep] thumb do novo step status:", r.status)
+      } catch (e) { console.warn("[addStep] upload novo step falhou:", e) }
+      // Re-fetch pieceRef pra ter o imageUrl novo refletido localmente.
+      try {
+        const r = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
+        if (r.ok) {
+          const fresh = await r.json()
+          if (pieceRef.current) pieceRef.current = fresh
+        }
+      } catch (e) {}
+    }
   }
 
   async function removeStep(indexToRemove: number, skipConfirm = false) {
