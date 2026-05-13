@@ -174,10 +174,10 @@ export default function PiecePage() {
           </div>
         </div>
 
-        {/* PREVIEW DA PEÇA — em cima, mesma altura/visual da pagina de assets (h 240px) */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 16, marginBottom: 20 }}>
+        {/* PREVIEW DA PEÇA — em cima, compacto pra dar foco no copy abaixo */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 12, marginBottom: 20 }}>
           <div style={{
-            height: 240, background: "#F5F5F0", borderRadius: 6,
+            height: 140, background: "#F5F5F0", borderRadius: 6,
             display: "flex", alignItems: "center", justifyContent: "center",
             overflow: "hidden",
           }}>
@@ -190,9 +190,9 @@ export default function PiecePage() {
           </div>
         </div>
 
-        {/* CAMPO LEGENDAS — destaque logo abaixo do preview */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, marginBottom: 20 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        {/* CAMPO LEGENDAS — hero da pagina: foco maximo aqui. Hora do redator brilhar */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 28, marginBottom: 20 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
             Legenda / Copy
             <span style={{ fontSize: 10, color: "#bbb", fontWeight: 500, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
               {copy.length} {copy.length === 1 ? "caractere" : "caracteres"}
@@ -202,21 +202,22 @@ export default function PiecePage() {
             value={copy}
             onChange={e => setCopy(e.target.value)}
             placeholder="Ex: Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black"
-            rows={8}
+            rows={14}
             style={{
               width: "100%",
-              padding: "10px 12px",
+              padding: "14px 16px",
               border: "1px solid #E0E0E0",
               borderRadius: 6,
-              fontSize: 14,
+              fontSize: 15,
+              lineHeight: 1.6,
               outline: "none",
               boxSizing: "border-box",
               fontFamily: "inherit",
               resize: "vertical",
-              minHeight: 140,
+              minHeight: 280,
             }}
           />
-          <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>
             Texto pra redes sociais. Aparece na apresentação ao lado da peça e vai num arquivo .txt na entrega.
           </div>
         </div>
@@ -260,13 +261,6 @@ export default function PiecePage() {
               Usado pra agrupar peças na apresentação. Peças com mesmo segmento ficam juntas.
             </div>
           </div>
-
-          {piece.imageUrl && (
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Preview</label>
-              <img src={piece.imageUrl} alt="preview" style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid #E0E0E0" }} />
-            </div>
-          )}
 
           <div style={{ padding: "12px 16px", background: "#F8F9FA", borderRadius: 6, fontSize: 12, color: "#888" }}>
             Criada em {new Date(piece.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
