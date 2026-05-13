@@ -26,6 +26,7 @@ interface Piece {
   heightValue?: number | null
   widthUnit?: string | null
   heightUnit?: string | null
+  steps?: Array<{ index: number; thumbnailUrl?: string | null; imageUrl?: string | null }> | null
 }
 
 interface CampaignData {
@@ -178,7 +179,7 @@ function addSegmentSlide(pptx: PptxGenJS, segment: string | null) {
  *  - Bolinha amarela top-right (decoracao)
  *  - Imagem centralizada (max 9.5 x 5.5, mantendo aspect)
  */
-function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null) {
+function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null, stepImages?: Array<string | null>) {
   const slide = pptx.addSlide()
   slide.background = { color: BG_LIGHT }
 
@@ -261,7 +262,42 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
     const CARD_X = 0.3 + PIECE_AREA_W + 0.25
     const CARD_W = 4.0
 
-    if (imgDataUri && piece.width > 0 && piece.height > 0) {
+    // Multi-step: se a peca tem >= 2 steps, renderiza todos lado a lado na
+    // area da peca com label "Step N" acima de cada um. Escala uniforme.
+    const hasMultiStep = Array.isArray(stepImages) && stepImages.length >= 2
+    if (hasMultiStep) {
+      const total = stepImages!.length
+      const GAP = 0.1
+      const LABEL_H = 0.25
+      const cellW = (PIECE_AREA_W - GAP * (total - 1)) / total
+      const cellH = SPLIT_AREA_H - LABEL_H - 0.1
+      for (let i = 0; i < total; i++) {
+        const cellX = PIECE_AREA_X + i * (cellW + GAP)
+        // Label "Step N"
+        slide.addText(`STEP ${i + 1}`, {
+          x: cellX, y: AREA_Y, w: cellW, h: LABEL_H,
+          fontFace: "Calibri", fontSize: 8, bold: true,
+          color: "888888", align: "center", valign: "middle",
+          margin: 0,
+        })
+        const img = stepImages![i]
+        if (img && piece.width > 0 && piece.height > 0) {
+          const idealW = piece.width / PX_PER_INCH
+          const idealH = piece.height / PX_PER_INCH
+          const ratio = Math.min(cellW / idealW, cellH / idealH)
+          const w = idealW * ratio
+          const h = idealH * ratio
+          const x = cellX + (cellW - w) / 2
+          const y = AREA_Y + LABEL_H + 0.1 + (cellH - h) / 2
+          slide.addImage({ data: img, x, y, w, h })
+        } else {
+          slide.addText("(sem preview)", {
+            x: cellX, y: AREA_Y + LABEL_H + 0.1 + cellH / 2 - 0.15, w: cellW, h: 0.3,
+            fontFace: "Calibri", fontSize: 10, color: TEXT_GRAY, align: "center",
+          })
+        }
+      }
+    } else if (imgDataUri && piece.width > 0 && piece.height > 0) {
       // Tamanho ideal a 100% (72 DPI)
       const idealW = piece.width / PX_PER_INCH
       const idealH = piece.height / PX_PER_INCH
@@ -320,7 +356,40 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null)
     } as any)
   } else {
     // Layout sem copy: peca centralizada na area util inteira.
-    if (imgDataUri && piece.width > 0 && piece.height > 0) {
+    // Multi-step: mesma logica, mas usa AREA_W inteira.
+    const hasMultiStep = Array.isArray(stepImages) && stepImages.length >= 2
+    if (hasMultiStep) {
+      const total = stepImages!.length
+      const GAP = 0.15
+      const LABEL_H = 0.3
+      const cellW = (AREA_W - GAP * (total - 1)) / total
+      const cellH = AREA_H - LABEL_H - 0.15
+      for (let i = 0; i < total; i++) {
+        const cellX = AREA_X + i * (cellW + GAP)
+        slide.addText(`STEP ${i + 1}`, {
+          x: cellX, y: AREA_Y, w: cellW, h: LABEL_H,
+          fontFace: "Calibri", fontSize: 10, bold: true,
+          color: "888888", align: "center", valign: "middle",
+          margin: 0,
+        })
+        const img = stepImages![i]
+        if (img && piece.width > 0 && piece.height > 0) {
+          const idealW = piece.width / PX_PER_INCH
+          const idealH = piece.height / PX_PER_INCH
+          const ratio = Math.min(cellW / idealW, cellH / idealH)
+          const w = idealW * ratio
+          const h = idealH * ratio
+          const x = cellX + (cellW - w) / 2
+          const y = AREA_Y + LABEL_H + 0.15 + (cellH - h) / 2
+          slide.addImage({ data: img, x, y, w, h })
+        } else {
+          slide.addText("(sem preview)", {
+            x: cellX, y: AREA_Y + LABEL_H + 0.15 + cellH / 2 - 0.15, w: cellW, h: 0.3,
+            fontFace: "Calibri", fontSize: 11, color: TEXT_GRAY, align: "center",
+          })
+        }
+      }
+    } else if (imgDataUri && piece.width > 0 && piece.height > 0) {
       // Tamanho ideal a 100% (72 DPI)
       const idealW = piece.width / PX_PER_INCH
       const idealH = piece.height / PX_PER_INCH
@@ -431,6 +500,22 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
   const imgByPieceIdx = new Map<string, string | null>()
   data.pieces.forEach((p, i) => imgByPieceIdx.set(p.id, imgs[i]))
 
+  // STEPS: pre-carrega imagens dos steps tambem (pecas multi-step).
+  // Mapa: pieceId -> array<string|null> com dataUri de cada step.
+  const stepImgsByPieceIdx = new Map<string, Array<string | null>>()
+  await Promise.all(
+    data.pieces.map(async (p) => {
+      if (!p.steps || p.steps.length < 2) return
+      const stepImgs = await Promise.all(
+        p.steps.map(s => {
+          const src = s.imageUrl ?? s.thumbnailUrl ?? null
+          return src ? imgToDataUri(src) : Promise.resolve(null)
+        })
+      )
+      stepImgsByPieceIdx.set(p.id, stepImgs)
+    })
+  )
+
   // Agrupa pecas por segmento. Mesma logica da pagina de presentation:
   // - Pecas sem segmento ficam num grupo "" e NAO recebem slide divisor
   // - Pecas com segmento sao agrupadas e cada grupo recebe um divisor antes
@@ -450,7 +535,7 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
       addSegmentSlide(pptx, group.segment)
     }
     for (const p of group.pieces) {
-      addPieceSlide(pptx, p, imgByPieceIdx.get(p.id) ?? null)
+      addPieceSlide(pptx, p, imgByPieceIdx.get(p.id) ?? null, stepImgsByPieceIdx.get(p.id))
     }
   }
 
