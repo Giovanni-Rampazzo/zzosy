@@ -2428,6 +2428,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // Sem isso, toda vez que o user salva, o imageUrl do step ativo
         // some (o save sobrescreve com {layers, bgColor} sem imageUrl).
         const oldSteps: any[] = Array.isArray(oldData.steps) ? oldData.steps : []
+        // Fallback: peca era single-step (sem data.steps), thumb esta em piece.imageUrl.
+        const pieceImgFallback = (!oldSteps.length) ? ((pieceRef.current as any)?.imageUrl ?? null) : null
         for (let i = 0; i < stepCountRef.current; i++) {
           if (i === activeStepIndexRef.current) {
             const oldActive = oldSteps[i] ?? {}
@@ -2436,8 +2438,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               bgColor: bgColorRef.current,
               // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
               // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
-              imageUrl: oldActive.imageUrl ?? null,
-              thumbnailUrl: oldActive.thumbnailUrl ?? null,
+              imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
+              thumbnailUrl: oldActive.thumbnailUrl ?? (i === 0 ? pieceImgFallback : null),
             })
           } else {
             fullSteps.push(inactiveStepsRef.current[inactiveCursor] ?? { layers: [], bgColor: "#ffffff" })
@@ -2628,15 +2630,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // toda vez que o user troca de step, o snapshot do step que era ativo
     // entra no buffer dos inativos SEM imageUrl. O save depois persiste null
     // -> preview some na apresentacao.
-    const p = pieceRef.current
+    const p = pieceRef.current as any
     const pdata = p?.data ? (typeof p.data === "string" ? JSON.parse(p.data) : p.data) : {}
     const oldSteps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
     const oldActive = oldSteps[activeStepIndexRef.current] ?? {}
+    // Fallback: se a peca era SINGLE-STEP (sem data.steps no banco), o thumb
+    // ja gerado esta em piece.imageUrl. Usar isso como imageUrl do step ativo
+    // quando transitamos pra multi-step pela primeira vez (ex: addStep).
+    const fallbackImg = (!oldSteps.length && activeStepIndexRef.current === 0) ? (p?.imageUrl ?? null) : null
     return {
       layers,
       bgColor: bgColorRef.current,
-      imageUrl: oldActive.imageUrl ?? null,
-      thumbnailUrl: oldActive.thumbnailUrl ?? null,
+      imageUrl: oldActive.imageUrl ?? fallbackImg,
+      thumbnailUrl: oldActive.thumbnailUrl ?? fallbackImg,
     }
   }
 
@@ -2967,6 +2973,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // Sem isso, toda vez que o user salva, o imageUrl do step ativo
         // some (o save sobrescreve com {layers, bgColor} sem imageUrl).
         const oldSteps: any[] = Array.isArray(oldData.steps) ? oldData.steps : []
+        // Fallback: peca era single-step (sem data.steps), thumb esta em piece.imageUrl.
+        const pieceImgFallback = (!oldSteps.length) ? ((pieceRef.current as any)?.imageUrl ?? null) : null
         for (let i = 0; i < stepCountRef.current; i++) {
           if (i === activeStepIndexRef.current) {
             const oldActive = oldSteps[i] ?? {}
@@ -2975,8 +2983,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               bgColor: bgColorRef.current,
               // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
               // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
-              imageUrl: oldActive.imageUrl ?? null,
-              thumbnailUrl: oldActive.thumbnailUrl ?? null,
+              imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
+              thumbnailUrl: oldActive.thumbnailUrl ?? (i === 0 ? pieceImgFallback : null),
             })
           } else {
             fullSteps.push(inactiveStepsRef.current[inactiveCursor] ?? { layers: [], bgColor: "#ffffff" })
