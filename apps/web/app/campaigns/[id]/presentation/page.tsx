@@ -64,13 +64,20 @@ export default function PresentationPage() {
   useEffect(() => {
     async function load() {
       try {
-        // Cache-bust: timestamp na URL forca fetch fresco mesmo se Next cachear
-        // o componente no client-side router (router.push do editor pra presentation).
         const ts = Date.now()
+        console.log("[PRESENTATION] mount/refetch", new Date().toISOString())
         const [c, p] = await Promise.all([
           fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
           fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
         ])
+        console.log("[PRESENTATION] fetched", Array.isArray(p) ? p.length : 0, "pieces")
+        if (Array.isArray(p)) {
+          p.forEach((piece: any) => {
+            if (piece.steps && piece.steps.length > 0) {
+              console.log("[PRESENTATION] piece", piece.id, "steps:", piece.steps.map((s: any) => ({ i: s.index, hasImg: !!s.imageUrl })))
+            }
+          })
+        }
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
       } finally {
