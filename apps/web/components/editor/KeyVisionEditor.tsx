@@ -242,7 +242,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   //  - inactiveStepsRef: array com OS OUTROS steps (length = stepCount - 1)
   const [stepCount, setStepCount] = useState(1)
   const [activeStepIndex, setActiveStepIndex] = useState(0)
+  // Refs espelham os states pra leitura sincrona dentro de funcoes que rodam
+  // entre renders (performSave, doSaveNow, addStep). React state \u00e9 batched,
+  // entao logo apos setStepCount/setActiveStepIndex o valor lido por funcao
+  // pode estar STALE — use sempre o ref pra logica de save/step.
+  const stepCountRef = useRef(1)
+  const activeStepIndexRef = useRef(0)
   const inactiveStepsRef = useRef<Array<{ layers: any[]; bgColor: string; thumbnailUrl?: string | null; imageUrl?: string | null }>>([])
+  // Setters que mantem ref e state em sincrono. Use sempre estes pra mudar
+  // stepCount/activeStepIndex (NUNCA setStepCount diretamente — quebra o ref).
+  function setStepCountSync(next: number | ((prev: number) => number)) {
+    const value = typeof next === "function" ? (next as any)(stepCountRef.current) : next
+    stepCountRef.current = value
+    setStepCount(value)
+  }
+  function setActiveStepIndexSync(next: number | ((prev: number) => number)) {
+    const value = typeof next === "function" ? (next as any)(activeStepIndexRef.current) : next
+    activeStepIndexRef.current = value
+    setActiveStepIndex(value)
+  }
   const [selected, setSelected] = useState<any>(null)
   const [hexInput, setHexInput] = useState<string>("#111111")
   const [bgHexInput, setBgHexInput] = useState<string>("#ffffff")
@@ -312,8 +330,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const savedInactive: any[] = Array.isArray(pdata?.steps) ? pdata.steps : []
         const savedActive: number = typeof pdata?.activeStepIndex === "number" ? pdata.activeStepIndex : 0
         inactiveStepsRef.current = savedInactive
-        setStepCount(1 + savedInactive.length)
-        setActiveStepIndex(savedActive)
+        setStepCountSync(1 + savedInactive.length)
+        setActiveStepIndexSync(savedActive)
         // Agora seta states (dispara render + init do canvas)
         setPiece(p)
         setCanvasW(pw); setCanvasH(ph)
@@ -2137,11 +2155,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd })
     // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
     // Assim a apresentacao consegue mostrar cada step com seu preview real.
-    if (stepCount > 1) {
+    // CRITICO: usa REF pra ler valores atuais (state pode estar stale se essa
+    // funcao foi chamada de dentro de uma cadeia async como addStep -> doSaveNow).
+    if (stepCountRef.current > 1) {
       const fd2 = new FormData()
-      fd2.append("thumbnail", blob, `step${activeStepIndex}.png`)
+      fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
       try {
-        await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndex}`, { method: "POST", body: fd2 })
+        await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, { method: "POST", body: fd2 })
       } catch (e) { console.warn("[uploadPieceThumb] step thumb failed:", e) }
     }
   }
@@ -2427,15 +2447,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   async function switchToStep(newIndex: number) {
-    if (newIndex < 0 || newIndex >= stepCount) return
-    if (newIndex === activeStepIndex) return
+    if (newIndex < 0 || newIndex >= stepCountRef.current) return
+    if (newIndex === activeStepIndexRef.current) return
     // 1. Serializa step atual no inactiveStepsRef na posicao certa.
     const currentSnapshot = serializeCurrentStep()
     // Reconstroi o array completo de steps incluindo o atual.
     const fullSteps: any[] = []
     let cursor = 0
-    for (let i = 0; i < stepCount; i++) {
-      if (i === activeStepIndex) fullSteps.push(currentSnapshot)
+    for (let i = 0; i < stepCountRef.current; i++) {
+      if (i === activeStepIndexRef.current) fullSteps.push(currentSnapshot)
       else { fullSteps.push(inactiveStepsRef.current[cursor]); cursor++ }
     }
     // 2. Carrega o novo step.
@@ -2443,9 +2463,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // 3. Atualiza o buffer: remove o novo step (agora ativo) e mantem os outros.
     const newInactive = fullSteps.filter((_, i) => i !== newIndex)
     inactiveStepsRef.current = newInactive
-    setActiveStepIndex(newIndex)
+    setActiveStepIndexSync(newIndex)
     isDirtyRef.current = true
-    doSaveNow()
+    await doSaveNow()
   }
 
   async function addStep() {
@@ -2453,11 +2473,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // Assim o user nao precisa rebuildar a "casca" da peca — soh ajusta
     // o conteudo especifico de cada step.
     const copyOfCurrent = serializeCurrentStep()
-    const newStepIndex = stepCount // 0-indexed; novo step ocupa esse indice
+    const newStepIndex = stepCountRef.current // 0-indexed; novo step ocupa esse indice
     inactiveStepsRef.current = [...inactiveStepsRef.current, copyOfCurrent]
-    setStepCount(c => c + 1)
+    setStepCountSync(c => c + 1)
     isDirtyRef.current = true
-    doSaveNow()
+    // AGUARDA o save terminar antes de fazer upload do thumb do novo step.
+    // Sem isso, ordem dos PATCH/POST seria imprevisivel (race condition):
+    // o step-thumb podia rodar com data velho e sobrescrever o save.
+    await doSaveNow()
     // Gera thumb pro novo step (cópia do canvas atual). Sem isso, a apresentacao
     // mostra '(sem preview)' ate o user ativar o step pela primeira vez.
     const fc = fabricRef.current
@@ -2474,16 +2497,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   async function removeStep(indexToRemove: number, skipConfirm = false) {
-    if (stepCount <= 1) return // nao deixa apagar o ultimo
+    if (stepCountRef.current <= 1) return // nao deixa apagar o ultimo
     if (!skipConfirm && !window.confirm(`Apagar Step ${indexToRemove + 1}? Os steps seguintes serao renumerados.`)) return
     // Caso A: apaga step ativo. Precisa carregar outro no canvas primeiro.
-    if (indexToRemove === activeStepIndex) {
+    if (indexToRemove === activeStepIndexRef.current) {
       // Escolhe vizinho: anterior se houver, senao proximo.
       const fallbackIndex = indexToRemove === 0 ? 1 : indexToRemove - 1
       // Pega o step de fallback do buffer (sem incluir o ativo).
       // Mapeia: se fallbackIndex < activeStepIndex, eh posicao fallbackIndex no buffer.
       //         se fallbackIndex > activeStepIndex, eh posicao fallbackIndex-1.
-      const bufferIdx = fallbackIndex < activeStepIndex ? fallbackIndex : fallbackIndex - 1
+      const bufferIdx = fallbackIndex < activeStepIndexRef.current ? fallbackIndex : fallbackIndex - 1
       const fallbackStep = inactiveStepsRef.current[bufferIdx]
       if (fallbackStep) {
         await loadStepIntoCanvas(fallbackStep)
@@ -2493,18 +2516,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // Novo activeStepIndex: o fallback ocupa a posicao do removido.
         // Se fallback era anterior, novo activeIndex eh fallbackIndex.
         // Se era posterior, depois do shift de remocao, eh fallbackIndex - 1.
-        setActiveStepIndex(fallbackIndex < indexToRemove ? fallbackIndex : fallbackIndex - 1)
+        setActiveStepIndexSync(fallbackIndex < indexToRemove ? fallbackIndex : fallbackIndex - 1)
       }
     } else {
       // Caso B: apaga step inativo. Soh remove do buffer.
-      const bufferIdx = indexToRemove < activeStepIndex ? indexToRemove : indexToRemove - 1
+      const bufferIdx = indexToRemove < activeStepIndexRef.current ? indexToRemove : indexToRemove - 1
       inactiveStepsRef.current = inactiveStepsRef.current.filter((_, i) => i !== bufferIdx)
       // Se o removido vinha ANTES do ativo, o indice do ativo diminui em 1.
-      if (indexToRemove < activeStepIndex) setActiveStepIndex(activeStepIndex - 1)
+      if (indexToRemove < activeStepIndexRef.current) setActiveStepIndexSync(activeStepIndexRef.current - 1)
     }
-    setStepCount(c => c - 1)
+    setStepCountSync(c => c - 1)
     isDirtyRef.current = true
-    doSaveNow()
+    await doSaveNow()
   }
 
   // ============================================================
@@ -2517,13 +2540,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     saveTimer.current = setTimeout(performSave, 800)
   }
 
-  function doSaveNow() {
+  function doSaveNow(): Promise<void> {
     // Sem debounce: usado por acoes deliberadas do user (toggle olho/cadeado).
-    // Dispara o fetch antes que um possivel cleanup do useEffect cancele o timer.
-    // fetch eh fire-and-forget — o browser geralmente conclui requests em transito
-    // mesmo se o componente desmontar (navegacao client-side rapida).
+    // Retorna a Promise do performSave pra quem precisar aguardar (ex: addStep
+    // antes de fazer upload do thumb do novo step, evitando race condition).
     clearTimeout(saveTimer.current)
-    performSave()
+    return performSave()
   }
 
   async function performSave() {
@@ -2671,14 +2693,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // O step ativo eh sincronizado: pegamos newLayers (canvas atual) e
       // injetamos em steps[activeStepIndex]. Os outros vem do inactiveStepsRef.
       //
+      // CRITICO: usa REFS (stepCountRef, activeStepIndexRef) pra ler valores
+      // sincronos. React state \u00e9 batched e pode estar stale se essa funcao
+      // foi chamada logo apos setStepCount/setActiveStepIndex.
+      //
       // Pecas com 1 step soh: nao gravamos data.steps (compat formato legado).
-      if (stepCount > 1) {
+      if (stepCountRef.current > 1) {
         // Monta array completo: steps[i] = se i==activeStepIndex, usa o canvas atual.
         // Senao usa inactiveStepsRef.current[mapInactive(i)].
         const fullSteps: any[] = []
         let inactiveCursor = 0
-        for (let i = 0; i < stepCount; i++) {
-          if (i === activeStepIndex) {
+        for (let i = 0; i < stepCountRef.current; i++) {
+          if (i === activeStepIndexRef.current) {
             fullSteps.push({ layers: newLayers, bgColor: bgColorRef.current })
           } else {
             fullSteps.push(inactiveStepsRef.current[inactiveCursor] ?? { layers: [], bgColor: "#ffffff" })
@@ -2686,7 +2712,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           }
         }
         newData.steps = fullSteps
-        newData.activeStepIndex = activeStepIndex
+        newData.activeStepIndex = activeStepIndexRef.current
       } else {
         delete newData.steps
         delete newData.activeStepIndex
