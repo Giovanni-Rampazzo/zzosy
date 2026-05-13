@@ -2201,9 +2201,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   // Detecta steps sem thumbnail no piece.data e os gera offscreen.
   // Chamado ao abrir uma peca multi-step no editor. Roda em background
   // — nao trava o user.
-  // Flag de controle: autoGenerate so roda uma vez por carregamento e nunca em
-  // paralelo com saves. Sem isso, race condition entre autoGen (lendo dados
-  // antigos) e save (escrevendo dados novos) podia restaurar thumbs antigos.
+  // Flag de controle: autoGenerate so roda uma vez por carregamento.
   const autoGenDoneRef = useRef(false)
   async function autoGenerateMissingStepThumbs() {
     if (autoGenDoneRef.current) return
@@ -2217,23 +2215,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (allSteps.length < 2) return
     const activeIdx = pdata.activeStepIndex ?? 0
     for (let i = 0; i < allSteps.length; i++) {
-      // Pula o step ativo — o thumb dele eh gerado pelo uploadPieceThumb
-      // normal (a partir do canvas atual). Aqui soh interessam os inativos.
-      if (i === activeIdx) {
-        console.log("[autoGen] step", i, "= ativo, pulando")
-        continue
-      }
       const step = allSteps[i]
       // Soh gera quem nao tem thumb. Steps que ja tem ficam quietos.
       if (step?.imageUrl) {
         console.log("[autoGen] step", i, "ja tem thumb")
         continue
       }
-      // Guard: se o user comecou a editar, aborta autoGen pra nao competir
-      // com saves manuais que estao prestes a rodar.
-      if (isDirtyRef.current) {
-        console.log("[autoGen] abortado — isDirty=true antes do step", i)
-        return
+      // Para o step ATIVO sem thumb, usa o canvas atual em vez do offscreen
+      // (mais preciso, ja tem todos os layers prontos com fontes carregadas).
+      if (i === activeIdx) {
+        const fc = fabricRef.current
+        if (!fc) continue
+        console.log("[autoGen] gerando thumb pro step ATIVO", i, "via canvas")
+        try {
+          await uploadPieceThumb(fc, pieceId)
+        } catch (e) { console.warn("[auto thumb] uploadPieceThumb falhou:", e) }
+        continue
       }
       console.log("[autoGen] gerando thumb pro step", i)
       const blob = await renderStepOffscreenToBlob({
@@ -2243,11 +2240,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       if (!blob) {
         console.log("[autoGen] blob vazio pro step", i)
         continue
-      }
-      // Re-check: usuario pode ter editado durante o render offscreen
-      if (isDirtyRef.current) {
-        console.log("[autoGen] abortado durante render — isDirty agora true")
-        return
       }
       // CRITICO: re-busca o estado atual do banco JUSTAMENTE antes do upload.
       // Outro save (do user) pode ter gerado um thumb melhor pra este step.
@@ -2266,6 +2258,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       fd.append("thumbnail", blob, `step${i}.png`)
       try {
         await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${i}`, { method: "POST", body: fd })
+        console.log("[autoGen] thumb upload OK step", i)
       } catch (e) { console.warn("[auto thumb] upload fail step", i, e) }
     }
   }
