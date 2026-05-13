@@ -203,11 +203,13 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             const src = s.imageUrl ?? s.thumbnailUrl ?? null
             return (
               <div key={i} style={{
-                display: "flex", flexDirection: "column", alignItems: "center",
-                gap: "0.6cqw", width: "100%", height: "100%",
+                // Label e imagem alinhadas a esquerda — label fica colado
+                // na peca (mesma referencia visual de referencia mockup).
+                display: "flex", flexDirection: "column", alignItems: "flex-start",
+                gap: "0.4cqw", width: "100%", height: "100%",
                 minHeight: 0, minWidth: 0,
               }}>
-                {/* Label do step */}
+                {/* Label do step — alinhado a esquerda, colado na peca */}
                 <div style={{
                   fontSize: "0.75cqw", fontWeight: 700,
                   color: TEXT_DARK, opacity: 0.6,
@@ -217,10 +219,11 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 }}>
                   Step {i + 1}
                 </div>
-                {/* Imagem do step (escalada pra caber na celula) */}
+                {/* Imagem do step (escalada pra caber na celula).
+                    justifyContent flex-start pra colar na esquerda. */}
                 <div style={{
                   flex: 1, minHeight: 0, width: "100%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
+                  display: "flex", alignItems: "center", justifyContent: "flex-start",
                 }}>
                   {src ? (
                     <img src={src} alt={`${name} Step ${i + 1}`}
@@ -328,13 +331,15 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
 
       {/* CONTEUDO: imagem (e legenda, se houver ou se usuario adicionar) */}
       {showCard ? (
-        // Layout split: peca a esquerda ~2/3, legenda a direita ~1/3
+        // Layout split: peca a esquerda ~2/3, legenda a direita ~1/3.
+        // alignItems start: card de legenda ocupa apenas a altura necessaria
+        // pro conteudo (em vez de esticar 100% do slide).
         <div style={{
           position: "absolute", inset: 0,
           display: "grid", gridTemplateColumns: "2fr 1fr",
           padding: "10% 3% 8% 3%",
           gap: "2.5%",
-          alignItems: "stretch",
+          alignItems: "start",
         }}>
           {/* Peca */}
           <div style={{
@@ -343,9 +348,9 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           }}>
             {renderPieceVisual()}
           </div>
-          {/* Card legenda — header amarelo cheio em cima, corpo branco embaixo.
-              Ocupa altura inteira disponivel. Texto centralizado verticalmente
-              no body. */}
+          {/* Card legenda — header amarelo em cima, corpo branco embaixo.
+              Altura segue o conteudo: card pequeno pra legenda curta,
+              cresce quando o texto eh longo (limite: 100% do slide). */}
           <div style={{
             background: "white",
             borderRadius: RADIUS,
@@ -353,7 +358,8 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             border: "1px solid rgba(0,0,0,0.05)",
             display: "flex", flexDirection: "column",
             position: "relative",
-            minHeight: 0,
+            maxHeight: "100%",
+            overflow: "hidden",
           }}
           onClick={(e) => { if (editable) e.stopPropagation() }}
           >
@@ -371,14 +377,12 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
               <span>Legenda:</span>
               {saving && <span style={{ fontSize: "0.85cqw", fontWeight: 500, fontStyle: "normal", opacity: 0.7 }}>salvando…</span>}
             </div>
-            {/* Corpo — texto centralizado verticalmente, expande pra mostrar
-                a legenda inteira sem truncar. */}
+            {/* Corpo — padding sutil (vertical menor que lateral pra respiro proporcional).
+                NÃO usa flex:1 pra que o card encolha quando o texto for curto. */}
             <div style={{
-              flex: 1,
-              padding: "1.6cqw 1.6cqw",
-              display: "flex",
-              alignItems: "center",
+              padding: "1.1cqw 1.6cqw",
               minHeight: 0,
+              overflow: "auto",
             }}>
               {editable ? (
                 <textarea
