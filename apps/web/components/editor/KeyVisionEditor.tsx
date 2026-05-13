@@ -2314,7 +2314,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (!blob) return
     const fd = new FormData()
     fd.append("thumbnail", blob, "thumb.png")
-    await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd })
+    // keepalive: o request sobrevive a navegacao do user (ex: clicar
+    // em 'Voltar pra campanha' logo apos um save). Sem isso, o fetch
+    // eh cancelado e o thumb fica desatualizado.
+    await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
     // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
     // Assim a apresentacao consegue mostrar cada step com seu preview real.
     // CRITICO: usa REF pra ler valores atuais (state pode estar stale se essa
@@ -2323,7 +2326,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const fd2 = new FormData()
       fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
       try {
-        await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, { method: "POST", body: fd2 })
+        await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
+          method: "POST", body: fd2, keepalive: true,
+        })
       } catch (e) { console.warn("[uploadPieceThumb] step thumb failed:", e) }
     }
   }
@@ -2684,8 +2689,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     setStepCountSync(c => c + 1)
     isDirtyRef.current = true
     // AGUARDA o save terminar antes de fazer upload do thumb do novo step.
-    // Sem isso, ordem dos PATCH/POST seria imprevisivel (race condition):
-    // o step-thumb podia rodar com data velho e sobrescrever o save.
     await doSaveNow()
     // Gera thumb pro novo step (cópia do canvas atual). Sem isso, a apresentacao
     // mostra '(sem preview)' ate o user ativar o step pela primeira vez.
@@ -2696,7 +2699,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const fd = new FormData()
         fd.append("thumbnail", blob, `step${newStepIndex}.png`)
         try {
-          await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${newStepIndex}`, { method: "POST", body: fd })
+          // keepalive: request sobrevive a navegacao do user (ex: clicar
+          // em 'Voltar pra campanha' logo apos +Step). Sem isso, o fetch
+          // eh cancelado e o thumb nunca eh gerado no servidor.
+          await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${newStepIndex}`, {
+            method: "POST", body: fd, keepalive: true,
+          })
         } catch (e) { console.warn("[addStep] thumb upload failed:", e) }
       }
     }
