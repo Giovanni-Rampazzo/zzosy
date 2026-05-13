@@ -2454,9 +2454,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // fechar a aba durante o upload, ainda mostra "salvando" e nao perde o
         // estado "dirty" silenciosamente.
         await fetch(`/api/pieces/${targetPieceId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: JSON.stringify(newData) }) })
+        // CRITICO: atualiza pieceRef.current.data pra refletir o save. Sem isso,
+        // serializeCurrentStep continua lendo data antigo do banco e pode perder
+        // imageUrl que ja foi gravado no banco mas nao no ref local.
+        if (pieceRef.current) {
+          pieceRef.current = { ...pieceRef.current, data: JSON.stringify(newData) } as any
+        }
         // Upload do thumb e best-effort; falha nao deve marcar como dirty de novo
         // mas o save da peca em si ja persistiu.
-        try { await uploadPieceThumb(fc, targetPieceId) } catch (e) { console.warn("thumb fail:", e) }
+        try {
+          await uploadPieceThumb(fc, targetPieceId)
+          // Re-fetch pieceRef pra pegar o imageUrl novo dos steps (gravado por
+          // uploadPieceThumb). Sem isso, switchToStep posterior usa imageUrl
+          // null e perde o thumb que acabou de ser gerado.
+          try {
+            const r = await fetch(`/api/pieces/${targetPieceId}`, { cache: "no-store" })
+            if (r.ok) {
+              const fresh = await r.json()
+              if (pieceRef.current) pieceRef.current = fresh
+            }
+          } catch (e) { /* nao critico */ }
+        } catch (e) { console.warn("thumb fail:", e) }
         isDirtyRef.current = false
         setIsDirty(false)
       } catch (e) {
@@ -2974,7 +2992,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data: JSON.stringify(newData) })
       })
+      // CRITICO: atualiza pieceRef.current.data pra refletir o save (mesmo
+      // motivo do saveNow PECA acima).
+      if (pieceRef.current) {
+        pieceRef.current = { ...pieceRef.current, data: JSON.stringify(newData) } as any
+      }
       await uploadPieceThumb(fc, pieceId)
+      // Re-fetch pra pegar imageUrl dos steps gerados pelo upload.
+      try {
+        const r = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
+        if (r.ok) {
+          const fresh = await r.json()
+          if (pieceRef.current) pieceRef.current = fresh
+        }
+      } catch (e) { /* nao critico */ }
       isDirtyRef.current = false
       setIsDirty(false)
     } else {
