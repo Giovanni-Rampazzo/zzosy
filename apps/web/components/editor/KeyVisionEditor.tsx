@@ -2448,15 +2448,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     doSaveNow()
   }
 
-  function addStep() {
+  async function addStep() {
     // Adiciona novo step no fim, copiando o conteudo do ATIVO atual.
-    // Assim o user nao precisa rebuildar a "casca" da peca (logo, dimensoes,
-    // background) — soh ajusta o conteudo especifico de cada step.
+    // Assim o user nao precisa rebuildar a "casca" da peca — soh ajusta
+    // o conteudo especifico de cada step.
     const copyOfCurrent = serializeCurrentStep()
+    const newStepIndex = stepCount // 0-indexed; novo step ocupa esse indice
     inactiveStepsRef.current = [...inactiveStepsRef.current, copyOfCurrent]
     setStepCount(c => c + 1)
     isDirtyRef.current = true
     doSaveNow()
+    // Gera thumb pro novo step (cópia do canvas atual). Sem isso, a apresentacao
+    // mostra '(sem preview)' ate o user ativar o step pela primeira vez.
+    const fc = fabricRef.current
+    if (fc && pieceId) {
+      const blob = await generateCurrentThumbBlob(fc)
+      if (blob) {
+        const fd = new FormData()
+        fd.append("thumbnail", blob, `step${newStepIndex}.png`)
+        try {
+          await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${newStepIndex}`, { method: "POST", body: fd })
+        } catch (e) { console.warn("[addStep] thumb upload failed:", e) }
+      }
+    }
   }
 
   async function removeStep(indexToRemove: number, skipConfirm = false) {
