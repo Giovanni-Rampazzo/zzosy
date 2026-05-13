@@ -217,6 +217,32 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   const [piece, setPiece] = useState<any>(null)
   const pieceRef = useRef<any>(null)
   const isPieceMode = !!pieceId
+  // STEPS (carrossel Meta etc): cada peca pode ter 1+ steps.
+  //
+  // Estrutura no piece.data:
+  //   {
+  //     width, height, bgColor,            // dimens\u00f5es da peca (compartilhadas)
+  //     layers: [...],                     // step ATIVO (compat com pecas legadas)
+  //     activeStepIndex?: number,          // 0-based; 0 = step 1
+  //     steps?: Array<{ layers, bgColor, thumbnailUrl?, imageUrl? }>,
+  //                                        // SNAPSHOTS dos steps inativos.
+  //                                        // Tamanho = N-1 onde N = total de steps.
+  //                                        // Index map: depende do step ativo.
+  //   }
+  //
+  // Como funciona internamente:
+  // - Total de steps = 1 + (steps?.length ?? 0)
+  // - O step ATIVO esta no canvas + layers.
+  // - Os step INATIVOS ficam serializados em steps[].
+  // - Ao trocar de step ativo: salva canvas atual em steps[old], carrega steps[new] no canvas.
+  //
+  // Pra simplicidade no codigo client, mantemos no React state:
+  //  - stepCount: total de steps
+  //  - activeStepIndex: qual esta sendo editado (0-based)
+  //  - inactiveStepsRef: array com OS OUTROS steps (length = stepCount - 1)
+  const [stepCount, setStepCount] = useState(1)
+  const [activeStepIndex, setActiveStepIndex] = useState(0)
+  const inactiveStepsRef = useRef<Array<{ layers: any[]; bgColor: string; thumbnailUrl?: string | null; imageUrl?: string | null }>>([])
   const [selected, setSelected] = useState<any>(null)
   const [hexInput, setHexInput] = useState<string>("#111111")
   const [bgHexInput, setBgHexInput] = useState<string>("#ffffff")
@@ -281,6 +307,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         canvasHRef.current = ph
         const bg = pdata?.bgColor ?? camp.keyVision?.bgColor ?? "#ffffff"
         bgColorRef.current = bg
+        // STEPS: inicializa buffer dos steps inativos + indice ativo.
+        // Default: stepCount=1, activeStepIndex=0, inactiveStepsRef=[]
+        const savedInactive: any[] = Array.isArray(pdata?.steps) ? pdata.steps : []
+        const savedActive: number = typeof pdata?.activeStepIndex === "number" ? pdata.activeStepIndex : 0
+        inactiveStepsRef.current = savedInactive
+        setStepCount(1 + savedInactive.length)
+        setActiveStepIndex(savedActive)
         // Agora seta states (dispara render + init do canvas)
         setPiece(p)
         setCanvasW(pw); setCanvasH(ph)
@@ -2306,6 +2339,158 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     savingInFlightRef.current = false
   }
 
+  // ============================================================
+  // STEPS MANAGEMENT — carrosseis, sequencias, posts de varios cards
+  // ============================================================
+
+  // Serializa o canvas ATUAL no formato {layers, bgColor} pra salvar como
+  // snapshot em inactiveStepsRef. Replica a logica do performSave modo peca.
+  function serializeCurrentStep(): { layers: any[]; bgColor: string } {
+    const fc = fabricRef.current
+    if (!fc) return { layers: [], bgColor: bgColorRef.current }
+    const layers = fc.getObjects()
+      .filter((o: any) => {
+        if (o.__isBg) return false
+        if (o.__isBleedOverlay) return false
+        if (!o.__assetId && !o.__embedded) return false
+        return true
+      })
+      .map((o: any, i: number) => {
+        const layer: any = {
+          posX: Math.round(o.left ?? 0),
+          posY: Math.round(o.top ?? 0),
+          scaleX: o.scaleX ?? 1,
+          scaleY: o.scaleY ?? 1,
+          rotation: o.angle ?? 0,
+          zIndex: i,
+          width: Math.round(o.width ?? 400),
+          height: Math.round(o.height ?? 100),
+          overrides: {},
+        }
+        if (o.__assetId) layer.assetId = o.__assetId
+        if (o.__hidden === true) layer.hidden = true
+        if (o.__locked === true) layer.locked = true
+        if (o.__embedded) {
+          layer.embedded = true
+          layer.embeddedData = o.__embeddedData ?? null
+        }
+        // Overrides per-instancia: posicao + estilo de texto.
+        if ((o as any).fill !== undefined) layer.overrides.fill = (o as any).fill
+        if ((o as any).fontSize !== undefined) layer.overrides.fontSize = (o as any).fontSize
+        if ((o as any).fontFamily !== undefined) layer.overrides.fontFamily = (o as any).fontFamily
+        if ((o as any).styles !== undefined) layer.overrides.styles = (o as any).styles
+        if ((o as any).leadingPt !== undefined) layer.overrides.leadingPt = (o as any).leadingPt
+        if ((o as any).textAlign !== undefined) layer.overrides.textAlign = (o as any).textAlign
+        if (o.__mask) layer.mask = o.__mask
+        return layer
+      })
+    return { layers, bgColor: bgColorRef.current }
+  }
+
+  // Aplica um step {layers, bgColor} no canvas: limpa tudo e re-cria.
+  async function loadStepIntoCanvas(step: { layers: any[]; bgColor: string }) {
+    const fc = fabricRef.current
+    const camp = campaignRef.current
+    if (!fc || !camp) return
+    // Marca que esta aplicando para guards nao salvarem durante load
+    isApplyingHistory.current = true
+    try {
+      // Limpa todos os objetos exceto bg.
+      const toRemove = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+      toRemove.forEach((o: any) => fc.remove(o))
+      // Aplica bgColor.
+      bgColorRef.current = step.bgColor
+      setBgColor(step.bgColor)
+      if (bgRef.current) bgRef.current.set("fill", step.bgColor)
+      // Re-cria layers.
+      for (const layer of step.layers) {
+        if (layer.embedded) {
+          // Embedded: cria o objeto cru a partir de embeddedData.
+          // Pra simplicidade, pula no minimo viavel — depois melhoramos.
+          continue
+        }
+        if (!layer.assetId) continue
+        const asset = camp.assets.find((a: Asset) => a.id === layer.assetId)
+        if (!asset) continue
+        await addAssetToCanvas(fc, asset, layer)
+        const created = fc.getObjects()[fc.getObjects().length - 1]
+        if (created) applyHiddenLockedToObject(created, layer)
+      }
+      fc.renderAll()
+      refreshLayers(fc)
+    } finally {
+      isApplyingHistory.current = false
+    }
+  }
+
+  async function switchToStep(newIndex: number) {
+    if (newIndex < 0 || newIndex >= stepCount) return
+    if (newIndex === activeStepIndex) return
+    // 1. Serializa step atual no inactiveStepsRef na posicao certa.
+    const currentSnapshot = serializeCurrentStep()
+    // Reconstroi o array completo de steps incluindo o atual.
+    const fullSteps: any[] = []
+    let cursor = 0
+    for (let i = 0; i < stepCount; i++) {
+      if (i === activeStepIndex) fullSteps.push(currentSnapshot)
+      else { fullSteps.push(inactiveStepsRef.current[cursor]); cursor++ }
+    }
+    // 2. Carrega o novo step.
+    await loadStepIntoCanvas(fullSteps[newIndex])
+    // 3. Atualiza o buffer: remove o novo step (agora ativo) e mantem os outros.
+    const newInactive = fullSteps.filter((_, i) => i !== newIndex)
+    inactiveStepsRef.current = newInactive
+    setActiveStepIndex(newIndex)
+    isDirtyRef.current = true
+    doSaveNow()
+  }
+
+  function addStep() {
+    // Adiciona novo step VAZIO no fim. Activo continua sendo o atual.
+    inactiveStepsRef.current = [...inactiveStepsRef.current, { layers: [], bgColor: bgColorRef.current }]
+    setStepCount(c => c + 1)
+    isDirtyRef.current = true
+    doSaveNow()
+  }
+
+  async function removeStep(indexToRemove: number, skipConfirm = false) {
+    if (stepCount <= 1) return // nao deixa apagar o ultimo
+    if (!skipConfirm && !window.confirm(`Apagar Step ${indexToRemove + 1}? Os steps seguintes serao renumerados.`)) return
+    // Caso A: apaga step ativo. Precisa carregar outro no canvas primeiro.
+    if (indexToRemove === activeStepIndex) {
+      // Escolhe vizinho: anterior se houver, senao proximo.
+      const fallbackIndex = indexToRemove === 0 ? 1 : indexToRemove - 1
+      // Pega o step de fallback do buffer (sem incluir o ativo).
+      // Mapeia: se fallbackIndex < activeStepIndex, eh posicao fallbackIndex no buffer.
+      //         se fallbackIndex > activeStepIndex, eh posicao fallbackIndex-1.
+      const bufferIdx = fallbackIndex < activeStepIndex ? fallbackIndex : fallbackIndex - 1
+      const fallbackStep = inactiveStepsRef.current[bufferIdx]
+      if (fallbackStep) {
+        await loadStepIntoCanvas(fallbackStep)
+        // Remove fallback do buffer (agora eh ativo).
+        const newBuffer = inactiveStepsRef.current.filter((_, i) => i !== bufferIdx)
+        inactiveStepsRef.current = newBuffer
+        // Novo activeStepIndex: o fallback ocupa a posicao do removido.
+        // Se fallback era anterior, novo activeIndex eh fallbackIndex.
+        // Se era posterior, depois do shift de remocao, eh fallbackIndex - 1.
+        setActiveStepIndex(fallbackIndex < indexToRemove ? fallbackIndex : fallbackIndex - 1)
+      }
+    } else {
+      // Caso B: apaga step inativo. Soh remove do buffer.
+      const bufferIdx = indexToRemove < activeStepIndex ? indexToRemove : indexToRemove - 1
+      inactiveStepsRef.current = inactiveStepsRef.current.filter((_, i) => i !== bufferIdx)
+      // Se o removido vinha ANTES do ativo, o indice do ativo diminui em 1.
+      if (indexToRemove < activeStepIndex) setActiveStepIndex(activeStepIndex - 1)
+    }
+    setStepCount(c => c - 1)
+    isDirtyRef.current = true
+    doSaveNow()
+  }
+
+  // ============================================================
+  // FIM STEPS MANAGEMENT
+  // ============================================================
+
   function doSave() {
     // Debounce 800ms: usado por mudancas frequentes (drag, digitacao, edit).
     clearTimeout(saveTimer.current)
@@ -2453,13 +2638,38 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         }
       }
 
-      const newData = {
+      const newData: any = {
         ...oldData,
         version: 2,
         width: canvasWRef.current,
         height: canvasHRef.current,
         bgColor: bgColorRef.current,
         layers: newLayers,
+      }
+      // STEPS: se a peca tem multiplos steps, persiste TODOS em data.steps[].
+      // Estrutura: data.steps eh um array onde steps[i] = { layers, bgColor }.
+      // O step ativo eh sincronizado: pegamos newLayers (canvas atual) e
+      // injetamos em steps[activeStepIndex]. Os outros vem do inactiveStepsRef.
+      //
+      // Pecas com 1 step soh: nao gravamos data.steps (compat formato legado).
+      if (stepCount > 1) {
+        // Monta array completo: steps[i] = se i==activeStepIndex, usa o canvas atual.
+        // Senao usa inactiveStepsRef.current[mapInactive(i)].
+        const fullSteps: any[] = []
+        let inactiveCursor = 0
+        for (let i = 0; i < stepCount; i++) {
+          if (i === activeStepIndex) {
+            fullSteps.push({ layers: newLayers, bgColor: bgColorRef.current })
+          } else {
+            fullSteps.push(inactiveStepsRef.current[inactiveCursor] ?? { layers: [], bgColor: "#ffffff" })
+            inactiveCursor++
+          }
+        }
+        newData.steps = fullSteps
+        newData.activeStepIndex = activeStepIndex
+      } else {
+        delete newData.steps
+        delete newData.activeStepIndex
       }
       await fetch(`/api/pieces/${pieceId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -3009,6 +3219,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
         </button>
         <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
+        {/* STEPS NAVIGATION (modo peca apenas) */}
+        {isPieceMode && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8, padding: "4px 8px", background: "#1a1a1a", borderRadius: 6, border: "1px solid #2a2a2a" }}>
+            {stepCount > 1 && (
+              <>
+                <button
+                  onClick={() => switchToStep(activeStepIndex - 1)}
+                  disabled={activeStepIndex === 0}
+                  title="Step anterior"
+                  style={{ background: "transparent", border: "none", color: activeStepIndex === 0 ? "#333" : "#aaa", cursor: activeStepIndex === 0 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 6px", lineHeight: 1 }}
+                >
+                  ◀
+                </button>
+                <span style={{ fontSize: 11, color: "#bbb", fontWeight: 600, minWidth: 60, textAlign: "center" }}>
+                  Step {activeStepIndex + 1} de {stepCount}
+                </span>
+                <button
+                  onClick={() => switchToStep(activeStepIndex + 1)}
+                  disabled={activeStepIndex >= stepCount - 1}
+                  title="Proximo step"
+                  style={{ background: "transparent", border: "none", color: activeStepIndex >= stepCount - 1 ? "#333" : "#aaa", cursor: activeStepIndex >= stepCount - 1 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 6px", lineHeight: 1 }}
+                >
+                  ▶
+                </button>
+                <div style={{ width: 1, height: 16, background: "#333", margin: "0 2px" }} />
+              </>
+            )}
+            <button
+              onClick={addStep}
+              title="Adicionar novo step (carrossel, sequencia, etc)"
+              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+            >
+              + Step
+            </button>
+            {stepCount > 1 && (
+              <button
+                onClick={(e) => removeStep(activeStepIndex, e.altKey)}
+                title="Apagar este step (Option+click pula confirmacao)"
+                style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+              >
+                🗑
+              </button>
+            )}
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         {saving && <span style={{ fontSize: 11, color: "#555" }}>Salvando...</span>}
         <span style={{ fontSize: 11, color: "#555" }}>{canvasW} × {canvasH}</span>
