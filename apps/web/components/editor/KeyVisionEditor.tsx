@@ -326,12 +326,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const bg = pdata?.bgColor ?? camp.keyVision?.bgColor ?? "#ffffff"
         bgColorRef.current = bg
         // STEPS: inicializa buffer dos steps inativos + indice ativo.
-        // Default: stepCount=1, activeStepIndex=0, inactiveStepsRef=[]
-        const savedInactive: any[] = Array.isArray(pdata?.steps) ? pdata.steps : []
+        // O save grava TODOS os steps em data.steps (incluindo o ativo). No load,
+        // precisamos:
+        // 1. Extrair o step ativo (steps[activeStepIndex]) — vai pro canvas via layers.
+        // 2. Os outros (steps[i] onde i != activeStepIndex) viram inactiveStepsRef.
+        // stepCount total = data.steps.length (NAO eh 1 + inactives).
+        const savedAllSteps: any[] = Array.isArray(pdata?.steps) ? pdata.steps : []
         const savedActive: number = typeof pdata?.activeStepIndex === "number" ? pdata.activeStepIndex : 0
-        inactiveStepsRef.current = savedInactive
-        setStepCountSync(1 + savedInactive.length)
-        setActiveStepIndexSync(savedActive)
+        if (savedAllSteps.length >= 2) {
+          // Peca multi-step: separa ativo dos inativos.
+          inactiveStepsRef.current = savedAllSteps.filter((_, i) => i !== savedActive)
+          setStepCountSync(savedAllSteps.length)
+          setActiveStepIndexSync(savedActive)
+        } else {
+          // Peca legada / 1 step: nao mexe.
+          inactiveStepsRef.current = []
+          setStepCountSync(1)
+          setActiveStepIndexSync(0)
+        }
         // Agora seta states (dispara render + init do canvas)
         setPiece(p)
         setCanvasW(pw); setCanvasH(ph)
