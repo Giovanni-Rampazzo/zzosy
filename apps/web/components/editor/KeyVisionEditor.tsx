@@ -1915,8 +1915,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   // Aplica flags __hidden/__locked vindas do JSON salvo no objeto Fabric criado.
   // Chamado depois de addAssetToCanvas/addEmbeddedLayer pra restaurar estado.
   function applyHiddenLockedToObject(obj: any, layer: any) {
-    // DEBUG
-    console.log("[LOAD] applyHiddenLockedToObject — layer.hidden:", layer?.hidden, "layer.locked:", layer?.locked, "label:", obj?.__assetLabel)
+    // DEBUG: envia trace pro servidor pra Giovanni inspecionar via curl
+    try {
+      fetch("/api/debug/load-trace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "applyHiddenLockedToObject",
+          layer_hidden: layer?.hidden,
+          layer_locked: layer?.locked,
+          obj_label: obj?.__assetLabel,
+          obj_type: obj?.type,
+          had_hidden_before: obj?.__hidden,
+          had_locked_before: obj?.__locked,
+        }),
+      })
+    } catch {}
     if (layer?.hidden === true) {
       obj.__hidden = true
       obj.set("visible", false)
