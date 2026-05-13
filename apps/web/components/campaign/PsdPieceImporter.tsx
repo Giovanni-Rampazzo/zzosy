@@ -336,10 +336,10 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
     <>
       <label style={{ display: "inline-flex" }}>
         <Button
-          variant="secondary"
-          size="md"
+          variant="primary"
+          size="lg"
           loading={loading}
-          title="Importar PSDs como pecas (mantem dimensoes originais, linka layers com nomes iguais aos assets)"
+          title="Reimportar PSD como peca (mantem dimensoes originais, linka layers com nomes iguais aos assets)"
           // O <Button> nao expoe diretamente file picker multiple, entao usamos um input
           // file separado embaixo. O label do <Button> nao captura clique de file input.
           // Aqui o Button so dispara o click no input via ref.
@@ -348,7 +348,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
             input?.click()
           }}
         >
-          {loading ? (progress || "Importando…") : "Importar PSD como peça"}
+          {loading ? (progress || "Importando…") : "Reimportar PSD"}
         </Button>
       </label>
       <input

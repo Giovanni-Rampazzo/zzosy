@@ -378,7 +378,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
     <>
       <Button
         variant="primary"
-        size="md"
+        size="lg"
         accept=".psd"
         onFileSelect={(f) => handleFile(f)}
         loading={loading}
