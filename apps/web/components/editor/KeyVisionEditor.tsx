@@ -2705,26 +2705,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   async function addStep() {
-    // Adiciona novo step no fim, copiando o conteudo do ATIVO atual.
-    const newStepIndex = stepCountRef.current // 0-indexed
-    console.log("[addStep] inicio. stepCount atual:", stepCountRef.current, "newStepIndex:", newStepIndex)
-    // CRITICO: gera thumb do canvas ATUAL ANTES de qualquer state change.
-    // Esse thumb sera usado pro novo step E (se necessario) pro step que era
-    // ativo. Sem isso, dependiamos de fallbacks indiretos que falham em pecas
-    // novas ainda sem piece.imageUrl gravado.
+    // Adiciona novo step no fim, copiando o conteudo do ATIVO atual,
+    // e ATIVA o novo step automaticamente (user vai ver/editar ele direto).
+    const newStepIndex = stepCountRef.current // 0-indexed; novo step ocupa esse indice
+    console.log("[addStep] inicio. stepCount:", stepCountRef.current, "newStepIndex:", newStepIndex)
+    // Gera thumb do canvas atual (sera o thumb inicial do novo step E
+    // do step que era ativo, ja que sao copias visuais identicas no momento).
     const fc = fabricRef.current
     let currentBlob: Blob | null = null
     if (fc) {
       currentBlob = await generateCurrentThumbBlob(fc)
-      console.log("[addStep] blob gerado:", currentBlob ? `${currentBlob.size} bytes` : "null")
     }
-    const copyOfCurrent = serializeCurrentStep()
-    inactiveStepsRef.current = [...inactiveStepsRef.current, copyOfCurrent]
+    // Snapshot do step que era ATIVO (sera empurrado pro buffer).
+    const previousActiveSnapshot = serializeCurrentStep()
+    // Inclui no buffer o step antigo na posicao do activeIndex atual.
+    // (Antes ele estava "fora" do buffer porque era o ativo).
+    const previousActiveIndex = activeStepIndexRef.current
+    const newBuffer = [...inactiveStepsRef.current]
+    newBuffer.splice(previousActiveIndex, 0, previousActiveSnapshot)
+    inactiveStepsRef.current = newBuffer
+    // Aumenta count e troca ativo pro novo (que ainda nao foi adicionado ao
+    // buffer porque agora ELE eh o ativo no canvas).
     setStepCountSync(c => c + 1)
+    setActiveStepIndexSync(newStepIndex)
     isDirtyRef.current = true
+    // O canvas NAO precisa ser recarregado — eh o mesmo conteudo (cópia).
     await doSaveNow()
-    console.log("[addStep] save terminou. Subindo thumb pro novo step:", newStepIndex)
-    // Sobe thumb pro NOVO step (cópia visual do ativo). Best-effort.
+    console.log("[addStep] save terminou. Step novo agora eh o ativo:", newStepIndex)
+    // Sobe thumb pro novo step (que agora eh ativo).
     if (currentBlob && pieceId) {
       const fd = new FormData()
       fd.append("thumbnail", currentBlob, `step${newStepIndex}.png`)
@@ -2732,9 +2740,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const r = await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${newStepIndex}`, {
           method: "POST", body: fd, keepalive: true,
         })
-        console.log("[addStep] thumb do novo step status:", r.status)
-      } catch (e) { console.warn("[addStep] upload novo step falhou:", e) }
-      // Re-fetch pieceRef pra ter o imageUrl novo refletido localmente.
+        console.log("[addStep] thumb upload status:", r.status)
+      } catch (e) { console.warn("[addStep] thumb upload falhou:", e) }
+      // Re-fetch pieceRef
       try {
         const r = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
         if (r.ok) {
@@ -3590,7 +3598,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           const dest = from === "presentation"
             ? `/campaigns/${campaignId}/presentation${isPieceMode && pieceId ? `#piece-${pieceId}` : ""}`
             : `/campaigns/${campaignId}`
-          const go = () => router.push(dest)
+          const go = () => {
+            // CRITICO: router.refresh() invalida o Router Cache do Next antes
+            // de navegar. Sem isso, ao voltar pra campanha/presentation o
+            // Next podia servir versao cacheada sem os thumbs novos.
+            router.refresh()
+            router.push(dest)
+          }
           if (isDirtyRef.current) setConfirmExit(() => go)
           else go()
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
