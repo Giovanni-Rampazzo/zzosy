@@ -1694,9 +1694,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             el.onload = () => {
               const naturalW = el.naturalWidth || el.width || 1
               const naturalH = el.naturalHeight || el.height || 1
-              const layerH = layer?.height ?? naturalH
-              const sx = (scaleX !== 1 || scaleY !== 1) ? scaleX : (width / naturalW)
-              const sy = (scaleX !== 1 || scaleY !== 1) ? scaleY : (layerH / naturalH)
+              let sx: number, sy: number
+              if (scaleX !== 1 || scaleY !== 1) {
+                // Scale ja vem do layer (peca/matriz carregada): usa direto
+                sx = scaleX; sy = scaleY
+              } else if (layer?.height != null) {
+                // Tem width E height explicitos: pode distorcer (matriz com tamanho custom)
+                sx = width / naturalW
+                sy = layer.height / naturalH
+              } else {
+                // Tem so width (botao "+ Adicionar ao canvas"): mantem proporcao
+                // pra nao distorcer. Usa ratio uniforme baseado no width alvo.
+                const ratio = width / naturalW
+                sx = ratio; sy = ratio
+              }
               resolve(new FabricImage(el, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle }))
             }
             el.onerror = reject
