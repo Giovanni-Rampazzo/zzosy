@@ -906,6 +906,24 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     }
   }
 
+  // === PROPAGA __hidden / __locked DO FABRIC PRO PSD ===
+  // ag-psd suporta:
+  //   hidden: true            -> camada oculta (igual olho fechado)
+  //   transparencyProtected: true -> "Lock transparent pixels" do PS (mais
+  //     proximo do nosso lock simples; ag-psd nao tem all-locks num campo)
+  // Iteracao em paralelo: psdLayers[0] eh Background, psdLayers[1..] = objects[i].
+  {
+    let psdLayerIdx = 1
+    for (const obj of objects) {
+      if ((obj as any).__isBg) continue
+      const psdLayer: any = psdLayers[psdLayerIdx]
+      if (!psdLayer) { psdLayerIdx++; continue }
+      if ((obj as any).__hidden === true) psdLayer.hidden = true
+      if ((obj as any).__locked === true) psdLayer.transparencyProtected = true
+      psdLayerIdx++
+    }
+  }
+
   // === APLICA MASCARAS (raster / vector / clipping) NOS LAYERS DO PSD ===
   // Percorre os objects do canvas (em mesma ordem dos psdLayers) e injeta a
   // mascara salva em __maskData no psdLayer correspondente. Background nao

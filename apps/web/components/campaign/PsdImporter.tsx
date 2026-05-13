@@ -259,6 +259,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             posX: left, posY: top, width: textWidth, height: textHeight, zIndex,
             lastOverride,
             mask: assetMask,
+            hidden: layer.hidden === true ? true : undefined,
+            locked: (layer as any).transparencyProtected === true ? true : undefined,
           })
         } else if (layer.canvas) {
           try {
@@ -276,6 +278,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               linkedIndex,           // index no linkedBlobs (se for smart object)
               posX: left, posY: top, width, height, zIndex,
               mask: assetMask,
+              hidden: layer.hidden === true ? true : undefined,
+              locked: (layer as any).transparencyProtected === true ? true : undefined,
             })
           } catch (e) {
             console.warn("Falha ao extrair imagem do layer", name, e)

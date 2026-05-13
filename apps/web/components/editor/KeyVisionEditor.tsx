@@ -222,6 +222,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
   const [leadingInput, setLeadingInput] = useState<string>("96")
   const [selectedTick, setSelectedTick] = useState(0)
+  // Estado do drag-and-drop no painel Layers (visualIndex sendo arrastado / sobre)
+  const [dragLayerIdx, setDragLayerIdx] = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const undoStack = useRef<string[]>([])
   const redoStack = useRef<string[]>([])
   const isDirtyRef = useRef(false)
@@ -1083,6 +1086,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 const { Image: FabImage, Path } = await import("fabric")
                 await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
               }
+              if (created) applyHiddenLockedToObject(created, layer)
               continue
             }
             // Layer EMBEDDED (peca importada PSD avulsa). Conteudo cru no proprio
@@ -1095,6 +1099,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                 const { Image: FabImage, Path } = await import("fabric")
                 await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
               }
+              if (created) applyHiddenLockedToObject(created, layer)
               continue
             }
             // Layer orfao (nem asset valido nem embedded): pula com warning
@@ -1177,6 +1182,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               const { Image: FabImage, Path } = await import("fabric")
               await applyMaskToFabricObject({ Image: FabImage, Path }, created, (layer as any).mask)
             }
+            if (created) applyHiddenLockedToObject(created, layer)
           }
         }
       }
@@ -1197,7 +1203,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl"]))
+        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -1258,7 +1264,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         editorLog("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
         for (const orphan of orphans) fc.remove(orphan)
       }
-      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl"]))
+      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -1820,7 +1826,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     setLayers(
       fc.getObjects()
         .filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
-        .map((o: any, i: number) => ({ id: i, label: o.__assetLabel ?? o.type, type: o.type, obj: o }))
+        .map((o: any, i: number) => ({
+          id: i,
+          label: o.__assetLabel ?? o.type,
+          type: o.type,
+          obj: o,
+          hidden: o.__hidden === true,
+          locked: o.__locked === true,
+        }))
         .reverse()
     )
   }
@@ -1833,6 +1846,85 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     fc.renderAll()
     refreshLayers(fc)
     doSave()
+  }
+
+  // Reordena layer absolutamente: pega o objeto e coloca em targetVisualIndex
+  // (indice visual no painel, contando de cima pra baixo). Topo da lista = topo
+  // do canvas (mais a frente). targetVisualIndex 0 = mais a frente.
+  function reorderLayer(obj: any, targetVisualIndex: number) {
+    const fc = fabricRef.current
+    if (!fc || !obj) return
+    // Painel mostra os objetos invertidos (topo painel = topo canvas), entao o
+    // indice "real" na lista de objects (de tras pra frente) eh: (total-1) - visualIdx
+    const objects = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+    const total = objects.length
+    const targetCanvasIndex = Math.max(0, Math.min(total - 1, total - 1 - targetVisualIndex))
+    // Fabric API: moveObjectTo(obj, idx). Mas precisamos contar todos os obj
+    // (incluindo bg/overlays) pra acertar o index. O moveObjectTo do Fabric usa
+    // o array completo. Encontramos o idx do alvo no array completo.
+    const allObjs = fc.getObjects()
+    // Filtra apenas reais e pega o targetCanvasIndex-esimo
+    const realObjs = allObjs.filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+    const targetObj = realObjs[targetCanvasIndex]
+    if (!targetObj) return
+    const targetIndexInAll = allObjs.indexOf(targetObj)
+    fc.moveObjectTo(obj, targetIndexInAll)
+    fc.renderAll()
+    refreshLayers(fc)
+    doSave()
+  }
+
+  function toggleLayerVisibility(obj: any) {
+    const fc = fabricRef.current
+    if (!fc || !obj) return
+    const hidden = !(obj.__hidden === true)
+    obj.__hidden = hidden
+    obj.set("visible", !hidden)
+    fc.renderAll()
+    refreshLayers(fc)
+    doSave()
+  }
+
+  function toggleLayerLock(obj: any) {
+    const fc = fabricRef.current
+    if (!fc || !obj) return
+    const locked = !(obj.__locked === true)
+    obj.__locked = locked
+    // Lock = nao move, nao redimensiona, nao rotaciona, nao seleciona via clique
+    obj.set({
+      selectable: !locked,
+      evented: !locked,
+      lockMovementX: locked,
+      lockMovementY: locked,
+      lockScalingX: locked,
+      lockScalingY: locked,
+      lockRotation: locked,
+    })
+    if (locked && fc.getActiveObject() === obj) fc.discardActiveObject()
+    fc.renderAll()
+    refreshLayers(fc)
+    doSave()
+  }
+
+  // Aplica flags __hidden/__locked vindas do JSON salvo no objeto Fabric criado.
+  // Chamado depois de addAssetToCanvas/addEmbeddedLayer pra restaurar estado.
+  function applyHiddenLockedToObject(obj: any, layer: any) {
+    if (layer?.hidden === true) {
+      obj.__hidden = true
+      obj.set("visible", false)
+    }
+    if (layer?.locked === true) {
+      obj.__locked = true
+      obj.set({
+        selectable: false,
+        evented: false,
+        lockMovementX: true,
+        lockMovementY: true,
+        lockScalingX: true,
+        lockScalingY: true,
+        lockRotation: true,
+      })
+    }
   }
 
   // ============= MASK HELPERS =============
@@ -2118,6 +2210,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
             overrides: {},
           }
+          if (o.__hidden === true) layer.hidden = true
+          if (o.__locked === true) layer.locked = true
           // Espelha a logica do modo PECA: salva overrides per-instancia (fill,
           // fontSize, styles per-char, leadingPt, etc) pra preservar formatacao
           // ao alternar entre KV/Assets/Campanha. Sem isso, recarregar o KV
@@ -2251,6 +2345,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             }
             // Linkado a um asset: grava assetId.
             if (o.__assetId) layer.assetId = o.__assetId
+            // Visibilidade e lock: persiste se diferente do default.
+            if (o.__hidden === true) layer.hidden = true
+            if (o.__locked === true) layer.locked = true
             // Embedded: grava flag + conteudo cru (sem asset).
             if (o.__embedded) {
               layer.__embedded = true
@@ -3036,9 +3133,72 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             const isEditingThis = editingLayerAssetId && layerAssetId === editingLayerAssetId
             const maskData = (layer.obj as any)?.__maskData
             const hasMask = !!maskData
+            const isHidden = layer.hidden === true
+            const isLocked = layer.locked === true
+            const isDragOver = dragOverIdx === i && dragLayerIdx !== null && dragLayerIdx !== i
+            const dragLineTop = isDragOver && (dragLayerIdx ?? 0) > i
+            const dragLineBottom = isDragOver && (dragLayerIdx ?? 0) < i
             return (
-              <div key={i} onClick={() => { if (isEditingThis) return; fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
-                style={{ display: "flex", alignItems: "center", gap: 4, padding: "8px 8px 8px 12px", cursor: isEditingThis ? "default" : "pointer", borderLeft: isSel ? "2px solid #F5C400" : "2px solid transparent", background: isSel ? "rgba(245,196,0,0.08)" : "transparent" }}>
+              <div
+                key={i}
+                draggable={!isEditingThis}
+                onDragStart={e => {
+                  if (isEditingThis) { e.preventDefault(); return }
+                  setDragLayerIdx(i)
+                  e.dataTransfer.effectAllowed = "move"
+                  // Firefox precisa de dataTransfer.setData pra ativar drag
+                  e.dataTransfer.setData("text/plain", String(i))
+                }}
+                onDragEnd={() => { setDragLayerIdx(null); setDragOverIdx(null) }}
+                onDragOver={e => {
+                  if (dragLayerIdx === null || dragLayerIdx === i) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = "move"
+                  if (dragOverIdx !== i) setDragOverIdx(i)
+                }}
+                onDragLeave={() => { if (dragOverIdx === i) setDragOverIdx(null) }}
+                onDrop={e => {
+                  e.preventDefault()
+                  const src = dragLayerIdx
+                  setDragLayerIdx(null); setDragOverIdx(null)
+                  if (src === null || src === i) return
+                  // src e i sao indices VISUAIS (topo painel = topo canvas).
+                  // Move o objeto que estava em layers[src] pra posicao visual i.
+                  const srcLayer = layers[src]
+                  if (srcLayer) reorderLayer(srcLayer.obj, i)
+                }}
+                onClick={() => { if (isEditingThis) return; fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  padding: "8px 8px 8px 12px",
+                  cursor: isEditingThis ? "default" : "grab",
+                  borderLeft: isSel ? "2px solid #F5C400" : "2px solid transparent",
+                  background: isSel ? "rgba(245,196,0,0.08)" : "transparent",
+                  opacity: dragLayerIdx === i ? 0.3 : 1,
+                  borderTop: dragLineTop ? "2px solid #F5C400" : "2px solid transparent",
+                  borderBottom: dragLineBottom ? "2px solid #F5C400" : "2px solid transparent",
+                }}
+              >
+                {/* Visibilidade (olho) — primeiro da row, igual Photoshop */}
+                <button
+                  title={isHidden ? "Mostrar layer" : "Esconder layer"}
+                  onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.obj) }}
+                  style={{
+                    color: isHidden ? "#444" : "#aaa",
+                    background: "transparent", border: "none", cursor: "pointer",
+                    fontSize: 13, padding: "2px 4px", lineHeight: 1, width: 22, flexShrink: 0,
+                  }}
+                >{isHidden ? "○" : "●"}</button>
+                {/* Cadeado */}
+                <button
+                  title={isLocked ? "Destravar layer" : "Travar layer"}
+                  onClick={e => { e.stopPropagation(); toggleLayerLock(layer.obj) }}
+                  style={{
+                    color: isLocked ? "#F5C400" : "#333",
+                    background: "transparent", border: "none", cursor: "pointer",
+                    fontSize: 11, padding: "2px 4px", lineHeight: 1, width: 22, flexShrink: 0,
+                  }}
+                >{isLocked ? "🔒" : "🔓"}</button>
                 {/* Thumb do layer (cor por tipo) */}
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: layer.type === "textbox" ? "#F5C400" : "#86efac", flexShrink: 0 }} />
                 {/* Thumb da mascara (so aparece quando ha mascara). Igual Photoshop: */}
@@ -3139,10 +3299,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                     style={{ fontSize: 12, color: isSel ? "#fff" : "#888", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
                   >{layer.label}</span>
                 )}
-                <button title="Mover para cima" onClick={e => { e.stopPropagation(); moveLayer(layer.obj, "up") }}
-                  style={{ color: "#666", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, padding: "2px 4px", lineHeight: 1 }}>▲</button>
-                <button title="Mover para baixo" onClick={e => { e.stopPropagation(); moveLayer(layer.obj, "down") }}
-                  style={{ color: "#666", background: "transparent", border: "none", cursor: "pointer", fontSize: 11, padding: "2px 4px", lineHeight: 1 }}>▼</button>
                 <button title="Remover" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
                   style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
               </div>

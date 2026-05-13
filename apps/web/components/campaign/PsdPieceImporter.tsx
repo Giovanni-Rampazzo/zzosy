@@ -47,6 +47,12 @@ function colorToHex(color: any): string {
   return "#" + [rr, gg, bb].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("")
 }
 
+// Aplica hidden/locked do PSD ao layer da peca (round-trip Photoshop ↔ ZZOSY).
+function applyPsdHiddenLocked(layerData: any, psdLayer: any) {
+  if (psdLayer?.hidden === true) layerData.hidden = true
+  if (psdLayer?.transparencyProtected === true) layerData.locked = true
+}
+
 function collectAllLayers(layers: any[]): any[] {
   const result: any[] = []
   for (const layer of layers) {
@@ -200,7 +206,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
           layerData.__pendingNewAssetKey = assetKey
           newAssetCreated++
         }
-        dataLayers.push(layerData)
+        applyPsdHiddenLocked(layerData, layer); dataLayers.push(layerData)
 
       } else if (layer.canvas) {
         // === IMAGE LAYER (raster com pixels) ===
@@ -230,7 +236,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
             layerData.imageDataUrl = dataUrl
             embedded++
           }
-          dataLayers.push(layerData)
+          applyPsdHiddenLocked(layerData, layer); dataLayers.push(layerData)
         } catch (e) {
           console.warn("Falha ao extrair imagem do layer", layerName, e)
         }
@@ -246,7 +252,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
           posX: left, posY: top, width, height, zIndex,
           assetId: matchedAsset.id,
         }
-        dataLayers.push(layerData)
+        applyPsdHiddenLocked(layerData, layer); dataLayers.push(layerData)
         linked++
       } else if (layer.placedLayer || layer.canvas !== null) {
         // Layer especial sem pixel E sem match: avisa o usuario

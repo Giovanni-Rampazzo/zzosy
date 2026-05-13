@@ -53,6 +53,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       zIndex: number
       lastOverride?: any
       mask?: any
+      hidden?: boolean
+      locked?: boolean
     }>
 
     const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
@@ -187,6 +189,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       // Vai no override do layer pra que cada peca possa ter mascara diferente
       // (na importacao inicial todos os layers da matriz herdam a do PSD).
       ...(assets[i].mask ? { mask: assets[i].mask } : {}),
+      // Estados de visibilidade e lock do Photoshop preservados pra round-trip.
+      ...(assets[i].hidden === true ? { hidden: true } : {}),
+      ...(assets[i].locked === true ? { locked: true } : {}),
     }))
 
     // KeyVision (Matriz)
