@@ -983,6 +983,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // locais (texto + styles per-char), nunca propaga pro asset (asset = texto cru).
         // Excecao: na MATRIZ, atualiza tamem o asset.lastOverride (template visual).
         updateAssetLastOverride(obj)
+        // CRITICO: marca dirty pra o ConfirmExit aparecer caso o user clique
+        // 'Voltar' antes do debounce do doSave (800ms) disparar. Sem isso o
+        // user perdia a edicao silenciosamente ao sair logo apos editar texto.
+        isDirtyRef.current = true
+        setIsDirty(true)
         if (!isApplyingHistory.current) doSave()
       })
 
