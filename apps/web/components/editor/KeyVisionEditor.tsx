@@ -3184,21 +3184,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                   title={isHidden ? "Mostrar layer" : "Esconder layer"}
                   onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.obj) }}
                   style={{
-                    color: isHidden ? "#444" : "#aaa",
                     background: "transparent", border: "none", cursor: "pointer",
-                    fontSize: 13, padding: "2px 4px", lineHeight: 1, width: 22, flexShrink: 0,
+                    padding: "2px 4px", lineHeight: 1, width: 22, height: 22, flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: isHidden ? "#444" : "#bbb",
                   }}
-                >{isHidden ? "○" : "●"}</button>
+                >
+                  {isHidden ? (
+                    // Olho fechado (Photoshop: hidden)
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                      <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                  ) : (
+                    // Olho aberto (Photoshop: visible)
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  )}
+                </button>
                 {/* Cadeado */}
                 <button
                   title={isLocked ? "Destravar layer" : "Travar layer"}
                   onClick={e => { e.stopPropagation(); toggleLayerLock(layer.obj) }}
                   style={{
-                    color: isLocked ? "#F5C400" : "#333",
                     background: "transparent", border: "none", cursor: "pointer",
-                    fontSize: 11, padding: "2px 4px", lineHeight: 1, width: 22, flexShrink: 0,
+                    padding: "2px 4px", lineHeight: 1, width: 22, height: 22, flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: isLocked ? "#F5C400" : "#444",
                   }}
-                >{isLocked ? "🔒" : "🔓"}</button>
+                >
+                  {isLocked ? (
+                    // Cadeado fechado
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                  ) : (
+                    // Cadeado aberto
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                    </svg>
+                  )}
+                </button>
                 {/* Thumb do layer (cor por tipo) */}
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: layer.type === "textbox" ? "#F5C400" : "#86efac", flexShrink: 0 }} />
                 {/* Thumb da mascara (so aparece quando ha mascara). Igual Photoshop: */}
