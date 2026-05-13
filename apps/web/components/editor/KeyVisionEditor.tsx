@@ -1275,6 +1275,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       // Marca init concluido — saves sao liberados a partir daqui. Antes disso, salvar
       // poderia gravar layers: [] (canvas ainda nao tinha objetos carregados).
       isInitialized.current = true
+      // Auto-gera thumbnails pra steps inativos sem preview (background).
+      // Renderiza offscreen — nao mexe no canvas principal. User nao vê piscar.
+      if (pieceId) {
+        autoGenerateMissingStepThumbs().catch(e => console.warn("[auto-thumbs] erro:", e))
+      }
     }
 
     init()
@@ -2108,6 +2113,118 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     const fc = fabricRef.current
     const obj = fc?.getActiveObject()
     return (obj as any)?.__maskData ?? null
+  }
+
+  // Renderiza um step OFFSCREEN (sem mexer no canvas principal) e retorna o blob.
+  // Usado pra gerar thumbnails de steps inativos automaticamente quando a peca
+  // abre. Sem isso, o user teria que ativar cada step manualmente.
+  async function renderStepOffscreenToBlob(
+    step: { layers: any[]; bgColor: string }
+  ): Promise<Blob | null> {
+    const camp = campaignRef.current
+    if (!camp) return null
+    try {
+      const w = canvasWRef.current
+      const h = canvasHRef.current
+      const TARGET = 2400
+      const scale = Math.min(TARGET / w, TARGET / h, 1)
+      const tw = Math.round(w * scale)
+      const th = Math.round(h * scale)
+      const fabricMod = await import("fabric") as any
+      const { StaticCanvas, FabricImage, Path, Textbox, Rect } = fabricMod
+      const canvasEl = document.createElement("canvas")
+      canvasEl.width = tw; canvasEl.height = th
+      const sfc = new StaticCanvas(canvasEl, {
+        width: tw, height: th,
+        enableRetinaScaling: false,
+        backgroundColor: step.bgColor,
+      })
+      // Re-cria cada layer manualmente. Replica a logica de addAssetToCanvas
+      // de forma minima — soh o que precisamos pra render visual.
+      for (const layer of step.layers) {
+        if (layer.embedded) continue
+        if (!layer.assetId) continue
+        const asset = camp.assets.find((a: Asset) => a.id === layer.assetId)
+        if (!asset) continue
+        const left = (layer.posX ?? 0) * scale
+        const top = (layer.posY ?? 0) * scale
+        const sx = (layer.scaleX ?? 1) * scale
+        const sy = (layer.scaleY ?? 1) * scale
+        const angle = layer.rotation ?? 0
+        const overrides = layer.overrides ?? {}
+        if (asset.type === "IMAGE") {
+          if (!asset.imageUrl) continue
+          try {
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const el = new Image()
+              el.crossOrigin = "anonymous"
+              el.onload = () => resolve(el)
+              el.onerror = () => reject(new Error("img load"))
+              el.src = asset.imageUrl!
+            })
+            const fimg = new FabricImage(img, {
+              left, top, scaleX: sx, scaleY: sy, angle,
+            })
+            sfc.add(fimg)
+          } catch (e) { /* skip */ }
+        } else if (asset.type === "TEXT") {
+          // Reconstroi text a partir do content + overrides
+          const content = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+          const spans = Array.isArray(content) ? content : []
+          const text = spans.map((s: any) => s.text ?? "").join("")
+          const firstStyle = spans[0]?.style ?? {}
+          const tb = new Textbox(text || asset.label, {
+            left, top, scaleX: sx, scaleY: sy, angle,
+            fontFamily: overrides.fontFamily ?? firstStyle.fontFamily ?? "Arial",
+            fontSize: overrides.fontSize ?? firstStyle.fontSize ?? 80,
+            fill: overrides.fill ?? firstStyle.color ?? "#111111",
+            width: layer.width ?? 400,
+            textAlign: overrides.textAlign ?? "left",
+          })
+          if (overrides.styles) tb.set("styles", overrides.styles)
+          sfc.add(tb)
+        }
+      }
+      sfc.renderAll()
+      await new Promise(r => setTimeout(r, 100))
+      const dataUrl = sfc.toDataURL({ format: "png", multiplier: 1 })
+      sfc.dispose()
+      return await (await fetch(dataUrl)).blob()
+    } catch (e) {
+      console.warn("[renderStepOffscreen] fail:", e)
+      return null
+    }
+  }
+
+  // Detecta steps sem thumbnail no piece.data e os gera offscreen.
+  // Chamado ao abrir uma peca multi-step no editor. Roda em background
+  // — nao trava o user.
+  async function autoGenerateMissingStepThumbs() {
+    if (!pieceId) return
+    const p = pieceRef.current
+    if (!p) return
+    const pdata = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
+    const allSteps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
+    if (allSteps.length < 2) return
+    const activeIdx = pdata.activeStepIndex ?? 0
+    for (let i = 0; i < allSteps.length; i++) {
+      // Pula o step ativo — o thumb dele eh gerado pelo uploadPieceThumb
+      // normal (a partir do canvas atual). Aqui soh interessam os inativos.
+      if (i === activeIdx) continue
+      const step = allSteps[i]
+      // Soh gera quem nao tem thumb. Steps que ja tem ficam quietos.
+      if (step?.imageUrl) continue
+      const blob = await renderStepOffscreenToBlob({
+        layers: step.layers ?? [],
+        bgColor: step.bgColor ?? bgColorRef.current,
+      })
+      if (!blob) continue
+      const fd = new FormData()
+      fd.append("thumbnail", blob, `step${i}.png`)
+      try {
+        await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${i}`, { method: "POST", body: fd })
+      } catch (e) { console.warn("[auto thumb] upload fail step", i, e) }
+    }
   }
 
   // Gera o blob de thumbnail do canvas atual (PNG 2400px max).
@@ -3356,23 +3473,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               + Step
             </button>
             {stepCount > 1 && (
-              <>
-                <button
-                  onClick={(e) => removeStep(activeStepIndex, e.altKey)}
-                  title="Apagar este step (Option+click pula confirmacao)"
-                  style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-                >
-                  🗑
-                </button>
-                <button
-                  onClick={regenerateAllStepThumbs}
-                  disabled={regeneratingThumbs}
-                  title="Gera previews pra todos os steps (necessario quando aparecem 'sem preview' na apresentacao)"
-                  style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: regeneratingThumbs ? "#555" : "#aaa", cursor: regeneratingThumbs ? "wait" : "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-                >
-                  {regeneratingThumbs ? "…" : "🔄 Previews"}
-                </button>
-              </>
+              <button
+                onClick={(e) => removeStep(activeStepIndex, e.altKey)}
+                title="Apagar este step (Option+click pula confirmacao)"
+                style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+              >
+                🗑
+              </button>
             )}
           </div>
         )}
