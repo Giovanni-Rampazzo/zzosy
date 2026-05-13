@@ -261,6 +261,10 @@ export default function PresentationPage() {
                         index: slide.chunkIndex * STEPS_PER_SLIDE + i,
                       }))
                     : null
+                  // hideCard: chunks NAO-finais escondem a legenda. So o
+                  // ultimo chunk mostra (mais natural visualmente — legenda
+                  // vem depois de todos os steps).
+                  const isLastChunk = slide.chunkIndex === slide.totalChunks - 1
                   return (
                     <SlideRow key={`${p.id}-${si}`} id={si === 0 ? `piece-${p.id}` : undefined} num={++slideNum} total={totalSlides} label={displayName}>
                       <SlidePiece
@@ -275,6 +279,7 @@ export default function PresentationPage() {
                         steps={stepsForSlide}
                         copy={p.copy ?? null}
                         pieceId={p.id}
+                        hideCard={!isLastChunk}
                         onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
                       />

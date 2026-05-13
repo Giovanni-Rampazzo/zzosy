@@ -148,6 +148,9 @@ interface PieceSlideProps {
   pieceId?: string
   /** Callback opcional pra propagar mudanca no copy pro state pai imediatamente. */
   onCopyChange?: (next: string) => void
+  /** Se true, NAO renderiza o card de legenda (usado quando a peca foi
+   * dividida em multiplos slides — so o ULTIMO chunk mostra a legenda). */
+  hideCard?: boolean
 }
 
 // Formata "100 x 50 cm" / "1920 x 1080 px" etc. Quando largura e altura
@@ -169,7 +172,7 @@ function formatDims(
   return `${fmt(wV)} ${wU} x ${fmt(hV)} ${hU}`
 }
 
-export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, pieceId, onCopyChange }: PieceSlideProps) {
+export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, pieceId, onCopyChange, hideCard }: PieceSlideProps) {
   // DEBUG temporario: verificar se steps esta chegando
   if (typeof window !== "undefined" && steps && steps.length >= 2) {
     console.log("[SlidePiece DEBUG]", pieceId, "steps:", steps.map(s => ({ idx: s.index, hasImg: !!s.imageUrl, hasThumb: !!s.thumbnailUrl, imageUrl: s.imageUrl, thumbnailUrl: s.thumbnailUrl })))
@@ -186,8 +189,9 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
 
   const hasCopy = copyLocal.trim().length > 0
   const editable = !!pieceId
-  // Card aparece quando: ja tem copy OU usuario clicou em '+ Legenda'
-  const showCard = hasCopy || editing
+  // Card aparece quando: ja tem copy OU usuario clicou em '+ Legenda',
+  // EXCETO em chunks intermediarios de peca multi-slide (hideCard=true).
+  const showCard = !hideCard && (hasCopy || editing)
   // Multi-step: se tem qualquer step com imageUrl, renderiza o(s) step(s) lado
   // a lado com label "Step N". Mesmo com 1 step (ex: chunk final de peca
   // dividida em multiplos slides), o label eh importante pra contexto.
@@ -228,42 +232,55 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             const src = rawSrc ? `${rawSrc}?_t=${Date.now()}` : null
             return (
               <div key={i} style={{
-                // Label e imagem alinhadas a esquerda — label fica colado
-                // na peca (mesma referencia visual de referencia mockup).
-                display: "flex", flexDirection: "column", alignItems: "flex-start",
-                gap: "0.4cqw", height: "100%",
-                // 2 steps: layout flex, cada peca pega ~45% pra ficar
-                // proxima sem esticar. 3+: grid, cada celula ja eh fixa
-                // entao width:100% preenche a coluna.
-                width: total === 1 ? "50%" : total === 2 ? "45%" : "100%",
+                // Container do step: ocupa altura total e centraliza
+                // verticalmente o conteudo (label+peca) como um bloco.
+                // Sem isso, a peca centralizava sozinha e o label ficava
+                // longe no topo.
+                display: "flex", flexDirection: "column",
+                alignItems: "flex-start",
+                justifyContent: "center",
+                height: "100%",
+                width: total === 1 ? "50%" : total === 2 ? "40%" : "100%",
                 minHeight: 0, minWidth: 0,
               }}>
-                {/* Label do step — alinhado a esquerda, colado na peca */}
+                {/* Wrapper compacto: label + imagem como um bloco unico
+                    que se centraliza verticalmente. Label colado na peca. */}
                 <div style={{
-                  fontSize: "0.75cqw", fontWeight: 700,
-                  color: TEXT_DARK, opacity: 0.6,
-                  fontFamily: "system-ui, -apple-system, sans-serif",
-                  textTransform: "uppercase", letterSpacing: 0.5,
-                  flexShrink: 0,
+                  display: "flex", flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "0.3cqw",
+                  width: "100%",
+                  maxHeight: "100%",
+                  minHeight: 0,
                 }}>
-                  Step {(s.index ?? i) + 1}
-                </div>
-                {/* Imagem do step (escalada pra caber na celula).
-                    justifyContent flex-start pra colar na esquerda. */}
-                <div style={{
-                  flex: 1, minHeight: 0, width: "100%",
-                  display: "flex", alignItems: "center", justifyContent: "flex-start",
-                }}>
-                  {src ? (
-                    <img src={src} alt={`${name} Step ${(s.index ?? i) + 1}`}
-                      style={{
-                        maxWidth: "100%", maxHeight: "100%",
-                        objectFit: "contain",
-                        boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
-                      }} />
-                  ) : (
-                    <div style={{ color: TEXT_GRAY, fontSize: "0.9cqw" }}>(sem preview)</div>
-                  )}
+                  {/* Label do step — alinhado a esquerda, colado na peca */}
+                  <div style={{
+                    fontSize: "0.75cqw", fontWeight: 700,
+                    color: TEXT_DARK, opacity: 0.6,
+                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    textTransform: "uppercase", letterSpacing: 0.5,
+                    flexShrink: 0,
+                  }}>
+                    Step {(s.index ?? i) + 1}
+                  </div>
+                  {/* Imagem do step. flex-start a esquerda, sem flex:1 pra
+                      nao esticar verticalmente — label fica colado em cima. */}
+                  <div style={{
+                    width: "100%",
+                    minHeight: 0,
+                    display: "flex", alignItems: "flex-start", justifyContent: "flex-start",
+                  }}>
+                    {src ? (
+                      <img src={src} alt={`${name} Step ${(s.index ?? i) + 1}`}
+                        style={{
+                          maxWidth: "100%", maxHeight: "100%",
+                          objectFit: "contain",
+                          boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
+                        }} />
+                    ) : (
+                      <div style={{ color: TEXT_GRAY, fontSize: "0.9cqw" }}>(sem preview)</div>
+                    )}
+                  </div>
                 </div>
               </div>
             )
@@ -467,7 +484,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           {/* Botao '+ Legenda' aparece no canto inferior direito quando a peca
               tem pieceId (editavel) e ainda nao tem legenda. Clicar abre o card
               de legenda vazio pronto pra editar. */}
-          {editable && (
+          {editable && !hideCard && (
             <button
               onClick={(e) => { e.stopPropagation(); setEditing(true) }}
               style={{

@@ -546,12 +546,15 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
           const chunk = allStepImgs!.slice(chunkStart, chunkStart + STEPS_PER_SLIDE_PPTX)
           const chunkIdx = Math.floor(chunkStart / STEPS_PER_SLIDE_PPTX)
           const totalChunks = Math.ceil(totalSteps / STEPS_PER_SLIDE_PPTX)
+          const isLastChunk = chunkIdx === totalChunks - 1
           // Renomeia a peca pra incluir "(Parte N/M)" e marca o indice inicial
           // pros labels "Step N" continuarem a numeracao global.
+          // copy: so o ultimo chunk mostra a legenda (mais natural).
           const chunkPiece: any = {
             ...p,
             name: `${p.name ?? "Peça"} (Parte ${chunkIdx + 1}/${totalChunks})`,
             __stepIndexOffset: chunkStart,
+            copy: isLastChunk ? p.copy : null,
           }
           addPieceSlide(pptx, chunkPiece, imgByPieceIdx.get(p.id) ?? null, chunk)
         }
