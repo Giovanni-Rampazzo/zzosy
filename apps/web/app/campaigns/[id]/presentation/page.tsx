@@ -75,6 +75,25 @@ export default function PresentationPage() {
       }
     }
     load()
+    // Re-fetch sempre que a janela volta a ter foco (ex: usuario edita peca
+    // em outra aba, volta pra apresentacao). Sem isso, thumbs gerados em
+    // background no editor nao apareceriam na presentation ate F5.
+    function refetch() {
+      Promise.all([
+        fetch(`/api/campaigns/${id}`, { cache: "no-store" }).then(r => r.json()),
+        fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" }).then(r => r.json()),
+      ]).then(([c, p]) => {
+        setCampaign(c)
+        setPieces(Array.isArray(p) ? p : [])
+      }).catch(() => {})
+    }
+    window.addEventListener("focus", refetch)
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refetch()
+    })
+    return () => {
+      window.removeEventListener("focus", refetch)
+    }
   }, [id])
 
   // Scroll automatico pro slide indicado no hash (#piece-{id}).
