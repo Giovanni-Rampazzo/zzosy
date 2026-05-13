@@ -68,15 +68,6 @@ export default function DeliveryDetailPage() {
           <Info label="Formatos" value={formats.map(f => f.toUpperCase()).join(", ") || "—"} />
         </div>
 
-        {d.zipUrl && (
-          <div style={{ marginBottom: 24 }}>
-            <a href={d.zipUrl} download
-              style={{ background: "#111", color: "#fff", padding: "10px 18px", borderRadius: 6, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
-              ↓ Download do ZIP
-            </a>
-          </div>
-        )}
-
         <h3 style={{ fontSize: 14, marginBottom: 12, color: "#666" }}>Peças incluídas</h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
           {d.pieces?.map(({ piece }) => (
@@ -88,6 +79,15 @@ export default function DeliveryDetailPage() {
             </div>
           ))}
         </div>
+
+        {d.zipUrl && (
+          <div style={{ marginTop: 24 }}>
+            <a href={d.zipUrl} download
+              style={{ background: "#111", color: "#fff", padding: "10px 18px", borderRadius: 6, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
+              ↓ Download
+            </a>
+          </div>
+        )}
       </div>
     </PageShell>
   )
