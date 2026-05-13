@@ -196,26 +196,22 @@ export default function CampaignAssetsPage() {
       <TopNav />
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ cursor: "pointer", color: "#888" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
-                {campaign.client.name}
-              </span>
-              <span>/</span>
-              <span style={{ cursor: "pointer", color: "#888" }} onClick={() => router.push(`/campaigns/${id}`)}>
-                {campaign.name}
-              </span>
-              <span>/</span>
-              <span>Assets</span>
-            </div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Assets da campanha</h1>
-            {campaign.psdName && (
-              <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
-                PSD: <strong>{campaign.psdName}</strong> · {campaign.assets.length} assets
-              </p>
-            )}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
+            <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
+              {campaign.client.name}
+            </span>
+            {" / "}
+            <span style={{ cursor: "pointer" }} onClick={() => router.push(`/campaigns/${id}`)}>
+              {campaign.name}
+            </span>
           </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+            Assets
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#888", marginLeft: 8 }}>
+              {campaign.assets.length}
+            </span>
+          </h1>
         </div>
 
         {/* Sub-nav contextual da campanha. Linha 1: ← Cliente + Peças (amarelo).
@@ -381,19 +377,11 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
 
       {/* Conteudo */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{
-            fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700,
-            padding: "2px 8px", borderRadius: 4,
-            background: isText ? "#FFF7D6" : "#E8F5E9",
-            color: isText ? "#A88600" : "#2E7D32",
-          }}>
-            {isText ? "Texto" : "Imagem"}
+        {saving && (
+          <span style={{ fontSize: 11, color: "#F5C400", fontWeight: 500 }}>
+            Salvando…
           </span>
-          <span style={{ fontSize: 11, color: saving ? "#F5C400" : "#bbb", fontWeight: 500 }}>
-            {saving ? "Salvando..." : "Salvo"}
-          </span>
-        </div>
+        )}
         <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
           <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
         </div>
