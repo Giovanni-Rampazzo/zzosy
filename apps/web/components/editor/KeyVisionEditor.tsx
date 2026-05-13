@@ -2684,30 +2684,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // Assim o user nao precisa rebuildar a "casca" da peca — soh ajusta
     // o conteudo especifico de cada step.
     const copyOfCurrent = serializeCurrentStep()
+    // serializeCurrentStep ja preserva imageUrl do step ativo. Como o novo
+    // step eh uma COPIA EXATA, herda o mesmo thumb. Sem isso, ate o user
+    // ativar o novo step pela primeira vez, a apresentacao mostra '(sem preview)'.
     const newStepIndex = stepCountRef.current // 0-indexed; novo step ocupa esse indice
     inactiveStepsRef.current = [...inactiveStepsRef.current, copyOfCurrent]
     setStepCountSync(c => c + 1)
     isDirtyRef.current = true
-    // AGUARDA o save terminar antes de fazer upload do thumb do novo step.
+    // AGUARDA o save terminar — agora o data.steps[newIndex] ja tem imageUrl
+    // herdado do step copiado, entao a apresentacao pode mostrar o preview
+    // mesmo se o user sair imediatamente.
     await doSaveNow()
-    // Gera thumb pro novo step (cópia do canvas atual). Sem isso, a apresentacao
-    // mostra '(sem preview)' ate o user ativar o step pela primeira vez.
-    const fc = fabricRef.current
-    if (fc && pieceId) {
-      const blob = await generateCurrentThumbBlob(fc)
-      if (blob) {
-        const fd = new FormData()
-        fd.append("thumbnail", blob, `step${newStepIndex}.png`)
-        try {
-          // keepalive: request sobrevive a navegacao do user (ex: clicar
-          // em 'Voltar pra campanha' logo apos +Step). Sem isso, o fetch
-          // eh cancelado e o thumb nunca eh gerado no servidor.
-          await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${newStepIndex}`, {
-            method: "POST", body: fd, keepalive: true,
-          })
-        } catch (e) { console.warn("[addStep] thumb upload failed:", e) }
-      }
-    }
   }
 
   async function removeStep(indexToRemove: number, skipConfirm = false) {
