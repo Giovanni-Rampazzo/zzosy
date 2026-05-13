@@ -32,6 +32,7 @@ interface Piece {
   width: number
   height: number
   status: string
+  segment?: string | null
   imageUrl?: string | null
   copy?: string | null
   data?: any
@@ -70,6 +71,7 @@ export default function CampaignOverviewPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
   const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
+  const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
 
   async function loadAll() {
     console.log("[LOAD-ALL] disparou em", new Date().toISOString().slice(11, 19), "id=", id)
@@ -110,6 +112,14 @@ export default function CampaignOverviewPage() {
     fetch("/api/campaigns/codes", { cache: "no-store" })
       .then(r => r.ok ? r.json() : { codes: [] })
       .then(d => setCodeSuggestions(Array.isArray(d.codes) ? d.codes : []))
+      .catch(() => {})
+  }, [])
+
+  // Sugestoes de segmento (cards das pecas)
+  useEffect(() => {
+    fetch("/api/pieces/segments", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { segments: [] })
+      .then(d => setSegmentSuggestions(Array.isArray(d.segments) ? d.segments : []))
       .catch(() => {})
   }, [])
 
@@ -451,6 +461,18 @@ export default function CampaignOverviewPage() {
                       initial={p.copy ?? ""}
                       onChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
                     />
+                    <SegmentPicker
+                      pieceId={p.id}
+                      initial={p.segment}
+                      suggestions={segmentSuggestions}
+                      onChange={(next) => {
+                        setPieces(prev => prev.map(x => x.id === p.id ? { ...x, segment: next } : x))
+                        // Adiciona ao pool de sugestoes localmente
+                        if (next && !segmentSuggestions.includes(next)) {
+                          setSegmentSuggestions(prev => [...prev, next])
+                        }
+                      }}
+                    />
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", gap: 6 }}>
                       <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina dedicada da peca (legenda, copy, detalhes)">Legendas</Button>
                       <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
@@ -572,6 +594,69 @@ export default function CampaignOverviewPage() {
  *
  * Usado tanto no grid quanto na lista de pecas em /campaigns/[id].
  */
+function SegmentPicker({ pieceId, initial, suggestions, onChange }: {
+  pieceId: string;
+  initial: string | null | undefined;
+  suggestions: string[];
+  onChange: (next: string | null) => void;
+}) {
+  const [value, setValue] = useState(initial ?? "")
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setValue(initial ?? "") }, [initial, pieceId])
+
+  async function persist(next: string) {
+    const trimmed = next.trim()
+    setValue(trimmed)
+    onChange(trimmed || null)
+    setSaving(true)
+    try {
+      await fetch(`/api/pieces/${pieceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ segment: trimmed || null }),
+      })
+    } catch (e) { console.warn("[SegmentPicker] save fail:", e) }
+    finally { setSaving(false) }
+  }
+
+  function handleSelect(e: React.ChangeEvent<HTMLSelectElement>) {
+    const v = e.target.value
+    if (v === "__new__") {
+      const name = prompt("Novo segmento:")
+      if (name && name.trim()) persist(name.trim())
+      return
+    }
+    persist(v)
+  }
+
+  // Garante que o valor atual esta na lista de options (caso seja um segmento
+  // antigo que ja nao existe nas sugestoes ativas).
+  const allOptions = Array.from(new Set([...(value ? [value] : []), ...suggestions])).sort((a, b) => a.localeCompare(b, "pt-BR"))
+
+  return (
+    <div style={{ position: "relative" }}>
+      <select
+        value={value}
+        onChange={handleSelect}
+        style={{
+          width: "100%", padding: "5px 8px", borderRadius: 4,
+          border: "1px solid #E0E0E0", fontSize: 11, fontFamily: "inherit",
+          background: "white", color: value ? "#222" : "#888",
+          cursor: "pointer", outline: "none",
+        }}
+        title="Segmento da peca (usado pra agrupar na apresentacao)"
+      >
+        <option value="">Sem segmento</option>
+        {allOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        <option value="__new__">+ Novo segmento…</option>
+      </select>
+      {saving && (
+        <span style={{ position: "absolute", right: 24, top: 7, fontSize: 9, color: "#aaa" }}>…</span>
+      )}
+    </div>
+  )
+}
+
 function CopyEditor({ pieceId, initial, onChange }: { pieceId: string; initial: string; onChange: (next: string) => void }) {
   const [value, setValue] = useState(initial)
   const [saving, setSaving] = useState(false)
