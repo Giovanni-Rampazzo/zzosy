@@ -141,7 +141,7 @@ interface PieceSlideProps {
   imageUrl: string | null
   /** Se a peca tem multiplos steps (carrossel etc), passa as miniaturas/imagens de cada um.
    * Quando steps tem length >= 2, renderiza todos lado a lado escalados pra caber. */
-  steps?: Array<{ imageUrl?: string | null; thumbnailUrl?: string | null }> | null
+  steps?: Array<{ imageUrl?: string | null; thumbnailUrl?: string | null; index?: number }> | null
   copy?: string | null
   onClick?: () => void
   /** ID da peca pra permitir auto-save da legenda via PATCH /api/pieces/[id]. Quando omitido, legenda fica read-only. */
@@ -188,18 +188,24 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
   const editable = !!pieceId
   // Card aparece quando: ja tem copy OU usuario clicou em '+ Legenda'
   const showCard = hasCopy || editing
-  // Multi-step: se tem >= 2 steps, renderiza todos lado a lado com label.
-  const hasMultiStep = Array.isArray(steps) && steps.length >= 2
+  // Multi-step: se tem qualquer step com imageUrl, renderiza o(s) step(s) lado
+  // a lado com label "Step N". Mesmo com 1 step (ex: chunk final de peca
+  // dividida em multiplos slides), o label eh importante pra contexto.
+  const hasMultiStep = Array.isArray(steps) && steps.length >= 1
   // Wrapper que decide entre renderizar a imagem unica ou o grid de steps.
   // Recebe boxShadow opcional pra layout sem legenda.
   function renderPieceVisual(opts?: { withShadow?: boolean }) {
     if (hasMultiStep) {
       const total = steps!.length
-      // Com 2 steps, grid 50/50 deixa as pecas desbalanceadas (uma colada
-      // na esquerda, outra no meio-esquerda). Usa flex com justify-center
-      // pra elas ficarem proximas e centralizadas. 3+ steps mantem grid
-      // (distribuicao uniforme funciona melhor).
-      const containerStyle: React.CSSProperties = total === 2 ? {
+      // 1 step (chunk final de peca quebrada): peca centralizada em ~50% largura.
+      // 2 steps: flex centralizado.
+      // 3+ steps: grid uniforme.
+      const containerStyle: React.CSSProperties = total === 1 ? {
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        width: "100%", height: "100%",
+      } : total === 2 ? {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
@@ -229,7 +235,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 // 2 steps: layout flex, cada peca pega ~45% pra ficar
                 // proxima sem esticar. 3+: grid, cada celula ja eh fixa
                 // entao width:100% preenche a coluna.
-                width: total === 2 ? "45%" : "100%",
+                width: total === 1 ? "50%" : total === 2 ? "45%" : "100%",
                 minHeight: 0, minWidth: 0,
               }}>
                 {/* Label do step — alinhado a esquerda, colado na peca */}
@@ -240,7 +246,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                   textTransform: "uppercase", letterSpacing: 0.5,
                   flexShrink: 0,
                 }}>
-                  Step {i + 1}
+                  Step {(s.index ?? i) + 1}
                 </div>
                 {/* Imagem do step (escalada pra caber na celula).
                     justifyContent flex-start pra colar na esquerda. */}
@@ -249,7 +255,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                   display: "flex", alignItems: "center", justifyContent: "flex-start",
                 }}>
                   {src ? (
-                    <img src={src} alt={`${name} Step ${i + 1}`}
+                    <img src={src} alt={`${name} Step ${(s.index ?? i) + 1}`}
                       style={{
                         maxWidth: "100%", maxHeight: "100%",
                         objectFit: "contain",

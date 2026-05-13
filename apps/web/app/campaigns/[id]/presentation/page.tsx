@@ -127,6 +127,24 @@ export default function PresentationPage() {
 
   const groups = groupPiecesBySegment(orderedPieces)
 
+  // Steps por slide: max 4. Peças com mais steps quebram em múltiplos slides.
+  // Retorna array de {piece, stepsChunk, chunkIndex, totalChunks}.
+  const STEPS_PER_SLIDE = 4
+  function chunkPieceSteps(p: Piece): Array<{ piece: Piece; stepsChunk: any[] | null; chunkIndex: number; totalChunks: number }> {
+    const steps = p.steps
+    if (!Array.isArray(steps) || steps.length <= STEPS_PER_SLIDE) {
+      return [{ piece: p, stepsChunk: steps ?? null, chunkIndex: 0, totalChunks: 1 }]
+    }
+    const chunks: any[] = []
+    for (let i = 0; i < steps.length; i += STEPS_PER_SLIDE) {
+      chunks.push(steps.slice(i, i + STEPS_PER_SLIDE))
+    }
+    return chunks.map((c, i) => ({ piece: p, stepsChunk: c, chunkIndex: i, totalChunks: chunks.length }))
+  }
+
+  // Conta o total real de slides considerando chunks de steps.
+  const totalPieceSlides = orderedPieces.reduce((acc, p) => acc + chunkPieceSteps(p).length, 0)
+
   async function exportPPTX() {
     if (!campaign) return
     setExporting(true)
@@ -165,9 +183,9 @@ export default function PresentationPage() {
   }
 
   // Total de slides:
-  //  - Capa (1) + Código (1) + grupos com segment (cada um 1 divisor) + todas pecas + Obrigado (1)
+  //  - Capa (1) + Código (1) + grupos com segment + total de pecas (com chunks) + Obrigado (1)
   const segmentDividers = groups.filter(g => g.segment !== null).length
-  const totalSlides = 2 + segmentDividers + orderedPieces.length + 1
+  const totalSlides = 2 + segmentDividers + totalPieceSlides + 1
 
   let slideNum = 0
 
@@ -228,25 +246,42 @@ export default function PresentationPage() {
                   <SlideSegment segment={group.segment} />
                 </SlideRow>
               )}
-              {group.pieces.map(p => (
-                <SlideRow key={p.id} id={`piece-${p.id}`} num={++slideNum} total={totalSlides} label={p.name || "Peça"}>
-                  <SlidePiece
-                    name={p.name || "Peça sem nome"}
-                    width={p.width}
-                    height={p.height}
-                    widthValue={p.widthValue}
-                    heightValue={p.heightValue}
-                    widthUnit={p.widthUnit}
-                    heightUnit={p.heightUnit}
-                    imageUrl={p.imageUrl ?? null}
-                    steps={p.steps ?? null}
-                    copy={p.copy ?? null}
-                    pieceId={p.id}
-                    onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
-                    onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
-                  />
-                </SlideRow>
-              ))}
+              {group.pieces.flatMap(p => {
+                const slides = chunkPieceSteps(p)
+                return slides.map((slide, si) => {
+                  // Nome: se a peca foi quebrada, mostra "Nome (Parte N/M)".
+                  const displayName = slide.totalChunks > 1
+                    ? `${p.name || "Peça"} (Parte ${slide.chunkIndex + 1}/${slide.totalChunks})`
+                    : (p.name || "Peça sem nome")
+                  // Re-indexa os steps do chunk pra label "Step N" comecar
+                  // do indice global (nao reseta a cada slide).
+                  const stepsForSlide = slide.stepsChunk
+                    ? slide.stepsChunk.map((s: any, i: number) => ({
+                        ...s,
+                        index: slide.chunkIndex * STEPS_PER_SLIDE + i,
+                      }))
+                    : null
+                  return (
+                    <SlideRow key={`${p.id}-${si}`} id={si === 0 ? `piece-${p.id}` : undefined} num={++slideNum} total={totalSlides} label={displayName}>
+                      <SlidePiece
+                        name={displayName}
+                        width={p.width}
+                        height={p.height}
+                        widthValue={p.widthValue}
+                        heightValue={p.heightValue}
+                        widthUnit={p.widthUnit}
+                        heightUnit={p.heightUnit}
+                        imageUrl={p.imageUrl ?? null}
+                        steps={stepsForSlide}
+                        copy={p.copy ?? null}
+                        pieceId={p.id}
+                        onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
+                        onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
+                      />
+                    </SlideRow>
+                  )
+                })
+              })}
             </div>
           ))}
 

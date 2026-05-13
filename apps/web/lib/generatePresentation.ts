@@ -273,8 +273,9 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null,
       const cellH = SPLIT_AREA_H - LABEL_H - 0.1
       for (let i = 0; i < total; i++) {
         const cellX = PIECE_AREA_X + i * (cellW + GAP)
+        const globalIdx = ((piece as any).__stepIndexOffset ?? 0) + i
         // Label "Step N"
-        slide.addText(`STEP ${i + 1}`, {
+        slide.addText(`STEP ${globalIdx + 1}`, {
           x: cellX, y: AREA_Y, w: cellW, h: LABEL_H,
           fontFace: "Calibri", fontSize: 8, bold: true,
           color: "888888", align: "center", valign: "middle",
@@ -535,7 +536,28 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
       addSegmentSlide(pptx, group.segment)
     }
     for (const p of group.pieces) {
-      addPieceSlide(pptx, p, imgByPieceIdx.get(p.id) ?? null, stepImgsByPieceIdx.get(p.id))
+      const allStepImgs = stepImgsByPieceIdx.get(p.id)
+      const totalSteps = Array.isArray(allStepImgs) ? allStepImgs.length : 0
+      // Pecas com > 4 steps: quebra em multiplos slides (4 por slide).
+      // Pecas com <= 4 steps ou sem steps: 1 slide.
+      const STEPS_PER_SLIDE_PPTX = 4
+      if (totalSteps > STEPS_PER_SLIDE_PPTX) {
+        for (let chunkStart = 0; chunkStart < totalSteps; chunkStart += STEPS_PER_SLIDE_PPTX) {
+          const chunk = allStepImgs!.slice(chunkStart, chunkStart + STEPS_PER_SLIDE_PPTX)
+          const chunkIdx = Math.floor(chunkStart / STEPS_PER_SLIDE_PPTX)
+          const totalChunks = Math.ceil(totalSteps / STEPS_PER_SLIDE_PPTX)
+          // Renomeia a peca pra incluir "(Parte N/M)" e marca o indice inicial
+          // pros labels "Step N" continuarem a numeracao global.
+          const chunkPiece: any = {
+            ...p,
+            name: `${p.name ?? "Peça"} (Parte ${chunkIdx + 1}/${totalChunks})`,
+            __stepIndexOffset: chunkStart,
+          }
+          addPieceSlide(pptx, chunkPiece, imgByPieceIdx.get(p.id) ?? null, chunk)
+        }
+      } else {
+        addPieceSlide(pptx, p, imgByPieceIdx.get(p.id) ?? null, allStepImgs)
+      }
     }
   }
 
