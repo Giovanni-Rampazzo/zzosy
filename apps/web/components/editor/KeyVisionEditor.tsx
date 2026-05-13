@@ -1883,8 +1883,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     obj.set("visible", !hidden)
     fc.renderAll()
     refreshLayers(fc)
-    isDirtyRef.current = true
-    doSave(true)  // immediate: a\u00e7\u00e3o deliberada, sem debounce, pra n\u00e3o perder se user sair da p\u00e1gina
+    // Save sem debounce: acao deliberada do user, nao pode ser perdida se ele
+    // sair da pagina logo apos clicar (cleanup do useEffect cancelaria o timer).
+    doSaveNow()
   }
 
   function toggleLayerLock(obj: any) {
@@ -1905,8 +1906,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (locked && fc.getActiveObject() === obj) fc.discardActiveObject()
     fc.renderAll()
     refreshLayers(fc)
-    isDirtyRef.current = true
-    doSave(true)  // immediate: a\u00e7\u00e3o deliberada, sem debounce, pra n\u00e3o perder se user sair da p\u00e1gina
+    // Save sem debounce: acao deliberada do user, nao pode ser perdida se ele
+    // sair da pagina logo apos clicar (cleanup do useEffect cancelaria o timer).
+    doSaveNow()
   }
 
   // Aplica flags __hidden/__locked vindas do JSON salvo no objeto Fabric criado.
@@ -2285,246 +2287,258 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     savingInFlightRef.current = false
   }
 
-  function doSave(immediate = false) {
+  function doSave() {
+    // Debounce 800ms: usado por mudancas frequentes (drag, digitacao, edit).
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      // Guard 0: durante apply de undo/redo, NUNCA salva. loadFromJSON dispara
-      // object:added/modified que poderiam acionar saves com canvas em estado
-      // transitorio (sem __assetId restaurados, sem bg, etc).
-      if (isApplyingHistory.current) {
-        editorLog("[doSave] abortado — undo/redo em andamento")
-        return
-      }
-      // Guard 1: se o init nao terminou (ou se o cleanup ja rodou), aborta.
-      // Sem isso, um timer que ficou pendurado dispara depois que o useEffect re-rodou
-      // mas antes do init recarregar todos os layers, gravando layers: [] no banco.
-      if (!isInitialized.current) {
-        editorLog("[doSave] abortado — init nao terminou (canvas em re-mount)")
-        return
-      }
-      // Se há propagação de texto em curso (PUT asset migrando styles em todos escopos),
-      // adia o save: rodar agora salvaria layers com styles em índices errados.
-      if (pendingTextPropagation.current) {
-        // Reagendar daqui a 200ms até liberar
-        saveTimer.current = setTimeout(() => doSave(), 200)
-        return
-      }
-      const fc = fabricRef.current
-      if (!fc) return
-      setSaving(true)
+    saveTimer.current = setTimeout(performSave, 800)
+  }
 
-      if (pieceId && pieceRef.current) {
-        // MODO PEÇA v2: salva layers[] com posicoes + overrides
-        const p = pieceRef.current
-        const oldData = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
+  function doSaveNow() {
+    // Sem debounce: usado por acoes deliberadas do user (toggle olho/cadeado).
+    // Dispara o fetch antes que um possivel cleanup do useEffect cancele o timer.
+    // fetch eh fire-and-forget — o browser geralmente conclui requests em transito
+    // mesmo se o componente desmontar (navegacao client-side rapida).
+    clearTimeout(saveTimer.current)
+    performSave()
+  }
 
-        const newLayers = fc.getObjects()
-          .filter((o: any) => {
-            if (o.__isBg) return false
-            if (o.__isBleedOverlay) return false
-            // Layer valido: __assetId (linkado) ou __embedded (PSD avulso importado).
-            // Sem essas flags eh fantasma. Loga warning pra detectar caminhos
-            // problematicos (paste mal feito, drag-from-asset com bug, etc).
-            if (!o.__assetId && !o.__embedded) {
-              editorLog("[PIECE-SAVE] objeto sem __assetId nem __embedded BLOQUEADO:", {
-                type: o.type, text: (o as any).text?.slice(0, 30),
-                left: o.left, top: o.top,
-              })
-              return false
-            }
-            return true
-          })
-          .map((o: any, i: number) => {
-            const layer: any = {
-              posX: Math.round(o.left ?? 0),
-              posY: Math.round(o.top ?? 0),
-              scaleX: o.scaleX ?? 1,
-              scaleY: o.scaleY ?? 1,
-              rotation: o.angle ?? 0,
-              zIndex: i,
-              width: Math.round(o.width ?? 400),
-              height: Math.round(o.height ?? 100),
-              overrides: {},
-            }
-            // Linkado a um asset: grava assetId.
-            if (o.__assetId) layer.assetId = o.__assetId
-            // Visibilidade e lock: persiste se diferente do default.
-            if (o.__hidden === true) layer.hidden = true
-            if (o.__locked === true) layer.locked = true
-            // Embedded: grava flag + conteudo cru (sem asset).
-            if (o.__embedded) {
-              layer.__embedded = true
-              if (o.type === "textbox" || o.type === "i-text") {
-                layer.type = "TEXT"
-                layer.text = o.text ?? ""
-                layer.fontFamily = o.fontFamily
-                layer.fontSize = o.fontSize
-                layer.fontWeight = o.fontWeight
-                layer.fill = o.fill
-                if (o.textAlign) layer.textAlign = o.textAlign
-              } else if (o.type === "image") {
-                layer.type = "IMAGE"
-                if ((o as any).imageDataUrl) {
-                  layer.imageDataUrl = (o as any).imageDataUrl
-                } else if ((o as any).getSrc) {
-                  // Fallback: pega src atual da imagem (pode ser blob: ou data: URL)
-                  try { layer.imageDataUrl = (o as any).getSrc() } catch {}
-                }
-              }
-            }
-            // Mascara (raster/vector/clipping) preservada via __maskData.
-            // Round-trip do PSD ate o re-export sem perder a mascara.
-            if ((o as any).__maskData) {
-              layer.mask = (o as any).__maskData
-            }
-            // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
-            if (o.type === "textbox" || o.type === "i-text") {
-              // PECA: NAO salva overrides.content (caracteres vem do asset).
-              // Modelo: peca tem overrides LOCAIS (styles, cor, fonte, box) mas
-              // texto cru sempre vem de asset.content. Sem isso, edicoes em
-              // /assets nao propagavam apos primeiro save da peca.
-              layer.overrides.fill = o.fill
-              layer.overrides.fontSize = o.fontSize
-              layer.overrides.fontFamily = o.fontFamily
-              layer.overrides.fontWeight = o.fontWeight
-              if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
-              if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
-              if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
-              if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
-                layer.overrides.leadingPt = (o as any).leadingPt
-              }
-              // Styles per-char locais da peca. Outras pecas/matriz nao afetadas.
-              if (o.styles && Object.keys(o.styles).length > 0) {
-                layer.overrides.styles = o.styles
-              }
-            }
-            return layer
-          })
+  async function performSave() {
+    // Guard 0: durante apply de undo/redo, NUNCA salva. loadFromJSON dispara
+    // object:added/modified que poderiam acionar saves com canvas em estado
+    // transitorio (sem __assetId restaurados, sem bg, etc).
+    if (isApplyingHistory.current) {
+      editorLog("[performSave] abortado — undo/redo em andamento")
+      return
+    }
+    // Guard 1: se o init nao terminou (ou se o cleanup ja rodou), aborta.
+    // Sem isso, um timer pendurado dispararia depois do useEffect re-rodar
+    // mas antes do init recarregar layers, gravando layers: [] no banco.
+    if (!isInitialized.current) {
+      editorLog("[performSave] abortado — init nao terminou (canvas em re-mount)")
+      return
+    }
+    // Se ha propagacao de texto em curso (PUT asset migrando styles em todos
+    // escopos), adia o save: rodar agora salvaria layers com styles em
+    // indices errados.
+    if (pendingTextPropagation.current) {
+      saveTimer.current = setTimeout(performSave, 200)
+      return
+    }
+    const fc = fabricRef.current
+    if (!fc) return
+    setSaving(true)
 
-        // Circuit breaker: nao grava layers: [] sobre piece.data que tinha layers.
-        // Race condition tipica: load do PSD importado retorna layer com schema
-        // antigo, addAssetToCanvas/addEmbeddedLayer falham, canvas fica vazio,
-        // doSave dispara e sobrescreve o data original com [] -> peca destruida.
-        if (newLayers.length === 0) {
-          const previousLayers = (oldData?.layers as any) ?? []
-          const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
-          if (hadLayers) {
-            editorLog("[doSave PIECE] abortado — tentaria gravar layers:[] sobre piece.data que tinha", previousLayers.length, "layers. Provavel race no load.")
-            isDirtyRef.current = false
-            setIsDirty(false)
-            setSaving(false)
-            return
+    if (pieceId && pieceRef.current) {
+      // MODO PEÇA v2: salva layers[] com posicoes + overrides
+      const p = pieceRef.current
+      const oldData = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
+
+      const newLayers = fc.getObjects()
+        .filter((o: any) => {
+          if (o.__isBg) return false
+          if (o.__isBleedOverlay) return false
+          // Layer valido: __assetId (linkado) ou __embedded (PSD avulso importado).
+          // Sem essas flags eh fantasma. Loga warning pra detectar caminhos
+          // problematicos (paste mal feito, drag-from-asset com bug, etc).
+          if (!o.__assetId && !o.__embedded) {
+            editorLog("[PIECE-SAVE] objeto sem __assetId nem __embedded BLOQUEADO:", {
+              type: o.type, text: (o as any).text?.slice(0, 30),
+              left: o.left, top: o.top,
+            })
+            return false
           }
-        }
-
-        const newData = {
-          ...oldData,
-          version: 2,
-          width: canvasWRef.current,
-          height: canvasHRef.current,
-          bgColor: bgColorRef.current,
-          layers: newLayers,
-        }
-        await fetch(`/api/pieces/${pieceId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: JSON.stringify(newData) })
+          return true
         })
-        await uploadPieceThumb(fc, pieceId)
-        isDirtyRef.current = false
-        setIsDirty(false)
-      } else {
-        // MODO MATRIZ
-        const layersToSave: any[] = fc.getObjects()
-          .filter((o: any) => {
-            if (o.__isBg) return false
-            if (!o.__assetId) {
-              editorLog("[SAVE-MATRIX-2] objeto sem __assetId ignorado:", o.type, { left: o.left, top: o.top })
-              return false
-            }
-            return true
-          })
-          .map((o: any, i: number) => {
-            const layer: any = {
-              assetId: o.__assetId,
-              posX: Math.round(o.left ?? 0),
-              posY: Math.round(o.top ?? 0),
-              scaleX: o.scaleX ?? 1,
-              scaleY: o.scaleY ?? 1,
-              rotation: o.angle ?? 0,
-              zIndex: i,
-              width: Math.round(o.width ?? 400),
-              height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
-              overrides: {},
-            }
-            // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
-            // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset
-            if (o.type === "textbox" || o.type === "i-text") {
-              // Matriz: NAO salva overrides.content (texto cru vem do asset).
-              // Caracteres = asset; styles = overrides.
-              layer.overrides.fill = o.fill
-              layer.overrides.fontSize = o.fontSize
-              layer.overrides.fontFamily = o.fontFamily
-              layer.overrides.fontWeight = o.fontWeight
-              if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
-              if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
-              if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
-              if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
-                layer.overrides.leadingPt = (o as any).leadingPt
-              }
-              if (o.styles && Object.keys(o.styles).length > 0) {
-                layer.overrides.styles = o.styles
-              }
-            }
-            return layer
-          })
-        // Circuit breaker: se o save tentaria gravar matriz VAZIA mas o KV anterior tinha
-        // layers, eh quase certamente um init incompleto disparando save por engano. Aborta
-        // pra nao perder o trabalho. O usuario pode esvaziar de propriedade clicando em Apagar
-        // em cada layer (passa por moveLayer/remove + doSave com canvas ja inicializado).
-        if (layersToSave.length === 0) {
-          const previousLayers = (campaignRef.current?.keyVision?.layers as any) ?? []
-          const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
-          if (hadLayers) {
-            editorLog("[SAVE-MATRIX-2] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
-            setSaving(false)
-            return
+        .map((o: any, i: number) => {
+          const layer: any = {
+            posX: Math.round(o.left ?? 0),
+            posY: Math.round(o.top ?? 0),
+            scaleX: o.scaleX ?? 1,
+            scaleY: o.scaleY ?? 1,
+            rotation: o.angle ?? 0,
+            zIndex: i,
+            width: Math.round(o.width ?? 400),
+            height: Math.round(o.height ?? 100),
+            overrides: {},
           }
-        }
-        await fetch(`/api/campaigns/${campaignId}/key-vision`, {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
+          // Linkado a um asset: grava assetId.
+          if (o.__assetId) layer.assetId = o.__assetId
+          // Visibilidade e lock: persiste se diferente do default.
+          if (o.__hidden === true) layer.hidden = true
+          if (o.__locked === true) layer.locked = true
+          // Embedded: grava flag + conteudo cru (sem asset).
+          if (o.__embedded) {
+            layer.__embedded = true
+            if (o.type === "textbox" || o.type === "i-text") {
+              layer.type = "TEXT"
+              layer.text = o.text ?? ""
+              layer.fontFamily = o.fontFamily
+              layer.fontSize = o.fontSize
+              layer.fontWeight = o.fontWeight
+              layer.fill = o.fill
+              if (o.textAlign) layer.textAlign = o.textAlign
+            } else if (o.type === "image") {
+              layer.type = "IMAGE"
+              if ((o as any).imageDataUrl) {
+                layer.imageDataUrl = (o as any).imageDataUrl
+              } else if ((o as any).getSrc) {
+                // Fallback: pega src atual da imagem (pode ser blob: ou data: URL)
+                try { layer.imageDataUrl = (o as any).getSrc() } catch {}
+              }
+            }
+          }
+          // Mascara (raster/vector/clipping) preservada via __maskData.
+          // Round-trip do PSD ate o re-export sem perder a mascara.
+          if ((o as any).__maskData) {
+            layer.mask = (o as any).__maskData
+          }
+          // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
+          if (o.type === "textbox" || o.type === "i-text") {
+            // PECA: NAO salva overrides.content (caracteres vem do asset).
+            // Modelo: peca tem overrides LOCAIS (styles, cor, fonte, box) mas
+            // texto cru sempre vem de asset.content. Sem isso, edicoes em
+            // /assets nao propagavam apos primeiro save da peca.
+            layer.overrides.fill = o.fill
+            layer.overrides.fontSize = o.fontSize
+            layer.overrides.fontFamily = o.fontFamily
+            layer.overrides.fontWeight = o.fontWeight
+            if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
+            if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
+            if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
+            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
+              layer.overrides.leadingPt = (o as any).leadingPt
+            }
+            // Styles per-char locais da peca. Outras pecas/matriz nao afetadas.
+            if (o.styles && Object.keys(o.styles).length > 0) {
+              layer.overrides.styles = o.styles
+            }
+          }
+          return layer
         })
-        // Nota: lastOverride dos assets ja foi atualizado em tempo real via
-        // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
-        // Nao precisa propagar de novo aqui no doSave.
 
-        // Gerar e enviar thumbnail do KV (max 480px maior lado, JPEG 0.85)
-        try {
-          const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
-          // CROP da area da peca. Le offset real do viewportTransform pra
-          // cortar exatamente onde a peca renderiza no canvas DOM.
-          const z = zoomRef.current || 1
-          const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
-          const offsetX = vt[4] ?? 0
-          const offsetY = vt[5] ?? 0
-          const dataUrl = fc.toDataURL({
-            format: "jpeg", quality: 0.85,
-            multiplier: thumbScale / z,
-            left: offsetX,
-            top: offsetY,
-            width: canvasWRef.current * z,
-            height: canvasHRef.current * z,
-          })
-          const blob = await (await fetch(dataUrl)).blob()
-          const fd = new FormData()
-          fd.append("thumbnail", blob, "kv-thumb.jpg")
-          await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
-        } catch (e) { console.warn("KV thumb upload failed:", e) }
-        isDirtyRef.current = false
-        setIsDirty(false)
+      // Circuit breaker: nao grava layers: [] sobre piece.data que tinha layers.
+      // Race condition tipica: load do PSD importado retorna layer com schema
+      // antigo, addAssetToCanvas/addEmbeddedLayer falham, canvas fica vazio,
+      // doSave dispara e sobrescreve o data original com [] -> peca destruida.
+      if (newLayers.length === 0) {
+        const previousLayers = (oldData?.layers as any) ?? []
+        const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
+        if (hadLayers) {
+          editorLog("[doSave PIECE] abortado — tentaria gravar layers:[] sobre piece.data que tinha", previousLayers.length, "layers. Provavel race no load.")
+          isDirtyRef.current = false
+          setIsDirty(false)
+          setSaving(false)
+          return
+        }
       }
-      setSaving(false)
-    }, immediate ? 0 : 800)
+
+      const newData = {
+        ...oldData,
+        version: 2,
+        width: canvasWRef.current,
+        height: canvasHRef.current,
+        bgColor: bgColorRef.current,
+        layers: newLayers,
+      }
+      await fetch(`/api/pieces/${pieceId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: JSON.stringify(newData) })
+      })
+      await uploadPieceThumb(fc, pieceId)
+      isDirtyRef.current = false
+      setIsDirty(false)
+    } else {
+      // MODO MATRIZ
+      const layersToSave: any[] = fc.getObjects()
+        .filter((o: any) => {
+          if (o.__isBg) return false
+          if (!o.__assetId) {
+            editorLog("[SAVE-MATRIX-2] objeto sem __assetId ignorado:", o.type, { left: o.left, top: o.top })
+            return false
+          }
+          return true
+        })
+        .map((o: any, i: number) => {
+          const layer: any = {
+            assetId: o.__assetId,
+            posX: Math.round(o.left ?? 0),
+            posY: Math.round(o.top ?? 0),
+            scaleX: o.scaleX ?? 1,
+            scaleY: o.scaleY ?? 1,
+            rotation: o.angle ?? 0,
+            zIndex: i,
+            width: Math.round(o.width ?? 400),
+            height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
+            overrides: {},
+          }
+          // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
+          // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset
+          if (o.type === "textbox" || o.type === "i-text") {
+            // Matriz: NAO salva overrides.content (texto cru vem do asset).
+            // Caracteres = asset; styles = overrides.
+            layer.overrides.fill = o.fill
+            layer.overrides.fontSize = o.fontSize
+            layer.overrides.fontFamily = o.fontFamily
+            layer.overrides.fontWeight = o.fontWeight
+            if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
+            if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
+            if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
+            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
+              layer.overrides.leadingPt = (o as any).leadingPt
+            }
+            if (o.styles && Object.keys(o.styles).length > 0) {
+              layer.overrides.styles = o.styles
+            }
+          }
+          return layer
+        })
+      // Circuit breaker: se o save tentaria gravar matriz VAZIA mas o KV anterior tinha
+      // layers, eh quase certamente um init incompleto disparando save por engano. Aborta
+      // pra nao perder o trabalho. O usuario pode esvaziar de propriedade clicando em Apagar
+      // em cada layer (passa por moveLayer/remove + doSave com canvas ja inicializado).
+      if (layersToSave.length === 0) {
+        const previousLayers = (campaignRef.current?.keyVision?.layers as any) ?? []
+        const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
+        if (hadLayers) {
+          editorLog("[SAVE-MATRIX-2] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
+          setSaving(false)
+          return
+        }
+      }
+      await fetch(`/api/campaigns/${campaignId}/key-vision`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
+      })
+      // Nota: lastOverride dos assets ja foi atualizado em tempo real via
+      // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
+      // Nao precisa propagar de novo aqui no doSave.
+
+      // Gerar e enviar thumbnail do KV (max 480px maior lado, JPEG 0.85)
+      try {
+        const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
+        // CROP da area da peca. Le offset real do viewportTransform pra
+        // cortar exatamente onde a peca renderiza no canvas DOM.
+        const z = zoomRef.current || 1
+        const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+        const offsetX = vt[4] ?? 0
+        const offsetY = vt[5] ?? 0
+        const dataUrl = fc.toDataURL({
+          format: "jpeg", quality: 0.85,
+          multiplier: thumbScale / z,
+          left: offsetX,
+          top: offsetY,
+          width: canvasWRef.current * z,
+          height: canvasHRef.current * z,
+        })
+        const blob = await (await fetch(dataUrl)).blob()
+        const fd = new FormData()
+        fd.append("thumbnail", blob, "kv-thumb.jpg")
+        await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+      } catch (e) { console.warn("KV thumb upload failed:", e) }
+      isDirtyRef.current = false
+      setIsDirty(false)
+    }
+    setSaving(false)
   }
 
   async function addLayer() {
