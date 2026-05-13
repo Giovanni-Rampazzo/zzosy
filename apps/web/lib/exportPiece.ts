@@ -297,7 +297,7 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
 
   const out = document.createElement("canvas")
   out.width = W; out.height = H
-  const ctx = out.getContext("2d", { alpha: false } as any)!
+  const ctx = out.getContext("2d", { alpha: false } as any)! as CanvasRenderingContext2D
   ctx.fillStyle = data?.bgColor ?? "#ffffff"
   ctx.fillRect(0, 0, W, H)
   ctx.drawImage(fc.getElement() as HTMLCanvasElement, 0, 0)
@@ -979,7 +979,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   const compositeCanvas = document.createElement("canvas")
   compositeCanvas.width = W
   compositeCanvas.height = H
-  const cctx = compositeCanvas.getContext("2d", { alpha: false } as any)!
+  const cctx = compositeCanvas.getContext("2d", { alpha: false } as any)! as CanvasRenderingContext2D
   cctx.fillStyle = data?.bgColor ?? "#ffffff"
   cctx.fillRect(0, 0, W, H)
   cctx.drawImage(fc.getElement(), 0, 0)
@@ -988,7 +988,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   const thumbScale = Math.min(256 / W, 256 / H)
   thumbCanvas.width = Math.round(W * thumbScale)
   thumbCanvas.height = Math.round(H * thumbScale)
-  const tctx = thumbCanvas.getContext("2d", { alpha: false } as any)!
+  const tctx = thumbCanvas.getContext("2d", { alpha: false } as any)! as CanvasRenderingContext2D
   tctx.fillStyle = "#fff"
   tctx.fillRect(0, 0, thumbCanvas.width, thumbCanvas.height)
   tctx.drawImage(compositeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height)
