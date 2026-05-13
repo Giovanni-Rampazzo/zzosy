@@ -2418,9 +2418,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       if (stepCountRef.current > 1) {
         const fullSteps: any[] = []
         let inactiveCursor = 0
+        // Le oldData.steps pra preservar imageUrl do step ativo no save.
+        // Sem isso, toda vez que o user salva, o imageUrl do step ativo
+        // some (o save sobrescreve com {layers, bgColor} sem imageUrl).
+        const oldSteps: any[] = Array.isArray(oldData.steps) ? oldData.steps : []
         for (let i = 0; i < stepCountRef.current; i++) {
           if (i === activeStepIndexRef.current) {
-            fullSteps.push({ layers: newLayers, bgColor: bgColorRef.current })
+            const oldActive = oldSteps[i] ?? {}
+            fullSteps.push({
+              layers: newLayers,
+              bgColor: bgColorRef.current,
+              // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
+              // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
+              imageUrl: oldActive.imageUrl ?? null,
+              thumbnailUrl: oldActive.thumbnailUrl ?? null,
+            })
           } else {
             fullSteps.push(inactiveStepsRef.current[inactiveCursor] ?? { layers: [], bgColor: "#ffffff" })
             inactiveCursor++
@@ -2718,8 +2730,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     isDirtyRef.current = true
     await doSaveNow()
     // Re-dispara autoGen pra gerar novos thumbs com os indices corretos.
+    // AWAIT crítico: se o user fechar o editor antes do autoGen terminar,
+    // alguns steps ficam sem preview. Esperar garante consistencia.
     autoGenDoneRef.current = false
-    autoGenerateMissingStepThumbs().catch(e => console.warn("[removeStep] autoGen erro:", e))
+    try {
+      await autoGenerateMissingStepThumbs()
+    } catch (e) { console.warn("[removeStep] autoGen erro:", e) }
   }
 
   // Percorre todos os steps gerando thumbnail individual pra cada um.
@@ -2920,9 +2936,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // Senao usa inactiveStepsRef.current[mapInactive(i)].
         const fullSteps: any[] = []
         let inactiveCursor = 0
+        // Le oldData.steps pra preservar imageUrl do step ativo no save.
+        // Sem isso, toda vez que o user salva, o imageUrl do step ativo
+        // some (o save sobrescreve com {layers, bgColor} sem imageUrl).
+        const oldSteps: any[] = Array.isArray(oldData.steps) ? oldData.steps : []
         for (let i = 0; i < stepCountRef.current; i++) {
           if (i === activeStepIndexRef.current) {
-            fullSteps.push({ layers: newLayers, bgColor: bgColorRef.current })
+            const oldActive = oldSteps[i] ?? {}
+            fullSteps.push({
+              layers: newLayers,
+              bgColor: bgColorRef.current,
+              // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
+              // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
+              imageUrl: oldActive.imageUrl ?? null,
+              thumbnailUrl: oldActive.thumbnailUrl ?? null,
+            })
           } else {
             fullSteps.push(inactiveStepsRef.current[inactiveCursor] ?? { layers: [], bgColor: "#ffffff" })
             inactiveCursor++
