@@ -252,7 +252,7 @@ async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; asse
   return { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
 }
 
-async function renderToCanvas(pieceLite: { id?: string; name: string; data: any; width: number; height: number }): Promise<{ canvas: HTMLCanvasElement; dpi: number }> {
+async function renderToCanvas(pieceLite: { id?: string; name: string; data: any; width: number; height: number; __virtualStepOriginalId?: string }): Promise<{ canvas: HTMLCanvasElement; dpi: number }> {
   // Sempre busca peça + assets do servidor (sync) caso tenha id
   let piece: any = pieceLite
   let assets: Asset[] = []
@@ -266,6 +266,21 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
           assets = camp.assets.map(normalizeAsset)
         }
       }
+    } else if (pieceLite.__virtualStepOriginalId) {
+      // Peca virtual de step: busca SO os assets da campanha. Mantem o
+      // piece.data como veio em pieceLite (com layers do step especifico).
+      // Sem isso, o data do banco (com TODOS os steps) sobrescreveria os
+      // layers do step e o export sairia errado/vazio.
+      const r = await fetch(`/api/pieces/${pieceLite.id}`, { cache: "no-store" })
+      if (r.ok) {
+        const p = await r.json()
+        const cres = await fetch(`/api/campaigns/${p.campaignId}`, { cache: "no-store" })
+        if (cres.ok) {
+          const camp = await cres.json()
+          if (Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
+        }
+      }
+      // NAO sobrescreve piece — fica como pieceLite (com data do step certo).
     } else {
       const fetched = await fetchPieceWithAssets(pieceLite.id)
       piece = fetched.piece
@@ -580,7 +595,7 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
   return runs
 }
 
-export async function exportPSDBlob(pieceLite: { id?: string; name: string; data: any; width: number; height: number }): Promise<Blob> {
+export async function exportPSDBlob(pieceLite: { id?: string; name: string; data: any; width: number; height: number; __virtualStepOriginalId?: string }): Promise<Blob> {
   let piece: any = pieceLite
   let assets: Asset[] = []
   if (pieceLite.id) {
@@ -596,6 +611,17 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         }
       }
       // piece ja eh o pieceLite com data preenchido (vem do editor)
+    } else if (pieceLite.__virtualStepOriginalId) {
+      // Peca virtual de step: busca SO os assets. Mantem data como veio.
+      const r = await fetch(`/api/pieces/${pieceLite.id}`, { cache: "no-store" })
+      if (r.ok) {
+        const p = await r.json()
+        const cres = await fetch(`/api/campaigns/${p.campaignId}`, { cache: "no-store" })
+        if (cres.ok) {
+          const camp = await cres.json()
+          if (Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
+        }
+      }
     } else {
       const fetched = await fetchPieceWithAssets(pieceLite.id)
       piece = fetched.piece
@@ -1018,8 +1044,8 @@ async function buildBlob(piece: { id?: string; name: string; data: any; width: n
  */
 function expandSteps(
   pieces: Array<{ id?: string; name: string; data: any; width: number; height: number }>
-): Array<{ id?: string; name: string; data: any; width: number; height: number }> {
-  const out: typeof pieces = []
+): Array<{ id?: string; name: string; data: any; width: number; height: number; __virtualStepOriginalId?: string }> {
+  const out: any[] = []
   for (const p of pieces) {
     const d = typeof p.data === "string" ? JSON.parse(p.data) : p.data
     const allSteps: Array<{ layers: any[]; bgColor?: string }> = Array.isArray(d?.steps) ? d.steps : []
@@ -1029,9 +1055,15 @@ function expandSteps(
       continue
     }
     // Multi-step: gera N pecas virtuais.
+    // CRITICO: usa o ID ORIGINAL pra renderToCanvas conseguir buscar os assets
+    // da campanha via fetchPieceWithAssets. Mas marca a peca como virtual
+    // (__virtualStepOriginalId) pra o renderToCanvas saber que NAO deve
+    // sobrescrever piece.data com o data do banco (que tem todos os steps),
+    // e sim usar o data ja preparado aqui (com layers do step especifico).
     allSteps.forEach((step, i) => {
       out.push({
-        id: p.id ? `${p.id}__step${i + 1}` : undefined,
+        id: p.id, // mesmo id pra renderToCanvas buscar assets do banco
+        __virtualStepOriginalId: p.id, // marca como virtual
         name: `${p.name}_Step${i + 1}`,
         width: p.width,
         height: p.height,
