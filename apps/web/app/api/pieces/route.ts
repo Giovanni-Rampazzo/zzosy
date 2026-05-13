@@ -36,9 +36,19 @@ export async function GET(req: NextRequest) {
 
   const enriched = pieces.map(p => {
     let width = 0, height = 0, format = "", dpi = 72
+    let steps: any[] | null = null
     try {
       const d = p.data ? JSON.parse(p.data) : null
       if (d) { width = d.width ?? 0; height = d.height ?? 0; format = d.format ?? ""; dpi = d.dpi ?? 72 }
+      // Steps: array de {layers, bgColor, thumbnailUrl?, imageUrl?} no piece.data.
+      // Quando >= 2 steps, presentation/export sabem que eh carrossel.
+      if (d && Array.isArray(d.steps) && d.steps.length >= 2) {
+        steps = d.steps.map((s: any, i: number) => ({
+          index: i,
+          thumbnailUrl: s.thumbnailUrl ?? null,
+          imageUrl: s.imageUrl ?? null,
+        }))
+      }
     } catch {}
 
     const mf = p.mediaFormatId ? mfMap.get(p.mediaFormatId) : null
@@ -52,7 +62,7 @@ export async function GET(req: NextRequest) {
     const widthUnit = mf?.widthUnit ?? "px"
     const heightUnit = mf?.heightUnit ?? "px"
 
-    return { ...p, width, height, format, dpi, media, mediaFormatCategory: mfCategory, widthValue, heightValue, widthUnit, heightUnit }
+    return { ...p, width, height, format, dpi, media, mediaFormatCategory: mfCategory, widthValue, heightValue, widthUnit, heightUnit, steps }
   })
   return NextResponse.json(enriched)
 }

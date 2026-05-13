@@ -18,6 +18,7 @@ interface Piece {
   widthUnit?: string | null
   heightUnit?: string | null
   imageUrl?: string | null
+  steps?: Array<{ index: number; thumbnailUrl?: string | null; imageUrl?: string | null }> | null
   createdAt: string
 }
 
@@ -213,6 +214,7 @@ export default function PresentationPage() {
                     widthUnit={p.widthUnit}
                     heightUnit={p.heightUnit}
                     imageUrl={p.imageUrl ?? null}
+                    steps={p.steps ?? null}
                     copy={p.copy ?? null}
                     pieceId={p.id}
                     onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}

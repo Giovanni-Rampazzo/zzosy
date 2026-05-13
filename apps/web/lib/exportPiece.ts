@@ -1002,12 +1002,58 @@ async function buildBlob(piece: { id?: string; name: string; data: any; width: n
   }
 }
 
+/**
+ * Expande pecas com multiplos steps em "pecas virtuais" — uma por step.
+ * Cada step vira uma peca independente do export com:
+ *   - name: "{original}_Step1", "{original}_Step2", etc.
+ *   - data.layers: os layers daquele step
+ *   - data.bgColor: o bg daquele step (steps podem ter bg diferente)
+ *   - mesma width/height da peca original
+ *
+ * Pecas com 1 step soh (ou sem campo 'steps'): passam direto sem modificacao.
+ */
+function expandSteps(
+  pieces: Array<{ id?: string; name: string; data: any; width: number; height: number }>
+): Array<{ id?: string; name: string; data: any; width: number; height: number }> {
+  const out: typeof pieces = []
+  for (const p of pieces) {
+    const d = typeof p.data === "string" ? JSON.parse(p.data) : p.data
+    const allSteps: Array<{ layers: any[]; bgColor?: string }> = Array.isArray(d?.steps) ? d.steps : []
+    if (allSteps.length <= 1) {
+      // Peca legada / 1 step soh: passa direto.
+      out.push(p)
+      continue
+    }
+    // Multi-step: gera N pecas virtuais.
+    allSteps.forEach((step, i) => {
+      out.push({
+        id: p.id ? `${p.id}__step${i + 1}` : undefined,
+        name: `${p.name}_Step${i + 1}`,
+        width: p.width,
+        height: p.height,
+        data: {
+          ...d,
+          layers: step.layers,
+          bgColor: step.bgColor ?? d.bgColor,
+          // remove o campo steps pra nao confundir o resto do pipeline
+          steps: undefined,
+          activeStepIndex: undefined,
+        },
+      })
+    })
+  }
+  return out
+}
+
 export async function exportPieces(
   pieces: Array<{ id?: string; name: string; data: any; width: number; height: number }>,
   formats: ExportFormat[],
   onProgress?: (msg: string) => void,
   campaignName?: string,
 ): Promise<void> {
+  // Expande pecas multi-step ANTES de iniciar o export. Cada step vira uma
+  // peca virtual com nome _StepN. O resto do pipeline trata como peca normal.
+  pieces = expandSteps(pieces)
   const total = pieces.length * formats.length
   if (total === 0) return
 
@@ -1070,6 +1116,9 @@ export async function buildDeliveryZip(
 ): Promise<Blob> {
   const JSZip = (await import("jszip")).default
   const zip = new JSZip()
+  // Expande pecas multi-step (carrossel etc): cada step vira uma peca virtual
+  // com nome _StepN no zip de entrega.
+  pieces = expandSteps(pieces) as any
   let done = 0
   const total = pieces.length * formats.length
 

@@ -139,6 +139,9 @@ interface PieceSlideProps {
   widthUnit?: string | null
   heightUnit?: string | null
   imageUrl: string | null
+  /** Se a peca tem multiplos steps (carrossel etc), passa as miniaturas/imagens de cada um.
+   * Quando steps tem length >= 2, renderiza todos lado a lado escalados pra caber. */
+  steps?: Array<{ imageUrl?: string | null; thumbnailUrl?: string | null }> | null
   copy?: string | null
   onClick?: () => void
   /** ID da peca pra permitir auto-save da legenda via PATCH /api/pieces/[id]. Quando omitido, legenda fica read-only. */
@@ -166,7 +169,7 @@ function formatDims(
   return `${fmt(wV)} ${wU} x ${fmt(hV)} ${hU}`
 }
 
-export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, copy, onClick, pieceId, onCopyChange }: PieceSlideProps) {
+export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, pieceId, onCopyChange }: PieceSlideProps) {
   const dims = formatDims(width, height, widthValue, heightValue, widthUnit, heightUnit)
   const clickable = !!onClick
   // copyLocal: estado interno editavel. Sincroniza com prop copy ao mudar
@@ -181,6 +184,73 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
   const editable = !!pieceId
   // Card aparece quando: ja tem copy OU usuario clicou em '+ Legenda'
   const showCard = hasCopy || editing
+  // Multi-step: se tem >= 2 steps, renderiza todos lado a lado com label.
+  const hasMultiStep = Array.isArray(steps) && steps.length >= 2
+  // Wrapper que decide entre renderizar a imagem unica ou o grid de steps.
+  // Recebe boxShadow opcional pra layout sem legenda.
+  function renderPieceVisual(opts?: { withShadow?: boolean }) {
+    if (hasMultiStep) {
+      const total = steps!.length
+      return (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${total}, 1fr)`,
+          gap: "1.5%",
+          width: "100%", height: "100%",
+          alignItems: "center",
+        }}>
+          {steps!.map((s, i) => {
+            const src = s.imageUrl ?? s.thumbnailUrl ?? null
+            return (
+              <div key={i} style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                gap: "0.6cqw", width: "100%", height: "100%",
+                minHeight: 0, minWidth: 0,
+              }}>
+                {/* Label do step */}
+                <div style={{
+                  fontSize: "0.75cqw", fontWeight: 700,
+                  color: TEXT_DARK, opacity: 0.6,
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                  textTransform: "uppercase", letterSpacing: 0.5,
+                  flexShrink: 0,
+                }}>
+                  Step {i + 1}
+                </div>
+                {/* Imagem do step (escalada pra caber na celula) */}
+                <div style={{
+                  flex: 1, minHeight: 0, width: "100%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {src ? (
+                    <img src={src} alt={`${name} Step ${i + 1}`}
+                      style={{
+                        maxWidth: "100%", maxHeight: "100%",
+                        objectFit: "contain",
+                        boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
+                      }} />
+                  ) : (
+                    <div style={{ color: TEXT_GRAY, fontSize: "0.9cqw" }}>(sem preview)</div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+    // Single step (peca normal/legada)
+    return imageUrl ? (
+      <img src={imageUrl} alt={name}
+        style={{
+          maxWidth: "100%", maxHeight: "100%",
+          objectFit: "contain",
+          boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
+        }} />
+    ) : (
+      <div style={{ color: TEXT_GRAY, fontSize: "1.4cqw" }}>(Imagem não disponível)</div>
+    )
+  }
 
   function handleCopyChange(next: string) {
     setCopyLocal(next)
@@ -271,20 +341,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             display: "flex", alignItems: "center", justifyContent: "center",
             height: "100%", minHeight: 0,
           }}>
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={name}
-                style={{
-                  maxWidth: "100%", maxHeight: "100%",
-                  objectFit: "contain",
-                }}
-              />
-            ) : (
-              <div style={{ color: TEXT_GRAY, fontSize: "1.4cqw" }}>
-                (Imagem não disponível)
-              </div>
-            )}
+            {renderPieceVisual()}
           </div>
           {/* Card legenda — header amarelo cheio em cima, corpo branco embaixo.
               Ocupa altura inteira disponivel. Texto centralizado verticalmente
@@ -373,24 +430,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           display: "flex", alignItems: "center", justifyContent: "center",
           padding: "10% 5% 8% 5%",
         }}>
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={name}
-              style={{
-                maxWidth: "100%", maxHeight: "100%",
-                objectFit: "contain",
-                boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-              }}
-            />
-          ) : (
-            <div style={{
-              color: TEXT_GRAY, fontSize: "1.4cqw",
-              fontFamily: "system-ui, -apple-system, sans-serif",
-            }}>
-              (Imagem não disponível)
-            </div>
-          )}
+          {renderPieceVisual({ withShadow: true })}
           {/* Botao '+ Legenda' aparece no canto inferior direito quando a peca
               tem pieceId (editavel) e ainda nao tem legenda. Clicar abre o card
               de legenda vazio pronto pra editar. */}
