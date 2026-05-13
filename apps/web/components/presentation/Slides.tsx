@@ -202,23 +202,25 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
           sem fundo. */}
       <div style={{
         position: "absolute", top: "4%", left: "3%",
-        display: "flex", alignItems: "center", gap: "1.2cqw",
+        display: "flex", alignItems: "center", gap: "1.5cqw",
         zIndex: 2,
+        maxWidth: "70cqw",
       }}>
-        {/* Box amarelo nome */}
+        {/* Box amarelo nome — expande conforme o texto, com padding lateral confortavel */}
         <div style={{
           background: YELLOW, borderRadius: RADIUS,
-          padding: "0.54% 1.4%",
+          padding: "0.6cqw 1.7cqw",
           fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "1cqw", fontWeight: 700, color: TEXT_DARK,
-          maxWidth: "40cqw", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 700, color: TEXT_DARK,
+          whiteSpace: "nowrap",
         }}>
           {name}
         </div>
         {/* Dimensao em texto puro (sem fundo amarelo) */}
         <div style={{
           fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "0.9cqw", fontWeight: 500, color: TEXT_DARK,
+          fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 500, color: TEXT_DARK,
+          whiteSpace: "nowrap",
         }}>
           {dims}
         </div>
@@ -366,8 +368,8 @@ export function SlidePiece({ name, width, height, imageUrl, copy, onClick, piece
                 position: "absolute", bottom: "4%", right: "4%",
                 background: YELLOW, color: TEXT_DARK,
                 border: "none", borderRadius: RADIUS,
-                padding: "0.6% 1.4%",
-                fontSize: "1cqw", fontWeight: 700,
+                padding: "0.7cqw 1.7cqw",
+                fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 700,
                 cursor: "pointer",
                 fontFamily: "system-ui, -apple-system, sans-serif",
                 zIndex: 3,
