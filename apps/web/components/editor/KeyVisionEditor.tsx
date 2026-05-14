@@ -2274,22 +2274,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const TARGET = 2400
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
 
-      // ABORDAGEM SIMPLES: usa toDataURL do canvas atual direto. Multiplier
-      // pode escalar pra qualquer tamanho sem precisar clonar objetos.
-      // Antes a função clonava cada objeto pra um StaticCanvas — Fabric v7
-      // mudou a API e o `await obj.clone()` falhava silenciosamente em
-      // alguns objetos, retornando blob null. Logo o uploadPieceThumb nem
-      // tentava fazer o POST do thumbnail. Bug raiz do "preview nao atualiza".
+      // O canvas Fabric do editor eh GRANDE (fullW x fullH ~ painel do editor)
+      // com a peca centralizada via viewportTransform. Sem bounds explicitos,
+      // toDataURL capturava o canvas inteiro -> thumb saia com area de bleed
+      // ao redor da peca + objetos perto da borda saindo cortados.
+      //
+      // Fix: calcular regiao da peca em coords do canvas DOM:
+      //   mundo Fabric (0,0,w,h) -> canvas DOM (vt[4], vt[5], w*z, h*z)
+      // onde z = vt[0] (zoom atual).
+      const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+      const z = vt[0] ?? 1
+      const offsetX = vt[4] ?? 0
+      const offsetY = vt[5] ?? 0
 
-      // Esconde temporariamente o bleed overlay (não deve aparecer no thumb)
+      // Esconde temporariamente o bleed overlay
       const bleedOverlays = fc.getObjects().filter((o: any) => o.__isBleedOverlay)
       bleedOverlays.forEach((o: any) => { o.visible = false })
       try {
         const dataUrl = fc.toDataURL({
           format: "png",
-          multiplier: thumbScale,
-          // viewport: ignora zoom/pan do user — sempre exporta o canvas inteiro
+          // multiplier dividido por z compensa o zoom — resultado: PNG com
+          // exatamente w*thumbScale x h*thumbScale (proporcao da peca).
+          multiplier: thumbScale / z,
           enableRetinaScaling: false,
+          left: offsetX,
+          top: offsetY,
+          width: w * z,
+          height: h * z,
         })
         const blob = await (await fetch(dataUrl)).blob()
         console.log("[thumb] gerado", blob.size, "bytes", `${Math.round(w * thumbScale)}x${Math.round(h * thumbScale)}`)
