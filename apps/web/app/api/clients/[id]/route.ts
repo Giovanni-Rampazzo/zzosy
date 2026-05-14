@@ -38,8 +38,18 @@ export async function PATCH(req: Request, ctx: Ctx) {
   for (const k of ["name", "contact", "email", "phone", "address", "logoUrl", "brandFont", "brandColors"]) {
     if (k in body) data[k] = body[k]
   }
-  const updated = await prisma.client.update({ where: { id }, data })
-  return NextResponse.json(updated)
+  try {
+    const updated = await prisma.client.update({ where: { id }, data })
+    return NextResponse.json(updated)
+  } catch (err: any) {
+    console.error("[CLIENT-PATCH] erro:", err?.message, err?.code, "campos enviados:", Object.keys(data))
+    return NextResponse.json({
+      error: err?.message ?? "Erro interno",
+      code: err?.code,
+      meta: err?.meta,
+      campos: Object.keys(data),
+    }, { status: 500 })
+  }
 }
 
 export async function DELETE(req: Request, ctx: Ctx) {

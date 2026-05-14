@@ -126,13 +126,19 @@ export default function EditClientPage() {
   }, [id])
 
   // PATCH parcial usado pelo auto-save do logo
-  async function patchClient(partial: Partial<Client>): Promise<boolean> {
+  async function patchClient(partial: Partial<Client>): Promise<{ok: boolean; error?: string}> {
     const res = await fetch(`/api/clients/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(partial),
     })
-    return res.ok
+    if (res.ok) return { ok: true }
+    try {
+      const body = await res.json()
+      return { ok: false, error: `${res.status}: ${body.error ?? "erro"} ${body.code ? `[${body.code}]` : ""} ${body.campos ? `campos: ${body.campos.join(",")}` : ""}` }
+    } catch {
+      return { ok: false, error: `${res.status}: erro sem corpo` }
+    }
   }
 
   // AUTO-SAVE da identidade visual: debounced 600ms.
@@ -143,16 +149,16 @@ export default function EditClientPage() {
 
     const handle = setTimeout(async () => {
       setSavingBrand(true)
-      const ok = await patchClient({
+      const r = await patchClient({
         brandFont: brandFont || null,
         brandColors: brandColors as any,
       })
       setSavingBrand(false)
-      if (ok) {
+      if (r.ok) {
         setBrandSavedAt(Date.now())
         setTimeout(() => setBrandSavedAt(null), 2000)
       } else {
-        setError("Falha ao salvar identidade visual.")
+        setError("Identidade visual: " + (r.error ?? "erro desconhecido"))
       }
     }, 600)
     return () => clearTimeout(handle)
@@ -191,9 +197,9 @@ export default function EditClientPage() {
 
     // AUTO-SAVE: persiste o logo no banco imediatamente apos upload
     setSavingLogo(true)
-    const ok = await patchClient({ logoUrl: data.url })
+    const r = await patchClient({ logoUrl: data.url })
     setSavingLogo(false)
-    if (ok) {
+    if (r.ok) {
       setLogoSavedAt(Date.now())
       setTimeout(() => setLogoSavedAt(null), 2000)
     } else {
@@ -204,9 +210,9 @@ export default function EditClientPage() {
   async function handleDeleteLogo() {
     setError("")
     setSavingLogo(true)
-    const ok = await patchClient({ logoUrl: null })
+    const r = await patchClient({ logoUrl: null })
     setSavingLogo(false)
-    if (ok) {
+    if (r.ok) {
       setLogoUrl(null)
       setLogoSavedAt(Date.now())
       setTimeout(() => setLogoSavedAt(null), 2000)
@@ -237,7 +243,7 @@ export default function EditClientPage() {
     if (!name.trim()) { setError("Nome obrigatório"); return }
     setError("")
     setSaving(true)
-    const ok = await patchClient({
+    const r = await patchClient({
       name: name.trim(),
       contact: contact.trim() || null,
       email: email.trim() || null,
@@ -245,7 +251,7 @@ export default function EditClientPage() {
       address: address.trim() || null,
     })
     setSaving(false)
-    if (ok) {
+    if (r.ok) {
       router.push(`/clients/${id}`)
     } else {
       setError("Erro ao salvar. Tente novamente.")
