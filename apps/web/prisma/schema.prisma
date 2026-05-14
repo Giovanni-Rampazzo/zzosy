@@ -67,19 +67,21 @@ model VerificationToken {
 }
 
 model Client {
-  id        String     @id @default(cuid())
-  tenantId  String
-  name      String
-  slug      String?
-  contact   String?
-  email     String?
-  phone     String?
-  address   String?
-  logoUrl   String?    @db.LongText
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  campaigns Campaign[]
+  id          String     @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String?
+  contact     String?
+  email       String?
+  phone       String?
+  address     String?
+  logoUrl     String?    @db.LongText
+  brandFont   String?
+  brandColors Json?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  campaigns   Campaign[]
 }
 
 model Campaign {

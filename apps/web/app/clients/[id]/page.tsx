@@ -6,14 +6,18 @@ import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
+import { loadGoogleFont } from "@/lib/google-fonts"
 
 
 interface Campaign {
   id: string; name: string; createdAt: string; _count: { pieces: number }
   keyVision?: { thumbnailUrl?: string | null } | null
 }
+interface BrandColor {
+  hex: string; name?: string; role: "primary" | "secondary"
+}
 interface Client {
-  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; logoUrl: string | null; campaigns: Campaign[]
+  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; logoUrl: string | null; brandFont: string | null; brandColors: BrandColor[] | null; campaigns: Campaign[]
 }
 
 export default function ClientPage() {
@@ -27,7 +31,11 @@ export default function ClientPage() {
 
   async function load() {
     const res = await fetch(`/api/clients/${id}`)
-    if (res.ok) setClient(await res.json())
+    if (res.ok) {
+      const c = await res.json()
+      setClient(c)
+      if (c.brandFont) loadGoogleFont(c.brandFont)
+    }
     setLoading(false)
   }
 
@@ -101,6 +109,37 @@ export default function ClientPage() {
               </div>
             ))}
           </div>
+
+          {/* Identidade visual (so mostra se tiver algo definido) */}
+          {(client.brandFont || (client.brandColors && client.brandColors.length > 0)) && (
+            <div style={{marginTop:20,paddingTop:20,borderTop:"1px solid #F0F0F0",display:"flex",alignItems:"center",gap:24,flexWrap:"wrap"}}>
+              {client.brandFont && (
+                <div>
+                  <div style={{fontSize:11,color:"#888",marginBottom:2}}>Tipografia</div>
+                  <div style={{fontSize:14,fontFamily:`'${client.brandFont}', sans-serif`}}>{client.brandFont}</div>
+                </div>
+              )}
+              {client.brandColors && client.brandColors.length > 0 && (
+                <div>
+                  <div style={{fontSize:11,color:"#888",marginBottom:4}}>Cores da marca</div>
+                  <div style={{display:"flex",gap:6}}>
+                    {client.brandColors.map((c, i) => (
+                      <div
+                        key={i}
+                        title={c.name ? `${c.name} (${c.hex})` : c.hex}
+                        style={{
+                          width:24,height:24,borderRadius:6,
+                          background:c.hex,
+                          border:"1px solid rgba(0,0,0,0.08)",
+                          boxShadow: c.role === "primary" ? "0 0 0 2px rgba(0,0,0,0.04)" : "none",
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Lista de campanhas */}

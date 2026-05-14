@@ -20,6 +20,20 @@ import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
+import { GOOGLE_FONTS, loadGoogleFont } from "@/lib/google-fonts"
+
+interface BrandColor {
+  hex: string
+  name?: string
+  role: "primary" | "secondary"
+}
+
+const DEFAULT_BRAND_COLORS: BrandColor[] = [
+  { hex: "#000000", role: "primary" },
+  { hex: "#FFFFFF", role: "primary" },
+  { hex: "#888888", role: "secondary" },
+  { hex: "#CCCCCC", role: "secondary" },
+]
 
 interface Client {
   id: string
@@ -29,6 +43,8 @@ interface Client {
   phone: string | null
   address: string | null
   logoUrl: string | null
+  brandFont: string | null
+  brandColors: BrandColor[] | null
 }
 
 const labelStyle: React.CSSProperties = {
@@ -74,6 +90,11 @@ export default function EditClientPage() {
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [brandFont, setBrandFont] = useState<string>("")
+  const [brandColors, setBrandColors] = useState<BrandColor[]>(DEFAULT_BRAND_COLORS)
+  const [savingBrand, setSavingBrand] = useState(false)
+  const [brandSavedAt, setBrandSavedAt] = useState<number | null>(null)
+  const brandFirstLoadRef = useRef(true)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
@@ -93,6 +114,13 @@ export default function EditClientPage() {
         setPhone(c.phone ?? "")
         setAddress(c.address ?? "")
         setLogoUrl(c.logoUrl ?? null)
+        setBrandFont(c.brandFont ?? "")
+        // brandColors do banco pode vir null (cliente antigo) ou com array
+        // de tamanho diferente. Normaliza pra 4 items garantidos.
+        const incoming = Array.isArray(c.brandColors) ? c.brandColors : []
+        const merged = DEFAULT_BRAND_COLORS.map((def, i) => incoming[i] ?? def)
+        setBrandColors(merged)
+        if (c.brandFont) loadGoogleFont(c.brandFont)
         setLoading(false)
       })
   }, [id])
@@ -105,6 +133,38 @@ export default function EditClientPage() {
       body: JSON.stringify(partial),
     })
     return res.ok
+  }
+
+  // AUTO-SAVE da identidade visual: debounced 600ms.
+  // brandFirstLoadRef evita disparar PATCH no carregamento inicial dos dados.
+  useEffect(() => {
+    if (loading) return
+    if (brandFirstLoadRef.current) { brandFirstLoadRef.current = false; return }
+
+    const handle = setTimeout(async () => {
+      setSavingBrand(true)
+      const ok = await patchClient({
+        brandFont: brandFont || null,
+        brandColors: brandColors as any,
+      })
+      setSavingBrand(false)
+      if (ok) {
+        setBrandSavedAt(Date.now())
+        setTimeout(() => setBrandSavedAt(null), 2000)
+      } else {
+        setError("Falha ao salvar identidade visual.")
+      }
+    }, 600)
+    return () => clearTimeout(handle)
+  }, [brandFont, brandColors, loading])
+
+  function updateColor(index: number, patch: Partial<BrandColor>) {
+    setBrandColors(prev => prev.map((c, i) => i === index ? { ...c, ...patch } : c))
+  }
+
+  function handleFontChange(font: string) {
+    setBrandFont(font)
+    if (font) loadGoogleFont(font)
   }
 
   async function uploadLogoFile(file: File) {
@@ -373,6 +433,64 @@ export default function EditClientPage() {
           </div>
         </form>
 
+        {/* CARD: Identidade Visual (auto-save) */}
+        <div style={{maxWidth:640,background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <div style={{fontSize:14,fontWeight:700}}>Identidade visual</div>
+            {savingBrand ? <span style={{fontSize:10,color:"#888"}}>salvando…</span>
+              : brandSavedAt ? <span style={{fontSize:10,color:"#15803d"}}>✓ salvo</span>
+              : null}
+          </div>
+          <p style={{fontSize:12,color:"#888",margin:"0 0 20px",lineHeight:1.4}}>
+            Fonte e cores da marca. Será usado como padrão ao criar textos e peças desse cliente.
+          </p>
+
+          {/* Tipografia */}
+          <div style={{marginBottom:24}}>
+            <label style={labelStyle}>Tipografia</label>
+            <div style={{display:"flex",gap:10,alignItems:"center",marginTop:8}}>
+              <select
+                value={brandFont}
+                onChange={e => handleFontChange(e.target.value)}
+                style={{...inputStyle,minWidth:220,cursor:"pointer"}}
+              >
+                <option value="">— Sem fonte definida —</option>
+                <optgroup label="Sans-serif">
+                  {GOOGLE_FONTS.filter(f => f.category === "sans").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                </optgroup>
+                <optgroup label="Serif">
+                  {GOOGLE_FONTS.filter(f => f.category === "serif").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                </optgroup>
+                <optgroup label="Display">
+                  {GOOGLE_FONTS.filter(f => f.category === "display").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                </optgroup>
+                <optgroup label="Monospace">
+                  {GOOGLE_FONTS.filter(f => f.category === "mono").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                </optgroup>
+                <optgroup label="Handwriting">
+                  {GOOGLE_FONTS.filter(f => f.category === "handwriting").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                </optgroup>
+              </select>
+            </div>
+            {brandFont && (
+              <div style={{
+                marginTop:12,padding:"14px 16px",
+                background:"#FAFAFA",border:"1px solid #E0E0E0",borderRadius:8,
+                fontFamily:`'${brandFont}', sans-serif`,
+              }}>
+                <div style={{fontSize:22,fontWeight:700,lineHeight:1.2,marginBottom:4}}>The quick brown fox</div>
+                <div style={{fontSize:14,fontWeight:400,color:"#555"}}>Jumps over the lazy dog • 1234567890</div>
+              </div>
+            )}
+          </div>
+
+          {/* Cores */}
+          <div style={{display:"flex",flexDirection:"column",gap:18}}>
+            <ColorGroup label="Cores principais" colors={brandColors} startIndex={0} updateColor={updateColor} />
+            <ColorGroup label="Cores secundárias" colors={brandColors} startIndex={2} updateColor={updateColor} />
+          </div>
+        </div>
+
         <div style={{maxWidth:640,background:"white",borderRadius:10,border:"1px solid #FCA5A5",padding:24}}>
           <div style={{fontSize:14,fontWeight:700,color:"#991B1B",marginBottom:8}}>Zona de perigo</div>
           <p style={{fontSize:12,color:"#666",margin:"0 0 16px",lineHeight:1.5}}>
@@ -398,6 +516,57 @@ export default function EditClientPage() {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Renderiza 2 slots de cor (par primary ou secondary).
+ * `startIndex` define qual par do array brandColors[] mostrar (0 ou 2).
+ */
+function ColorGroup({
+  label, colors, startIndex, updateColor,
+}: {
+  label: string
+  colors: BrandColor[]
+  startIndex: number
+  updateColor: (index: number, patch: Partial<BrandColor>) => void
+}) {
+  return (
+    <div>
+      <div style={{...{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"},marginBottom:8}}>{label}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {[0,1].map(offset => {
+          const i = startIndex + offset
+          const c = colors[i]
+          if (!c) return null
+          return (
+            <div key={i} style={{display:"flex",gap:10,alignItems:"center"}}>
+              <input
+                type="color"
+                value={c.hex}
+                onChange={e => updateColor(i, { hex: e.target.value.toUpperCase() })}
+                style={{width:44,height:36,border:"1px solid #E0E0E0",borderRadius:6,padding:2,cursor:"pointer",background:"white"}}
+              />
+              <input
+                type="text"
+                value={c.hex}
+                onChange={e => updateColor(i, { hex: e.target.value })}
+                placeholder="#000000"
+                maxLength={7}
+                style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"monospace",width:100,textTransform:"uppercase"}}
+              />
+              <input
+                type="text"
+                value={c.name ?? ""}
+                onChange={e => updateColor(i, { name: e.target.value || undefined })}
+                placeholder="Nome (opcional, ex: Verde Sicredi)"
+                style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit",flex:1}}
+              />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
