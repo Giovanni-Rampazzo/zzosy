@@ -94,8 +94,58 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
 
   for (const piece of pieces) {
     const pdata = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
-    if (!pdata || pdata.version !== 2 || !Array.isArray(pdata.layers)) continue
+    if (!pdata || pdata.version !== 2) continue
 
+    // MULTI-STEP: pdata.steps[] contem layers de cada step. Cada step
+    // precisa de seu proprio thumb (via /step-thumbnail?index=N).
+    // O thumb principal (piece.imageUrl) usa o step ATIVO.
+    const steps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
+    const isMultiStep = steps.length >= 2
+
+    if (isMultiStep) {
+      // Detecta quais steps usam o asset alterado.
+      const W = pdata.width ?? 1080
+      const H = pdata.height ?? 1080
+      const activeIdx = typeof pdata.activeStepIndex === "number" ? pdata.activeStepIndex : 0
+      let regeneratedSomething = false
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i]
+        if (!step || !Array.isArray(step.layers)) continue
+        const stepUsesAsset = step.layers.some((l: any) => l?.assetId === assetId)
+        if (!stepUsesAsset) continue
+        // Renderiza esse step com layers + bgColor proprios.
+        const pseudoStepPiece = {
+          version: 2,
+          width: W, height: H,
+          bgColor: step.bgColor ?? pdata.bgColor ?? "#ffffff",
+          layers: step.layers,
+        }
+        try {
+          const blob = await buildThumbnailFromPieceData(pseudoStepPiece, assets)
+          if (!blob) continue
+          const fd = new FormData()
+          fd.append("thumbnail", blob, `step${i}.jpg`)
+          await fetch(`/api/pieces/${piece.id}/step-thumbnail?index=${i}`, { method: "POST", body: fd })
+          regeneratedSomething = true
+          // Se eh o step ativo, tambem sobe como thumb principal.
+          if (i === activeIdx) {
+            const fdMain = new FormData()
+            fdMain.append("thumbnail", blob, "thumb.jpg")
+            await fetch(`/api/pieces/${piece.id}/thumbnail`, { method: "POST", body: fdMain })
+          }
+        } catch (e) {
+          console.warn("regen step falhou", piece.id, i, e)
+        }
+      }
+      // Se o step ativo NAO usa o asset (mas algum inativo usa), o thumb
+      // principal continua igual — nao precisamos sobrescrever.
+      if (regeneratedSomething) continue
+    }
+
+    // SINGLE-STEP (ou multi-step onde nenhum step usou o asset — improvavel):
+    // codigo original.
+    if (!Array.isArray(pdata.layers)) continue
     const usesAsset = pdata.layers.some((l: any) => l.assetId === assetId)
     if (!usesAsset) continue
 
