@@ -2335,22 +2335,61 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
       console.log("[uploadPieceThumb] thumb principal status:", r.status)
       srvLog("uploadPieceThumb-MAIN-STATUS", { status: r.status })
-    } catch (e: any) { 
+    } catch (e: any) {
       console.warn("[uploadPieceThumb] main thumb failed:", e)
       srvLog("uploadPieceThumb-MAIN-FAIL", { error: String(e?.message ?? e) })
     }
-    // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
+    // STEPS: regenera thumb pra TODOS os steps quando a peca eh multi-step.
+    // Antes, so o step ATIVO ganhava thumb novo. Os inativos ficavam com o
+    // thumb antigo (gerado quando foram ativos no passado). Resultado: editar
+    // step 1 e voltar pra apresentacao mostrava thumbs antigos pros outros
+    // steps — usuario via "todos iguais" porque o thumb nao refletia overrides.
     if (stepCountRef.current > 1) {
+      // Step ATIVO: usa o blob que ja foi gerado (capturou o canvas atual com
+      // overrides aplicados).
       const fd2 = new FormData()
       fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
       try {
         const r2 = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
           method: "POST", body: fd2, keepalive: true,
         })
-        srvLog("uploadPieceThumb-STEP-STATUS", { index: activeStepIndexRef.current, status: r2.status })
+        srvLog("uploadPieceThumb-STEP-ACTIVE-STATUS", { index: activeStepIndexRef.current, status: r2.status })
       } catch (e: any) {
-        console.warn("[uploadPieceThumb] step thumb failed:", e)
-        srvLog("uploadPieceThumb-STEP-FAIL", { error: String(e?.message ?? e) })
+        srvLog("uploadPieceThumb-STEP-ACTIVE-FAIL", { error: String(e?.message ?? e) })
+      }
+      // Steps INATIVOS: renderiza offscreen com os overrides especificos de
+      // cada step. Isso garante que cada thumb reflita o estado real do step.
+      // Le data.steps direto do banco pra ter o snapshot mais recente.
+      try {
+        const r = await fetch(`/api/pieces/${pId}`, { cache: "no-store" })
+        if (r.ok) {
+          const fresh = await r.json()
+          const data = typeof fresh.data === "string" ? JSON.parse(fresh.data) : fresh.data
+          const steps: any[] = Array.isArray(data?.steps) ? data.steps : []
+          srvLog("uploadPieceThumb-INACTIVE-START", { totalSteps: steps.length, activeIdx: activeStepIndexRef.current })
+          for (let i = 0; i < steps.length; i++) {
+            if (i === activeStepIndexRef.current) continue // ja subiu acima
+            const stepData = steps[i]
+            if (!stepData || !Array.isArray(stepData.layers)) continue
+            try {
+              const stepBlob = await renderStepOffscreenToBlob(stepData)
+              if (!stepBlob) {
+                srvLog("uploadPieceThumb-INACTIVE-NULL", { index: i })
+                continue
+              }
+              const fdStep = new FormData()
+              fdStep.append("thumbnail", stepBlob, `step${i}.png`)
+              const rStep = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${i}`, {
+                method: "POST", body: fdStep, keepalive: true,
+              })
+              srvLog("uploadPieceThumb-INACTIVE-STATUS", { index: i, status: rStep.status, bytes: stepBlob.size })
+            } catch (e: any) {
+              srvLog("uploadPieceThumb-INACTIVE-FAIL", { index: i, error: String(e?.message ?? e) })
+            }
+          }
+        }
+      } catch (e: any) {
+        srvLog("uploadPieceThumb-INACTIVE-FETCH-FAIL", { error: String(e?.message ?? e) })
       }
     }
   }
