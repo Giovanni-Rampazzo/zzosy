@@ -15,13 +15,49 @@ function colorToHex(color: any): string {
   return "#" + [rr, gg, bb].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("")
 }
 
-function collectAllLayers(layers: any[]): any[] {
-  const result: any[] = []
+// Retorna folhas (layers nao-folder) com:
+//  - parentHidden: folder ancestral marcado hidden no PSD ⇒ SKIP no import (fix #2)
+//  - inheritedRawMask: se algum folder ancestral tem raster/vector mask, herda
+//    pros filhos pra o editor recortar igual ao PS (fix #3). Em folders aninhados
+//    com mask em ambos niveis, o mais interno prevalece (simplificacao MVP — caso
+//    raro; nao ocorre no PSD-piloto do Sicredi).
+type RawMaskRef = { kind: "raster" | "vector"; data: any }
+function collectAllLayers(
+  layers: any[],
+  parentHidden = false,
+  inheritedRawMask: RawMaskRef | null = null,
+): Array<{ layer: any; inheritedRawMask: RawMaskRef | null }> {
+  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null }> = []
   for (const layer of layers) {
-    if (layer.children?.length) result.push(...collectAllLayers(layer.children))
-    else result.push(layer)
+    const effectiveHidden = parentHidden || layer.hidden === true
+    if (effectiveHidden) continue // SKIP filho de folder hidden
+
+    if (layer.children?.length) {
+      let folderMask: RawMaskRef | null = inheritedRawMask
+      if (layer.mask?.canvas) {
+        folderMask = { kind: "raster", data: layer.mask }
+      } else if ((layer as any).vectorMask?.paths?.length) {
+        folderMask = { kind: "vector", data: (layer as any).vectorMask }
+      }
+      result.push(...collectAllLayers(layer.children, effectiveHidden, folderMask))
+    } else {
+      result.push({ layer, inheritedRawMask })
+    }
   }
   return result
+}
+
+function buildRasterAssetMask(m: any) {
+  const mLeft = m.left ?? 0
+  const mTop = m.top ?? 0
+  const mRight = m.right ?? (mLeft + (m.canvas as HTMLCanvasElement).width)
+  const mBottom = m.bottom ?? (mTop + (m.canvas as HTMLCanvasElement).height)
+  const dataUrl = (m.canvas as HTMLCanvasElement).toDataURL("image/png")
+  return {
+    type: "raster" as const,
+    enabled: !m.disabled,
+    raster: { dataUrl, posX: mLeft, posY: mTop, width: mRight - mLeft, height: mBottom - mTop },
+  }
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -57,9 +93,10 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       const psd = readPsd(buffer, { skipLayerImageData: false, skipCompositeImageData: false, skipThumbnail: true })
 
       setProgress("Extraindo layers...")
-      const allLayers = collectAllLayers(psd.children ?? [])
+      const allLayerEntries = collectAllLayers(psd.children ?? [])
       const assets: any[] = []
       const imageBlobs: Blob[] = []
+      const folderMaskCache = new Map<any, any>() // raw mask obj → asset mask (deduplica entre filhos do mesmo folder)
       let zIndex = 0
 
       // Smart Objects: extrai linkedFiles do PSD (bytes originais embeddados)
@@ -107,9 +144,14 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         guidToIndex.set(guid, idx)
       }
 
-      for (const layer of allLayers) {
+      for (const { layer, inheritedRawMask } of allLayerEntries) {
         const name = (layer.name ?? "").trim()
-        if (!name || name === "Background") { zIndex++; continue }
+        // Fix #6: filtra a "Background" auto-criada pelo PS (raster top-level
+        // sem placedLayer), mas deixa passar Smart Objects intencionais que o
+        // designer nomeou de "Background" (ex: PSD do Sicredi tem um SO assim
+        // dentro de Design System que eh o painel verde inferior inteiro).
+        const isSmartObject = !!(layer as any).placedLayer
+        if (!name || (name === "Background" && !isSmartObject)) { zIndex++; continue }
 
         const left = layer.left ?? 0
         const top = layer.top ?? 0
@@ -124,18 +166,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // Raster mask: layer.mask.canvas tem o grayscale (preto = transparente).
         if (layer.mask?.canvas) {
           try {
-            const mLeft = layer.mask.left ?? 0
-            const mTop = layer.mask.top ?? 0
-            const mRight = layer.mask.right ?? (mLeft + (layer.mask.canvas as HTMLCanvasElement).width)
-            const mBottom = layer.mask.bottom ?? (mTop + (layer.mask.canvas as HTMLCanvasElement).height)
-            const mWidth = mRight - mLeft
-            const mHeight = mBottom - mTop
-            const dataUrl = (layer.mask.canvas as HTMLCanvasElement).toDataURL("image/png")
-            assetMask = {
-              type: "raster" as const,
-              enabled: !layer.mask.disabled,
-              raster: { dataUrl, posX: mLeft, posY: mTop, width: mWidth, height: mHeight },
-            }
+            assetMask = buildRasterAssetMask(layer.mask)
           } catch (e) { console.warn("[psd-mask] falha lendo raster mask de", name, e) }
         }
         // Vector mask: layer.vectorMask tem paths (objetos com knots/curves).
@@ -183,6 +214,22 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             clipping: true,
           }
         }
+        // Fix #3: se ainda nao tem mask propria, herda a do folder ancestral.
+        // Cacheia pra nao re-gerar dataUrl pra cada filho do mesmo folder.
+        if (!assetMask && inheritedRawMask) {
+          try {
+            let cached = folderMaskCache.get(inheritedRawMask.data)
+            if (!cached) {
+              if (inheritedRawMask.kind === "raster" && inheritedRawMask.data?.canvas) {
+                cached = buildRasterAssetMask(inheritedRawMask.data)
+              }
+              // Folders com vector mask sao raros e ainda nao aparecem no piloto.
+              // Quando precisar, reusar a logica do block acima.
+              if (cached) folderMaskCache.set(inheritedRawMask.data, cached)
+            }
+            if (cached) assetMask = cached
+          } catch (e) { console.warn("[psd-mask] falha aplicando inherited mask em", name, e) }
+        }
 
         if (layer.text) {
           const td = layer.text
@@ -192,6 +239,20 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           const defFontSize = defStyle.fontSize ?? 48
           const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
           const defWeight = (defStyle.fauxBold || defFontName.toLowerCase().includes("bold")) ? "bold" : "normal"
+
+          // Fix #1: ag-psd retorna fontSize NO ESPACO DO TEXTO (antes da transform).
+          // A transform 6-elem [a,b,c,d,e,f] aplica scale/rot/translate; pra fontSize
+          // visual real, multiplica pelo magnitude de [a,b] (scaleX) ~= [c,d] (scaleY).
+          // Sem isso, "Seguro Viagem" sai com fontSize 788 (cru) em vez de 189 (visual).
+          const tform: number[] | undefined = td.transform
+          let textScale = 1
+          if (tform && tform.length >= 4) {
+            const sx = Math.hypot(tform[0] ?? 1, tform[1] ?? 0)
+            const sy = Math.hypot(tform[2] ?? 0, tform[3] ?? 1)
+            const avg = (sx + sy) / 2
+            if (Number.isFinite(avg) && avg > 0) textScale = avg
+          }
+          const scaledDefFontSize = defFontSize * textScale
 
           let spans: any[] = []
           const runs = td.styleRuns ?? []
@@ -203,22 +264,24 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               if (!segment) { cursor += len; continue }
               const rs = run.style ?? {}
               const fontName = rs.font?.name ?? defFontName
-              const fontSize = rs.fontSize ?? defFontSize
+              const fontSize = (rs.fontSize ?? defFontSize) * textScale
               const color = rs.fillColor ? colorToHex(rs.fillColor) : defColor
               const fontWeight = (rs.fauxBold || fontName.toLowerCase().includes("bold")) ? "bold" : defWeight
               spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontFamily: fontName } })
               cursor += len
             }
             if (cursor < rawText.length) {
-              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(defFontSize), fontWeight: defWeight, fontFamily: defFontName } })
+              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontFamily: defFontName } })
             }
           } else {
-            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(defFontSize), fontWeight: defWeight, fontFamily: defFontName } }]
+            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontFamily: defFontName } }]
           }
 
-          const bbox = td.boundingBox
-          const textWidth = bbox ? Math.round(bbox.right - bbox.left) : Math.max(width, 200)
-          const textHeight = bbox ? Math.round(bbox.bottom - bbox.top) : height
+          // Fix #1 (cont): td.boundingBox vem em PONTOS no espaco PRE-transform —
+          // pode dar valores absurdos (5000+). layer.right-left/bottom-top ja eh o
+          // bbox visual em pixels no canvas, sempre correto. Usamos esse direto.
+          const textWidth = width
+          const textHeight = height
 
           // Monta lastOverride: BOX (width/height) + CHARACTER (cor, fonte, etc).
           // Se ha multiplos spans, gera styles per-caractere pra preservar formatacao
@@ -227,7 +290,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             width: textWidth,
             height: textHeight,
             fontFamily: defFontName,
-            fontSize: Math.round(defFontSize),
+            fontSize: Math.round(scaledDefFontSize),
             fontWeight: defWeight,
             fill: defColor,
             charSpacing: 0,
