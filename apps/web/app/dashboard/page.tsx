@@ -8,7 +8,7 @@ import { ClientEditModal } from "@/components/clients/ClientEditModal"
 
 interface Client {
   id: string; name: string; email: string | null; contact: string | null
-  phone?: string | null; address?: string | null
+  phone?: string | null; address?: string | null; logoUrl?: string | null
   _count: { campaigns: number }; createdAt: string
 }
 
@@ -87,7 +87,7 @@ export default function DashboardPage() {
               {clients.map(c => (
                 <tr key={c.id} style={{borderBottom:"1px solid #f0f0f0"}}>
                   <td style={{padding:"8px 8px",cursor:"pointer"}} onClick={() => router.push(`/clients/${c.id}`)}>
-                    <RowThumb fallbackText={c.name} fallbackBg={colorFromString(c.name)} />
+                    <RowThumb src={c.logoUrl} alt={c.name} fallbackText={c.name} fallbackBg={colorFromString(c.name)} />
                   </td>
                   <td style={{padding:"12px 16px",fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={() => router.push(`/clients/${c.id}`)}>{c.name}</td>
                   <td style={{padding:"12px 16px",fontSize:13,color:"#555"}}>{c.contact ?? "—"}</td>
@@ -105,7 +105,7 @@ export default function DashboardPage() {
                         <>
                           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
                           <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}/edit`)}>Editar</Button>
-                          <Button variant="primary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
+                          <Button variant="view" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
                         </>
                       )}
                     </div>

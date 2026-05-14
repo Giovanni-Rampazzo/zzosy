@@ -14,6 +14,8 @@
  *  - warning: laranja. Atencao, avisos.
  *  - info:    azul. Duplicar, copiar, acoes intermediarias.
  *  - ghost:   cinza bem claro. Acoes secundarias/menos importantes.
+ *  - view:    amarelo (stroke amarelo, fill branco, texto preto). PADRAO pra
+ *             botoes "Ver" — navegar/abrir item, em todo o sistema.
  *
  * REGRA: todo botao com fill branco DEVE ter borda visivel (stroke). Nunca botao
  * sem borda em cima de fundo branco — fica "perdido". A unica excecao e o primary
@@ -25,7 +27,7 @@ import { ButtonHTMLAttributes } from "react"
 import { clsx } from "clsx"
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "dark" | "danger" | "success" | "warning" | "info" | "ghost" | "link"
+  variant?: "primary" | "secondary" | "dark" | "danger" | "success" | "warning" | "info" | "ghost" | "link" | "view"
   size?: "sm" | "md" | "lg"
   loading?: boolean
   /**
@@ -51,6 +53,7 @@ export function Button({ variant = "secondary", size = "md", loading, className,
     warning:   "bg-white text-[#111111] border-2 border-[#d97706] hover:bg-[#fffbeb]",
     info:      "bg-white text-[#111111] border-2 border-[#2563eb] hover:bg-[#eff6ff]",
     ghost:     "bg-white text-[#111111] border-2 border-[#D0D0D0] hover:border-[#888888]",
+    view:      "bg-white text-[#111111] border-2 border-[#F5C400] hover:bg-[#FFFBE6]",
     link:      "bg-transparent text-[#F5C400] border-0 hover:text-[#e0b000] underline-offset-2",
   }
   const sizes = {

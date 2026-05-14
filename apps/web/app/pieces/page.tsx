@@ -289,7 +289,7 @@ function PiecesContent() {
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.width}×{p.height}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.dpi}</td>
                     <td className="px-4 py-3"><StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} /></td>
-                    <td className="px-4 py-3 text-right"><Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button></td>
+                    <td className="px-4 py-3 text-right"><Button variant="view" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button></td>
                   </tr>
                 ))}
               </tbody>
