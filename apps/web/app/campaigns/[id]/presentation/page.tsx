@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
-import { useRouter, useParams } from "next/navigation"
+import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { SlideCover, SlideCode, SlideSegment, SlidePiece, SlideThanks } from "@/components/presentation/Slides"
@@ -56,6 +56,11 @@ function groupPiecesBySegment(pieces: Piece[]): Array<{ segment: string | null; 
 export default function PresentationPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Param "t" muda toda vez que o user volta do editor (timestamp na URL).
+  // Adicionado nas deps do useEffect pra forcar refetch nessa transicao,
+  // mesmo se a pagina estiver cacheada pelo App Router.
+  const t = searchParams.get("t")
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,7 +70,7 @@ export default function PresentationPage() {
     async function load() {
       try {
         const ts = Date.now()
-        console.log("[PRESENTATION] mount/refetch", new Date().toISOString())
+        console.log("[PRESENTATION] mount/refetch t=", t, new Date().toISOString())
         const [c, p] = await Promise.all([
           fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
           fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
@@ -107,7 +112,7 @@ export default function PresentationPage() {
       window.removeEventListener("focus", refetch)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [id])
+  }, [id, t])
 
   // Scroll automatico pro slide indicado no hash (#piece-{id}).
   // Acontece DEPOIS de pieces serem renderizadas (loading=false), pois antes

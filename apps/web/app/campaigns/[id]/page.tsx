@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
@@ -43,6 +43,8 @@ interface Piece {
 export default function CampaignOverviewPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const t = searchParams.get("t")
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
@@ -106,7 +108,7 @@ export default function CampaignOverviewPage() {
     setLoading(false)
   }
 
-  useEffect(() => { loadAll() }, [id])
+  useEffect(() => { loadAll() }, [id, t])
 
   // Sugestoes de codigo (datalist)
   useEffect(() => {

@@ -3600,13 +3600,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
           // o botao volta pra apresentacao em vez da pagina geral da campanha.
           // Anexa #piece-{id} pra que a pagina role automaticamente ate o slide
           // de origem (visualmente mais claro: user volta exatamente onde estava).
-          const dest = from === "presentation"
-            ? `/campaigns/${campaignId}/presentation${isPieceMode && pieceId ? `#piece-${pieceId}` : ""}`
+          // Adiciona ?t={ts} pra forcar useEffect na pagina destino re-rodar.
+          // Sem isso, App Router mantem a pagina cacheada e useEffect com [id]
+          // nao re-disparava (mesmo id) -> previews stale.
+          const ts = Date.now()
+          const sep = from === "presentation" ? "?" : "?"
+          const hash = from === "presentation" && isPieceMode && pieceId ? `#piece-${pieceId}` : ""
+          const base = from === "presentation"
+            ? `/campaigns/${campaignId}/presentation`
             : `/campaigns/${campaignId}`
+          const dest = `${base}${sep}t=${ts}${hash}`
           const go = () => {
-            // CRITICO: router.refresh() invalida o Router Cache do Next antes
-            // de navegar. Sem isso, ao voltar pra campanha/presentation o
-            // Next podia servir versao cacheada sem os thumbs novos.
             router.refresh()
             router.push(dest)
           }
