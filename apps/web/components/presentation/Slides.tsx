@@ -354,26 +354,25 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
 
       {/* CONTEUDO: imagem (e legenda, se houver ou se usuario adicionar) */}
       {showCard ? (
-        // Layout split: peca a esquerda ~2/3, legenda a direita ~1/3.
-        // alignItems start: card de legenda ocupa apenas a altura necessaria
-        // pro conteudo (em vez de esticar 100% do slide).
+        // Layout flex centralizado: peca toma APENAS o espaco necessario
+        // (width auto + max-height 100%). Legenda a direita com width fixa.
+        // Antes usava grid 2fr/1fr — pecas verticais (1080x1440) ficavam
+        // com muito espaco vazio lateral porque a coluna 2fr era larga
+        // mas a peca portrait so usa parte do espaco.
         <div style={{
           position: "absolute", inset: 0,
-          display: "grid", gridTemplateColumns: "2fr 1fr",
+          display: "flex", alignItems: "center", justifyContent: "center",
           padding: "10% 3% 8% 3%",
-          gap: "2.5%",
-          alignItems: "start",
+          gap: "3%",
         }}>
-          {/* Peca */}
+          {/* Peca: width auto, maxWidth respeitando a legenda */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "center",
-            height: "100%", minHeight: 0,
+            height: "100%", maxWidth: "62%", minHeight: 0,
           }}>
             {renderPieceVisual()}
           </div>
-          {/* Card legenda — header amarelo em cima, corpo branco embaixo.
-              Altura segue o conteudo: card pequeno pra legenda curta,
-              cresce quando o texto eh longo (limite: 100% do slide). */}
+          {/* Card legenda — header amarelo em cima, corpo branco embaixo. */}
           <div style={{
             background: "white",
             borderRadius: RADIUS,
@@ -381,8 +380,10 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             border: "1px solid rgba(0,0,0,0.05)",
             display: "flex", flexDirection: "column",
             position: "relative",
+            width: "32%", flexShrink: 0,
             maxHeight: "100%",
             overflow: "hidden",
+            alignSelf: "flex-start",
           }}
           onClick={(e) => { if (editable) e.stopPropagation() }}
           >
