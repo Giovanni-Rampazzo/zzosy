@@ -37,7 +37,7 @@ export function RowThumb({ src, alt, fallbackText, fallbackBg, size = 56, rounde
 
   if (src) {
     return (
-      <div style={styleBase}>
+      <div style={{...styleBase, border: "none", background: "transparent"}}>
         <img src={src} alt={alt ?? ""} style={{ width: "100%", height: "100%", objectFit: fit }} />
       </div>
     )

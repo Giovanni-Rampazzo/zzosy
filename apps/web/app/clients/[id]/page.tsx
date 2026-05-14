@@ -80,7 +80,7 @@ export default function ClientPage() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
             <div style={{display:"flex",alignItems:"center",gap:16}}>
               {client.logoUrl ? (
-                <div style={{width:56,height:56,borderRadius:8,border:"1px solid #E0E0E0",background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",padding:4,flexShrink:0}}>
+                <div style={{width:56,height:56,borderRadius:8,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",padding:4,flexShrink:0}}>
                   <img src={client.logoUrl} alt={client.name} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
                 </div>
               ) : null}
