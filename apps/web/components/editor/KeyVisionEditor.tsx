@@ -2274,38 +2274,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const TARGET = 2400
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
 
-      // CRITICO: salva e reseta o viewportTransform ANTES do toDataURL.
-      // Sem isso, o zoom/pan do user no editor (ex: 50% zoom out) eh
-      // aplicado ao thumb — objetos posicionados pelo viewport ficam
-      // 'fora' e nao aparecem na imagem exportada. Esse era o bug raiz
-      // de 'preview nao mostra o que esta no canvas'.
-      const savedVPT = fc.viewportTransform ? [...fc.viewportTransform] : null
-      const identityVPT = [1, 0, 0, 1, 0, 0]
-
-      // Esconde temporariamente o bleed overlay (não deve aparecer no thumb)
+      // Esconde temporariamente o bleed overlay
       const bleedOverlays = fc.getObjects().filter((o: any) => o.__isBleedOverlay)
       bleedOverlays.forEach((o: any) => { o.visible = false })
-
       try {
-        // Reset viewport pra identidade — toDataURL captura o canvas em
-        // coordenadas reais, sem zoom/pan aplicado.
-        fc.setViewportTransform(identityVPT)
-        fc.requestRenderAll()
-
+        // toDataURL captura considerando viewportTransform atual.
+        // Multiplier escala o resultado final.
         const dataUrl = fc.toDataURL({
           format: "png",
           multiplier: thumbScale,
           enableRetinaScaling: false,
-          // left/top/width/height: forca a area exportada a ser exatamente
-          // o canvas logico (0,0 ate w,h), ignorando qualquer offset visual.
-          left: 0, top: 0, width: w, height: h,
         })
         const blob = await (await fetch(dataUrl)).blob()
         console.log("[thumb] gerado", blob.size, "bytes", `${Math.round(w * thumbScale)}x${Math.round(h * thumbScale)}`)
         return blob
       } finally {
-        // Restaura viewportTransform original (volta zoom/pan do user)
-        if (savedVPT) fc.setViewportTransform(savedVPT)
         bleedOverlays.forEach((o: any) => { o.visible = true })
         fc.requestRenderAll()
       }
