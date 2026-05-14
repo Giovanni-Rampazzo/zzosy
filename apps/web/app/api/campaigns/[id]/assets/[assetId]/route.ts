@@ -93,22 +93,67 @@ export async function PUT(req: Request, ctx: Ctx) {
     for (const p of pieces) {
       let pdata: any = null
       try { pdata = typeof p.data === "string" ? JSON.parse(p.data as string) : p.data } catch {}
-      if (!pdata || !Array.isArray(pdata.layers)) continue
-      // Se a peca usa esse asset (em qualquer layer), invalida o thumb
-      const usesAsset = pdata.layers.some((l: any) => l?.assetId === assetId)
-      if (usesAsset) pieceInvalidateThumb.push(p.id)
+      if (!pdata) continue
       let touched = false
-      const newLayers = pdata.layers.map((l: any) => {
-        if (l?.assetId === assetId && l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
-          const migrated = migrateStyles(oldText, newText, l.overrides.styles)
+      let usesAsset = false
+
+      // SINGLE-STEP: layers no topo de pdata
+      if (Array.isArray(pdata.layers)) {
+        if (pdata.layers.some((l: any) => l?.assetId === assetId)) usesAsset = true
+        const newLayers = pdata.layers.map((l: any) => {
+          if (l?.assetId === assetId && l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
+            const migrated = migrateStyles(oldText, newText, l.overrides.styles)
+            touched = true
+            return { ...l, overrides: { ...l.overrides, styles: migrated } }
+          }
+          return l
+        })
+        pdata.layers = newLayers
+      }
+
+      // MULTI-STEP: pdata.steps[].layers — itera CADA step e invalida step.imageUrl
+      // tambem. Sem isso, peca com 4 steps que usa esse asset continua com thumbs
+      // velhos em todos os steps mesmo depois de mudar o texto no asset.
+      if (Array.isArray(pdata.steps)) {
+        pdata.steps = pdata.steps.map((step: any) => {
+          if (!step || !Array.isArray(step.layers)) return step
+          if (step.layers.some((l: any) => l?.assetId === assetId)) usesAsset = true
+          const newStepLayers = step.layers.map((l: any) => {
+            if (l?.assetId === assetId && l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
+              const migrated = migrateStyles(oldText, newText, l.overrides.styles)
+              touched = true
+              return { ...l, overrides: { ...l.overrides, styles: migrated } }
+            }
+            return l
+          })
+          // Se este step usa o asset, invalida imageUrl/thumbnailUrl do step.
+          const stepUsesAsset = step.layers.some((l: any) => l?.assetId === assetId)
+          return {
+            ...step,
+            layers: newStepLayers,
+            ...(stepUsesAsset ? { imageUrl: null, thumbnailUrl: null } : {}),
+          }
+        })
+        // Se algum step usa o asset, considera que data mudou (precisa salvar).
+        if (pdata.steps.some((s: any) => Array.isArray(s?.layers) && s.layers.some((l: any) => l?.assetId === assetId))) {
           touched = true
-          return { ...l, overrides: { ...l.overrides, styles: migrated } }
         }
-        return l
-      })
+      }
+
+      if (usesAsset) pieceInvalidateThumb.push(p.id)
       if (touched) {
-        const newData = { ...pdata, layers: newLayers }
-        pieceUpdates.push({ id: p.id, data: JSON.stringify(newData) })
+        pieceUpdates.push({ id: p.id, data: JSON.stringify(pdata) })
+      } else if (usesAsset) {
+        // Mesmo sem styles per-char pra migrar, peca usa o asset — precisa
+        // invalidar steps[].imageUrl pra forcar regen na proxima abertura.
+        if (Array.isArray(pdata.steps)) {
+          pdata.steps = pdata.steps.map((step: any) => {
+            if (!step || !Array.isArray(step.layers)) return step
+            const stepUsesAsset = step.layers.some((l: any) => l?.assetId === assetId)
+            return stepUsesAsset ? { ...step, imageUrl: null, thumbnailUrl: null } : step
+          })
+          pieceUpdates.push({ id: p.id, data: JSON.stringify(pdata) })
+        }
       }
     }
   }
