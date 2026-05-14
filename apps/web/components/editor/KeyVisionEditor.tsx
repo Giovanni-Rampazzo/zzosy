@@ -2181,40 +2181,87 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             sfc.add(fimg)
           } catch (e) { /* skip */ }
         } else if (asset.type === "TEXT") {
-          // Reconstroi text a partir do content + overrides
-          const content = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
-          const spans = Array.isArray(content) ? content : []
+          // CRITICO: replica EXATAMENTE a logica de addAssetToCanvas pra
+          // garantir paridade visual entre editor e thumb. Antes essa fn
+          // tinha uma versao simplificada que ignorava:
+          // 1. Consolidacao de scaleX/scaleY no fontSize
+          // 2. initDimensions() apos criacao
+          // 3. lastOverride do asset (template visual)
+          // 4. spansToTextboxData (extracao correta do texto a partir de spans)
+          // Resultado: texto saia rotacionado/cortado/desalinhado no thumb.
+          const spans = (() => {
+            const c = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+            return Array.isArray(c) ? c : []
+          })()
+          // Reconstroi texto a partir de spans (preserva line breaks via \n).
           const text = spans.map((s: any) => s.text ?? "").join("")
-          const firstStyle = spans[0]?.style ?? {}
-          // CRITICO: width DO TEXTO precisa ser escalada pelo mesmo 'scale' do
-          // canvas offscreen. Sem isso, o textbox excede o canvas e fica cortado.
-          // fontSize idem.
-          const baseFontSize = overrides.fontSize ?? firstStyle.fontSize ?? 80
+          // Default style: usa o style do PRIMEIRO span. Cobre fontSize/fontFamily/color base.
+          const def: any = spans[0]?.style ?? {}
+          const layerOv: any = layer?.overrides
+          const assetTpl: any = ((asset as any).lastOverride && typeof (asset as any).lastOverride === "object")
+            ? (asset as any).lastOverride
+            : null
+          const ov: any = layerOv ?? assetTpl ?? null
+          // Consolida scaleX/scaleY no fontSize/width quando != 1 (Photoshop-style).
+          // Sem isso, scaleX/scaleY multiplicariam visualmente o texto E o scale do
+          // canvas offscreen — resultando em texto gigante/torto.
+          let effScaleX = layer.scaleX ?? 1
+          let effScaleY = layer.scaleY ?? 1
+          let effWidth = layer.width ?? 400
+          let effFontSize = ov?.fontSize ?? def.fontSize ?? 80
+          let effStyles = ov?.styles
+          const needsConsolidation = Math.abs(effScaleX - 1) > 0.001 || Math.abs(effScaleY - 1) > 0.001
+          if (needsConsolidation) {
+            effFontSize = effFontSize * effScaleY
+            effWidth = effWidth * effScaleX
+            if (effStyles && typeof effStyles === "object") {
+              const newStyles: any = {}
+              for (const lineKey of Object.keys(effStyles)) {
+                newStyles[lineKey] = {}
+                for (const colKey of Object.keys(effStyles[lineKey])) {
+                  const cs = { ...effStyles[lineKey][colKey] }
+                  if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * effScaleY
+                  newStyles[lineKey][colKey] = cs
+                }
+              }
+              effStyles = newStyles
+            }
+            effScaleX = 1
+            effScaleY = 1
+          }
+          // Agora aplica o scale do canvas offscreen (escala TUDO uniformemente).
           const tb = new Textbox(text || asset.label, {
-            left, top, angle,
-            fontFamily: overrides.fontFamily ?? firstStyle.fontFamily ?? "Arial",
-            fontSize: baseFontSize * scale,
-            fill: overrides.fill ?? firstStyle.color ?? "#111111",
-            width: (layer.width ?? 400) * scale,
-            textAlign: overrides.textAlign ?? "left",
+            left: (layer.posX ?? 0) * scale,
+            top: (layer.posY ?? 0) * scale,
+            angle: layer.rotation ?? 0,
+            scaleX: effScaleX,
+            scaleY: effScaleY,
+            width: effWidth * scale,
+            fontSize: effFontSize * scale,
+            fontFamily: ov?.fontFamily ?? def.fontFamily ?? "Arial",
+            fontWeight: ov?.fontWeight ?? def.fontWeight ?? "normal",
+            fill: ov?.fill ?? def.color ?? "#111111",
           })
-          if (overrides.styles) {
-            // CRITICO: escala fontSize per-char tambem. O objeto styles tem
-            // fontSize absoluto por caractere. Sem aplicar scale, ficam
-            // gigantes no canvas offscreen (que foi reduzido por scale).
-            // Bug sintomatico: 'Step 2 e 3 aparecem gigantes na apresentacao'.
+          if (ov?.charSpacing !== undefined) tb.set("charSpacing", ov.charSpacing)
+          if (ov?.lineHeight !== undefined) tb.set("lineHeight", ov.lineHeight)
+          if (ov?.textAlign !== undefined) tb.set("textAlign", ov.textAlign)
+          if (effStyles && Object.keys(effStyles).length > 0) {
+            // Aplica scale tambem nos fontSize per-char do styles ja consolidado.
             const scaledStyles: any = {}
-            const origStyles = overrides.styles
-            for (const lineKey of Object.keys(origStyles)) {
+            for (const lineKey of Object.keys(effStyles)) {
               scaledStyles[lineKey] = {}
-              for (const colKey of Object.keys(origStyles[lineKey])) {
-                const cs = { ...origStyles[lineKey][colKey] }
+              for (const colKey of Object.keys(effStyles[lineKey])) {
+                const cs = { ...effStyles[lineKey][colKey] }
                 if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
                 scaledStyles[lineKey][colKey] = cs
               }
             }
             tb.set("styles", scaledStyles)
           }
+          // CRITICO: initDimensions recalcula altura do textbox baseado no
+          // fontSize atual. Sem isso, Fabric pode renderizar o texto com
+          // baseline/altura errados — exatamente o sintoma 'texto desalinhado'.
+          if ((tb as any).initDimensions) (tb as any).initDimensions()
           sfc.add(tb)
         }
       }
