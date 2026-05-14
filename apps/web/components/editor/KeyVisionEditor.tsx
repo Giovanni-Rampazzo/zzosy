@@ -2361,7 +2361,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
     const fd = new FormData()
     fd.append("thumbnail", blob, "thumb.png")
     try {
-      const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
+      // SEM keepalive: o navegador limita body de keepalive em ~64KB.
+      // Thumbs costumam passar disso (70+ KB). Sem keepalive precisamos
+      // garantir que await termina antes de window.location.href navegar
+      // (responsabilidade do caller — Voltar handler ja faz isso).
+      const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd })
       console.log("[uploadPieceThumb] thumb principal status:", r.status)
       srvLog("uploadPieceThumb-MAIN-STATUS", { status: r.status })
     } catch (e: any) {
@@ -2374,7 +2378,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
       try {
         const r2 = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
-          method: "POST", body: fd2, keepalive: true,
+          method: "POST", body: fd2,
         })
         srvLog("uploadPieceThumb-STEP-STATUS", { index: activeStepIndexRef.current, status: r2.status })
       } catch (e: any) {
