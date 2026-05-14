@@ -1139,7 +1139,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
                   syncLineHeightFromLeading(created)
                 }
                 if (layer.overrides.styles !== undefined) {
-                  created.set("styles", layer.overrides.styles)
+                  // DEEP CLONE: sem isso, o objeto styles vira REFERENCIA
+                  // compartilhada entre o snapshot do step inativo e o objeto
+                  // Fabric no canvas. Fabric muta styles direto ao editar texto,
+                  // entao o snapshot inativo tambem mudava -> overrides
+                  // ficavam iguais em todos os steps.
+                  created.set("styles", JSON.parse(JSON.stringify(layer.overrides.styles)))
                   if (created.initDimensions) created.initDimensions()
                 }
                 ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
@@ -2193,7 +2198,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             width: (layer.width ?? 400) * scale,
             textAlign: overrides.textAlign ?? "left",
           })
-          if (overrides.styles) tb.set("styles", overrides.styles)
+          if (overrides.styles) tb.set("styles", JSON.parse(JSON.stringify(overrides.styles)))
           sfc.add(tb)
         }
       }
@@ -2403,7 +2408,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             }
             // Styles per-char locais da peca. Outras pecas/matriz nao sao afetadas.
             if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
+              layer.overrides.styles = JSON.parse(JSON.stringify(o.styles))
             }
           }
           return layer
@@ -2522,7 +2527,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               layer.overrides.leadingPt = (o as any).leadingPt
             }
             if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
+              layer.overrides.styles = JSON.parse(JSON.stringify(o.styles))
             }
           }
           return layer
@@ -2610,7 +2615,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         if ((o as any).fill !== undefined) layer.overrides.fill = (o as any).fill
         if ((o as any).fontSize !== undefined) layer.overrides.fontSize = (o as any).fontSize
         if ((o as any).fontFamily !== undefined) layer.overrides.fontFamily = (o as any).fontFamily
-        if ((o as any).styles !== undefined) layer.overrides.styles = (o as any).styles
+        if ((o as any).styles !== undefined) layer.overrides.styles = JSON.parse(JSON.stringify((o as any).styles))
         if ((o as any).leadingPt !== undefined) layer.overrides.leadingPt = (o as any).leadingPt
         if ((o as any).textAlign !== undefined) layer.overrides.textAlign = (o as any).textAlign
         if (o.__mask) layer.mask = o.__mask
@@ -2945,7 +2950,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             }
             // Styles per-char locais da peca. Outras pecas/matriz nao afetadas.
             if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
+              layer.overrides.styles = JSON.parse(JSON.stringify(o.styles))
             }
           }
           return layer
@@ -3078,7 +3083,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               layer.overrides.leadingPt = (o as any).leadingPt
             }
             if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
+              layer.overrides.styles = JSON.parse(JSON.stringify(o.styles))
             }
           }
           return layer
