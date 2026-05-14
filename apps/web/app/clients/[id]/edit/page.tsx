@@ -7,12 +7,14 @@
  * historico, configs).
  *
  * Contem:
- *  - Slot de logo (upload, trocar, apagar)
- *  - Form com 5 campos (name, contact, email, phone, address)
- *  - Zona de perigo: apagar cliente com confirmacao dupla
+ *  - Slot de logo (upload, trocar, apagar) com AUTO-SAVE — toda mudanca
+ *    no logo dispara PATCH imediato, sem precisar clicar Salvar.
+ *  - Form de campos texto (name, contact, email, phone, address) com
+ *    Salvar/Cancelar fixados no TOPO do card (alinhados a direita).
+ *  - Zona de perigo: apagar cliente com confirmacao dupla.
  *
- * Upload de logo usa /api/upload (data URL base64 ate ter R2).
- * Aceita PNG/JPG/SVG/WEBP ate 2MB.
+ * Upload de logo: /api/upload (base64 data URL). Aceita PNG/JPG/SVG/WEBP
+ * ate 5MB. Coluna no banco e LONGTEXT (4GB).
  */
 import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
@@ -47,8 +49,14 @@ const inputStyle: React.CSSProperties = {
   background: "white",
 }
 
-const MAX_LOGO_BYTES = 2 * 1024 * 1024
+const MAX_LOGO_BYTES = 5 * 1024 * 1024  // 5MB (aumentado de 2MB)
 const ACCEPTED_LOGO_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"]
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export default function EditClientPage() {
   const { id } = useParams<{ id: string }>()
@@ -69,6 +77,8 @@ export default function EditClientPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [savingLogo, setSavingLogo] = useState(false)
+  const [logoSavedAt, setLogoSavedAt] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
   useEffect(() => {
@@ -87,14 +97,24 @@ export default function EditClientPage() {
       })
   }, [id])
 
+  // PATCH parcial usado pelo auto-save do logo
+  async function patchClient(partial: Partial<Client>): Promise<boolean> {
+    const res = await fetch(`/api/clients/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(partial),
+    })
+    return res.ok
+  }
+
   async function uploadLogoFile(file: File) {
     setError("")
     if (!ACCEPTED_LOGO_TYPES.includes(file.type)) {
-      setError("Formato não suportado. Use PNG, JPG, SVG ou WEBP.")
+      setError("Formato não suportado. Use PNG, JPG, SVG ou WEBP. SVG é o ideal — vetor leve que não perde qualidade.")
       return
     }
     if (file.size > MAX_LOGO_BYTES) {
-      setError("Logo deve ter no máximo 2MB.")
+      setError(`Arquivo muito grande (${formatBytes(file.size)}). O limite é 5MB. Reduza o tamanho ou prefira SVG — vetor leve que não perde qualidade.`)
       return
     }
     setUploadingLogo(true)
@@ -102,9 +122,37 @@ export default function EditClientPage() {
     fd.append("file", file)
     const res = await fetch("/api/upload", { method: "POST", body: fd })
     setUploadingLogo(false)
-    if (!res.ok) { setError("Falha ao enviar logo. Tente novamente."); return }
+    if (!res.ok) {
+      setError("Falha ao enviar logo. Tente reduzir o tamanho do arquivo (ideal usar SVG).")
+      return
+    }
     const data = await res.json()
     setLogoUrl(data.url)
+
+    // AUTO-SAVE: persiste o logo no banco imediatamente apos upload
+    setSavingLogo(true)
+    const ok = await patchClient({ logoUrl: data.url })
+    setSavingLogo(false)
+    if (ok) {
+      setLogoSavedAt(Date.now())
+      setTimeout(() => setLogoSavedAt(null), 2000)
+    } else {
+      setError("Logo enviado mas falhou ao salvar no banco. Tente um arquivo menor (ideal usar SVG).")
+    }
+  }
+
+  async function handleDeleteLogo() {
+    setError("")
+    setSavingLogo(true)
+    const ok = await patchClient({ logoUrl: null })
+    setSavingLogo(false)
+    if (ok) {
+      setLogoUrl(null)
+      setLogoSavedAt(Date.now())
+      setTimeout(() => setLogoSavedAt(null), 2000)
+    } else {
+      setError("Não foi possível apagar o logo.")
+    }
   }
 
   function triggerFilePicker() {
@@ -129,20 +177,15 @@ export default function EditClientPage() {
     if (!name.trim()) { setError("Nome obrigatório"); return }
     setError("")
     setSaving(true)
-    const res = await fetch(`/api/clients/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim(),
-        contact: contact.trim() || null,
-        email: email.trim() || null,
-        phone: phone.trim() || null,
-        address: address.trim() || null,
-        logoUrl: logoUrl ?? null,
-      }),
+    const ok = await patchClient({
+      name: name.trim(),
+      contact: contact.trim() || null,
+      email: email.trim() || null,
+      phone: phone.trim() || null,
+      address: address.trim() || null,
     })
     setSaving(false)
-    if (res.ok) {
+    if (ok) {
       router.push(`/clients/${id}`)
     } else {
       setError("Erro ao salvar. Tente novamente.")
@@ -179,6 +222,13 @@ export default function EditClientPage() {
     )
   }
 
+  // Status do auto-save do logo, mostrado discreto ao lado do label
+  const logoStatus = savingLogo
+    ? <span style={{fontSize:10,color:"#888",fontWeight:400,textTransform:"none",letterSpacing:0,marginLeft:8}}>salvando…</span>
+    : logoSavedAt
+      ? <span style={{fontSize:10,color:"#15803d",fontWeight:400,textTransform:"none",letterSpacing:0,marginLeft:8}}>✓ salvo</span>
+      : null
+
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
       <TopNav />
@@ -200,11 +250,21 @@ export default function EditClientPage() {
 
         <form onSubmit={handleSave} style={{maxWidth:640}}>
           <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
-            <div style={{fontSize:14,fontWeight:700,marginBottom:20}}>Dados do cliente</div>
+            {/* Header com titulo e botoes Salvar/Cancelar no topo */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:14,fontWeight:700}}>Dados do cliente</div>
+              <div style={{display:"flex",gap:10}}>
+                <Button type="button" variant="secondary" size="md" onClick={() => router.push(`/clients/${id}`)}>Cancelar</Button>
+                <Button type="submit" variant="primary" size="md" loading={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
+              </div>
+            </div>
 
-            {/* Logo */}
+            {/* Logo (auto-save) */}
             <div style={{marginBottom:20}}>
-              <div style={labelStyle}>Logo</div>
+              <div style={{...labelStyle,display:"flex",alignItems:"center"}}>
+                Logo
+                {logoStatus}
+              </div>
               <div style={{display:"flex",alignItems:"flex-start",gap:14,marginTop:8}}>
                 {logoUrl ? (
                   <>
@@ -221,13 +281,12 @@ export default function EditClientPage() {
                       <img src={logoUrl} alt="Logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:6,paddingTop:4}}>
-                      <Button type="button" variant="secondary" size="sm" onClick={triggerFilePicker} disabled={uploadingLogo}>
+                      <Button type="button" variant="secondary" size="sm" onClick={triggerFilePicker} disabled={uploadingLogo || savingLogo}>
                         {uploadingLogo ? "Enviando..." : "Trocar"}
                       </Button>
-                      <Button type="button" variant="danger" size="sm" onClick={() => setLogoUrl(null)} disabled={uploadingLogo}>
+                      <Button type="button" variant="danger" size="sm" onClick={handleDeleteLogo} disabled={uploadingLogo || savingLogo}>
                         Apagar
                       </Button>
-                      <div style={{fontSize:10,color:"#999",marginTop:4,lineHeight:1.4}}>PNG, JPG, SVG, WEBP<br/>máx 2MB</div>
                     </div>
                   </>
                 ) : (
@@ -237,13 +296,13 @@ export default function EditClientPage() {
                     onDragOver={e => { e.preventDefault(); setDragOver(true) }}
                     onDragLeave={() => setDragOver(false)}
                     onDrop={handleDrop}
-                    disabled={uploadingLogo}
+                    disabled={uploadingLogo || savingLogo}
                     style={{
                       width:120,height:120,
                       border: dragOver ? "2px dashed #F09300" : "2px dashed #D0D0D0",
                       borderRadius:8,
                       background: dragOver ? "rgba(240,147,0,0.05)" : "transparent",
-                      cursor: uploadingLogo ? "wait" : "pointer",
+                      cursor: (uploadingLogo || savingLogo) ? "wait" : "pointer",
                       display:"flex",flexDirection:"column",
                       alignItems:"center",justifyContent:"center",
                       gap:6,
@@ -255,8 +314,8 @@ export default function EditClientPage() {
                       transition:"border-color 0.15s, background 0.15s",
                     }}
                   >
-                    {uploadingLogo ? (
-                      <span>Enviando...</span>
+                    {(uploadingLogo || savingLogo) ? (
+                      <span>{uploadingLogo ? "Enviando…" : "Salvando…"}</span>
                     ) : (
                       <>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -276,6 +335,11 @@ export default function EditClientPage() {
                   onChange={handleFileChange}
                   style={{display:"none"}}
                 />
+              </div>
+              {/* Aviso sobre tamanho e formato */}
+              <div style={{fontSize:11,color:"#888",marginTop:10,lineHeight:1.5,maxWidth:480}}>
+                <strong style={{color:"#111"}}>Prefira SVG</strong> — vetor, leve e nunca pixeliza.
+                Aceita PNG, JPG, SVG ou WEBP. Tamanho máximo <strong>5MB</strong> (quanto menor, mais rápido carrega).
               </div>
             </div>
 
@@ -305,12 +369,7 @@ export default function EditClientPage() {
               </div>
             </div>
 
-            {error && <p style={{color:"#dc2626",fontSize:12,margin:"16px 0 0"}}>{error}</p>}
-
-            <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:24}}>
-              <Button type="button" variant="secondary" onClick={() => router.push(`/clients/${id}`)}>Cancelar</Button>
-              <Button type="submit" variant="primary" loading={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
-            </div>
+            {error && <p style={{color:"#dc2626",fontSize:12,margin:"16px 0 0",lineHeight:1.5}}>{error}</p>}
           </div>
         </form>
 
