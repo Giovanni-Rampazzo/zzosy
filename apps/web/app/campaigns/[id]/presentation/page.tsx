@@ -61,50 +61,35 @@ export default function PresentationPage() {
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
+  // Funcao de refetch reutilizavel (botao manual + focus + visibilidade).
+  async function refetchAll() {
+    const ts = Date.now()
+    try {
+      const [c, p] = await Promise.all([
+        fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
+        fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
+      ])
+      setCampaign(c)
+      setPieces(Array.isArray(p) ? p : [])
+    } catch (e) { console.warn("[refetchAll] falhou:", e) }
+  }
+
   useEffect(() => {
     async function load() {
       try {
-        const ts = Date.now()
-        console.log("[PRESENTATION] mount/refetch", new Date().toISOString())
-        const [c, p] = await Promise.all([
-          fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
-          fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
-        ])
-        console.log("[PRESENTATION] fetched", Array.isArray(p) ? p.length : 0, "pieces")
-        if (Array.isArray(p)) {
-          p.forEach((piece: any) => {
-            if (piece.steps && piece.steps.length > 0) {
-              console.log("[PRESENTATION] piece", piece.id, "steps:", piece.steps.map((s: any) => ({ i: s.index, hasImg: !!s.imageUrl })))
-            }
-          })
-        }
-        setCampaign(c)
-        setPieces(Array.isArray(p) ? p : [])
+        await refetchAll()
       } finally {
         setLoading(false)
       }
     }
     load()
-    // Re-fetch sempre que a janela volta a ter foco (ex: usuario edita peca
-    // em outra aba, volta pra apresentacao). Sem isso, thumbs gerados em
-    // background no editor nao apareceriam na presentation ate F5.
-    function refetch() {
-      const ts = Date.now()
-      Promise.all([
-        fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
-        fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
-      ]).then(([c, p]) => {
-        setCampaign(c)
-        setPieces(Array.isArray(p) ? p : [])
-      }).catch(() => {})
-    }
     function onVisibilityChange() {
-      if (document.visibilityState === "visible") refetch()
+      if (document.visibilityState === "visible") refetchAll()
     }
-    window.addEventListener("focus", refetch)
+    window.addEventListener("focus", refetchAll)
     document.addEventListener("visibilitychange", onVisibilityChange)
     return () => {
-      window.removeEventListener("focus", refetch)
+      window.removeEventListener("focus", refetchAll)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
   }, [id])
@@ -221,6 +206,9 @@ export default function PresentationPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="secondary" size="md" onClick={refetchAll} title="Recarrega previews do servidor">
+            ↻ Atualizar
+          </Button>
           <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${id}`)}>Voltar</Button>
           <Button variant="primary" size="md" onClick={exportPPTX} disabled={exporting}>
             {exporting ? "Exportando…" : "Exportar PPT"}
