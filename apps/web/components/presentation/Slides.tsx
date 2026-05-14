@@ -221,15 +221,16 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             const src = s.imageUrl ?? s.thumbnailUrl ?? null
             return (
               <div key={i} style={{
-                // Container do step: inline-flex pra ter width baseada em
-                // conteudo. Empilha label + imagem verticalmente.
+                // Container do step: inline-flex pra ter width baseada
+                // EXATAMENTE no conteudo (imagem). Antes maxWidth era 25%-2%
+                // (= 23%) e imagens portrait deixavam muito branco lateral.
                 display: "inline-flex", flexDirection: "column",
-                alignItems: "flex-start",
+                alignItems: "center",
                 justifyContent: "center",
                 height: "100%",
-                // maxWidth limita pra cada peca caber na sua 'fatia'.
-                // maxHeight indireto: a imagem usa height calculada.
-                maxWidth: `calc(${100 / total}% - ${total > 1 ? "2%" : "0%"})`,
+                // SEM maxWidth: largura segue a imagem (object-fit:contain +
+                // height:100%) — peca portrait ocupa width auto. Flex parent
+                // (justifyContent center, gap) distribui horizontalmente.
                 minHeight: 0, minWidth: 0,
               }}>
                 {/* Label do step — alinhado a esquerda, colado na peca */}
@@ -242,15 +243,17 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 }}>
                   Step {(s.index ?? i) + 1}
                 </div>
-                {/* Imagem com altura calculada (deixa espaco pro label).
-                    width:auto deriva pela aspect ratio. */}
+                {/* Imagem com width:auto, height limitada. Container do step
+                    (inline-flex) segue a width natural da imagem. */}
                 {src ? (
                   <img src={src} alt={`${name} Step ${(s.index ?? i) + 1}`}
                     style={{
-                      // Altura: max ate caber no container (descontando label+gap).
-                      // Width: auto pra preservar aspect ratio.
-                      maxWidth: "100%",
-                      maxHeight: "calc(100% - 2.5cqw)", // 2.5cqw reserva pro label
+                      // Height bounded pelo slide (descontando label+gap).
+                      // Width: auto + maxWidth limita pela fatia disponivel,
+                      // usando 100vw/N como referencia bruta (Slides ficam em
+                      // viewport-relative containers).
+                      maxHeight: "calc(100% - 2.5cqw)",
+                      maxWidth: `${Math.floor(95 / total)}cqw`,
                       width: "auto", height: "auto",
                       objectFit: "contain",
                       display: "block",
