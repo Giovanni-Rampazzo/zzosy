@@ -2594,6 +2594,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
           }
           if (o.__hidden === true) layer.hidden = true
           if (o.__locked === true) layer.locked = true
+          // Mascara (raster/vector/clipping) preservada via __maskData.
+          // Sem isso, auto-save da matriz logo apos import do PSD APAGAVA as
+          // masks que vieram do PSD (Background, Pa, escudo): client serializava
+          // sem mask e o PUT /key-vision sobrescrevia o banco com layers
+          // sem mask. Espelha o save da peca (linha ~2476).
+          if ((o as any).__maskData) {
+            layer.mask = (o as any).__maskData
+          }
           // DEBUG: log do que tah indo pra matriz
           console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "__hidden:", o.__hidden, "__locked:", o.__locked, "-> hidden:", layer.hidden, "locked:", layer.locked)
           // Espelha a logica do modo PECA: salva overrides per-instancia (fill,
@@ -3156,6 +3164,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
             width: Math.round(o.width ?? 400),
             height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
             overrides: {},
+          }
+          // Mascara preservada via __maskData. Mesmo bug do SAVE-MATRIX:
+          // sem isso, este auto-save (que dispara logo apos import do PSD via
+          // dirty trigger) sobrescrevia o banco perdendo as masks do PSD.
+          if ((o as any).__maskData) {
+            layer.mask = (o as any).__maskData
           }
           // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
           // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset
