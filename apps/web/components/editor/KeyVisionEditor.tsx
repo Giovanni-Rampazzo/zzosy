@@ -2342,16 +2342,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const TARGET = 2400
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
 
+      // O canvas Fabric do editor eh GRANDE (fullW x fullH ~ painel do editor)
+      // com a peca centralizada via viewportTransform. Pra capturar SOMENTE a
+      // peca (sem bleed lateral), precisamos calcular a regiao da peca em
+      // coordenadas do canvas DOM:
+      //   mundo Fabric (0,0,w,h) -> canvas DOM (offsetX, offsetY, w*z, h*z)
+      // onde offsetX = vt[4], offsetY = vt[5], z = vt[0].
+      const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+      const z = vt[0] ?? 1
+      const offsetX = vt[4] ?? 0
+      const offsetY = vt[5] ?? 0
+
       // Esconde temporariamente o bleed overlay
       const bleedOverlays = fc.getObjects().filter((o: any) => o.__isBleedOverlay)
       bleedOverlays.forEach((o: any) => { o.visible = false })
       try {
-        // toDataURL captura considerando viewportTransform atual.
-        // Multiplier escala o resultado final.
+        // toDataURL com bounds explicitos: captura apenas a regiao da peca.
+        // Multiplier escala o resultado pro tamanho do thumb.
+        // SEM left/top/width/height: capturava o canvas inteiro (fullW x fullH)
+        // -> bleed aparecia no thumb como branco lateral.
         const dataUrl = fc.toDataURL({
           format: "png",
-          multiplier: thumbScale,
+          multiplier: thumbScale / z,
           enableRetinaScaling: false,
+          left: offsetX,
+          top: offsetY,
+          width: w * z,
+          height: h * z,
         })
         const blob = await (await fetch(dataUrl)).blob()
         console.log("[thumb] gerado", blob.size, "bytes", `${Math.round(w * thumbScale)}x${Math.round(h * thumbScale)}`)
