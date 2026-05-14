@@ -13,7 +13,7 @@ interface Campaign {
   keyVision?: { thumbnailUrl?: string | null } | null
 }
 interface Client {
-  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; campaigns: Campaign[]
+  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; logoUrl: string | null; campaigns: Campaign[]
 }
 
 export default function ClientPage() {
@@ -78,9 +78,16 @@ export default function ClientPage() {
         {/* Header */}
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
-            <div>
-              <div style={{fontSize:20,fontWeight:700}}>{client.name}</div>
-              {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
+            <div style={{display:"flex",alignItems:"center",gap:16}}>
+              {client.logoUrl ? (
+                <div style={{width:56,height:56,borderRadius:8,border:"1px solid #E0E0E0",background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",padding:4,flexShrink:0}}>
+                  <img src={client.logoUrl} alt={client.name} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
+                </div>
+              ) : null}
+              <div>
+                <div style={{fontSize:20,fontWeight:700}}>{client.name}</div>
+                {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
+              </div>
             </div>
             <div style={{display:"flex",gap:10}}>
               <Button variant="primary" onClick={() => router.push(`/clients/${id}/edit`)}>Editar</Button>

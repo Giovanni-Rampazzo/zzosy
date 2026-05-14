@@ -104,7 +104,7 @@ export default function DashboardPage() {
                       ) : (
                         <>
                           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
-                          <Button variant="secondary" size="sm" onClick={() => setEditingClient(c)}>Editar</Button>
+                          <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}/edit`)}>Editar</Button>
                           <Button variant="primary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
                         </>
                       )}
