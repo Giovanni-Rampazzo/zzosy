@@ -2289,8 +2289,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     if (!p) return
     const pdata = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
     const allSteps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
-    console.log("[autoGen] iniciando. stepCount:", allSteps.length, "isDirty:", isDirtyRef.current)
-    if (allSteps.length < 2) return
+    console.log("[autoGen] iniciando. stepCount:", allSteps.length, "pieceImageUrl:", p.imageUrl)
+
+    // SINGLE-STEP: peca sem data.steps. Se piece.imageUrl eh null, gera thumb
+    // direto via renderStepOffscreenToBlob usando o layers atual.
+    if (allSteps.length < 2) {
+      if (p.imageUrl) {
+        console.log("[autoGen] single-step ja tem imageUrl, pulando")
+        return
+      }
+      console.log("[autoGen] single-step sem thumb, gerando...")
+      const blob = await renderStepOffscreenToBlob({
+        layers: pdata.layers ?? [],
+        bgColor: pdata.bgColor ?? bgColorRef.current,
+      })
+      if (!blob) {
+        console.log("[autoGen] single-step blob veio null")
+        return
+      }
+      const fd = new FormData()
+      fd.append("thumbnail", blob, "thumb.png")
+      try {
+        const r = await fetch(`/api/pieces/${pieceId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
+        console.log("[autoGen] single-step thumb status:", r.status)
+      } catch (e) { console.warn("[autoGen] single-step upload falhou:", e) }
+      return
+    }
+
     const activeIdx = pdata.activeStepIndex ?? 0
     for (let i = 0; i < allSteps.length; i++) {
       const step = allSteps[i]
@@ -2401,7 +2426,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   async function uploadPieceThumb(fc: any, pId: string) {
     console.log("[uploadPieceThumb] inicio pra", pId)
     srvLog("uploadPieceThumb-START", { pieceId: pId, stepCount: stepCountRef.current, activeStep: activeStepIndexRef.current })
-    const blob = await generateCurrentThumbBlob(fc)
+
+    // UNIFICACAO: tanto o step ativo quanto os inativos usam renderStepOffscreenToBlob.
+    // Antes o ativo usava generateCurrentThumbBlob (capturava canvas Fabric do editor,
+    // que tinha bleed/landscape) e os inativos usavam renderStepOffscreen (canvas
+    // portrait). Resultado: thumb do ativo aspect-ratio diferente dos inativos —
+    // bug visivel na apresentacao (alguns steps com branco lateral, outros nao).
+
+    // Step ativo: monta um snapshot do canvas atual no formato de step e renderiza.
+    const activeStepData = serializeCurrentStep()
+    const blob = await renderStepOffscreenToBlob(activeStepData)
     if (!blob) {
       console.error("[uploadPieceThumb] ABORTADO — blob veio null!")
       srvLog("uploadPieceThumb-ABORTED", "blob veio null")
@@ -2409,24 +2443,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     }
     console.log("[uploadPieceThumb] blob ok,", blob.size, "bytes. Subindo...")
     srvLog("uploadPieceThumb-BLOB-OK", { bytes: blob.size })
+
+    // Sobe como thumb principal da peca (campo piece.imageUrl).
     const fd = new FormData()
     fd.append("thumbnail", blob, "thumb.png")
     try {
       const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
-      console.log("[uploadPieceThumb] thumb principal status:", r.status)
       srvLog("uploadPieceThumb-MAIN-STATUS", { status: r.status })
     } catch (e: any) {
-      console.warn("[uploadPieceThumb] main thumb failed:", e)
       srvLog("uploadPieceThumb-MAIN-FAIL", { error: String(e?.message ?? e) })
     }
+
     // STEPS: regenera thumb pra TODOS os steps quando a peca eh multi-step.
-    // Antes, so o step ATIVO ganhava thumb novo. Os inativos ficavam com o
-    // thumb antigo (gerado quando foram ativos no passado). Resultado: editar
-    // step 1 e voltar pra apresentacao mostrava thumbs antigos pros outros
-    // steps — usuario via "todos iguais" porque o thumb nao refletia overrides.
     if (stepCountRef.current > 1) {
-      // Step ATIVO: usa o blob que ja foi gerado (capturou o canvas atual com
-      // overrides aplicados).
+      // Step ATIVO: usa o mesmo blob (mesma logica).
       const fd2 = new FormData()
       fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
       try {
@@ -2437,26 +2467,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       } catch (e: any) {
         srvLog("uploadPieceThumb-STEP-ACTIVE-FAIL", { error: String(e?.message ?? e) })
       }
-      // Steps INATIVOS: renderiza offscreen com os overrides especificos de
-      // cada step. Isso garante que cada thumb reflita o estado real do step.
-      // Le data.steps direto do banco pra ter o snapshot mais recente.
+      // Steps INATIVOS: renderiza cada um com seus proprios layers.
       try {
         const r = await fetch(`/api/pieces/${pId}`, { cache: "no-store" })
         if (r.ok) {
           const fresh = await r.json()
           const data = typeof fresh.data === "string" ? JSON.parse(fresh.data) : fresh.data
           const steps: any[] = Array.isArray(data?.steps) ? data.steps : []
-          srvLog("uploadPieceThumb-INACTIVE-START", { totalSteps: steps.length, activeIdx: activeStepIndexRef.current })
           for (let i = 0; i < steps.length; i++) {
-            if (i === activeStepIndexRef.current) continue // ja subiu acima
+            if (i === activeStepIndexRef.current) continue
             const stepData = steps[i]
             if (!stepData || !Array.isArray(stepData.layers)) continue
             try {
               const stepBlob = await renderStepOffscreenToBlob(stepData)
-              if (!stepBlob) {
-                srvLog("uploadPieceThumb-INACTIVE-NULL", { index: i })
-                continue
-              }
+              if (!stepBlob) continue
               const fdStep = new FormData()
               fdStep.append("thumbnail", stepBlob, `step${i}.png`)
               const rStep = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${i}`, {
