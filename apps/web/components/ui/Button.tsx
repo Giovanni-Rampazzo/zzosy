@@ -8,7 +8,7 @@
  *  - secondary: borda cinza escuro #555, fill branco, texto preto. DEFAULT do sistema.
  *               Usar em qualquer botao "neutro" (Salvar nao-destaque, Aplicar, etc).
  *
- * Cores semanticas (todas com fill branco + borda+texto da cor — outline style):
+ * Cores semanticas (todas com fill branco + borda colorida + texto preto):
  *  - danger:  vermelho. Apagar/destrutivo.
  *  - success: verde. Confirmar, OK, aprovar.
  *  - warning: laranja. Atencao, avisos.
@@ -46,11 +46,11 @@ export function Button({ variant = "secondary", size = "md", loading, className,
     primary:   "bg-[#F5C400] text-[#111111] border border-[#F5C400] hover:bg-[#e0b000] hover:border-[#e0b000]",
     secondary: "bg-white text-[#111111] border border-[#555555] hover:bg-[#F5F5F0]",
     dark:      "bg-[#111111] text-white border border-[#111111] hover:bg-[#000]",
-    danger:    "bg-white text-[#dc2626] border border-[#dc2626] hover:bg-[#fef2f2]",
-    success:   "bg-white text-[#15803d] border border-[#15803d] hover:bg-[#f0fdf4]",
-    warning:   "bg-white text-[#d97706] border border-[#d97706] hover:bg-[#fffbeb]",
-    info:      "bg-white text-[#2563eb] border border-[#2563eb] hover:bg-[#eff6ff]",
-    ghost:     "bg-white text-[#888888] border border-[#D0D0D0] hover:text-[#111111] hover:border-[#888888]",
+    danger:    "bg-white text-[#111111] border border-[#dc2626] hover:bg-[#fef2f2]",
+    success:   "bg-white text-[#111111] border border-[#15803d] hover:bg-[#f0fdf4]",
+    warning:   "bg-white text-[#111111] border border-[#d97706] hover:bg-[#fffbeb]",
+    info:      "bg-white text-[#111111] border border-[#2563eb] hover:bg-[#eff6ff]",
+    ghost:     "bg-white text-[#111111] border border-[#D0D0D0] hover:border-[#888888]",
     link:      "bg-transparent text-[#F5C400] border-0 hover:text-[#e0b000] underline-offset-2",
   }
   const sizes = {
