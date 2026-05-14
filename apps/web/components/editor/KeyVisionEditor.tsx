@@ -2292,6 +2292,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         })
         const blob = await (await fetch(dataUrl)).blob()
         console.log("[thumb] gerado", blob.size, "bytes", `${Math.round(w * thumbScale)}x${Math.round(h * thumbScale)}`)
+        srvLog("thumb-GENERATED", { bytes: blob.size, w: Math.round(w * thumbScale), h: Math.round(h * thumbScale), objects: fc.getObjects().length })
         return blob
       } finally {
         bleedOverlays.forEach((o: any) => { o.visible = true })
@@ -2303,29 +2304,53 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     }
   }
 
+  // Helper: envia log do client pro terminal do servidor (pra debug fica
+  // visivel sem F12). Best-effort: nao espera resposta, nao quebra se falhar.
+  function srvLog(tag: string, data: any) {
+    try {
+      fetch("/api/debug/client-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag, data }),
+        keepalive: true,
+      }).catch(() => {})
+    } catch {}
+  }
+
   async function uploadPieceThumb(fc: any, pId: string) {
     console.log("[uploadPieceThumb] inicio pra", pId)
+    srvLog("uploadPieceThumb-START", { pieceId: pId, stepCount: stepCountRef.current, activeStep: activeStepIndexRef.current })
     const blob = await generateCurrentThumbBlob(fc)
     if (!blob) {
       console.error("[uploadPieceThumb] ABORTADO — blob veio null!")
+      srvLog("uploadPieceThumb-ABORTED", "blob veio null")
       return
     }
     console.log("[uploadPieceThumb] blob ok,", blob.size, "bytes. Subindo...")
+    srvLog("uploadPieceThumb-BLOB-OK", { bytes: blob.size })
     const fd = new FormData()
     fd.append("thumbnail", blob, "thumb.png")
     try {
       const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
       console.log("[uploadPieceThumb] thumb principal status:", r.status)
-    } catch (e) { console.warn("[uploadPieceThumb] main thumb failed:", e) }
+      srvLog("uploadPieceThumb-MAIN-STATUS", { status: r.status })
+    } catch (e: any) { 
+      console.warn("[uploadPieceThumb] main thumb failed:", e)
+      srvLog("uploadPieceThumb-MAIN-FAIL", { error: String(e?.message ?? e) })
+    }
     // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
     if (stepCountRef.current > 1) {
       const fd2 = new FormData()
       fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
       try {
-        await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
+        const r2 = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
           method: "POST", body: fd2, keepalive: true,
         })
-      } catch (e) { console.warn("[uploadPieceThumb] step thumb failed:", e) }
+        srvLog("uploadPieceThumb-STEP-STATUS", { index: activeStepIndexRef.current, status: r2.status })
+      } catch (e: any) {
+        console.warn("[uploadPieceThumb] step thumb failed:", e)
+        srvLog("uploadPieceThumb-STEP-FAIL", { error: String(e?.message ?? e) })
+      }
     }
   }
 
@@ -2345,9 +2370,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     // Trava de reentrada: se outro saveNow ja esta rodando, espera. Sem isso,
     // chamadas em sequencia (e.g. Cmd+S apertado 2x) podiam corromper estado
     // do pieceRef ou disparar 2 PATCH simultaneos.
-    if (savingInFlightRef.current) {
-      editorLog("[saveNow] abortado — save anterior ainda rodando")
-      return
+    // Se ha save em andamento, AGUARDA terminar antes de comecar o novo.
+    // Antes abortava — mas isso fazia o user perder edicoes quando clicava
+    // Voltar logo apos uma edicao (o auto-save anterior estava rodando,
+    // saveNow do Voltar abortava, nada chegava ao servidor).
+    let waitCount = 0
+    while (savingInFlightRef.current && waitCount < 50) {
+      await new Promise(r => setTimeout(r, 100))
+      waitCount++
     }
     savingInFlightRef.current = true
     setSaving(true)
@@ -3591,7 +3621,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             ? `/campaigns/${campaignId}/presentation`
             : `/campaigns/${campaignId}`
           const dest = `${base}${hash}`
-          // FORCA exit do modo edit de texto. Se o user estava editando um
+          // Forca exit do modo edit de texto. Se o user estava editando um
           // texto inline e clicou Voltar sem clicar fora, text:editing:exited
           // nao dispara naturalmente. Sem isso, a edicao do texto eh perdida.
           try {
@@ -3601,15 +3631,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
               if (typeof (active as any).exitEditing === "function") (active as any).exitEditing()
             }
           } catch (e) { /* nao critico */ }
-          // Pequeno delay pra o text:editing:exited handler rodar e setar dirty.
-          await new Promise(r => setTimeout(r, 50))
-          // Se tem mudancas, salva ANTES de navegar (sem dialog).
-          if (isDirtyRef.current) {
-            try { await saveNow() } catch (e) { console.warn("[Voltar] save falhou:", e) }
-          }
-          // HARD navigation: window.location forca full reload, ignora cache
-          // do App Router. Garante que a pagina destino re-monta com dados
-          // frescos do servidor.
+          // Delay pra Fabric processar text:editing:exited e marcar dirty.
+          await new Promise(r => setTimeout(r, 150))
+          // SEMPRE salva (nao confia no flag dirty — pode estar stale).
+          // O save eh idempotente: se nada mudou, banco fica igual.
+          try {
+            console.log("[Voltar] forcando saveNow…")
+            await saveNow()
+            console.log("[Voltar] saveNow completo")
+          } catch (e) { console.warn("[Voltar] save falhou:", e) }
+          // Delay extra pra garantir que os fetches do thumb terminaram
+          // de ser processados pelo servidor (writeFile + prisma update).
+          await new Promise(r => setTimeout(r, 300))
+          // HARD navigation
           if (typeof window !== "undefined") window.location.href = dest
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
           title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
