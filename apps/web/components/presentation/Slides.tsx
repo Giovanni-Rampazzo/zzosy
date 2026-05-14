@@ -222,15 +222,13 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             return (
               <div key={i} style={{
                 // Container do step: inline-flex pra ter width baseada
-                // EXATAMENTE no conteudo (imagem). Antes maxWidth era 25%-2%
-                // (= 23%) e imagens portrait deixavam muito branco lateral.
+                // EXATAMENTE no conteudo (imagem).
                 display: "inline-flex", flexDirection: "column",
-                alignItems: "center",
+                // flex-start: label e imagem alinhados a esquerda
+                // (label fica acima do canto superior esquerdo da peca).
+                alignItems: "flex-start",
                 justifyContent: "center",
                 height: "100%",
-                // SEM maxWidth: largura segue a imagem (object-fit:contain +
-                // height:100%) — peca portrait ocupa width auto. Flex parent
-                // (justifyContent center, gap) distribui horizontalmente.
                 minHeight: 0, minWidth: 0,
               }}>
                 {/* Label do step — alinhado a esquerda, colado na peca */}
