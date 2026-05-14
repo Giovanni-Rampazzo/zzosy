@@ -2298,8 +2298,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         bleedOverlays.forEach((o: any) => { o.visible = true })
         fc.requestRenderAll()
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[generateCurrentThumbBlob] FALHOU:", e)
+      srvLog("thumb-FAILED", { error: String(e?.message ?? e), stack: e?.stack?.split("\n").slice(0, 4).join(" | ") })
       return null
     }
   }
@@ -2355,6 +2356,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   async function saveNow() {
+    srvLog("saveNow-CALLED", { pieceId, isDirty: isDirtyRef.current, stepCount: stepCountRef.current, activeStep: activeStepIndexRef.current })
     clearTimeout(saveTimer.current)
     // Guards: nao salva durante apply de historico, nem antes do init terminar.
     // Sem isso, fechar a aba durante remount podia gravar layers em estado
@@ -2871,6 +2873,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
   }
 
   async function performSave() {
+    srvLog("performSave-CALLED", { pieceId, isDirty: isDirtyRef.current })
     // Guard 0: durante apply de undo/redo, NUNCA salva. loadFromJSON dispara
     // object:added/modified que poderiam acionar saves com canvas em estado
     // transitorio (sem __assetId restaurados, sem bg, etc).
