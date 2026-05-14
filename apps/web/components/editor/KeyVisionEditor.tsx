@@ -2423,78 +2423,85 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
     } catch {}
   }
 
+  // Trava: previne 2 uploadPieceThumb concorrentes (causa 'Failed to fetch'
+  // quando user clica steps rapidamente — request anterior aborta).
+  const thumbUploadInFlightRef = useRef<Promise<void> | null>(null)
+
   async function uploadPieceThumb(fc: any, pId: string) {
-    console.log("[uploadPieceThumb] inicio pra", pId)
-    srvLog("uploadPieceThumb-START", { pieceId: pId, stepCount: stepCountRef.current, activeStep: activeStepIndexRef.current })
-
-    // UNIFICACAO: tanto o step ativo quanto os inativos usam renderStepOffscreenToBlob.
-    // Antes o ativo usava generateCurrentThumbBlob (capturava canvas Fabric do editor,
-    // que tinha bleed/landscape) e os inativos usavam renderStepOffscreen (canvas
-    // portrait). Resultado: thumb do ativo aspect-ratio diferente dos inativos —
-    // bug visivel na apresentacao (alguns steps com branco lateral, outros nao).
-
-    // Step ativo: monta um snapshot do canvas atual no formato de step e renderiza.
-    const activeStepData = serializeCurrentStep()
-    const blob = await renderStepOffscreenToBlob(activeStepData)
-    if (!blob) {
-      console.error("[uploadPieceThumb] ABORTADO — blob veio null!")
-      srvLog("uploadPieceThumb-ABORTED", "blob veio null")
-      return
+    // Se ja tem upload rodando, espera ele terminar antes de comecar o proximo.
+    // Sem isso, switch rapido entre steps disparava varios uploads concorrentes
+    // e o navegador cancelava os anteriores -> 'Failed to fetch' em todos.
+    if (thumbUploadInFlightRef.current) {
+      await thumbUploadInFlightRef.current.catch(() => {})
     }
-    console.log("[uploadPieceThumb] blob ok,", blob.size, "bytes. Subindo...")
-    srvLog("uploadPieceThumb-BLOB-OK", { bytes: blob.size })
+    const task = (async () => {
+      console.log("[uploadPieceThumb] inicio pra", pId)
+      srvLog("uploadPieceThumb-START", { pieceId: pId, stepCount: stepCountRef.current, activeStep: activeStepIndexRef.current })
 
-    // Sobe como thumb principal da peca (campo piece.imageUrl).
-    const fd = new FormData()
-    fd.append("thumbnail", blob, "thumb.png")
-    try {
-      const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
-      srvLog("uploadPieceThumb-MAIN-STATUS", { status: r.status })
-    } catch (e: any) {
-      srvLog("uploadPieceThumb-MAIN-FAIL", { error: String(e?.message ?? e) })
-    }
-
-    // STEPS: regenera thumb pra TODOS os steps quando a peca eh multi-step.
-    if (stepCountRef.current > 1) {
-      // Step ATIVO: usa o mesmo blob (mesma logica).
-      const fd2 = new FormData()
-      fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
-      try {
-        const r2 = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
-          method: "POST", body: fd2, keepalive: true,
-        })
-        srvLog("uploadPieceThumb-STEP-ACTIVE-STATUS", { index: activeStepIndexRef.current, status: r2.status })
-      } catch (e: any) {
-        srvLog("uploadPieceThumb-STEP-ACTIVE-FAIL", { error: String(e?.message ?? e) })
+      const activeStepData = serializeCurrentStep()
+      const blob = await renderStepOffscreenToBlob(activeStepData)
+      if (!blob) {
+        srvLog("uploadPieceThumb-ABORTED", "blob veio null")
+        return
       }
-      // Steps INATIVOS: renderiza cada um com seus proprios layers.
+      srvLog("uploadPieceThumb-BLOB-OK", { bytes: blob.size })
+
+      // Thumb principal — SEM keepalive (some bugs em Safari/Chrome quando
+      // body grande). Aguarda completion antes do proximo upload.
+      const fd = new FormData()
+      fd.append("thumbnail", blob, "thumb.png")
       try {
-        const r = await fetch(`/api/pieces/${pId}`, { cache: "no-store" })
-        if (r.ok) {
-          const fresh = await r.json()
-          const data = typeof fresh.data === "string" ? JSON.parse(fresh.data) : fresh.data
-          const steps: any[] = Array.isArray(data?.steps) ? data.steps : []
-          for (let i = 0; i < steps.length; i++) {
-            if (i === activeStepIndexRef.current) continue
-            const stepData = steps[i]
-            if (!stepData || !Array.isArray(stepData.layers)) continue
-            try {
-              const stepBlob = await renderStepOffscreenToBlob(stepData)
-              if (!stepBlob) continue
-              const fdStep = new FormData()
-              fdStep.append("thumbnail", stepBlob, `step${i}.png`)
-              const rStep = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${i}`, {
-                method: "POST", body: fdStep, keepalive: true,
-              })
-              srvLog("uploadPieceThumb-INACTIVE-STATUS", { index: i, status: rStep.status, bytes: stepBlob.size })
-            } catch (e: any) {
-              srvLog("uploadPieceThumb-INACTIVE-FAIL", { index: i, error: String(e?.message ?? e) })
+        const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd })
+        srvLog("uploadPieceThumb-MAIN-STATUS", { status: r.status })
+      } catch (e: any) {
+        srvLog("uploadPieceThumb-MAIN-FAIL", { error: String(e?.message ?? e) })
+      }
+
+      if (stepCountRef.current > 1) {
+        // Step ATIVO
+        const fd2 = new FormData()
+        fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
+        try {
+          const r2 = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
+            method: "POST", body: fd2,
+          })
+          srvLog("uploadPieceThumb-STEP-ACTIVE-STATUS", { index: activeStepIndexRef.current, status: r2.status })
+        } catch (e: any) {
+          srvLog("uploadPieceThumb-STEP-ACTIVE-FAIL", { error: String(e?.message ?? e) })
+        }
+        // Steps INATIVOS sequencialmente
+        try {
+          const r = await fetch(`/api/pieces/${pId}`, { cache: "no-store" })
+          if (r.ok) {
+            const fresh = await r.json()
+            const data = typeof fresh.data === "string" ? JSON.parse(fresh.data) : fresh.data
+            const steps: any[] = Array.isArray(data?.steps) ? data.steps : []
+            for (let i = 0; i < steps.length; i++) {
+              if (i === activeStepIndexRef.current) continue
+              const stepData = steps[i]
+              if (!stepData || !Array.isArray(stepData.layers)) continue
+              try {
+                const stepBlob = await renderStepOffscreenToBlob(stepData)
+                if (!stepBlob) continue
+                const fdStep = new FormData()
+                fdStep.append("thumbnail", stepBlob, `step${i}.png`)
+                const rStep = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${i}`, {
+                  method: "POST", body: fdStep,
+                })
+                srvLog("uploadPieceThumb-INACTIVE-STATUS", { index: i, status: rStep.status, bytes: stepBlob.size })
+              } catch (e: any) {
+                srvLog("uploadPieceThumb-INACTIVE-FAIL", { index: i, error: String(e?.message ?? e) })
+              }
             }
           }
+        } catch (e: any) {
+          srvLog("uploadPieceThumb-INACTIVE-FETCH-FAIL", { error: String(e?.message ?? e) })
         }
-      } catch (e: any) {
-        srvLog("uploadPieceThumb-INACTIVE-FETCH-FAIL", { error: String(e?.message ?? e) })
       }
+    })()
+    thumbUploadInFlightRef.current = task
+    try { await task } finally {
+      if (thumbUploadInFlightRef.current === task) thumbUploadInFlightRef.current = null
     }
   }
 
