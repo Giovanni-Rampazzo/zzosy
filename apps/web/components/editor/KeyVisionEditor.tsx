@@ -2198,7 +2198,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
             width: (layer.width ?? 400) * scale,
             textAlign: overrides.textAlign ?? "left",
           })
-          if (overrides.styles) tb.set("styles", JSON.parse(JSON.stringify(overrides.styles)))
+          if (overrides.styles) {
+            // CRITICO: escala fontSize per-char tambem. O objeto styles tem
+            // fontSize absoluto por caractere. Sem aplicar scale, ficam
+            // gigantes no canvas offscreen (que foi reduzido por scale).
+            // Bug sintomatico: 'Step 2 e 3 aparecem gigantes na apresentacao'.
+            const scaledStyles: any = {}
+            const origStyles = overrides.styles
+            for (const lineKey of Object.keys(origStyles)) {
+              scaledStyles[lineKey] = {}
+              for (const colKey of Object.keys(origStyles[lineKey])) {
+                const cs = { ...origStyles[lineKey][colKey] }
+                if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
+                scaledStyles[lineKey][colKey] = cs
+              }
+            }
+            tb.set("styles", scaledStyles)
+          }
           sfc.add(tb)
         }
       }
