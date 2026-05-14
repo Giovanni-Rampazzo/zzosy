@@ -206,23 +206,6 @@ export default function PresentationPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="secondary" size="md" onClick={async () => {
-            // Regenera thumbs de TODAS as pecas: limpa imageUrl no banco
-            // e reabre o editor de cada peca (que dispara autoGen).
-            // Mais simples: pra cada peca multi-step, faz clear-thumbs e
-            // depois abre/fecha o editor em background pra autoGen rodar.
-            if (!confirm("Regerar todos os previews? Pode demorar alguns segundos.")) return
-            const multiStepPieces = pieces.filter((p: any) => (p.stepCount ?? 1) > 1)
-            for (const p of multiStepPieces) {
-              try {
-                await fetch(`/api/pieces/${p.id}/clear-thumbs`, { method: "POST" })
-              } catch (e) { console.warn("clear-thumbs falhou:", p.id, e) }
-            }
-            alert(`${multiStepPieces.length} pecas marcadas pra regen. Abra cada uma no editor pra regenerar.`)
-            await refetchAll()
-          }} title="Limpa previews e gera de novo">
-            🔄 Regen previews
-          </Button>
           <Button variant="secondary" size="md" onClick={refetchAll} title="Recarrega previews do servidor">
             ↻ Atualizar
           </Button>
