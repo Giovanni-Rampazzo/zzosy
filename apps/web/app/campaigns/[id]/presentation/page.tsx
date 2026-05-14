@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
@@ -60,6 +60,10 @@ export default function PresentationPage() {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
+  const [regening, setRegening] = useState(false)
+  const [regenProgress, setRegenProgress] = useState({ current: 0, total: 0 })
+  const regenContainerRef = useRef<HTMLDivElement | null>(null)
+  const autoRegenDoneRef = useRef(false)
 
   // Funcao de refetch reutilizavel (botao manual + focus + visibilidade).
   async function refetchAll() {
@@ -72,6 +76,50 @@ export default function PresentationPage() {
       setCampaign(c)
       setPieces(Array.isArray(p) ? p : [])
     } catch (e) { console.warn("[refetchAll] falhou:", e) }
+  }
+
+  // Detecta pecas com steps faltando thumb e regenera via iframe oculto.
+  // O iframe carrega /editor com a peca, autoGen roda dentro do editor
+  // (gera+sobe os thumbs), depois iframe eh descartado. Tudo silencioso.
+  async function regenStalePieces(piecesList: Piece[]) {
+    if (typeof window === "undefined") return
+    const stale = piecesList.filter((p: any) => {
+      // Multi-step com algum step sem imageUrl
+      if (Array.isArray(p.steps) && p.steps.length > 1) {
+        return p.steps.some((s: any) => !s.imageUrl && !s.thumbnailUrl)
+      }
+      // Single-step sem thumb
+      return !p.imageUrl
+    })
+    if (!stale.length) return
+    console.log(`[regen] ${stale.length} pecas com thumbs stale, regerando...`)
+    setRegening(true)
+    setRegenProgress({ current: 0, total: stale.length })
+
+    for (let idx = 0; idx < stale.length; idx++) {
+      const piece = stale[idx]
+      setRegenProgress({ current: idx + 1, total: stale.length })
+      try {
+        // Cria iframe oculto que carrega a peca no editor. autoGen dentro
+        // do editor detecta thumbs faltando e gera+sobe. Esperamos ~6s
+        // por peca (load + render + uploads). Se peca tem muitos steps,
+        // pode demorar mais.
+        const iframe = document.createElement("iframe")
+        iframe.style.cssText = "position:fixed;left:-10000px;top:-10000px;width:1280px;height:800px;border:0;"
+        iframe.src = `/editor?campaignId=${id}&pieceId=${piece.id}&silent=1`
+        document.body.appendChild(iframe)
+        // Espera load + autoGen (renderiza N steps + uploads). Conservador.
+        const waitMs = 2000 + ((piece as any).stepCount ?? 1) * 1500
+        await new Promise(r => setTimeout(r, waitMs))
+        document.body.removeChild(iframe)
+      } catch (e) {
+        console.warn("[regen] falha em", piece.id, e)
+      }
+    }
+
+    console.log("[regen] terminou. Recarregando previews.")
+    setRegening(false)
+    await refetchAll()
   }
 
   useEffect(() => {
@@ -93,6 +141,15 @@ export default function PresentationPage() {
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
   }, [id])
+
+  // Auto-regen: roda 1x apos o primeiro load. Detecta pecas multi-step com
+  // step.imageUrl null (caso classico: usuario mudou texto no asset, banco
+  // invalidou os thumbs, mas autoGen do editor nao rodou ainda).
+  useEffect(() => {
+    if (loading || autoRegenDoneRef.current) return
+    autoRegenDoneRef.current = true
+    regenStalePieces(pieces).catch(e => console.warn("[auto-regen] falha:", e))
+  }, [loading, pieces])
 
   // Scroll automatico pro slide indicado no hash (#piece-{id}).
   // Acontece DEPOIS de pieces serem renderizadas (loading=false), pois antes
@@ -183,6 +240,7 @@ export default function PresentationPage() {
 
   return (
     <PageShell>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       {/* Toolbar abaixo do TopNav */}
       <div style={{
         position: "sticky", top: 0, zIndex: 10,
@@ -205,7 +263,17 @@ export default function PresentationPage() {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {regening && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#666", padding: "0 12px" }}>
+              <span className="spinner" style={{
+                width: 12, height: 12, borderRadius: "50%",
+                border: "2px solid #ddd", borderTopColor: "#F5C400",
+                animation: "spin 0.8s linear infinite",
+              }} />
+              Regenerando preview {regenProgress.current}/{regenProgress.total}
+            </div>
+          )}
           <Button variant="secondary" size="md" onClick={refetchAll} title="Recarrega previews do servidor">
             ↻ Atualizar
           </Button>
