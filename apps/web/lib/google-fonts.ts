@@ -31,6 +31,7 @@ export const GOOGLE_FONTS: FontOption[] = [
   { name: "Mulish", category: "sans" },
   { name: "Public Sans", category: "sans" },
   { name: "Source Sans 3", category: "sans" },
+  { name: "Exo 2", category: "sans" },
 
   // Serif (mais formais, editoriais)
   { name: "Playfair Display", category: "serif" },
