@@ -2334,54 +2334,83 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         })
         const blob = await (await fetch(dataUrl)).blob()
         console.log("[thumb] gerado", blob.size, "bytes", `${Math.round(w * thumbScale)}x${Math.round(h * thumbScale)}`)
+        srvLog("thumb-GENERATED", { bytes: blob.size, w: Math.round(w * thumbScale), h: Math.round(h * thumbScale), objects: fc.getObjects().length })
         return blob
       } finally {
         bleedOverlays.forEach((o: any) => { o.visible = true })
         fc.requestRenderAll()
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[generateCurrentThumbBlob] FALHOU:", e)
+      srvLog("thumb-FAILED", { error: String(e?.message ?? e), stack: e?.stack?.split("\n").slice(0, 4).join(" | ") })
       return null
     }
   }
 
   async function uploadPieceThumb(fc: any, pId: string) {
     console.log("[uploadPieceThumb] inicio pra", pId)
+    srvLog("uploadPieceThumb-START", { pieceId: pId, stepCount: stepCountRef.current, activeStep: activeStepIndexRef.current })
     const blob = await generateCurrentThumbBlob(fc)
     if (!blob) {
       console.error("[uploadPieceThumb] ABORTADO — blob veio null!")
+      srvLog("uploadPieceThumb-ABORTED", "blob veio null")
       return
     }
     console.log("[uploadPieceThumb] blob ok,", blob.size, "bytes. Subindo...")
+    srvLog("uploadPieceThumb-BLOB-OK", { bytes: blob.size })
     const fd = new FormData()
     fd.append("thumbnail", blob, "thumb.png")
     try {
       const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
       console.log("[uploadPieceThumb] thumb principal status:", r.status)
-    } catch (e) { console.warn("[uploadPieceThumb] main thumb failed:", e) }
+      srvLog("uploadPieceThumb-MAIN-STATUS", { status: r.status })
+    } catch (e: any) {
+      console.warn("[uploadPieceThumb] main thumb failed:", e)
+      srvLog("uploadPieceThumb-MAIN-FAIL", { error: String(e?.message ?? e) })
+    }
     // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
     if (stepCountRef.current > 1) {
       const fd2 = new FormData()
       fd2.append("thumbnail", blob, `step${activeStepIndexRef.current}.png`)
       try {
-        await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
+        const r2 = await fetch(`/api/pieces/${pId}/step-thumbnail?index=${activeStepIndexRef.current}`, {
           method: "POST", body: fd2, keepalive: true,
         })
-      } catch (e) { console.warn("[uploadPieceThumb] step thumb failed:", e) }
+        srvLog("uploadPieceThumb-STEP-STATUS", { index: activeStepIndexRef.current, status: r2.status })
+      } catch (e: any) {
+        console.warn("[uploadPieceThumb] step thumb failed:", e)
+        srvLog("uploadPieceThumb-STEP-FAIL", { error: String(e?.message ?? e) })
+      }
     }
+  }
+
+  // Helper: envia log do client pro terminal do servidor (pra debug fica
+  // visivel sem F12). Best-effort: nao espera resposta, nao quebra se falhar.
+  function srvLog(tag: string, data: any) {
+    try {
+      fetch("/api/debug/client-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag, data }),
+        keepalive: true,
+      }).catch(() => {})
+    } catch {}
   }
 
   async function saveNow() {
     clearTimeout(saveTimer.current)
+    srvLog("saveNow-CALLED", { pieceId, isDirty: isDirtyRef.current, savingInFlight: savingInFlightRef.current })
     // Guards: nao salva durante apply de historico, nem antes do init terminar.
     // Sem isso, fechar a aba durante remount podia gravar layers em estado
     // transitorio (sem __assetId restaurados) -> KV vazia/quebrada.
     if (isApplyingHistory.current) {
       editorLog("[saveNow] abortado — undo/redo em andamento")
+      srvLog("saveNow-SKIPPED", "applying history")
       return
     }
     if (!isInitialized.current) {
       editorLog("[saveNow] abortado — init nao terminou")
+      srvLog("saveNow-SKIPPED", "init nao terminou")
       return
     }
     // Trava de reentrada: se outro saveNow ja esta rodando, ESPERA ele terminar
@@ -2516,7 +2545,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         // Upload do thumb e best-effort; falha nao deve marcar como dirty de novo
         // mas o save da peca em si ja persistiu.
         try {
+          srvLog("saveNow-PRE-UPLOAD", { pieceId: targetPieceId, isDirty: isDirtyRef.current })
           await uploadPieceThumb(fc, targetPieceId)
+          srvLog("saveNow-POST-UPLOAD", { pieceId: targetPieceId })
           // Re-fetch pieceRef pra pegar o imageUrl novo dos steps (gravado por
           // uploadPieceThumb). Sem isso, switchToStep posterior usa imageUrl
           // null e perde o thumb que acabou de ser gerado.
@@ -3659,9 +3690,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
           // Pequeno delay pra o text:editing:exited handler rodar e setar dirty.
           await new Promise(r => setTimeout(r, 50))
           // Se tem mudancas, salva ANTES de navegar (sem dialog).
+          srvLog("Voltar-CLICKED", { isDirty: isDirtyRef.current, dest, savingInFlight: savingInFlightRef.current })
           if (isDirtyRef.current) {
             try { await saveNow() } catch (e) { console.warn("[Voltar] save falhou:", e) }
           }
+          srvLog("Voltar-NAVIGATING", { dest })
           // HARD navigation: window.location forca full reload, ignora cache
           // do App Router. Garante que a pagina destino re-monta com dados
           // frescos do servidor.
