@@ -3595,27 +3595,32 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       </div>
 
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: TH, background: "rgba(17,17,17,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 12, zIndex: 200 }}>
-        <button onClick={() => {
-          // Quando o editor foi aberto a partir da apresentacao (?from=presentation),
-          // o botao volta pra apresentacao em vez da pagina geral da campanha.
-          // Anexa #piece-{id} pra que a pagina role automaticamente ate o slide
-          // de origem (visualmente mais claro: user volta exatamente onde estava).
-          // Adiciona ?t={ts} pra forcar useEffect na pagina destino re-rodar.
-          // Sem isso, App Router mantem a pagina cacheada e useEffect com [id]
-          // nao re-disparava (mesmo id) -> previews stale.
-          const ts = Date.now()
-          const sep = from === "presentation" ? "?" : "?"
+        <button onClick={async () => {
           const hash = from === "presentation" && isPieceMode && pieceId ? `#piece-${pieceId}` : ""
           const base = from === "presentation"
             ? `/campaigns/${campaignId}/presentation`
             : `/campaigns/${campaignId}`
-          const dest = `${base}${sep}t=${ts}${hash}`
-          const go = () => {
-            router.refresh()
-            router.push(dest)
+          const dest = `${base}${hash}`
+          // FORCA exit do modo edit de texto. Se o user estava editando um
+          // texto inline e clicou Voltar sem clicar fora, text:editing:exited
+          // nao dispara naturalmente. Sem isso, a edicao do texto eh perdida.
+          try {
+            const fc: any = fabricRef.current
+            const active = fc?.getActiveObject?.()
+            if (active && (active.isEditing || (active as any).isEditing)) {
+              if (typeof (active as any).exitEditing === "function") (active as any).exitEditing()
+            }
+          } catch (e) { /* nao critico */ }
+          // Pequeno delay pra o text:editing:exited handler rodar e setar dirty.
+          await new Promise(r => setTimeout(r, 50))
+          // Se tem mudancas, salva ANTES de navegar (sem dialog).
+          if (isDirtyRef.current) {
+            try { await saveNow() } catch (e) { console.warn("[Voltar] save falhou:", e) }
           }
-          if (isDirtyRef.current) setConfirmExit(() => go)
-          else go()
+          // HARD navigation: window.location forca full reload, ignora cache
+          // do App Router. Garante que a pagina destino re-monta com dados
+          // frescos do servidor.
+          if (typeof window !== "undefined") window.location.href = dest
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
           title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
           {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
