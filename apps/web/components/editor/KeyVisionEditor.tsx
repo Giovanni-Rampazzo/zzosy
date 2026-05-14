@@ -2273,59 +2273,50 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       const h = canvasHRef.current
       const TARGET = 2400
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
-      const tw = Math.round(w * thumbScale)
-      const th = Math.round(h * thumbScale)
-      const { StaticCanvas: _ThumbSC, Image: _FabImage, Path: _Path } = await import("fabric") as any
-      const thumbEl = document.createElement("canvas")
-      thumbEl.width = tw; thumbEl.height = th
-      const thumbFc = new _ThumbSC(thumbEl, { width: tw, height: th, enableRetinaScaling: false, backgroundColor: bgColorRef.current })
 
-      const objectsToClone = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
-      for (const obj of objectsToClone) {
-        const cloned = await obj.clone()
-        const isText = obj.type === "textbox" || obj.type === "i-text"
-        if (isText && obj.styles && Object.keys(obj.styles).length > 0) {
-          cloned.set("styles", JSON.parse(JSON.stringify(obj.styles)))
-          if (cloned.initDimensions) cloned.initDimensions()
-        }
-        cloned.set({
-          left: (obj.left ?? 0) * thumbScale,
-          top: (obj.top ?? 0) * thumbScale,
-          scaleX: (obj.scaleX ?? 1) * thumbScale,
-          scaleY: (obj.scaleY ?? 1) * thumbScale,
+      // ABORDAGEM SIMPLES: usa toDataURL do canvas atual direto. Multiplier
+      // pode escalar pra qualquer tamanho sem precisar clonar objetos.
+      // Antes a função clonava cada objeto pra um StaticCanvas — Fabric v7
+      // mudou a API e o `await obj.clone()` falhava silenciosamente em
+      // alguns objetos, retornando blob null. Logo o uploadPieceThumb nem
+      // tentava fazer o POST do thumbnail. Bug raiz do "preview nao atualiza".
+
+      // Esconde temporariamente o bleed overlay (não deve aparecer no thumb)
+      const bleedOverlays = fc.getObjects().filter((o: any) => o.__isBleedOverlay)
+      bleedOverlays.forEach((o: any) => { o.visible = false })
+      try {
+        const dataUrl = fc.toDataURL({
+          format: "png",
+          multiplier: thumbScale,
+          // viewport: ignora zoom/pan do user — sempre exporta o canvas inteiro
+          enableRetinaScaling: false,
         })
-        if ((obj as any).__maskData) {
-          ;(cloned as any).__maskData = (obj as any).__maskData
-          try {
-            cloned.clipPath = null
-            await applyMaskToFabricObject({ Image: _FabImage, Path: _Path }, cloned, (obj as any).__maskData)
-          } catch (e) { console.warn("[thumb] mask clone failed:", e) }
-        }
-        thumbFc.add(cloned)
+        const blob = await (await fetch(dataUrl)).blob()
+        console.log("[thumb] gerado", blob.size, "bytes", `${Math.round(w * thumbScale)}x${Math.round(h * thumbScale)}`)
+        return blob
+      } finally {
+        bleedOverlays.forEach((o: any) => { o.visible = true })
+        fc.requestRenderAll()
       }
-      thumbFc.renderAll()
-      await new Promise(r => setTimeout(r, 200))
-      const dataUrl = thumbFc.toDataURL({ format: "png", multiplier: 1 })
-      thumbFc.dispose()
-      return await (await fetch(dataUrl)).blob()
     } catch (e) {
-      console.warn("[generateCurrentThumbBlob] fail:", e)
+      console.error("[generateCurrentThumbBlob] FALHOU:", e)
       return null
     }
   }
 
   async function uploadPieceThumb(fc: any, pId: string) {
+    console.log("[uploadPieceThumb] inicio pra", pId)
     const blob = await generateCurrentThumbBlob(fc)
-    if (!blob) return
+    if (!blob) {
+      console.error("[uploadPieceThumb] ABORTADO — blob veio null!")
+      return
+    }
+    console.log("[uploadPieceThumb] blob ok,", blob.size, "bytes. Subindo...")
     const fd = new FormData()
     fd.append("thumbnail", blob, "thumb.png")
-    // keepalive: o request sobrevive a navegacao do user (ex: clicar
-    // em 'Voltar pra campanha' logo apos um save). Sem isso, o fetch
-    // eh cancelado e o thumb fica desatualizado.
-    // try/catch porque "Failed to fetch" pode aparecer quando o user
-    // navega ou hot-reload derruba a conexao — nao deve quebrar o save.
     try {
-      await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
+      const r = await fetch(`/api/pieces/${pId}/thumbnail`, { method: "POST", body: fd, keepalive: true })
+      console.log("[uploadPieceThumb] thumb principal status:", r.status)
     } catch (e) { console.warn("[uploadPieceThumb] main thumb failed:", e) }
     // STEPS: se a peca tem multiplos steps, atualiza tambem o thumb do step ativo.
     if (stepCountRef.current > 1) {
