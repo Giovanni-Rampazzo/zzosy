@@ -289,6 +289,7 @@ export default function PresentationPage() {
                         hideCard={!isLastChunk}
                         onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
+                        onStepClick={(stepIndex) => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation&stepIndex=${stepIndex}`)}
                       />
                     </SlideRow>
                   )

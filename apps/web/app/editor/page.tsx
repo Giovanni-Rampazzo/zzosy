@@ -20,12 +20,18 @@ function EditorContent() {
   const campaignId = searchParams.get("campaignId") ?? ""
   const pieceId = searchParams.get("pieceId") ?? undefined
   const from = searchParams.get("from") ?? undefined
+  // stepIndex opcional: quando user clica num step especifico na apresentacao,
+  // queremos abrir o editor JA naquele step (em vez do activeStepIndex salvo).
+  const stepIndexParam = searchParams.get("stepIndex")
+  const initialStepIndex = stepIndexParam != null && !Number.isNaN(parseInt(stepIndexParam, 10))
+    ? parseInt(stepIndexParam, 10)
+    : undefined
   if (!campaignId) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#111",color:"white"}}>
       Campaign ID não encontrado
     </div>
   )
-  return <KeyVisionEditor campaignId={campaignId} pieceId={pieceId} from={from} />
+  return <KeyVisionEditor campaignId={campaignId} pieceId={pieceId} from={from} initialStepIndex={initialStepIndex} />
 }
 
 export default function EditorPage() {

@@ -144,6 +144,9 @@ interface PieceSlideProps {
   steps?: Array<{ imageUrl?: string | null; thumbnailUrl?: string | null; index?: number }> | null
   copy?: string | null
   onClick?: () => void
+  /** Callback quando user clica num step especifico em pecas multi-step.
+   * Recebe o indice 0-based do step. Quando nao passado, fallback pra onClick. */
+  onStepClick?: (index: number) => void
   /** ID da peca pra permitir auto-save da legenda via PATCH /api/pieces/[id]. Quando omitido, legenda fica read-only. */
   pieceId?: string
   /** Callback opcional pra propagar mudanca no copy pro state pai imediatamente. */
@@ -172,7 +175,7 @@ function formatDims(
   return `${fmt(wV)} ${wU} x ${fmt(hV)} ${hU}`
 }
 
-export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, pieceId, onCopyChange, hideCard }: PieceSlideProps) {
+export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, onStepClick, pieceId, onCopyChange, hideCard }: PieceSlideProps) {
   // DEBUG temporario: verificar se steps esta chegando
   if (typeof window !== "undefined" && steps && steps.length >= 2) {
     console.log("[SlidePiece DEBUG]", pieceId, "steps:", steps.map(s => ({ idx: s.index, hasImg: !!s.imageUrl, hasThumb: !!s.thumbnailUrl, imageUrl: s.imageUrl, thumbnailUrl: s.thumbnailUrl })))
@@ -219,19 +222,29 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             // A URL ja vem versionada do API (?v=updatedAt). Sem cache-bust
             // adicional aqui pra evitar re-fetch desnecessario a cada render.
             const src = s.imageUrl ?? s.thumbnailUrl ?? null
+            const stepIndex = s.index ?? i
+            const stepClickable = !!onStepClick
             return (
-              <div key={i} style={{
-                // Container do step: inline-flex pra ter width baseada em
-                // conteudo. Empilha label + imagem verticalmente.
-                display: "inline-flex", flexDirection: "column",
-                alignItems: "flex-start",
-                justifyContent: "center",
-                height: "100%",
-                // maxWidth limita pra cada peca caber na sua 'fatia'.
-                // maxHeight indireto: a imagem usa height calculada.
-                maxWidth: `calc(${100 / total}% - ${total > 1 ? "2%" : "0%"})`,
-                minHeight: 0, minWidth: 0,
-              }}>
+              <div key={i}
+                onClick={stepClickable ? (e) => {
+                  // Stop propagation pra nao disparar o onClick do slide inteiro
+                  // (que abria o editor sem o stepIndex). Aqui passamos o index
+                  // exato do step clicado.
+                  e.stopPropagation()
+                  onStepClick!(stepIndex)
+                } : undefined}
+                style={{
+                  // Container do step: inline-flex pra ter width baseada em
+                  // conteudo. Empilha label + imagem verticalmente.
+                  display: "inline-flex", flexDirection: "column",
+                  alignItems: "flex-start",
+                  justifyContent: "center",
+                  height: "100%",
+                  // maxWidth limita pra cada peca caber na sua 'fatia'.
+                  maxWidth: `calc(${100 / total}% - ${total > 1 ? "2%" : "0%"})`,
+                  minHeight: 0, minWidth: 0,
+                  cursor: stepClickable ? "pointer" : undefined,
+                }}>
                 {/* Label do step — alinhado a esquerda, colado na peca */}
                 <div style={{
                   fontSize: "0.75cqw", fontWeight: 700,

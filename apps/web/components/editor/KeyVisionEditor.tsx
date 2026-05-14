@@ -204,7 +204,7 @@ function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: 
 }
 
 
-export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: string; pieceId?: string; from?: string }) {
+export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }: { campaignId: string; pieceId?: string; from?: string; initialStepIndex?: number }) {
   const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -333,11 +333,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         // stepCount total = data.steps.length (NAO eh 1 + inactives).
         const savedAllSteps: any[] = Array.isArray(pdata?.steps) ? pdata.steps : []
         const savedActive: number = typeof pdata?.activeStepIndex === "number" ? pdata.activeStepIndex : 0
+        // Se a URL pediu um step especifico (?stepIndex=N vindo da apresentacao),
+        // usa esse no lugar do savedActive — desde que seja valido pra esta peca.
+        const requestedStep = (typeof initialStepIndex === "number"
+          && initialStepIndex >= 0
+          && initialStepIndex < savedAllSteps.length)
+          ? initialStepIndex
+          : savedActive
         if (savedAllSteps.length >= 2) {
           // Peca multi-step: separa ativo dos inativos.
-          inactiveStepsRef.current = savedAllSteps.filter((_, i) => i !== savedActive)
+          inactiveStepsRef.current = savedAllSteps.filter((_, i) => i !== requestedStep)
           setStepCountSync(savedAllSteps.length)
-          setActiveStepIndexSync(savedActive)
+          setActiveStepIndexSync(requestedStep)
         } else {
           // Peca legada / 1 step: nao mexe.
           inactiveStepsRef.current = []
@@ -1108,9 +1115,32 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
         const pdata = typeof p.data === "string" ? JSON.parse(p.data) : p.data
         const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
 
-        if (pdata?.version === 2 && Array.isArray(pdata?.layers)) {
+        // STEPS: se a URL pediu um step especifico (?stepIndex=N) que NAO eh o
+        // savedActive, precisamos carregar os layers DESSE step (que estao em
+        // pdata.steps[N].layers, NAO em pdata.layers que sempre eh o savedActive).
+        const savedAllSteps: any[] = Array.isArray(pdata?.steps) ? pdata.steps : []
+        const savedActiveIdx = typeof pdata?.activeStepIndex === "number" ? pdata.activeStepIndex : 0
+        const loadIdx = (typeof initialStepIndex === "number"
+          && initialStepIndex >= 0
+          && initialStepIndex < savedAllSteps.length
+          && savedAllSteps.length >= 2)
+          ? initialStepIndex
+          : null
+        const layersToLoad = (loadIdx !== null && loadIdx !== savedActiveIdx)
+          ? (savedAllSteps[loadIdx]?.layers ?? [])
+          : (pdata?.layers ?? [])
+        const bgToLoad = (loadIdx !== null && loadIdx !== savedActiveIdx)
+          ? (savedAllSteps[loadIdx]?.bgColor ?? pdata?.bgColor ?? "#ffffff")
+          : (pdata?.bgColor ?? "#ffffff")
+        // Atualiza bgColor pra refletir o step carregado (se diferente do salvo).
+        if (loadIdx !== null && loadIdx !== savedActiveIdx) {
+          bgColorRef.current = bgToLoad
+          setBgColor(bgToLoad)
+        }
+
+        if (pdata?.version === 2 && Array.isArray(layersToLoad)) {
           // Renderiza cada layer da peca
-          const sorted = [...pdata.layers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+          const sorted = [...layersToLoad].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
           for (const layer of sorted) {
             // Layer LINKADO a um asset (peca gerada ou linkada do PSD)
             const asset = assetMap[layer.assetId] as Asset
@@ -2354,12 +2384,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from }: { campaignId: str
       editorLog("[saveNow] abortado — init nao terminou")
       return
     }
-    // Trava de reentrada: se outro saveNow ja esta rodando, espera. Sem isso,
-    // chamadas em sequencia (e.g. Cmd+S apertado 2x) podiam corromper estado
-    // do pieceRef ou disparar 2 PATCH simultaneos.
+    // Trava de reentrada: se outro saveNow ja esta rodando, ESPERA ele terminar
+    // antes de comecar este. Antes abortava silenciosamente, mas isso causava
+    // bug grave no fluxo "Voltar pra apresentacao":
+    //   1. User edita -> debounce 800ms agenda auto-save
+    //   2. Auto-save comeca (PATCH lento, upload thumb pendente)
+    //   3. User clica Voltar -> saveNow() chamado -> abortava
+    //   4. window.location.href acontece ANTES do auto-save terminar upload
+    //   5. Thumb nunca era subido -> preview na apresentacao nao atualizava
     if (savingInFlightRef.current) {
-      editorLog("[saveNow] abortado — save anterior ainda rodando")
-      return
+      editorLog("[saveNow] aguardando save anterior terminar...")
+      // Espera ate 5s pelo save anterior. Polling simples.
+      const startWait = Date.now()
+      while (savingInFlightRef.current && Date.now() - startWait < 5000) {
+        await new Promise(r => setTimeout(r, 50))
+      }
+      if (savingInFlightRef.current) {
+        editorLog("[saveNow] timeout esperando save anterior — abortando")
+        return
+      }
     }
     savingInFlightRef.current = true
     setSaving(true)
