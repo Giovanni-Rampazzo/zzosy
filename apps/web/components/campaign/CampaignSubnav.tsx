@@ -4,7 +4,7 @@
  * /campaigns/[id], /campaigns/[id]/assets, /campaigns/[id]/pieces, etc.
  *
  * Linha 1 (navegacao):
- *   - "← Cliente" (volta pro cliente)
+ *   - "← Campanhas" (volta pro cliente)
  *   - "Campanha" (vai pra /campaigns/[id]) — escondido se ja estamos na campanha
  *   - "Peças" (vai pra /pieces?campaignId=X) — escondido se ja estamos em pecas
  *
@@ -42,7 +42,7 @@ export function CampaignSubnav({ campaignId, clientId, actions, activeTab }: Pro
           onClick={() => clientId ? router.push(`/clients/${clientId}`) : router.back()}
           title="Voltar para o cliente"
         >
-          ← Cliente
+          ← Campanhas
         </Button>
         {activeTab !== "campaign" && (
           <Button

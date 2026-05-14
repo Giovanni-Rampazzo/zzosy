@@ -83,7 +83,7 @@ export default function ClientPage() {
               {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
             </div>
             <div style={{display:"flex",gap:10}}>
-              <Button variant="primary" onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
+              <Button variant="primary" onClick={() => router.push(`/clients/${id}/edit`)}>Editar</Button>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
@@ -98,6 +98,10 @@ export default function ClientPage() {
 
         {/* Lista de campanhas */}
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px",borderBottom:"1px solid #E0E0E0"}}>
+              <div style={{fontSize:14,fontWeight:700}}>Campanhas</div>
+              <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
+            </div>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>
                 <tr>
