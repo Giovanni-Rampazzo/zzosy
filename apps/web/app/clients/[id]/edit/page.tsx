@@ -317,8 +317,15 @@ export default function EditClientPage() {
   async function handleFontFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files
     srvLog("font-INPUT-CHANGE", { fileCount: files?.length ?? 0 })
+    if (!files || files.length === 0) {
+      srvLog("font-INPUT-NO-FILES", {})
+      return
+    }
+    // Converte FileList pra array ANTES de mexer no input (zerar value invalida FileList em alguns browsers)
+    const fileArray: File[] = Array.from(files)
+    srvLog("font-INPUT-ARRAY", { count: fileArray.length, firstName: fileArray[0]?.name })
     e.target.value = ""
-    if (files && files.length > 0) await uploadFontFiles(files)
+    await uploadFontFiles(fileArray)
   }
 
   function updateFontFileMeta(index: number, patch: Partial<CustomFontFile>) {
