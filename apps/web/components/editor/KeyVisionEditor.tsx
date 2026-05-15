@@ -9,6 +9,7 @@ import { ExportAssetButtons } from "./ExportAssetButtons"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
+import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
 // poluem o console sem valor pro user final. Em dev, sao essenciais pra diagnostico.
@@ -33,8 +34,20 @@ interface Layer {
   scaleX: number; scaleY: number; rotation: number; zIndex: number; width: number; height?: number
   overrides?: any
 }
+interface BrandColor {
+  hex: string
+  name?: string
+  role?: "principal" | "secundaria" | "apoio" | "neutra" | "primary" | "secondary"
+}
+interface CustomFontFile { url: string; weight: number; style: "normal" | "italic"; fileName: string }
 interface Campaign {
-  id: string; name: string; client: { id: string; name: string }
+  id: string; name: string
+  client: {
+    id: string; name: string
+    brandFont?: string | null
+    brandColors?: BrandColor[] | null
+    customFontFiles?: CustomFontFile[] | null
+  }
   assets: Asset[]
   keyVision: { bgColor: string; layers: Layer[] | null; width?: number; height?: number } | null
 }
@@ -310,6 +323,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       const campRes = await fetch(`/api/campaigns/${campaignId}`)
       const camp: Campaign = await campRes.json()
       campaignRef.current = camp
+      // Carrega fonte da marca pra Fabric renderizar com ela
+      try {
+        const bf = camp.client?.brandFont
+        const files = camp.client?.customFontFiles
+        if (bf) {
+          if (Array.isArray(files) && files.length > 0) loadCustomFontFamily(bf, files)
+          else loadGoogleFont(bf)
+        }
+      } catch {}
       if (camp.assets?.length) { assetIdRef.current = camp.assets[0].id }
 
       // MODO PEÇA: carrega peça PRIMEIRO, atualiza refs, depois disso seta campaign (que dispara init)
@@ -4164,6 +4186,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
                 style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
               />
             </div>
+            {/* Cores da marca (se cliente tiver) — aparecem antes dos defaults */}
+            {(() => {
+              const brand = (campaignRef.current?.client?.brandColors ?? []) as BrandColor[]
+              if (!brand.length) return null
+              return (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Cores da marca</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {brand.map((c, idx) => (
+                      <div key={idx} onClick={() => changeBg(c.hex)}
+                        title={c.name ? `${c.name} (${c.hex})` : c.hex}
+                        style={{ width: 26, height: 26, borderRadius: 5, background: c.hex, cursor: "pointer", border: bgColor.toLowerCase() === c.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+            <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Padrão</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {SWATCHES.map(c => (
                 <div key={c} onClick={() => changeBg(c)}
@@ -4311,6 +4351,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
               <FontPicker
                 value={mixedFontFamily ? "" : effectiveFontFamily}
                 onChange={(f) => applyStyle("fontFamily", f)}
+                brandFont={campaignRef.current?.client?.brandFont ?? null}
               />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -4454,6 +4495,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
                   style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
                 />
               </div>
+              {/* Cores da marca (se cliente tiver) — aparecem antes dos defaults */}
+              {(() => {
+                const brand = (campaignRef.current?.client?.brandColors ?? []) as BrandColor[]
+                if (!brand.length) return null
+                return (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Cores da marca</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {brand.map((c, idx) => (
+                        <div key={idx} onClick={() => applyStyle("fill", c.hex)}
+                          title={c.name ? `${c.name} (${c.hex})` : c.hex}
+                          style={{ width: 24, height: 24, borderRadius: 4, background: c.hex, cursor: "pointer", border: (selected.fill ?? "").toLowerCase() === c.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+              <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Padrão</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {SWATCHES.map(c => (
                   <div key={c} onClick={() => applyStyle("fill", c)}

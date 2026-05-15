@@ -26,10 +26,12 @@ interface PickerProps {
   value: string
   onChange: (newFontFamily: string) => void
   buttonStyle?: React.CSSProperties
+  /** Fonte da marca do cliente (Google ou custom). Se presente, aparece como secao destacada no topo. */
+  brandFont?: string | null
 }
 
 /** Picker de FAMILIA. */
-export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
+export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerProps) {
   const [families, setFamilies] = useState<FontFamily[]>(_familiesCache ?? [])
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -116,6 +118,33 @@ export function FontPicker({ value, onChange, buttonStyle }: PickerProps) {
             }}
           />
           <div style={{ overflowY: "auto", maxHeight: 270 }}>
+            {/* Fontes da marca — destaque no topo se cliente tiver brandFont */}
+            {brandFont && brandFont.trim() && (!query.trim() || brandFont.toLowerCase().includes(query.toLowerCase().trim())) && (
+              <div>
+                <div style={{ padding: "8px 12px 4px", fontSize: 9, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Fonte da marca</div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try { await ensureFontLoaded(brandFont) } catch {}
+                    onChange(brandFont)
+                    setOpen(false); setQuery("")
+                  }}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left",
+                    padding: "6px 12px", border: "none",
+                    background: brandFont === currentFamily ? "#3a3a1a" : "transparent",
+                    color: "white", fontSize: 13, fontFamily: `'${brandFont}', sans-serif`, cursor: "pointer",
+                    borderLeft: "2px solid #F5C400",
+                  }}
+                  onMouseEnter={e => { if (brandFont !== currentFamily) (e.currentTarget as HTMLButtonElement).style.background = "#2a2a1a" }}
+                  onMouseLeave={e => { if (brandFont !== currentFamily) (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                >
+                  {brandFont}
+                </button>
+                <div style={{ height: 1, background: "#333", margin: "6px 0" }} />
+                <div style={{ padding: "0 12px 4px", fontSize: 9, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Sistema</div>
+              </div>
+            )}
             {filtered.length === 0 ? (
               <div style={{ padding: "10px 12px", color: "#888", fontSize: 11 }}>Nenhuma fonte encontrada</div>
             ) : (

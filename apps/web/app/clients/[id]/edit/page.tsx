@@ -25,14 +25,23 @@ import { GOOGLE_FONTS, loadGoogleFont, loadCustomFontFamily, detectFontMetadata,
 interface BrandColor {
   hex: string
   name?: string
-  role: "primary" | "secondary"
+  /** Categoria da cor no sistema de marca. Aceita valores legados em ingles. */
+  role: "principal" | "secundaria" | "apoio" | "neutra" | "primary" | "secondary"
 }
 
-const DEFAULT_BRAND_COLORS: BrandColor[] = [
-  { hex: "#000000", role: "primary" },
-  { hex: "#FFFFFF", role: "primary" },
-  { hex: "#888888", role: "secondary" },
-  { hex: "#CCCCCC", role: "secondary" },
+/** Migra valores legados (primary/secondary) pros nomes novos. */
+function normalizeRole(r: any): "principal" | "secundaria" | "apoio" | "neutra" {
+  if (r === "primary") return "principal"
+  if (r === "secondary") return "secundaria"
+  if (r === "principal" || r === "secundaria" || r === "apoio" || r === "neutra") return r
+  return "principal"
+}
+
+const ROLE_OPTIONS: Array<{ value: "principal" | "secundaria" | "apoio" | "neutra"; label: string }> = [
+  { value: "principal", label: "Principal" },
+  { value: "secundaria", label: "Secundária" },
+  { value: "apoio", label: "Apoio" },
+  { value: "neutra", label: "Neutra" },
 ]
 
 const WEIGHT_OPTIONS = [
@@ -104,7 +113,7 @@ export default function EditClientPage() {
   const [address, setAddress] = useState("")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [brandFont, setBrandFont] = useState<string>("")
-  const [brandColors, setBrandColors] = useState<BrandColor[]>(DEFAULT_BRAND_COLORS)
+  const [brandColors, setBrandColors] = useState<BrandColor[]>([])
   const [customFontFiles, setCustomFontFiles] = useState<CustomFontFile[]>([])
   const [fontMode, setFontMode] = useState<"google" | "custom">("google")
   const [uploadingFont, setUploadingFont] = useState(false)
@@ -133,11 +142,14 @@ export default function EditClientPage() {
         setAddress(c.address ?? "")
         setLogoUrl(c.logoUrl ?? null)
         setBrandFont(c.brandFont ?? "")
-        // brandColors do banco pode vir null (cliente antigo) ou com array
-        // de tamanho diferente. Normaliza pra 4 items garantidos.
-        const incoming = Array.isArray(c.brandColors) ? c.brandColors : []
-        const merged = DEFAULT_BRAND_COLORS.map((def, i) => incoming[i] ?? def)
-        setBrandColors(merged)
+        // brandColors do banco: array dinamico (sem tamanho fixo). Migra
+        // valores legados (primary/secondary → principal/secundaria).
+        const incoming: BrandColor[] = (Array.isArray(c.brandColors) ? c.brandColors : []).map((x: any) => ({
+          hex: x?.hex ?? "#000000",
+          name: x?.name,
+          role: normalizeRole(x?.role),
+        }))
+        setBrandColors(incoming)
         const files: CustomFontFile[] = Array.isArray(c.customFontFiles) ? c.customFontFiles : []
         setCustomFontFiles(files)
         if (files.length > 0) {
@@ -187,6 +199,29 @@ export default function EditClientPage() {
 
   function updateColor(index: number, patch: Partial<BrandColor>) {
     setBrandColors(prev => prev.map((c, i) => i === index ? { ...c, ...patch } : c))
+  }
+
+  function addColor() {
+    setBrandColors(prev => [...prev, { hex: "#000000", role: "principal" }])
+  }
+
+  function removeColor(index: number) {
+    setBrandColors(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // Drag-and-drop para reordenar cores
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  function handleColorDragStart(index: number) { setDragIndex(index) }
+  function handleColorDragOver(e: React.DragEvent) { e.preventDefault() }
+  function handleColorDrop(targetIndex: number) {
+    if (dragIndex === null || dragIndex === targetIndex) { setDragIndex(null); return }
+    setBrandColors(prev => {
+      const copy = [...prev]
+      const [moved] = copy.splice(dragIndex, 1)
+      copy.splice(targetIndex, 0, moved)
+      return copy
+    })
+    setDragIndex(null)
   }
 
   function srvLog(tag: string, data: any) {
@@ -795,10 +830,98 @@ export default function EditClientPage() {
             )}
           </div>
 
-          {/* Cores */}
-          <div style={{display:"flex",flexDirection:"column",gap:18}}>
-            <ColorGroup label="Cores principais" colors={brandColors} startIndex={0} updateColor={updateColor} />
-            <ColorGroup label="Cores secundárias" colors={brandColors} startIndex={2} updateColor={updateColor} />
+          {/* Cores — lista dinamica com drag, categoria editavel, swatch grande */}
+          <div>
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Cores da marca</div>
+              <div style={{fontSize:11,color:"#AAA"}}>Arraste pra reordenar</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+              {brandColors.length === 0 ? (
+                <div style={{fontSize:12,color:"#999",fontStyle:"italic",padding:"10px 0"}}>Nenhuma cor cadastrada. Adicione abaixo.</div>
+              ) : brandColors.map((c, i) => {
+                const role = normalizeRole(c.role)
+                const placeholderByRole: Record<string,string> = {
+                  principal: "Ex: Verde principal",
+                  secundaria: "Ex: Amarelo secundário",
+                  apoio: "Ex: Laranja apoio",
+                  neutra: "Ex: Cinza claro",
+                }
+                const isDragging = dragIndex === i
+                return (
+                  <div
+                    key={i}
+                    draggable
+                    onDragStart={() => handleColorDragStart(i)}
+                    onDragOver={handleColorDragOver}
+                    onDrop={() => handleColorDrop(i)}
+                    style={{
+                      display:"flex",gap:10,alignItems:"center",
+                      padding:8,
+                      background:"#FAFAFA",
+                      border:"1px solid #E8E8E8",
+                      borderRadius:8,
+                      opacity: isDragging ? 0.4 : 1,
+                      cursor: isDragging ? "grabbing" : "default",
+                    }}
+                  >
+                    {/* Handle de drag — grip vertical */}
+                    <div
+                      style={{cursor:"grab",color:"#BBB",fontSize:14,padding:"0 2px",userSelect:"none",lineHeight:1}}
+                      title="Arraste pra reordenar"
+                    >⋮⋮</div>
+                    {/* Swatch grande clicavel */}
+                    <label style={{position:"relative",display:"inline-block",cursor:"pointer",flexShrink:0}}>
+                      <div style={{
+                        width:40,height:40,borderRadius:8,
+                        background:c.hex,
+                        border:"2px solid white",
+                        boxShadow:"0 0 0 1px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)",
+                      }} />
+                      <input
+                        type="color"
+                        value={c.hex}
+                        onChange={e => updateColor(i, { hex: e.target.value.toUpperCase() })}
+                        style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer"}}
+                      />
+                    </label>
+                    {/* Hex */}
+                    <input
+                      type="text"
+                      value={c.hex}
+                      onChange={e => updateColor(i, { hex: e.target.value })}
+                      placeholder="#000000"
+                      maxLength={7}
+                      style={{padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"monospace",width:88,textTransform:"uppercase",background:"white"}}
+                    />
+                    {/* Nome */}
+                    <input
+                      type="text"
+                      value={c.name ?? ""}
+                      onChange={e => updateColor(i, { name: e.target.value || undefined })}
+                      placeholder={placeholderByRole[role]}
+                      style={{padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"inherit",flex:1,minWidth:0,background:"white"}}
+                    />
+                    {/* Categoria */}
+                    <select
+                      value={role}
+                      onChange={e => updateColor(i, { role: e.target.value as any })}
+                      style={{padding:"7px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:11,cursor:"pointer",background:"white",fontFamily:"inherit"}}
+                    >
+                      {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    {/* Remover */}
+                    <button
+                      type="button"
+                      onClick={() => removeColor(i)}
+                      title="Remover cor"
+                      style={{background:"transparent",border:"none",cursor:"pointer",color:"#999",fontSize:18,padding:"0 8px",lineHeight:1,flexShrink:0}}
+                    >×</button>
+                  </div>
+                )
+              })}
+            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={addColor}>+ Adicionar cor</Button>
           </div>
         </div>
 
@@ -832,53 +955,3 @@ export default function EditClientPage() {
   )
 }
 
-/**
- * Renderiza 2 slots de cor (par primary ou secondary).
- * `startIndex` define qual par do array brandColors[] mostrar (0 ou 2).
- */
-function ColorGroup({
-  label, colors, startIndex, updateColor,
-}: {
-  label: string
-  colors: BrandColor[]
-  startIndex: number
-  updateColor: (index: number, patch: Partial<BrandColor>) => void
-}) {
-  return (
-    <div>
-      <div style={{...{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"},marginBottom:8}}>{label}</div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {[0,1].map(offset => {
-          const i = startIndex + offset
-          const c = colors[i]
-          if (!c) return null
-          return (
-            <div key={i} style={{display:"flex",gap:10,alignItems:"center"}}>
-              <input
-                type="color"
-                value={c.hex}
-                onChange={e => updateColor(i, { hex: e.target.value.toUpperCase() })}
-                style={{width:44,height:36,border:"1px solid #E0E0E0",borderRadius:6,padding:2,cursor:"pointer",background:"white"}}
-              />
-              <input
-                type="text"
-                value={c.hex}
-                onChange={e => updateColor(i, { hex: e.target.value })}
-                placeholder="#000000"
-                maxLength={7}
-                style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"monospace",width:100,textTransform:"uppercase"}}
-              />
-              <input
-                type="text"
-                value={c.name ?? ""}
-                onChange={e => updateColor(i, { name: e.target.value || undefined })}
-                placeholder="Nome (opcional, ex: Verde Sicredi)"
-                style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit",flex:1}}
-              />
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
