@@ -256,3 +256,124 @@ export function WeightPicker({ value, onChange, buttonStyle }: PickerProps) {
     </div>
   )
 }
+
+/**
+ * Picker de PESO dedicado a fonte da marca (Google ou custom).
+ * Diferente do WeightPicker padrao (que opera em "Family + Variant" das
+ * fontes do sistema operacional), esse opera direto no fontWeight numerico.
+ *
+ * - Se customFontFiles tem itens: lista APENAS os pesos+estilos subidos.
+ * - Senao (Google Font): lista todos os 9 pesos (100-900) presumindo
+ *   que a familia tem todos disponiveis.
+ */
+const BRAND_WEIGHT_LABELS: Record<number, string> = {
+  100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular",
+  500: "Medium", 600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black",
+}
+
+export interface BrandWeightOption {
+  weight: number
+  style: "normal" | "italic"
+  label: string
+}
+
+export function BrandWeightPicker({
+  value, onChange, buttonStyle, customFontFiles,
+}: {
+  /** fontWeight atual ("400", "700", "normal", "bold") + opcional fontStyle separado nao tratado aqui */
+  value: string
+  /** Recebe a string do peso ("400", "700", etc) e estilo separado nao usado pra simplificar */
+  onChange: (weight: string, style: "normal" | "italic") => void
+  buttonStyle?: React.CSSProperties
+  /** Se preenchido, restringe a lista aos pesos/estilos disponiveis na familia custom */
+  customFontFiles?: Array<{ weight: number; style: "normal" | "italic" }> | null
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onClick)
+    return () => document.removeEventListener("mousedown", onClick)
+  }, [open])
+
+  // Constroi a lista de opcoes
+  let options: BrandWeightOption[]
+  if (customFontFiles && customFontFiles.length > 0) {
+    // Apenas os subidos, ordenados por peso e estilo
+    const sorted = [...customFontFiles].sort((a, b) =>
+      a.weight !== b.weight ? a.weight - b.weight : a.style.localeCompare(b.style)
+    )
+    options = sorted.map(f => ({
+      weight: f.weight,
+      style: f.style,
+      label: `${f.weight} ${BRAND_WEIGHT_LABELS[f.weight] ?? ""}${f.style === "italic" ? " Italic" : ""}`.trim(),
+    }))
+  } else {
+    // Google Font ou fallback: todos os 9 pesos sem italico
+    options = [100, 200, 300, 400, 500, 600, 700, 800, 900].map(w => ({
+      weight: w, style: "normal", label: `${w} ${BRAND_WEIGHT_LABELS[w]}`,
+    }))
+  }
+
+  // Parse do valor atual ("400", "700", "normal", "bold") → numero
+  function parseWeight(v: string): number {
+    if (v === "normal") return 400
+    if (v === "bold") return 700
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 400
+  }
+  const currentWeight = parseWeight(value)
+  const currentLabel = `${currentWeight} ${BRAND_WEIGHT_LABELS[currentWeight] ?? ""}`.trim()
+
+  return (
+    <div ref={wrapperRef} style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", background: "#111", border: "1px solid #2a2a2a",
+          color: "white", fontSize: 12, padding: "5px 8px", borderRadius: 4,
+          outline: "none", textAlign: "left", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4,
+          ...buttonStyle,
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {currentLabel}
+        </span>
+        <span style={{ opacity: 0.5, fontSize: 10 }}>▾</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4,
+          background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, zIndex: 50,
+          maxHeight: 280, overflowY: "auto",
+          boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
+        }}>
+          {options.map(o => {
+            const isCurrent = o.weight === currentWeight
+            return (
+              <button
+                key={`${o.weight}-${o.style}`} type="button"
+                onClick={() => { onChange(String(o.weight), o.style); setOpen(false) }}
+                style={{
+                  display: "block", width: "100%", textAlign: "left",
+                  padding: "6px 12px", border: "none",
+                  background: isCurrent ? "#333" : "transparent",
+                  color: "white", fontSize: 12, cursor: "pointer",
+                }}
+                onMouseEnter={e => { if (!isCurrent) (e.currentTarget as HTMLButtonElement).style.background = "#222" }}
+                onMouseLeave={e => { if (!isCurrent) (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+              >
+                {o.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
-import { FontPicker, WeightPicker } from "./FontPicker"
+import { FontPicker, WeightPicker, BrandWeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { MaskPanel } from "./MaskPanel"
 import { ExportAssetButtons } from "./ExportAssetButtons"
@@ -4225,6 +4225,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
             let effectiveFontFamily = selected.fontFamily ?? "Arial"
             let effectiveFontSize = selected.fontSize ?? 80
             let effectiveFill = selected.fill ?? "#111111"
+            let effectiveFontWeight: string = String((selected as any).fontWeight ?? "normal")
             // Detector de "valor misto" — quando o texto tem partes com fontes/tamanhos/cores
             // diferentes, painel mostra placeholder em vez de um valor incorreto.
             let mixedFontFamily = false
@@ -4374,7 +4375,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
               </div>
               <div>
                 <div style={secS}>Peso</div>
-                <WeightPicker value={effectiveFontFamily} onChange={(f) => applyStyle("fontFamily", f)} />
+                {(() => {
+                  const bf = campaignRef.current?.client?.brandFont ?? null
+                  const cff = campaignRef.current?.client?.customFontFiles ?? null
+                  const isBrand = !!bf && effectiveFontFamily === bf
+                  if (isBrand) {
+                    return (
+                      <BrandWeightPicker
+                        value={effectiveFontWeight}
+                        customFontFiles={cff as any}
+                        onChange={(w, style) => {
+                          applyStyle("fontWeight", w)
+                          // se a familia custom tem italico, aplica tambem
+                          if (style === "italic") applyStyle("fontStyle", "italic")
+                          else applyStyle("fontStyle", "normal")
+                        }}
+                      />
+                    )
+                  }
+                  return <WeightPicker value={effectiveFontFamily} onChange={(f) => applyStyle("fontFamily", f)} />
+                })()}
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
