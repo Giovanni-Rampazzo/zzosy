@@ -443,7 +443,7 @@ export default function CampaignOverviewPage() {
                     title="Editar peça"
                     style={{ position: "relative", height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer", borderRadius: "10px 10px 0 0" }}>
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : (
                       <div style={{ textAlign: "center", color: "#aaa", fontSize: 11 }}>
                         <div style={{ fontWeight: 600 }}>{p.format}</div>
