@@ -260,22 +260,33 @@ export default function EditClientPage() {
 
   async function uploadFontFiles(fileList: FileList | File[]) {
     setError("")
-    const files = Array.from(fileList)
-    srvLog("font-MULTI-START", { count: files.length, names: files.map(f => f.name) })
-    if (customFontFiles.length + files.length > 18) {
-      srvLog("font-MULTI-OVER-LIMIT", { existing: customFontFiles.length, adding: files.length })
-      setError("Máximo 18 arquivos no total (9 pesos × 2 estilos).")
+    const allFiles = Array.from(fileList)
+    srvLog("font-MULTI-START", { count: allFiles.length, names: allFiles.map(f => f.name) })
+
+    const MAX_TOTAL = 50
+    const spaceLeft = MAX_TOTAL - customFontFiles.length
+    let files = allFiles
+    let ignoredCount = 0
+    if (spaceLeft <= 0) {
+      setError(`Limite de ${MAX_TOTAL} arquivos atingido. Remova alguns antes de adicionar mais.`)
       return
     }
+    if (allFiles.length > spaceLeft) {
+      files = allFiles.slice(0, spaceLeft)
+      ignoredCount = allFiles.length - spaceLeft
+      srvLog("font-MULTI-TRUNCATED", { processed: files.length, ignored: ignoredCount })
+    }
+
     setUploadingFont(true)
     const newFiles: CustomFontFile[] = []
+    const replacedSlots: string[] = []
     for (const file of files) {
       const uploaded = await uploadOneFontFile(file)
       if (uploaded) {
-        // Evita duplicata: mesmo peso+style ja existente substitui
+        // Se peso+style ja existe, substitui (silencioso, mas guarda info pra avisar)
         const dupIdx = [...customFontFiles, ...newFiles].findIndex(f => f.weight === uploaded.weight && f.style === uploaded.style)
         if (dupIdx >= 0) {
-          // Substitui em vez de adicionar nova entrada
+          replacedSlots.push(`${uploaded.weight} ${uploaded.style}`)
           if (dupIdx < customFontFiles.length) {
             const updated = [...customFontFiles]
             updated[dupIdx] = uploaded
@@ -290,8 +301,15 @@ export default function EditClientPage() {
       }
     }
     setUploadingFont(false)
-    srvLog("font-MULTI-DONE", { uploadedCount: newFiles.length, totalAfter: customFontFiles.length + newFiles.length })
-    if (newFiles.length === 0) return
+    srvLog("font-MULTI-DONE", { uploadedCount: newFiles.length, totalAfter: customFontFiles.length + newFiles.length, replaced: replacedSlots.length })
+
+    // Avisos finais (nao bloqueia, so informa)
+    const warnings: string[] = []
+    if (ignoredCount > 0) warnings.push(`${ignoredCount} arquivo(s) ignorado(s) — limite ${MAX_TOTAL}`)
+    if (replacedSlots.length > 0) warnings.push(`${replacedSlots.length} peso(s) substituído(s): ${replacedSlots.join(", ")}`)
+    if (warnings.length > 0) setError(warnings.join(" • "))
+
+    if (newFiles.length === 0 && replacedSlots.length === 0) return
 
     const merged = [...customFontFiles, ...newFiles].sort((a, b) =>
       a.weight !== b.weight ? a.weight - b.weight : a.style.localeCompare(b.style)
@@ -301,11 +319,9 @@ export default function EditClientPage() {
     // Se ainda nao tem nome de fonte, deriva do primeiro arquivo
     let nameToUse = brandFont
     if (!nameToUse) {
-      const baseName = newFiles[0].fileName
-        .replace(/\.(ttf|otf|woff2|woff)$/i, "")
-        .replace(/[-_](thin|extralight|ultralight|light|regular|book|medium|semibold|demibold|bold|extrabold|ultrabold|black|heavy|italic|oblique)+/gi, "")
-        .replace(/[-_]/g, " ")
-        .trim()
+      const baseName = (newFiles[0] || files[0] as any)?.fileName
+        ? newFiles[0]?.fileName.replace(/\.(ttf|otf|woff2|woff)$/i, "").replace(/[-_](thin|extralight|ultralight|light|regular|book|medium|semibold|demibold|bold|extrabold|ultrabold|black|heavy|italic|oblique)+/gi, "").replace(/[-_]/g, " ").trim()
+        : ""
       nameToUse = baseName || "Fonte custom"
       setBrandFont(nameToUse)
     }
@@ -755,7 +771,7 @@ export default function EditClientPage() {
                     accept=".ttf,.otf,.woff,.woff2"
                     multiple
                     onChange={handleFontFileChange}
-                    disabled={uploadingFont || customFontFiles.length >= 18}
+                    disabled={uploadingFont || customFontFiles.length >= 50}
                     style={{fontSize:12,fontFamily:"inherit"}}
                   />
                   {uploadingFont && <span style={{fontSize:11,color:"#888"}}>Enviando...</span>}
