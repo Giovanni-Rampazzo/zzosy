@@ -700,18 +700,30 @@ export default function EditClientPage() {
                   </div>
                 ) : null}
 
-                {/* Botao adicionar arquivos */}
-                <Button type="button" variant="secondary" size="sm" onClick={triggerFontPicker} disabled={uploadingFont || customFontFiles.length >= 18}>
+                {/* Botao adicionar arquivos — usa label htmlFor (mais robusto que onClick+ref) */}
+                <label
+                  htmlFor="font-files-input"
+                  style={{
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    padding: "6px 12px", fontSize: 12, fontWeight: 600,
+                    background: "white", color: "#111", border: "2px solid #555",
+                    borderRadius: 6, cursor: (uploadingFont || customFontFiles.length >= 18) ? "not-allowed" : "pointer",
+                    opacity: (uploadingFont || customFontFiles.length >= 18) ? 0.5 : 1,
+                    fontFamily: "inherit", userSelect: "none",
+                  }}
+                >
                   {uploadingFont ? "Enviando..." : customFontFiles.length === 0 ? "+ Adicionar arquivos" : "+ Adicionar mais pesos"}
-                </Button>
+                </label>
 
                 <input
+                  id="font-files-input"
                   ref={fontFileInputRef}
                   type="file"
                   accept=".ttf,.otf,.woff,.woff2"
                   multiple
                   onChange={handleFontFileChange}
-                  style={{display:"none"}}
+                  disabled={uploadingFont || customFontFiles.length >= 18}
+                  style={{position:"absolute",left:"-9999px",width:0,height:0,opacity:0}}
                 />
 
                 <div style={{fontSize:11,color:"#888",marginTop:10,lineHeight:1.5,maxWidth:520}}>
