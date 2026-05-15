@@ -9,6 +9,7 @@ import { ExportAssetButtons } from "./ExportAssetButtons"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
+import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
 // poluem o console sem valor pro user final. Em dev, sao essenciais pra diagnostico.
@@ -34,7 +35,12 @@ interface Layer {
   overrides?: any
 }
 interface Campaign {
-  id: string; name: string; client: { id: string; name: string }
+  id: string; name: string
+  client: {
+    id: string; name: string
+    brandFont?: string | null
+    customFontFiles?: Array<{ url: string; weight: number; style: "normal" | "italic"; fileName: string }> | null
+  }
   assets: Asset[]
   keyVision: { bgColor: string; layers: Layer[] | null; width?: number; height?: number } | null
 }
@@ -310,6 +316,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       const campRes = await fetch(`/api/campaigns/${campaignId}`)
       const camp: Campaign = await campRes.json()
       campaignRef.current = camp
+      // Carrega fonte da marca do cliente pra Fabric renderizar textos com ela
+      try {
+        const bf = camp.client?.brandFont
+        const files = camp.client?.customFontFiles
+        if (bf) {
+          if (Array.isArray(files) && files.length > 0) loadCustomFontFamily(bf, files)
+          else loadGoogleFont(bf)
+        }
+      } catch {}
       if (camp.assets?.length) { assetIdRef.current = camp.assets[0].id }
 
       // MODO PEÇA: carrega peça PRIMEIRO, atualiza refs, depois disso seta campaign (que dispara init)

@@ -7,6 +7,7 @@ import { PsdImporter } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
+import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 interface Asset {
   id: string
@@ -17,10 +18,18 @@ interface Asset {
   content: any
   order: number
 }
+interface BrandColor { hex: string; name?: string; role: "primary" | "secondary" }
+interface CustomFontFile { url: string; weight: number; style: "normal" | "italic"; fileName: string }
 interface Campaign {
   id: string
   name: string
-  client: { id: string; name: string }
+  client: {
+    id: string
+    name: string
+    brandFont?: string | null
+    brandColors?: BrandColor[] | null
+    customFontFiles?: CustomFontFile[] | null
+  }
   psdUrl?: string | null
   psdName?: string | null
   assets: Asset[]
@@ -50,7 +59,7 @@ export default function CampaignAssetsPage() {
 
   async function addTextAsset() {
     const defaultText = "Novo texto"
-    const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: "Arial" } }
+    const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: (campaign?.client?.brandFont || "Arial") } }
     const res = await fetch(`/api/campaigns/${id}/assets`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -95,7 +104,16 @@ export default function CampaignAssetsPage() {
 
   async function load() {
     const res = await fetch(`/api/campaigns/${id}`)
-    if (res.ok) setCampaign(await res.json())
+    if (res.ok) {
+      const c: Campaign = await res.json()
+      setCampaign(c)
+      // Carrega fonte da marca do cliente pra renderizar textos com ela
+      const files = c.client?.customFontFiles
+      if (c.client?.brandFont) {
+        if (Array.isArray(files) && files.length > 0) loadCustomFontFamily(c.client.brandFont, files)
+        else loadGoogleFont(c.client.brandFont)
+      }
+    }
     setLoading(false)
   }
 
@@ -132,7 +150,7 @@ export default function CampaignAssetsPage() {
         const spans = parseContent(a.content)
         const newSpans = spans.length
           ? [{ ...spans[0], text: newText }, ...spans.slice(1)]
-          : [{ text: newText, style: { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" } }]
+          : [{ text: newText, style: { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: (campaign?.client?.brandFont || "Arial") } }]
         return { ...a, content: newSpans, value: newText, label: newLabel }
       })
     })
@@ -144,7 +162,7 @@ export default function CampaignAssetsPage() {
       const spans = parseContent(asset?.content)
       const newSpans = spans.length
         ? [{ ...spans[0], text: newText }, ...spans.slice(1)]
-        : [{ text: newText, style: { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" } }]
+        : [{ text: newText, style: { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: (campaign?.client?.brandFont || "Arial") } }]
       await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
