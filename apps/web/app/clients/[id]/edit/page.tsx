@@ -188,30 +188,66 @@ export default function EditClientPage() {
     setBrandColors(prev => prev.map((c, i) => i === index ? { ...c, ...patch } : c))
   }
 
+  function srvLog(tag: string, data: any) {
+    try {
+      fetch("/api/debug/client-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag, data }),
+      }).catch(() => {})
+    } catch {}
+  }
+
+  // Captura erros JS globais e manda pro terminal do server
+  useEffect(() => {
+    const onErr = (ev: ErrorEvent) => srvLog("font-WINDOW-ERROR", { msg: ev.message, src: ev.filename, line: ev.lineno })
+    window.addEventListener("error", onErr)
+    return () => window.removeEventListener("error", onErr)
+  }, [])
+
   function handleFontChange(font: string) {
     setBrandFont(font)
     if (font) loadGoogleFont(font)
   }
 
   async function uploadOneFontFile(file: File): Promise<CustomFontFile | null> {
+    srvLog("font-ONE-START", { name: file.name, size: file.size, type: file.type })
     const fname = (file.name || "").toLowerCase()
     const validExt = fname.endsWith(".ttf") || fname.endsWith(".otf") || fname.endsWith(".woff") || fname.endsWith(".woff2")
     if (!validExt) {
+      srvLog("font-ONE-INVALID-EXT", { name: file.name })
       setError(`"${file.name}": formato não suportado. Use TTF, OTF, WOFF ou WOFF2.`)
       return null
     }
     if (file.size > 2 * 1024 * 1024) {
+      srvLog("font-ONE-TOO-BIG", { name: file.name, size: file.size })
       setError(`"${file.name}": maior que 2MB.`)
       return null
     }
     const fd = new FormData()
     fd.append("file", file)
-    const res = await fetch("/api/upload", { method: "POST", body: fd })
-    if (!res.ok) {
-      setError(`Falha ao enviar "${file.name}".`)
+    srvLog("font-ONE-FETCH-START", { name: file.name })
+    let res: Response
+    try {
+      res = await fetch("/api/upload", { method: "POST", body: fd })
+    } catch (e: any) {
+      srvLog("font-ONE-FETCH-THREW", { name: file.name, error: String(e?.message ?? e) })
+      setError(`Falha de rede ao enviar "${file.name}".`)
       return null
     }
-    const data = await res.json()
+    srvLog("font-ONE-FETCH-DONE", { name: file.name, status: res.status, ok: res.ok })
+    if (!res.ok) {
+      setError(`Falha ao enviar "${file.name}" (status ${res.status}).`)
+      return null
+    }
+    let data: any
+    try {
+      data = await res.json()
+    } catch (e: any) {
+      srvLog("font-ONE-JSON-FAIL", { name: file.name, error: String(e?.message ?? e) })
+      return null
+    }
+    srvLog("font-ONE-OK", { name: file.name, urlLen: data?.url?.length ?? 0 })
     const detected = detectFontMetadata(file.name)
     return {
       url: data.url,
@@ -224,7 +260,9 @@ export default function EditClientPage() {
   async function uploadFontFiles(fileList: FileList | File[]) {
     setError("")
     const files = Array.from(fileList)
+    srvLog("font-MULTI-START", { count: files.length, names: files.map(f => f.name) })
     if (customFontFiles.length + files.length > 18) {
+      srvLog("font-MULTI-OVER-LIMIT", { existing: customFontFiles.length, adding: files.length })
       setError("Máximo 18 arquivos no total (9 pesos × 2 estilos).")
       return
     }
@@ -251,6 +289,7 @@ export default function EditClientPage() {
       }
     }
     setUploadingFont(false)
+    srvLog("font-MULTI-DONE", { uploadedCount: newFiles.length, totalAfter: customFontFiles.length + newFiles.length })
     if (newFiles.length === 0) return
 
     const merged = [...customFontFiles, ...newFiles].sort((a, b) =>
@@ -276,6 +315,7 @@ export default function EditClientPage() {
 
   async function handleFontFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files
+    srvLog("font-INPUT-CHANGE", { fileCount: files?.length ?? 0 })
     e.target.value = ""
     if (files && files.length > 0) await uploadFontFiles(files)
   }
