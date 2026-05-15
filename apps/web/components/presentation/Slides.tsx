@@ -367,23 +367,16 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
 
       {/* CONTEUDO: imagem (e legenda, se houver ou se usuario adicionar) */}
       {showCard ? (
-        // Layout split: peca a esquerda ~2/3, legenda a direita ~1/3.
-        // alignItems start: card de legenda ocupa apenas a altura necessaria
-        // pro conteudo (em vez de esticar 100% do slide).
+        // Layout split: legenda a esquerda ~1/3, peca a direita ~2/3.
+        // alignItems center: card de legenda centralizado verticalmente em
+        // relacao a peca (parece flutuar no meio).
         <div style={{
           position: "absolute", inset: 0,
-          display: "grid", gridTemplateColumns: "2fr 1fr",
+          display: "grid", gridTemplateColumns: "1fr 2fr",
           padding: "10% 3% 8% 3%",
           gap: "2.5%",
-          alignItems: "start",
+          alignItems: "center",
         }}>
-          {/* Peca */}
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            height: "100%", minHeight: 0,
-          }}>
-            {renderPieceVisual()}
-          </div>
           {/* Card legenda — header amarelo em cima, corpo branco embaixo.
               Altura segue o conteudo: card pequeno pra legenda curta,
               cresce quando o texto eh longo (limite: 100% do slide). */}
@@ -459,6 +452,13 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 </div>
               )}
             </div>
+          </div>
+          {/* Peca — agora na coluna direita */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            height: "100%", minHeight: 0,
+          }}>
+            {renderPieceVisual()}
           </div>
         </div>
       ) : (
