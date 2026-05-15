@@ -60,7 +60,19 @@ export default function CampaignAssetsPage() {
 
   async function addTextAsset() {
     const defaultText = "Novo texto"
-    const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: (campaign?.client?.brandFont || "Arial") } }
+    const usedFont = (campaign?.client?.brandFont || "Arial")
+    try {
+      fetch("/api/debug/client-log", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag: "assets-ADD-TEXT", data: {
+          campaignLoaded: !!campaign,
+          hasClient: !!campaign?.client,
+          brandFontRaw: campaign?.client?.brandFont ?? null,
+          usedFont,
+        }})
+      }).catch(() => {})
+    } catch {}
+    const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: usedFont } }
     const res = await fetch(`/api/campaigns/${id}/assets`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -107,6 +119,20 @@ export default function CampaignAssetsPage() {
     const res = await fetch(`/api/campaigns/${id}`)
     if (res.ok) {
       const c: Campaign = await res.json()
+      // Log diagnostico — o que a API retornou pro client
+      try {
+        fetch("/api/debug/client-log", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tag: "assets-LOAD", data: {
+            hasClient: !!c.client,
+            clientId: c.client?.id,
+            brandFont: c.client?.brandFont ?? null,
+            brandFontType: typeof c.client?.brandFont,
+            customFontFilesCount: Array.isArray(c.client?.customFontFiles) ? c.client.customFontFiles.length : -1,
+            brandColorsCount: Array.isArray(c.client?.brandColors) ? c.client.brandColors.length : -1,
+          }})
+        }).catch(() => {})
+      } catch {}
       setCampaign(c)
       const files = c.client?.customFontFiles
       if (c.client?.brandFont) {
