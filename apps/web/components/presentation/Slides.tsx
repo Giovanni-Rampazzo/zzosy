@@ -9,7 +9,111 @@
  * Posicionamento usa % do container pra escalar bem em qualquer largura.
  * Cada slide tem border-radius 12 e sombra discreta pra ficar elegante.
  */
-import React from "react"
+import React, { useEffect, useRef, useState } from "react"
+
+/**
+ * Texto inline editavel — clique = entra em modo edicao, blur/Enter = salva.
+ * Estilo herda do parent (transparente quando nao em foco) pra integrar
+ * naturalmente em qualquer slide. Auto-save debounced via onChange do parent.
+ *
+ * Uso:
+ *   <InlineEditable value={x} onCommit={(v) => savePatch(v)} placeholder="..." />
+ *
+ * Comportamento:
+ *   - Display: texto puro com hover sutil (cursor text)
+ *   - Click: vira input com outline amarelo
+ *   - Enter/Blur: commit (chama onCommit, sai do modo edit)
+ *   - Escape: cancela edicao
+ *   - Vazio + commit: chama onCommit com string vazia (parent decide)
+ */
+function InlineEditable({
+  value, onCommit, placeholder, style, uppercase, multiline,
+}: {
+  value: string
+  onCommit: (next: string) => void | Promise<void>
+  placeholder?: string
+  style?: React.CSSProperties
+  uppercase?: boolean
+  multiline?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+  useEffect(() => { setDraft(value) }, [value])
+  useEffect(() => { if (editing) inputRef.current?.focus(); inputRef.current?.select?.() }, [editing])
+
+  function commit() {
+    const t = draft
+    setEditing(false)
+    if (t !== value) onCommit(t)
+  }
+  function cancel() { setDraft(value); setEditing(false) }
+
+  const display = (value && value.trim()) ? value : (placeholder ?? "")
+  const isPlaceholder = !value || !value.trim()
+  const displayText = uppercase ? display.toUpperCase() : display
+  const sharedStyle: React.CSSProperties = {
+    background: "transparent",
+    border: "none",
+    outline: editing ? "2px solid rgba(255,255,255,0.85)" : "none",
+    outlineOffset: editing ? 2 : 0,
+    borderRadius: editing ? 4 : 0,
+    padding: 0, margin: 0,
+    font: "inherit",
+    color: "inherit",
+    letterSpacing: "inherit",
+    lineHeight: "inherit",
+    textTransform: uppercase ? "uppercase" : "none",
+    width: "100%",
+    boxSizing: "border-box",
+    resize: "none",
+    cursor: editing ? "text" : "pointer",
+    ...style,
+  }
+
+  if (editing) {
+    return multiline ? (
+      <textarea
+        ref={inputRef as any}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === "Escape") { e.preventDefault(); cancel() }
+        }}
+        rows={1}
+        style={sharedStyle}
+      />
+    ) : (
+      <input
+        ref={inputRef as any}
+        type="text"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === "Enter") { e.preventDefault(); commit() }
+          if (e.key === "Escape") { e.preventDefault(); cancel() }
+        }}
+        style={sharedStyle}
+      />
+    )
+  }
+  return (
+    <div
+      onClick={() => setEditing(true)}
+      title="Clique pra editar"
+      style={{
+        ...sharedStyle,
+        opacity: isPlaceholder ? 0.6 : 1,
+        whiteSpace: multiline ? "pre-wrap" : "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >{displayText}</div>
+  )
+}
+
 
 // Cores (mesmas do PPTX)
 const YELLOW = "#F5C400"
@@ -74,7 +178,14 @@ export function SlideCover() {
 }
 
 /* ============== Slide 2 — Codigo + Nome ============== */
-export function SlideCode({ campaignName, code }: { campaignName: string; code?: string | null }) {
+export function SlideCode({
+  campaignName, code, onCampaignNameChange, onCodeChange,
+}: {
+  campaignName: string
+  code?: string | null
+  onCampaignNameChange?: (next: string) => void
+  onCodeChange?: (next: string) => void
+}) {
   return (
     <div style={{ ...slideShellBase, background: YELLOW, containerType: "inline-size" }}>
       <div style={{
@@ -90,7 +201,14 @@ export function SlideCode({ campaignName, code }: { campaignName: string; code?:
           fontSize: "3.2cqw", fontWeight: 800, color: "#fff",
           letterSpacing: "-0.01em", lineHeight: 1.1,
         }}>
-          {code && code.trim() ? code.toUpperCase() : "CÓDIGO CAMPANHA"}
+          {onCodeChange ? (
+            <InlineEditable
+              value={code ?? ""}
+              onCommit={onCodeChange}
+              placeholder="CÓDIGO CAMPANHA"
+              uppercase
+            />
+          ) : (code && code.trim() ? code.toUpperCase() : "CÓDIGO CAMPANHA")}
         </div>
         <div style={{
           fontFamily: "system-ui, -apple-system, sans-serif",
@@ -98,7 +216,14 @@ export function SlideCode({ campaignName, code }: { campaignName: string; code?:
           letterSpacing: "-0.01em", lineHeight: 1.1, marginTop: "1%",
           textTransform: "uppercase",
         }}>
-          {campaignName || "—"}
+          {onCampaignNameChange ? (
+            <InlineEditable
+              value={campaignName ?? ""}
+              onCommit={onCampaignNameChange}
+              placeholder="Nome da campanha"
+              uppercase
+            />
+          ) : (campaignName || "—")}
         </div>
       </div>
       <Footer />

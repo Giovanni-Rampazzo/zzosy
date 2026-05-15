@@ -152,6 +152,23 @@ export default function PresentationPage() {
   // Conta o total real de slides considerando chunks de steps.
   const totalPieceSlides = orderedPieces.reduce((acc, p) => acc + chunkPieceSteps(p).length, 0)
 
+  /**
+   * Patch campaign field (name ou code) — otimista no estado local +
+   * PATCH na API. Usado pelos inline-edits dos slides.
+   */
+  async function patchCampaign(patch: Partial<Campaign>) {
+    setCampaign(c => c ? { ...c, ...patch } : c)
+    try {
+      await fetch(`/api/campaigns/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      })
+    } catch (e) {
+      console.error("[patchCampaign]", e)
+    }
+  }
+
   async function exportPPTX() {
     if (!campaign) return
     setExporting(true)
@@ -243,7 +260,12 @@ export default function PresentationPage() {
           </SlideRow>
 
           <SlideRow num={++slideNum} total={totalSlides} label="Código + Nome da campanha">
-            <SlideCode campaignName={campaign.name} code={campaign.code ?? null} />
+            <SlideCode
+              campaignName={campaign.name}
+              code={campaign.code ?? null}
+              onCampaignNameChange={(next) => patchCampaign({ name: next })}
+              onCodeChange={(next) => patchCampaign({ code: next })}
+            />
           </SlideRow>
 
           {groups.map((group, gi) => (
