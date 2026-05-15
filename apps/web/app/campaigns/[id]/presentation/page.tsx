@@ -4,6 +4,7 @@ import { useRouter, useParams } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { SlideCover, SlideCode, SlideSegment, SlidePiece, SlideThanks } from "@/components/presentation/Slides"
+import { regenerateAllPiecesThumbs } from "@/lib/regenerateThumbs"
 
 interface Piece {
   id: string
@@ -83,6 +84,22 @@ export default function PresentationPage() {
       } finally {
         setLoading(false)
       }
+      // Apos load inicial, regenera todos os thumbs em background pra
+      // garantir que previews refletem o estado atual da peca (caso o
+      // save automatico tenha falhado ou o usuario tenha mexido em
+      // outra aba). Quando termina, re-fetch pra atualizar imageUrl com
+      // o novo updatedAt.
+      ;(async () => {
+        try {
+          const n = await regenerateAllPiecesThumbs(id)
+          console.log("[PRESENTATION] regenerated", n, "piece thumbs")
+          if (n > 0) {
+            const ts = Date.now()
+            const p = await fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json())
+            if (Array.isArray(p)) setPieces(p)
+          }
+        } catch (e) { console.warn("[PRESENTATION] regen all falhou:", e) }
+      })()
     }
     load()
     // Re-fetch sempre que a janela volta a ter foco (ex: usuario edita peca

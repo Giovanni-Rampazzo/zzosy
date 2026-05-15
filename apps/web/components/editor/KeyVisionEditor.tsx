@@ -1751,8 +1751,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
 
   async function addAssetToCanvas(fc: any, asset: Asset, layer: any) {
     const { Rect, Textbox, FabricImage } = await import("fabric")
-    const posX = layer?.posX ?? 100
-    const posY = layer?.posY ?? 100
+    // Se o layer ja vem com posicao (peca antiga sendo carregada), usa.
+    // Senao, calcula posicao cascading Figma-style: cada novo asset entra
+    // deslocado do anterior pra nao ficar empilhado em cima.
+    let posX = layer?.posX
+    let posY = layer?.posY
+    if (posX === undefined || posY === undefined) {
+      const existingCount = fc.getObjects().filter((o: any) => o.__assetId && o.__assetId !== "__BG__").length
+      const baseX = 100, baseY = 100, step = 40
+      posX = baseX + (existingCount % 12) * step
+      posY = baseY + (existingCount % 12) * step
+    }
     const width = layer?.width ?? 400
     const scaleX = layer?.scaleX ?? 1
     const scaleY = layer?.scaleY ?? 1

@@ -200,3 +200,67 @@ export async function regenerateKVThumb(campaignId: string): Promise<void> {
     console.warn("regen KV thumb falhou:", e)
   }
 }
+
+/**
+ * Regenera as thumbnails de TODAS as pecas de uma campanha.
+ * Util quando o usuario volta pra apresentacao e quer garantir que
+ * os previews refletem o estado atual da peca (caso o save automatico
+ * tenha falhado ou nao terminado a tempo).
+ *
+ * Roda sequencialmente pra nao saturar o browser. Cada peca eh
+ * renderizada em StaticCanvas, exportada como blob e enviada pra
+ * /api/pieces/[id]/thumbnail (e /step-thumbnail pra multi-step).
+ *
+ * Retorna o numero de pecas regeneradas com sucesso.
+ */
+export async function regenerateAllPiecesThumbs(campaignId: string): Promise<number> {
+  const [campRes, piecesRes] = await Promise.all([
+    fetch(`/api/campaigns/${campaignId}`).then(r => r.json()),
+    fetch(`/api/pieces?campaignId=${campaignId}`).then(r => r.json()),
+  ])
+  const assets: Asset[] = campRes.assets ?? []
+  const pieces: any[] = Array.isArray(piecesRes) ? piecesRes : []
+  let regenerated = 0
+
+  for (const piece of pieces) {
+    const pdata = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
+    if (!pdata || pdata.version !== 2) continue
+    const steps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
+    const isMultiStep = steps.length >= 2
+    const W = pdata.width ?? 1080
+    const H = pdata.height ?? 1080
+
+    try {
+      if (isMultiStep) {
+        const activeIdx = typeof pdata.activeStepIndex === "number" ? pdata.activeStepIndex : 0
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i]
+          if (!step || !Array.isArray(step.layers)) continue
+          const pseudo = { version: 2, width: W, height: H, bgColor: step.bgColor ?? pdata.bgColor ?? "#ffffff", layers: step.layers }
+          const blob = await buildThumbnailFromPieceData(pseudo, assets)
+          if (!blob) continue
+          const fd = new FormData()
+          fd.append("thumbnail", blob, `step${i}.jpg`)
+          await fetch(`/api/pieces/${piece.id}/step-thumbnail?index=${i}`, { method: "POST", body: fd })
+          if (i === activeIdx) {
+            const fdMain = new FormData()
+            fdMain.append("thumbnail", blob, "thumb.jpg")
+            await fetch(`/api/pieces/${piece.id}/thumbnail`, { method: "POST", body: fdMain })
+          }
+        }
+      } else {
+        const layers = Array.isArray(pdata.layers) ? pdata.layers : []
+        const pseudo = { version: 2, width: W, height: H, bgColor: pdata.bgColor ?? "#ffffff", layers }
+        const blob = await buildThumbnailFromPieceData(pseudo, assets)
+        if (!blob) continue
+        const fd = new FormData()
+        fd.append("thumbnail", blob, "thumb.jpg")
+        await fetch(`/api/pieces/${piece.id}/thumbnail`, { method: "POST", body: fd })
+      }
+      regenerated++
+    } catch (e) {
+      console.warn("regen all falhou pra piece", piece.id, e)
+    }
+  }
+  return regenerated
+}
