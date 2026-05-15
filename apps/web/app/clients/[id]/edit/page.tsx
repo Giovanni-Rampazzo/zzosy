@@ -44,6 +44,47 @@ const ROLE_OPTIONS: Array<{ value: "principal" | "secundaria" | "apoio" | "neutr
   { value: "neutra", label: "Neutra" },
 ]
 
+/** 4 presets tipograficos. Cada um define peso + tamanho da fonte da marca. */
+type BrandPresetKey = "titulo" | "subtitulo" | "body" | "legenda"
+interface BrandPreset { fontWeight: number; fontSize: number }
+type BrandTypography = Record<BrandPresetKey, BrandPreset>
+
+const PRESET_LABELS: Record<BrandPresetKey, string> = {
+  titulo: "Título",
+  subtitulo: "Subtítulo",
+  body: "Corpo de texto",
+  legenda: "Legenda",
+}
+
+const PRESET_DESCRIPTIONS: Record<BrandPresetKey, string> = {
+  titulo: "Manchete, headline principal",
+  subtitulo: "Apoio do título, destaques",
+  body: "Texto corrido, paragrafos",
+  legenda: "Crédito, observação, rodapé",
+}
+
+const PRESET_ORDER: BrandPresetKey[] = ["titulo", "subtitulo", "body", "legenda"]
+
+const DEFAULT_TYPOGRAPHY: BrandTypography = {
+  titulo:    { fontWeight: 700, fontSize: 80 },
+  subtitulo: { fontWeight: 600, fontSize: 48 },
+  body:      { fontWeight: 400, fontSize: 24 },
+  legenda:   { fontWeight: 400, fontSize: 16 },
+}
+
+/** Normaliza dado vindo do banco (pode ter chaves faltando, valores invalidos). */
+function normalizeTypography(raw: any): BrandTypography {
+  const out: any = {}
+  for (const k of PRESET_ORDER) {
+    const r = raw?.[k]
+    out[k] = {
+      fontWeight: Number.isFinite(r?.fontWeight) ? r.fontWeight : DEFAULT_TYPOGRAPHY[k].fontWeight,
+      fontSize:   Number.isFinite(r?.fontSize)   ? r.fontSize   : DEFAULT_TYPOGRAPHY[k].fontSize,
+    }
+  }
+  return out
+}
+
 const WEIGHT_OPTIONS = [
   { value: 100, label: "100 Thin" },
   { value: 200, label: "200 ExtraLight" },
@@ -114,6 +155,7 @@ export default function EditClientPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [brandFont, setBrandFont] = useState<string>("")
   const [brandColors, setBrandColors] = useState<BrandColor[]>([])
+  const [brandTypography, setBrandTypography] = useState<BrandTypography>(DEFAULT_TYPOGRAPHY)
   const [customFontFiles, setCustomFontFiles] = useState<CustomFontFile[]>([])
   const [fontMode, setFontMode] = useState<"google" | "custom">("google")
   const [uploadingFont, setUploadingFont] = useState(false)
@@ -150,6 +192,7 @@ export default function EditClientPage() {
           role: normalizeRole(x?.role),
         }))
         setBrandColors(incoming)
+        setBrandTypography(normalizeTypography((c as any).brandTypography))
         const files: CustomFontFile[] = Array.isArray(c.customFontFiles) ? c.customFontFiles : []
         setCustomFontFiles(files)
         if (files.length > 0) {
@@ -184,6 +227,7 @@ export default function EditClientPage() {
       const ok = await patchClient({
         brandFont: brandFont || null,
         brandColors: brandColors as any,
+        brandTypography: brandTypography as any,
         customFontFiles: customFontFiles.length > 0 ? customFontFiles as any : null,
       })
       setSavingBrand(false)
@@ -195,7 +239,11 @@ export default function EditClientPage() {
       }
     }, 600)
     return () => clearTimeout(handle)
-  }, [brandFont, brandColors, customFontFiles, loading])
+  }, [brandFont, brandColors, brandTypography, customFontFiles, loading])
+
+  function updatePreset(key: BrandPresetKey, patch: Partial<BrandPreset>) {
+    setBrandTypography(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+  }
 
   function updateColor(index: number, patch: Partial<BrandColor>) {
     setBrandColors(prev => prev.map((c, i) => i === index ? { ...c, ...patch } : c))
@@ -922,6 +970,69 @@ export default function EditClientPage() {
               })}
             </div>
             <Button type="button" variant="secondary" size="sm" onClick={addColor}>+ Adicionar cor</Button>
+          </div>
+        </div>
+
+        {/* Card de presets tipograficos — 4 niveis: Titulo / Subtitulo / Corpo / Legenda.
+            Cada um define peso e tamanho aplicado quando o usuario cria um texto desse tipo no editor. */}
+        <div style={{maxWidth:640,background:"white",borderRadius:10,border:"1px solid #E5E5E5",padding:24}}>
+          <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>Tipografia da marca</div>
+          <p style={{fontSize:12,color:"#666",margin:"0 0 18px",lineHeight:1.5}}>
+            Defina o peso e tamanho de cada nível. Quando criar um texto no editor, ele já vem com esses padrões aplicados.
+          </p>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {PRESET_ORDER.map(key => {
+              const preset = brandTypography[key]
+              // Preview tem tamanho relativo (fontSize/2.5px max 32) pra todos caberem na mesma linha
+              const previewPx = Math.max(12, Math.min(32, preset.fontSize / 2.5))
+              return (
+                <div key={key} style={{
+                  display:"grid",gridTemplateColumns:"1fr 170px 110px",gap:12,alignItems:"center",
+                  padding:"12px 14px",
+                  background:"#FAFAFA",
+                  border:"1px solid #E8E8E8",
+                  borderRadius:8,
+                }}>
+                  {/* Esquerda: label + descricao + preview da fonte aplicada */}
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",color:"#666",marginBottom:2}}>{PRESET_LABELS[key]}</div>
+                    <div style={{fontSize:10,color:"#999",marginBottom:6}}>{PRESET_DESCRIPTIONS[key]}</div>
+                    <div style={{
+                      fontFamily: brandFont ? `'${brandFont}', sans-serif` : "inherit",
+                      fontWeight: preset.fontWeight,
+                      fontSize: previewPx,
+                      color:"#111",
+                      lineHeight:1.1,
+                      overflow:"hidden",
+                      textOverflow:"ellipsis",
+                      whiteSpace:"nowrap",
+                    }}>The quick brown fox</div>
+                  </div>
+                  {/* Peso */}
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <label style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Peso</label>
+                    <select
+                      value={preset.fontWeight}
+                      onChange={e => updatePreset(key, { fontWeight: Number(e.target.value) })}
+                      style={{padding:"6px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",cursor:"pointer",background:"white",fontFamily:"inherit"}}
+                    >
+                      {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                    </select>
+                  </div>
+                  {/* Tamanho */}
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <label style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Tamanho (pt)</label>
+                    <input
+                      type="number"
+                      min={6} max={500}
+                      value={preset.fontSize}
+                      onChange={e => updatePreset(key, { fontSize: Math.max(6, Math.min(500, Number(e.target.value) || 0)) })}
+                      style={{padding:"6px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"inherit",background:"white",width:"100%"}}
+                    />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 

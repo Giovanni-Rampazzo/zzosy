@@ -11,6 +11,31 @@ import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 interface CustomFontFile { url: string; weight: number; style: "normal" | "italic"; fileName: string }
 interface BrandColor { hex: string; name?: string; role?: string }
+type BrandPresetKey = "titulo" | "subtitulo" | "body" | "legenda"
+interface BrandPreset { fontWeight: number; fontSize: number }
+type BrandTypography = Record<BrandPresetKey, BrandPreset>
+
+const PRESET_LABELS: Record<BrandPresetKey, string> = {
+  titulo: "Título",
+  subtitulo: "Subtítulo",
+  body: "Corpo de texto",
+  legenda: "Legenda",
+}
+const PRESET_ORDER: BrandPresetKey[] = ["titulo", "subtitulo", "body", "legenda"]
+const DEFAULT_TYPOGRAPHY: BrandTypography = {
+  titulo:    { fontWeight: 700, fontSize: 80 },
+  subtitulo: { fontWeight: 600, fontSize: 48 },
+  body:      { fontWeight: 400, fontSize: 24 },
+  legenda:   { fontWeight: 400, fontSize: 16 },
+}
+function getPreset(client: any, key: BrandPresetKey): BrandPreset {
+  const t = client?.brandTypography
+  const r = t?.[key]
+  return {
+    fontWeight: Number.isFinite(r?.fontWeight) ? r.fontWeight : DEFAULT_TYPOGRAPHY[key].fontWeight,
+    fontSize:   Number.isFinite(r?.fontSize)   ? r.fontSize   : DEFAULT_TYPOGRAPHY[key].fontSize,
+  }
+}
 
 interface Asset {
   id: string
@@ -29,6 +54,7 @@ interface Campaign {
     name: string
     brandFont?: string | null
     brandColors?: BrandColor[] | null
+    brandTypography?: BrandTypography | null
     customFontFiles?: CustomFontFile[] | null
   }
   psdUrl?: string | null
@@ -58,26 +84,19 @@ export default function CampaignAssetsPage() {
   const newImageInputRef = useRef<HTMLInputElement>(null)
   const saveTimers = useRef<Record<string, any>>({})
 
-  async function addTextAsset() {
-    const defaultText = "Novo texto"
+  async function addTextAsset(preset: BrandPresetKey = "body") {
+    const defaultText = PRESET_LABELS[preset]
     const usedFont = (campaign?.client?.brandFont || "Arial")
-    try {
-      fetch("/api/debug/client-log", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag: "assets-ADD-TEXT", data: {
-          campaignLoaded: !!campaign,
-          hasClient: !!campaign?.client,
-          brandFontRaw: campaign?.client?.brandFont ?? null,
-          usedFont,
-        }})
-      }).catch(() => {})
-    } catch {}
-    const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: usedFont } }
+    const { fontWeight, fontSize } = getPreset(campaign?.client, preset)
+    const span = {
+      text: defaultText,
+      style: { color: "#111111", fontSize, fontWeight: String(fontWeight), fontFamily: usedFont },
+    }
     const res = await fetch(`/api/campaigns/${id}/assets`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "TEXT",
-        label: "Novo texto",
+        label: defaultText,
         value: defaultText,
         content: [span],
       })
@@ -267,7 +286,7 @@ export default function CampaignAssetsPage() {
             activeTab="assets"
             actions={
               <>
-                <Button variant="secondary" size="md" onClick={addTextAsset}>+ Texto</Button>
+                <AddTextMenu onPick={addTextAsset} />
                 <Button variant="secondary" size="md" onClick={() => newImageInputRef.current?.click()}>+ Imagem</Button>
                 <PsdImporter campaignId={id} onImported={load} />
                 {campaign.assets.length > 0 && (
@@ -462,6 +481,55 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         }} title="Baixar PSD com 1 layer (texto editavel ou imagem)">PSD</Button>
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Dropdown menu pra criar texto com 1 dos 4 presets tipograficos.
+ * Click no botao abre menu com Titulo / Subtitulo / Corpo / Legenda.
+ */
+function AddTextMenu({ onPick }: { onPick: (preset: BrandPresetKey) => void }) {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onClick)
+    return () => document.removeEventListener("mousedown", onClick)
+  }, [open])
+  return (
+    <div ref={wrapperRef} style={{ position: "relative" }}>
+      <Button variant="secondary" size="md" onClick={() => setOpen(o => !o)}>+ Texto ▾</Button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0,
+          background: "white", border: "1px solid #E0E0E0", borderRadius: 8,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          minWidth: 200, zIndex: 50,
+          padding: 4,
+        }}>
+          {PRESET_ORDER.map(key => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => { onPick(key); setOpen(false) }}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                padding: "8px 12px", background: "transparent",
+                border: "none", borderRadius: 6, cursor: "pointer",
+                fontSize: 13, fontFamily: "inherit", color: "#111",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#F5F5F5" }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+            >
+              + {PRESET_LABELS[key]}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
