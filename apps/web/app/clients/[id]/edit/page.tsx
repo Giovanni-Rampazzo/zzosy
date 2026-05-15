@@ -740,31 +740,18 @@ export default function EditClientPage() {
                   </div>
                 ) : null}
 
-                {/* Botao adicionar arquivos — usa label htmlFor (mais robusto que onClick+ref) */}
-                <label
-                  htmlFor="font-files-input"
-                  style={{
-                    display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    padding: "6px 12px", fontSize: 12, fontWeight: 600,
-                    background: "white", color: "#111", border: "2px solid #555",
-                    borderRadius: 6, cursor: (uploadingFont || customFontFiles.length >= 18) ? "not-allowed" : "pointer",
-                    opacity: (uploadingFont || customFontFiles.length >= 18) ? 0.5 : 1,
-                    fontFamily: "inherit", userSelect: "none",
-                  }}
-                >
-                  {uploadingFont ? "Enviando..." : customFontFiles.length === 0 ? "+ Adicionar arquivos" : "+ Adicionar mais pesos"}
-                </label>
-
-                <input
-                  id="font-files-input"
-                  ref={fontFileInputRef}
-                  type="file"
-                  accept=".ttf,.otf,.woff,.woff2"
-                  multiple
-                  onChange={handleFontFileChange}
-                  disabled={uploadingFont || customFontFiles.length >= 18}
-                  style={{position:"absolute",left:"-9999px",width:0,height:0,opacity:0}}
-                />
+                {/* Input file NATIVO visivel — sem label/ref pra eliminar mediacao */}
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+                  <input
+                    type="file"
+                    accept=".ttf,.otf,.woff,.woff2"
+                    multiple
+                    onChange={handleFontFileChange}
+                    disabled={uploadingFont || customFontFiles.length >= 18}
+                    style={{fontSize:12,fontFamily:"inherit"}}
+                  />
+                  {uploadingFont && <span style={{fontSize:11,color:"#888"}}>Enviando...</span>}
+                </div>
 
                 <div style={{fontSize:11,color:"#888",marginTop:10,lineHeight:1.5,maxWidth:520}}>
                   Suba <strong>todos os pesos da família</strong> de uma vez (Regular, Bold, Light, Italic, etc). O peso e estilo são detectados pelo nome do arquivo — você pode ajustar nos dropdowns se errar. <strong>TTF, OTF, WOFF ou WOFF2</strong>, máximo 2MB cada.
