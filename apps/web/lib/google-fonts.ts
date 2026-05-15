@@ -81,3 +81,82 @@ export function loadGoogleFont(fontName: string): void {
   link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, "+")}:wght@400;700&display=swap`
   document.head.appendChild(link)
 }
+
+/**
+ * Arquivo de fonte custom dentro da familia.
+ * weight 100-900, style normal/italic, dataUrl base64 (TTF/OTF/WOFF).
+ */
+export interface CustomFontFile {
+  url: string
+  weight: number
+  style: "normal" | "italic"
+  fileName: string
+}
+
+/**
+ * Tenta inferir peso e estilo da fonte pelo nome do arquivo.
+ * Ex: "SicrediSans-Bold.ttf" → { weight: 700, style: "normal" }
+ *     "Lato-LightItalic.ttf" → { weight: 300, style: "italic" }
+ * A ordem dos regex importa — mais especifico primeiro.
+ */
+export function detectFontMetadata(fileName: string): { weight: number; style: "normal" | "italic" } {
+  const n = fileName.toLowerCase().replace(/\.(ttf|otf|woff2?|).*$/, "")
+  const style: "normal" | "italic" = /italic|oblique/.test(n) ? "italic" : "normal"
+
+  // Ordem importa: termos mais especificos antes dos genericos
+  let weight = 400
+  if (/extra[\s_-]?bold|ultra[\s_-]?bold/.test(n)) weight = 800
+  else if (/extra[\s_-]?light|ultra[\s_-]?light/.test(n)) weight = 200
+  else if (/semi[\s_-]?bold|demi[\s_-]?bold/.test(n)) weight = 600
+  else if (/black|heavy/.test(n)) weight = 900
+  else if (/thin|hairline/.test(n)) weight = 100
+  else if (/medium/.test(n)) weight = 500
+  else if (/bold/.test(n)) weight = 700
+  else if (/light/.test(n)) weight = 300
+  else if (/regular|book|normal/.test(n)) weight = 400
+  // default 400 ja setado
+
+  return { weight, style }
+}
+
+/**
+ * Detecta o format CSS pelo prefixo do data URL.
+ * Vem da API /upload que ja detecta pelo mime correto.
+ */
+function formatFromDataUrl(dataUrl: string): string {
+  if (dataUrl.startsWith("data:font/otf")) return "opentype"
+  if (dataUrl.startsWith("data:font/woff2")) return "woff2"
+  if (dataUrl.startsWith("data:font/woff")) return "woff"
+  return "truetype"
+}
+
+/**
+ * Carrega uma familia de fonte custom — multiplos arquivos com a mesma
+ * font-family mas pesos/estilos diferentes. CSS escolhe o arquivo certo
+ * automaticamente quando o texto pedir font-weight ou font-style especifico.
+ *
+ * Idempotente: re-injeta o CSS no mesmo <style> tag se a familia ja
+ * existe (ex: trocou um arquivo).
+ */
+export function loadCustomFontFamily(fontName: string, files: CustomFontFile[]): void {
+  if (typeof document === "undefined") return
+  if (!fontName || !files || files.length === 0) return
+
+  const id = `cfontfam-${fontName.replace(/\s+/g, "-")}`
+  const existing = document.getElementById(id) as HTMLStyleElement | null
+
+  const escapedName = fontName.replace(/'/g, "\\'")
+  const css = files.map(f => {
+    const format = formatFromDataUrl(f.url)
+    return `@font-face { font-family: '${escapedName}'; src: url('${f.url}') format('${format}'); font-weight: ${f.weight}; font-style: ${f.style}; font-display: swap; }`
+  }).join("\n")
+
+  if (existing) {
+    existing.textContent = css
+    return
+  }
+  const style = document.createElement("style")
+  style.id = id
+  style.textContent = css
+  document.head.appendChild(style)
+}

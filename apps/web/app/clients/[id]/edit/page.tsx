@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
-import { GOOGLE_FONTS, loadGoogleFont } from "@/lib/google-fonts"
+import { GOOGLE_FONTS, loadGoogleFont, loadCustomFontFamily, detectFontMetadata, CustomFontFile } from "@/lib/google-fonts"
 
 interface BrandColor {
   hex: string
@@ -35,6 +35,18 @@ const DEFAULT_BRAND_COLORS: BrandColor[] = [
   { hex: "#CCCCCC", role: "secondary" },
 ]
 
+const WEIGHT_OPTIONS = [
+  { value: 100, label: "100 Thin" },
+  { value: 200, label: "200 ExtraLight" },
+  { value: 300, label: "300 Light" },
+  { value: 400, label: "400 Regular" },
+  { value: 500, label: "500 Medium" },
+  { value: 600, label: "600 SemiBold" },
+  { value: 700, label: "700 Bold" },
+  { value: 800, label: "800 ExtraBold" },
+  { value: 900, label: "900 Black" },
+]
+
 interface Client {
   id: string
   name: string
@@ -45,6 +57,7 @@ interface Client {
   logoUrl: string | null
   brandFont: string | null
   brandColors: BrandColor[] | null
+  customFontFiles: CustomFontFile[] | null
 }
 
 const labelStyle: React.CSSProperties = {
@@ -92,6 +105,10 @@ export default function EditClientPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [brandFont, setBrandFont] = useState<string>("")
   const [brandColors, setBrandColors] = useState<BrandColor[]>(DEFAULT_BRAND_COLORS)
+  const [customFontFiles, setCustomFontFiles] = useState<CustomFontFile[]>([])
+  const [fontMode, setFontMode] = useState<"google" | "custom">("google")
+  const [uploadingFont, setUploadingFont] = useState(false)
+  const fontFileInputRef = useRef<HTMLInputElement | null>(null)
   const [savingBrand, setSavingBrand] = useState(false)
   const [brandSavedAt, setBrandSavedAt] = useState<number | null>(null)
   const brandFirstLoadRef = useRef(true)
@@ -120,7 +137,15 @@ export default function EditClientPage() {
         const incoming = Array.isArray(c.brandColors) ? c.brandColors : []
         const merged = DEFAULT_BRAND_COLORS.map((def, i) => incoming[i] ?? def)
         setBrandColors(merged)
-        if (c.brandFont) loadGoogleFont(c.brandFont)
+        const files: CustomFontFile[] = Array.isArray(c.customFontFiles) ? c.customFontFiles : []
+        setCustomFontFiles(files)
+        if (files.length > 0) {
+          setFontMode("custom")
+          if (c.brandFont) loadCustomFontFamily(c.brandFont, files)
+        } else {
+          setFontMode("google")
+          if (c.brandFont) loadGoogleFont(c.brandFont)
+        }
         setLoading(false)
       })
   }, [id])
@@ -146,6 +171,7 @@ export default function EditClientPage() {
       const ok = await patchClient({
         brandFont: brandFont || null,
         brandColors: brandColors as any,
+        customFontFiles: customFontFiles.length > 0 ? customFontFiles as any : null,
       })
       setSavingBrand(false)
       if (ok) {
@@ -156,7 +182,7 @@ export default function EditClientPage() {
       }
     }, 600)
     return () => clearTimeout(handle)
-  }, [brandFont, brandColors, loading])
+  }, [brandFont, brandColors, customFontFiles, loading])
 
   function updateColor(index: number, patch: Partial<BrandColor>) {
     setBrandColors(prev => prev.map((c, i) => i === index ? { ...c, ...patch } : c))
@@ -165,6 +191,123 @@ export default function EditClientPage() {
   function handleFontChange(font: string) {
     setBrandFont(font)
     if (font) loadGoogleFont(font)
+  }
+
+  async function uploadOneFontFile(file: File): Promise<CustomFontFile | null> {
+    const fname = (file.name || "").toLowerCase()
+    const validExt = fname.endsWith(".ttf") || fname.endsWith(".otf") || fname.endsWith(".woff") || fname.endsWith(".woff2")
+    if (!validExt) {
+      setError(`"${file.name}": formato não suportado. Use TTF, OTF, WOFF ou WOFF2.`)
+      return null
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError(`"${file.name}": maior que 2MB.`)
+      return null
+    }
+    const fd = new FormData()
+    fd.append("file", file)
+    const res = await fetch("/api/upload", { method: "POST", body: fd })
+    if (!res.ok) {
+      setError(`Falha ao enviar "${file.name}".`)
+      return null
+    }
+    const data = await res.json()
+    const detected = detectFontMetadata(file.name)
+    return {
+      url: data.url,
+      weight: detected.weight,
+      style: detected.style,
+      fileName: file.name,
+    }
+  }
+
+  async function uploadFontFiles(fileList: FileList | File[]) {
+    setError("")
+    const files = Array.from(fileList)
+    if (customFontFiles.length + files.length > 18) {
+      setError("Máximo 18 arquivos no total (9 pesos × 2 estilos).")
+      return
+    }
+    setUploadingFont(true)
+    const newFiles: CustomFontFile[] = []
+    for (const file of files) {
+      const uploaded = await uploadOneFontFile(file)
+      if (uploaded) {
+        // Evita duplicata: mesmo peso+style ja existente substitui
+        const dupIdx = [...customFontFiles, ...newFiles].findIndex(f => f.weight === uploaded.weight && f.style === uploaded.style)
+        if (dupIdx >= 0) {
+          // Substitui em vez de adicionar nova entrada
+          if (dupIdx < customFontFiles.length) {
+            const updated = [...customFontFiles]
+            updated[dupIdx] = uploaded
+            setCustomFontFiles(updated)
+            continue
+          } else {
+            newFiles[dupIdx - customFontFiles.length] = uploaded
+            continue
+          }
+        }
+        newFiles.push(uploaded)
+      }
+    }
+    setUploadingFont(false)
+    if (newFiles.length === 0) return
+
+    const merged = [...customFontFiles, ...newFiles].sort((a, b) =>
+      a.weight !== b.weight ? a.weight - b.weight : a.style.localeCompare(b.style)
+    )
+    setCustomFontFiles(merged)
+
+    // Se ainda nao tem nome de fonte, deriva do primeiro arquivo
+    let nameToUse = brandFont
+    if (!nameToUse) {
+      const baseName = newFiles[0].fileName
+        .replace(/\.(ttf|otf|woff2|woff)$/i, "")
+        .replace(/[-_](thin|extralight|ultralight|light|regular|book|medium|semibold|demibold|bold|extrabold|ultrabold|black|heavy|italic|oblique)+/gi, "")
+        .replace(/[-_]/g, " ")
+        .trim()
+      nameToUse = baseName || "Fonte custom"
+      setBrandFont(nameToUse)
+    }
+    loadCustomFontFamily(nameToUse, merged)
+  }
+
+  function triggerFontPicker() { fontFileInputRef.current?.click() }
+
+  async function handleFontFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    e.target.value = ""
+    if (files && files.length > 0) await uploadFontFiles(files)
+  }
+
+  function updateFontFileMeta(index: number, patch: Partial<CustomFontFile>) {
+    const updated = customFontFiles.map((f, i) => i === index ? { ...f, ...patch } : f)
+    setCustomFontFiles(updated)
+    if (brandFont) loadCustomFontFamily(brandFont, updated)
+  }
+
+  function removeFontFile(index: number) {
+    const updated = customFontFiles.filter((_, i) => i !== index)
+    setCustomFontFiles(updated)
+    if (brandFont && updated.length > 0) loadCustomFontFamily(brandFont, updated)
+  }
+
+  function handleCustomFontNameChange(newName: string) {
+    setBrandFont(newName)
+    if (newName && customFontFiles.length > 0) loadCustomFontFamily(newName, customFontFiles)
+  }
+
+  function handleSwitchToCustom() {
+    setFontMode("custom")
+    if (customFontFiles.length === 0) setBrandFont("")
+  }
+
+  function handleSwitchToGoogle() {
+    setFontMode("google")
+    if (customFontFiles.length > 0) {
+      setCustomFontFiles([])
+      setBrandFont("")
+    }
   }
 
   async function uploadLogoFile(file: File) {
@@ -448,7 +591,33 @@ export default function EditClientPage() {
           {/* Tipografia */}
           <div style={{marginBottom:24}}>
             <label style={labelStyle}>Tipografia</label>
-            <div style={{display:"flex",gap:10,alignItems:"center",marginTop:8}}>
+
+            {/* Toggle Google Font / Fonte custom */}
+            <div style={{display:"flex",gap:0,marginTop:8,marginBottom:12,border:"1px solid #E0E0E0",borderRadius:6,overflow:"hidden",width:"fit-content"}}>
+              <button
+                type="button"
+                onClick={handleSwitchToGoogle}
+                style={{
+                  padding:"6px 14px",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+                  background: fontMode === "google" ? "#111" : "white",
+                  color: fontMode === "google" ? "white" : "#666",
+                  fontFamily:"inherit",
+                }}
+              >Google Font</button>
+              <button
+                type="button"
+                onClick={handleSwitchToCustom}
+                style={{
+                  padding:"6px 14px",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+                  background: fontMode === "custom" ? "#111" : "white",
+                  color: fontMode === "custom" ? "white" : "#666",
+                  fontFamily:"inherit",
+                  borderLeft:"1px solid #E0E0E0",
+                }}
+              >Fonte custom (família)</button>
+            </div>
+
+            {fontMode === "google" ? (
               <select
                 value={brandFont}
                 onChange={e => handleFontChange(e.target.value)}
@@ -471,10 +640,89 @@ export default function EditClientPage() {
                   {GOOGLE_FONTS.filter(f => f.category === "handwriting").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
                 </optgroup>
               </select>
-            </div>
-            {brandFont && (
+            ) : (
+              <div>
+                {/* Nome da familia */}
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14,maxWidth:360}}>
+                  <label style={{fontSize:10,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Nome da família</label>
+                  <input
+                    type="text"
+                    value={brandFont}
+                    onChange={e => handleCustomFontNameChange(e.target.value)}
+                    placeholder="Ex: Sicredi Sans"
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Lista de arquivos da familia */}
+                {customFontFiles.length > 0 ? (
+                  <div style={{border:"1px solid #E0E0E0",borderRadius:8,overflow:"hidden",marginBottom:10}}>
+                    <div style={{display:"grid",gridTemplateColumns:"48px 1fr 160px 110px 36px",gap:0,background:"#FAFAFA",padding:"8px 12px",borderBottom:"1px solid #E0E0E0",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>
+                      <div>Aa</div>
+                      <div>Arquivo</div>
+                      <div>Peso</div>
+                      <div>Estilo</div>
+                      <div></div>
+                    </div>
+                    {customFontFiles.map((f, i) => (
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"48px 1fr 160px 110px 36px",gap:0,padding:"8px 12px",borderTop: i === 0 ? "none" : "1px solid #F0F0F0",alignItems:"center"}}>
+                        <div style={{
+                          fontFamily: brandFont ? `'${brandFont}', sans-serif` : "inherit",
+                          fontWeight: f.weight,
+                          fontStyle: f.style,
+                          fontSize: 22,
+                          lineHeight: 1,
+                        }}>Aa</div>
+                        <div style={{fontSize:12,color:"#444",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}} title={f.fileName}>{f.fileName}</div>
+                        <select
+                          value={f.weight}
+                          onChange={e => updateFontFileMeta(i, { weight: Number(e.target.value) })}
+                          style={{...inputStyle,padding:"4px 8px",fontSize:11,cursor:"pointer"}}
+                        >
+                          {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                        </select>
+                        <select
+                          value={f.style}
+                          onChange={e => updateFontFileMeta(i, { style: e.target.value as "normal" | "italic" })}
+                          style={{...inputStyle,padding:"4px 8px",fontSize:11,cursor:"pointer",marginLeft:6}}
+                        >
+                          <option value="normal">Normal</option>
+                          <option value="italic">Italic</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removeFontFile(i)}
+                          title="Remover este arquivo"
+                          style={{background:"transparent",border:"none",cursor:"pointer",color:"#999",fontSize:18,padding:"0 8px",lineHeight:1}}
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {/* Botao adicionar arquivos */}
+                <Button type="button" variant="secondary" size="sm" onClick={triggerFontPicker} disabled={uploadingFont || customFontFiles.length >= 18}>
+                  {uploadingFont ? "Enviando..." : customFontFiles.length === 0 ? "+ Adicionar arquivos" : "+ Adicionar mais pesos"}
+                </Button>
+
+                <input
+                  ref={fontFileInputRef}
+                  type="file"
+                  accept=".ttf,.otf,.woff,.woff2"
+                  multiple
+                  onChange={handleFontFileChange}
+                  style={{display:"none"}}
+                />
+
+                <div style={{fontSize:11,color:"#888",marginTop:10,lineHeight:1.5,maxWidth:520}}>
+                  Suba <strong>todos os pesos da família</strong> de uma vez (Regular, Bold, Light, Italic, etc). O peso e estilo são detectados pelo nome do arquivo — você pode ajustar nos dropdowns se errar. <strong>TTF, OTF, WOFF ou WOFF2</strong>, máximo 2MB cada.
+                </div>
+              </div>
+            )}
+
+            {brandFont && (fontMode === "google" || customFontFiles.length > 0) && (
               <div style={{
-                marginTop:12,padding:"14px 16px",
+                marginTop:14,padding:"14px 16px",
                 background:"#FAFAFA",border:"1px solid #E0E0E0",borderRadius:8,
                 fontFamily:`'${brandFont}', sans-serif`,
               }}>

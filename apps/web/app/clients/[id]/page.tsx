@@ -6,7 +6,7 @@ import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
-import { loadGoogleFont } from "@/lib/google-fonts"
+import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 
 interface Campaign {
@@ -16,8 +16,11 @@ interface Campaign {
 interface BrandColor {
   hex: string; name?: string; role: "primary" | "secondary"
 }
+interface CustomFontFile {
+  url: string; weight: number; style: "normal" | "italic"; fileName: string
+}
 interface Client {
-  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; logoUrl: string | null; brandFont: string | null; brandColors: BrandColor[] | null; campaigns: Campaign[]
+  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; logoUrl: string | null; brandFont: string | null; brandColors: BrandColor[] | null; customFontFiles: CustomFontFile[] | null; campaigns: Campaign[]
 }
 
 export default function ClientPage() {
@@ -34,7 +37,11 @@ export default function ClientPage() {
     if (res.ok) {
       const c = await res.json()
       setClient(c)
-      if (c.brandFont) loadGoogleFont(c.brandFont)
+      if (c.brandFont) {
+        const files: CustomFontFile[] = Array.isArray(c.customFontFiles) ? c.customFontFiles : []
+        if (files.length > 0) loadCustomFontFamily(c.brandFont, files)
+        else loadGoogleFont(c.brandFont)
+      }
     }
     setLoading(false)
   }

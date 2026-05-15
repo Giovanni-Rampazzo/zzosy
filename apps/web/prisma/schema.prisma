@@ -75,9 +75,13 @@ model Client {
   email       String?
   phone       String?
   address     String?
-  logoUrl     String?    @db.LongText
-  brandFont   String?
-  brandColors Json?
+  logoUrl         String?    @db.LongText
+  brandFont       String?
+  brandColors     Json?
+  /// @deprecated substituido por customFontFiles (familia completa). Mantido
+  /// no schema pra refletir colunas legadas que possam existir no banco.
+  customFontUrl   String?    @db.LongText
+  customFontFiles Json?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   tenant      Tenant     @relation(fields: [tenantId], references: [id])
