@@ -441,7 +441,15 @@ export default function CampaignOverviewPage() {
                   <div
                     onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}
                     title="Editar peça"
-                    style={{ position: "relative", height: 130, background: "#F5F5F0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", cursor: "pointer", borderRadius: "10px 10px 0 0" }}>
+                    style={{
+                      position: "relative",
+                      aspectRatio: p.width && p.height ? `${p.width} / ${p.height}` : "16 / 9",
+                      maxHeight: 360,
+                      background: "#F5F5F0",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      overflow: "hidden", cursor: "pointer",
+                      borderRadius: "10px 10px 0 0",
+                    }}>
                     {p.imageUrl ? (
                       <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : (
