@@ -120,6 +120,7 @@ export default function EditClientPage() {
   const [dragOver, setDragOver] = useState(false)
 
   useEffect(() => {
+    srvLog("edit-page-MOUNTED", { id, version: "v3-multi-fonts" })
     fetch(`/api/clients/${id}`)
       .then(r => r.ok ? r.json() : null)
       .then((c: Client | null) => {
