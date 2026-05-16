@@ -931,22 +931,6 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
 
   for (const obj of objects) {
     if ((obj as any).__isBg) continue
-    // DIAGNOSTICO: tipo de cada objeto que entra no loop
-    console.log("[PSD-LOOP]", { type: obj.type, isBg: (obj as any).__isBg, hasText: !!(obj as any).text, name: (obj as any).__assetLabel })
-    // DIAGNOSTICO DETALHADO: estado completo do objeto Fabric ANTES de qualquer processamento.
-    // Permite ver scaleX/Y, fontSize, width brutos como vieram do canvas.
-    console.log("[PSD-LOOP-DETAIL]", {
-      name: (obj as any).__assetLabel,
-      type: obj.type,
-      text: (obj as any).text?.substring?.(0, 40),
-      left: obj.left, top: obj.top,
-      width: obj.width, height: obj.height,
-      scaleX: obj.scaleX, scaleY: obj.scaleY,
-      fontSize: (obj as any).fontSize,
-      scaledWidth: obj.getScaledWidth?.(),
-      scaledHeight: obj.getScaledHeight?.(),
-      hasStyles: !!(obj as any).styles && Object.keys((obj as any).styles).length > 0,
-    })
     const ox = obj.left ?? 0
     const oy = obj.top ?? 0
     const ow = (obj.width ?? 100) * (obj.scaleX ?? 1)
@@ -998,20 +982,6 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         const rendered = obj.toCanvasElement({ multiplier: 1 })
         lctx.drawImage(rendered, 0, 0, w, h)
       } catch (e) { console.warn("rasterize text fail:", name, e) }
-      // DIAGNOSTICO TEMPORARIO
-      console.log("[PSD-TEXT-EXPORT]", {
-        name,
-        rawText: JSON.stringify(obj.text),
-        wrappedLineCount: wrappedLines?.length,
-        finalText: JSON.stringify(fullText),
-        fontFamily: obj.fontFamily, psFontName: ps.name, fauxBold: ps.fauxBold,
-        rawFontSize: obj.fontSize, scaleY: sY, scaledFontSize: fontSize,
-        bbox: { left, top, w, h },
-        styleRunsCount: styleRuns.length,
-        objStyles: obj.styles,
-        styleRuns,
-        boxFill: obj.fill,
-      })
       // Alinhamento real do textbox (Photoshop nao suporta "justify" no
       // paragraphStyle, fallback pra left). Hoje hardcoded "left" — bug.
       const psJust: "left" | "center" | "right" =

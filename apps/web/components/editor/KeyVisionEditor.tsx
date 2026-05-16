@@ -63,6 +63,39 @@ type BgLayerData =
   | (BgLayerCommon & { kind: "gradient"; gradientType: "linear" | "radial"; angle: number; stops: BgGradientStop[] })
   | (BgLayerCommon & { kind: "image"; imageDataUrl: string; fit: BgImageFit })
 
+// Cor representativa do BG (usado pra alimentar espelhos legacy bgColor*Ref).
+// Solid: cor direta. Gradient: 1o stop. Image: branco (sem cor representavel).
+function bgLayerLegacyColor(l: BgLayerData | undefined): string {
+  if (!l) return "#ffffff"
+  if (l.kind === "solid") return l.color
+  if (l.kind === "gradient") return l.stops[0]?.color ?? "#ffffff"
+  return "#ffffff"
+}
+
+// Migra um item bruto de JSON pra BgLayerData tipado. Preserva o `kind` se
+// presente (back-compat: pieces salvas com bgLayers gradient/image precisam
+// re-hidratar com o tipo certo, nao forcar tudo pra solid).
+function migrateBgLayerJson(l: any): BgLayerData {
+  const opacity = typeof l?.opacity === "number" ? l.opacity : 1
+  const hidden = l?.hidden === true ? true : undefined
+  const locked = l?.locked === true ? true : undefined
+  if (l?.kind === "gradient" && Array.isArray(l.stops) && l.stops.length >= 2) {
+    return {
+      kind: "gradient",
+      gradientType: l.gradientType === "radial" ? "radial" : "linear",
+      angle: typeof l.angle === "number" ? l.angle : 90,
+      stops: l.stops.map((s: any) => ({ offset: Math.max(0, Math.min(1, s?.offset ?? 0)), color: typeof s?.color === "string" ? s.color : "#ffffff" })),
+      opacity, hidden, locked,
+    }
+  }
+  if (l?.kind === "image" && typeof l.imageDataUrl === "string" && l.imageDataUrl) {
+    const fit: BgImageFit = (l.fit === "contain" || l.fit === "fill" || l.fit === "tile") ? l.fit : "cover"
+    return { kind: "image", imageDataUrl: l.imageDataUrl, fit, opacity, hidden, locked }
+  }
+  // Solid (default + fallback de items sem kind)
+  return { kind: "solid", color: typeof l?.color === "string" ? l.color : "#ffffff", opacity, hidden, locked }
+}
+
 // Constroi o `fill` pro Fabric a partir dos dados do BG. Pra gradient,
 // gera fabric.Gradient com coords calculadas pelo angulo + dimensoes do
 // canvas (raio = max(w,h)/2 garante cobertura total em qualquer angulo).
@@ -1580,21 +1613,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ? savedAllSteps[loadIdx]?.bgLayers
           : pdata?.bgLayers
         const bgLayersToLoad: BgLayerData[] = Array.isArray(bgLayersToLoadRaw) && bgLayersToLoadRaw.length > 0
-          ? bgLayersToLoadRaw.map((l: any) => ({
-              kind: "solid",
-              color: typeof l.color === "string" ? l.color : "#ffffff",
-              opacity: typeof l.opacity === "number" ? l.opacity : 1,
-              hidden: l.hidden === true ? true : undefined,
-              locked: l.locked === true ? true : undefined,
-            }))
+          ? bgLayersToLoadRaw.map(migrateBgLayerJson)
           : [{ kind: "solid", color: bgToLoad, opacity: bgOpToLoad }]
         // Atualiza bgLayersRef SEMPRE — canvas init le isso pra criar os Rects.
-        // bgColorRef/bgOpacityRef sao espelhos do BG[0] pra back-compat.
+        // bgColorRef/bgOpacityRef sao espelhos do BG[0] pra back-compat (so faz
+        // sentido pra kind=solid; gradient pega 1o stop; image pega branco).
         bgLayersRef.current = bgLayersToLoad
-        bgColorRef.current = bgLayersToLoad[0].color
+        bgColorRef.current = bgLayerLegacyColor(bgLayersToLoad[0])
         bgOpacityRef.current = bgLayersToLoad[0].opacity
         if (loadIdx !== null && loadIdx !== savedActiveIdx) {
-          setBgColor(bgLayersToLoad[0].color)
+          setBgColor(bgLayerLegacyColor(bgLayersToLoad[0]))
           setBgOpacity(bgLayersToLoad[0].opacity)
         }
 
@@ -3298,20 +3326,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // recriar os BGs do step abaixo.
       const toRemove = fc.getObjects().filter((o: any) => !o.__isBleedOverlay)
       toRemove.forEach((o: any) => fc.remove(o))
-      // Migra legacy → bgLayers se necessario
+      // Migra legacy → bgLayers (preserva kind: solid/gradient/image)
       const stepBgLayers: BgLayerData[] = Array.isArray(step.bgLayers) && step.bgLayers.length > 0
-        ? step.bgLayers.map((l: any) => ({
-            kind: "solid",
-            color: typeof l.color === "string" ? l.color : "#ffffff",
-            opacity: typeof l.opacity === "number" ? l.opacity : 1,
-            hidden: l.hidden === true ? true : undefined,
-            locked: l.locked === true ? true : undefined,
-          }))
+        ? step.bgLayers.map(migrateBgLayerJson)
         : [{ kind: "solid", color: step.bgColor, opacity: typeof step.bgOpacity === "number" ? step.bgOpacity : 1 }]
       bgLayersRef.current = stepBgLayers
-      // Atualiza espelhos legacy (BG[0])
-      bgColorRef.current = stepBgLayers[0].color
-      setBgColor(stepBgLayers[0].color)
+      // Atualiza espelhos legacy (BG[0]) — bgColor representativo so faz sentido pra solid
+      bgColorRef.current = bgLayerLegacyColor(stepBgLayers[0])
+      setBgColor(bgLayerLegacyColor(stepBgLayers[0]))
       bgOpacityRef.current = stepBgLayers[0].opacity
       setBgOpacity(stepBgLayers[0].opacity)
       // Re-cria todos os Rects BG
@@ -4067,9 +4089,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // Espelhos legacy (BG[0]) — save/export antigo continua funcionando.
     if (idx === 0) {
       bgOpacityRef.current = next.opacity
-      bgColorRef.current = next.kind === "solid"
-        ? next.color
-        : (next.stops[0]?.color ?? "#ffffff") // gradient: usa 1o stop como espelho
+      bgColorRef.current = bgLayerLegacyColor(next)
     }
     if (next.kind === "solid") {
       setBgColor(next.color)
@@ -4326,7 +4346,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
     bgRef.current = bgRectsRef.current[0]
     if (bgLayersRef.current[0]) {
-      bgColorRef.current = bgLayersRef.current[0].color
+      bgColorRef.current = bgLayerLegacyColor(bgLayersRef.current[0])
       bgOpacityRef.current = bgLayersRef.current[0].opacity
     }
   }
@@ -4376,7 +4396,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (obj?.__isBg && typeof obj.__bgIdx === "number") idx = obj.__bgIdx
     const layer = bgLayersRef.current[idx]
     if (!layer) return
-    setBgColor(layer.color)
+    setBgColor(bgLayerLegacyColor(layer))
     setBgOpacity(layer.opacity)
   }, [selected, selectedTick])
 

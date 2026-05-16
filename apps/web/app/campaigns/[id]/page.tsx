@@ -51,7 +51,7 @@ export default function CampaignOverviewPage() {
   const [view, setView] = useState<"grid" | "list">("grid")
   const [selected, setSelectedRaw] = useState<string[]>([])
   // Wrapper de debug temporario pra rastrear quem zera selected
-  const setSelected = (next: any) => {
+  const setSelected = (next: string[] | ((prev: string[]) => string[])) => {
     if (typeof next === "function") {
       setSelectedRaw(prev => {
         const result = next(prev)

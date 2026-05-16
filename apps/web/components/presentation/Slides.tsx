@@ -303,10 +303,6 @@ function formatDims(
 
 export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, onStepClick, pieceId, onCopyChange, hideCard, brand }: PieceSlideProps) {
   const primary = getPrimary(brand)
-  // DEBUG temporario: verificar se steps esta chegando
-  if (typeof window !== "undefined" && steps && steps.length >= 2) {
-    console.log("[SlidePiece DEBUG]", pieceId, "steps:", steps.map(s => ({ idx: s.index, hasImg: !!s.imageUrl, hasThumb: !!s.thumbnailUrl, imageUrl: s.imageUrl, thumbnailUrl: s.thumbnailUrl })))
-  }
   const dims = formatDims(width, height, widthValue, heightValue, widthUnit, heightUnit)
   const clickable = !!onClick
   // copyLocal: estado interno editavel. Sincroniza com prop copy ao mudar
