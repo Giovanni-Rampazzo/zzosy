@@ -860,21 +860,74 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     }
   }
 
-  // BACKGROUND: adiciona como primeira layer (vai pro fundo no Photoshop).
-  // BG-7: renderiza TODOS os BG layers (solid/gradient/image multilayer)
-  // num canvas único — o PSD recebe 1 layer "Background" rasterizada com
-  // tudo dentro. Round-trip 100% editavel no PSD nao eh possivel pra
-  // gradient/image multilayer sem mapear pra fill layers nativos do PSD
-  // (V2: implementar vectorFill writer no agPsd export).
-  const bgCanvas = document.createElement("canvas")
-  bgCanvas.width = W; bgCanvas.height = H
-  const bgCtx = bgCanvas.getContext("2d")!
-  await renderBgLayersOntoCanvas(bgCtx, bgLayersFromData(data), W, H)
-  psdLayers.push({
-    name: "Background",
-    top: 0, left: 0, bottom: H, right: W,
-    canvas: bgCanvas,
-  })
+  // BACKGROUND: cada bgLayer vira uma LAYER NATIVA do Photoshop em vez de
+  // ser rasterizado num canvas único.
+  //  - kind "solid"   → Solid Color Fill Layer (vectorFill type="color")
+  //                     editavel no PS: duplo clique no thumb troca a cor.
+  //  - kind "gradient"→ Gradient Fill Layer (vectorFill type="solid" com
+  //                     colorStops) editavel no PS.
+  //  - kind "image"   → fallback raster (Pattern Fill ainda nao mapeado).
+  // Ordem: BG[0] no fundo → primeiro pushed; assets vem em seguida no topo.
+  // Convencao ag-psd writer: ordem do push() = ordem visual (primeiro=fundo).
+  function hexToPsdColor(hex: string): { r: number; g: number; b: number } {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex ?? "")
+    if (!m) return { r: 255, g: 255, b: 255 }
+    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) }
+  }
+  const bgLayersArr: any[] = bgLayersFromData(data)
+  for (let i = 0; i < bgLayersArr.length; i++) {
+    const bl = bgLayersArr[i]
+    if (!bl || bl.hidden) continue
+    const layerName = i === 0 ? "Background" : `Background ${i + 1}`
+    const opacityByte = Math.max(0, Math.min(255, Math.round((typeof bl.opacity === "number" ? bl.opacity : 1) * 255)))
+    if (bl.kind === "solid") {
+      psdLayers.push({
+        name: layerName,
+        top: 0, left: 0, bottom: H, right: W,
+        opacity: opacityByte,
+        vectorFill: { type: "color", color: hexToPsdColor(bl.color) },
+      })
+    } else if (bl.kind === "gradient") {
+      // Converte angle ZZOSY (0=L→R, 90=T→B) → PSD (0=cima, sentido horario)
+      // Formula inversa do extractPsdBgLayer: psd = (zzosy + 180) mod 360
+      const angleZ = typeof bl.angle === "number" ? bl.angle : 90
+      const anglePsd = ((angleZ + 180) % 360 + 360) % 360
+      const psStyle = bl.gradientType === "radial" ? "radial" : "linear"
+      psdLayers.push({
+        name: layerName,
+        top: 0, left: 0, bottom: H, right: W,
+        opacity: opacityByte,
+        vectorFill: {
+          type: "solid",
+          name: "Custom",
+          smoothness: 4096,
+          colorStops: (bl.stops ?? []).map((s: any) => ({
+            color: hexToPsdColor(s.color),
+            location: Math.max(0, Math.min(1, s.offset ?? 0)),
+            midpoint: 50,
+          })),
+          opacityStops: [
+            { opacity: 100, location: 0, midpoint: 50 },
+            { opacity: 100, location: 1, midpoint: 50 },
+          ],
+          style: psStyle,
+          angle: anglePsd,
+        },
+      })
+    } else if (bl.kind === "image") {
+      // Raster fallback (V2: mapear pra Pattern Fill Layer nativo do PS)
+      const bgCanvas = document.createElement("canvas")
+      bgCanvas.width = W; bgCanvas.height = H
+      const ctx = bgCanvas.getContext("2d")!
+      await renderBgLayersOntoCanvas(ctx, [bl], W, H)
+      psdLayers.push({
+        name: layerName,
+        top: 0, left: 0, bottom: H, right: W,
+        opacity: opacityByte,
+        canvas: bgCanvas,
+      })
+    }
+  }
 
   for (const obj of objects) {
     if ((obj as any).__isBg) continue

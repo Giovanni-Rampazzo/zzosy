@@ -207,6 +207,35 @@ function sampleHexAt(c: HTMLCanvasElement, x: number, y: number): string | null 
   } catch { return null }
 }
 
+// Detecta se um canvas raster eh uma cor solida uniforme. Amostra 9 pontos
+// (cantos, meio dos lados, centro) — se todos batem com tolerancia 2 em
+// cada canal, considera solido. Caso contrario tem desenho/textura/gradient
+// rasterizado e deve virar BG kind="image" pra preservar.
+function isCanvasUniform(c: HTMLCanvasElement): boolean {
+  const ctx = c.getContext("2d")
+  if (!ctx) return true
+  const w = c.width, h = c.height
+  if (w === 0 || h === 0) return true
+  const xs = [0, Math.floor(w / 2), w - 1]
+  const ys = [0, Math.floor(h / 2), h - 1]
+  let ref: Uint8ClampedArray | null = null
+  for (const y of ys) {
+    for (const x of xs) {
+      try {
+        const px = ctx.getImageData(x, y, 1, 1).data
+        if (!ref) { ref = px; continue }
+        if (
+          Math.abs(px[0] - ref[0]) > 2 ||
+          Math.abs(px[1] - ref[1]) > 2 ||
+          Math.abs(px[2] - ref[2]) > 2 ||
+          Math.abs(px[3] - ref[3]) > 2
+        ) return false
+      } catch { return false }
+    }
+  }
+  return true
+}
+
 // Tenta extrair um BG layer (BgLayerData) a partir dum layer PSD top-level.
 // Suporta:
 //  - Solid Color fill layer (vectorFill.type === 'color') → BG solid exato
@@ -235,8 +264,23 @@ function extractPsdBgLayer(layer: any, psdW: number, psdH: number): BgLayerData 
   }
   if (layer.canvas) {
     const c = layer.canvas as HTMLCanvasElement
-    const color = sampleHexAt(c, c.width / 2, c.height / 2)
-    if (color) return { kind: "solid", color, opacity: 1 }
+    // Se o raster eh uma cor solida uniforme, retorna como solid (mais leve
+    // que image base64 inline). Se tem desenho/textura/etc, preserva como
+    // BG kind="image" com dataURL — fit="cover" pra cobrir o canvas da peca
+    // qualquer que seja a proporcao do PSD.
+    if (isCanvasUniform(c)) {
+      const color = sampleHexAt(c, c.width / 2, c.height / 2)
+      if (color) return { kind: "solid", color, opacity: 1 }
+    } else {
+      try {
+        const dataUrl = c.toDataURL("image/png")
+        return { kind: "image", imageDataUrl: dataUrl, fit: "cover", opacity: 1 }
+      } catch (e) {
+        console.warn("[bg-import] toDataURL falhou, fallback solid:", e)
+        const color = sampleHexAt(c, c.width / 2, c.height / 2)
+        if (color) return { kind: "solid", color, opacity: 1 }
+      }
+    }
   }
   return null
 }
