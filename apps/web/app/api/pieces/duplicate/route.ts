@@ -51,14 +51,64 @@ export async function POST(req: NextRequest) {
     const suffix = existing === 0 ? " (cópia)" : ` (cópia ${existing})`
     const newName = baseStripped + suffix
 
-    // Se trocou formato, atualiza data.width/height/dpi + descarta thumb antigo.
+    // Se trocou formato, atualiza data.width/height/dpi + ESCALA layers
+    // proporcionalmente (sem isso, layers ficam fora do canvas novo).
     // piece.data eh LongText (string) no schema — sempre passar JSON.stringified.
     let newData: string | undefined = (typeof orig.data === "string" ? orig.data : undefined)
     let newImageUrl: string | undefined = orig.imageUrl ?? undefined
     if (newFormat && newFormat.id !== orig.mediaFormatId) {
       try {
         const parsed = typeof orig.data === "string" ? JSON.parse(orig.data) : (orig.data ?? {})
+        const oldW = typeof parsed?.width === "number" && parsed.width > 0 ? parsed.width : null
+        const oldH = typeof parsed?.height === "number" && parsed.height > 0 ? parsed.height : null
         const merged = { ...parsed, width: newFormat.width, height: newFormat.height, dpi: newFormat.dpi }
+        if (oldW && oldH) {
+          // Escala uniforme (preserva proporção, sem distorcer textos) +
+          // centraliza pra usar área util do novo canvas.
+          const ratio = Math.min(newFormat.width / oldW, newFormat.height / oldH)
+          const offX = (newFormat.width - oldW * ratio) / 2
+          const offY = (newFormat.height - oldH * ratio) / 2
+          const scaleLayer = (l: any) => {
+            if (!l || typeof l !== "object") return l
+            const out = { ...l }
+            if (typeof out.posX === "number") out.posX = Math.round(out.posX * ratio + offX)
+            if (typeof out.posY === "number") out.posY = Math.round(out.posY * ratio + offY)
+            if (typeof out.width === "number") out.width = Math.round(out.width * ratio)
+            if (typeof out.height === "number") out.height = Math.round(out.height * ratio)
+            if (typeof out.scaleX === "number") out.scaleX = out.scaleX * ratio
+            if (typeof out.scaleY === "number") out.scaleY = out.scaleY * ratio
+            // Override fontSize/leadingPt/styles tambem escalam (texto preserva
+            // proporção visual contra o canvas)
+            if (out.overrides && typeof out.overrides === "object") {
+              const ov = { ...out.overrides }
+              if (typeof ov.fontSize === "number") ov.fontSize = Math.round(ov.fontSize * ratio)
+              if (typeof ov.width === "number") ov.width = Math.round(ov.width * ratio)
+              if (typeof ov.height === "number") ov.height = Math.round(ov.height * ratio)
+              if (typeof ov.leadingPt === "number") ov.leadingPt = ov.leadingPt * ratio
+              if (ov.styles && typeof ov.styles === "object") {
+                const newStyles: any = {}
+                for (const lineKey of Object.keys(ov.styles)) {
+                  newStyles[lineKey] = {}
+                  for (const colKey of Object.keys(ov.styles[lineKey])) {
+                    const cs = { ...ov.styles[lineKey][colKey] }
+                    if (typeof cs.fontSize === "number") cs.fontSize = Math.round(cs.fontSize * ratio)
+                    newStyles[lineKey][colKey] = cs
+                  }
+                }
+                ov.styles = newStyles
+              }
+              out.overrides = ov
+            }
+            return out
+          }
+          if (Array.isArray(merged.layers)) merged.layers = merged.layers.map(scaleLayer)
+          if (Array.isArray(merged.steps)) {
+            merged.steps = merged.steps.map((s: any) => ({
+              ...s,
+              layers: Array.isArray(s?.layers) ? s.layers.map(scaleLayer) : s?.layers,
+            }))
+          }
+        }
         newData = JSON.stringify(merged)
       } catch {
         newData = JSON.stringify({ width: newFormat.width, height: newFormat.height, dpi: newFormat.dpi })
