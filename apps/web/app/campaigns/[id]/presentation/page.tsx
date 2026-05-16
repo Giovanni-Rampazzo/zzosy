@@ -246,7 +246,10 @@ export default function PresentationPage() {
       }}>
         <div style={{
           display: "flex", flexDirection: "column", gap: 28,
-          maxWidth: 1400, width: "100%",
+          // Slides em 67% do tamanho anterior (1400 → 938). Preview compacto
+          // que cabe melhor no viewport sem reduzir escala via transform
+          // (preserva interatividade + qualidade de render).
+          maxWidth: 938, width: "100%",
           margin: "0 auto",
         }}>
           <SlideRow num={++slideNum} total={totalSlides} label="Capa">
