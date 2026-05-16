@@ -161,6 +161,8 @@ export async function cascadeBrandUpdate(
   const totalAll = allWork.length + kvWork.length
   onProgress?.({ total: totalAll, done, pieceIds: [] })
 
+  console.log("[brand-cascade] start", { clientId, pieces: allWork.length, kvs: kvWork.length, brandColors })
+
   // 3. Processa cada piece em sequência (evita pico de memória ao renderizar
   //    muitas pieces em paralelo — cada thumb ~1600px é caro). Cada piece:
   //    fetch data completo → aplica refs → PATCH + regen thumb se mudou.
@@ -169,21 +171,45 @@ export async function cascadeBrandUpdate(
       // pieces?campaignId retorna SEM data completo (so com width/height/etc).
       // Precisamos do data inteiro pra aplicar refs.
       const freshRes = await fetch(`/api/pieces/${piece.id}`, { cache: "no-store" })
-      if (!freshRes.ok) { done++; onProgress?.({ total: allWork.length, done, pieceIds: touched }); continue }
+      if (!freshRes.ok) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
       const freshPiece = await freshRes.json()
       const data = typeof freshPiece.data === "string" ? JSON.parse(freshPiece.data) : (freshPiece.data ?? {})
+      // DEBUG: lista quem tem brand ref pra confirmar que o ref foi salvo
+      const refsFound: any[] = []
+      const collectRefs = (block: any, prefix: string) => {
+        if (Array.isArray(block?.layers)) {
+          block.layers.forEach((l: any, i: number) => {
+            if (typeof l?.overrides?.fillBrandIdx === "number") {
+              refsFound.push({ where: `${prefix}layers[${i}]`, fillBrandIdx: l.overrides.fillBrandIdx, fill: l.overrides.fill, assetId: l.assetId })
+            }
+          })
+        }
+        if (Array.isArray(block?.bgLayers)) {
+          block.bgLayers.forEach((b: any, i: number) => {
+            if (b?.kind === "solid" && typeof b?.colorBrandIdx === "number") {
+              refsFound.push({ where: `${prefix}bgLayers[${i}]`, colorBrandIdx: b.colorBrandIdx, color: b.color })
+            }
+          })
+        }
+      }
+      collectRefs(data, "")
+      if (Array.isArray(data.steps)) data.steps.forEach((s: any, i: number) => collectRefs(s, `steps[${i}].`))
+      console.log("[brand-cascade] piece", piece.id, "name:", freshPiece.name, "refs:", refsFound)
+
       const dataCopy = JSON.parse(JSON.stringify(data))
       const changed = resolveBrandRefsInData(dataCopy, brandColors)
-      if (!changed) { done++; onProgress?.({ total: allWork.length, done, pieceIds: touched }); continue }
+      console.log("[brand-cascade] piece", piece.id, "changed:", changed)
+      if (!changed) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
 
       // Persiste novo data. piece.data eh String? @db.LongText no schema,
       // entao precisa ser stringified antes de mandar (Prisma update nao
       // serializa objeto pra string automaticamente em campo Text).
-      await fetch(`/api/pieces/${freshPiece.id}`, {
+      const patchRes = await fetch(`/api/pieces/${freshPiece.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data: JSON.stringify(dataCopy) }),
       })
+      console.log("[brand-cascade] piece", piece.id, "PATCH status:", patchRes.status)
 
       // Regenera thumb principal (do step ativo / single-step)
       const activeStepIdx = typeof dataCopy.activeStepIndex === "number" ? dataCopy.activeStepIndex : 0
