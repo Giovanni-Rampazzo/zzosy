@@ -169,6 +169,8 @@ const LW = 220, PW = 260, TH = 48, BH = 44
 const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
 
+interface BrandColor { hex: string; name?: string | null; role?: "primary" | "secondary" }
+
 function parseContent(raw: any): TextSpan[] {
   if (!raw) return []
   if (typeof raw === "string") { try { return JSON.parse(raw) } catch { return [] } }
@@ -645,6 +647,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const bgColorRef = useRef("#ffffff")
   const [bgOpacity, setBgOpacity] = useState(1)
   const bgOpacityRef = useRef(1)
+  // Library de cores do cliente (Client.brandColors). Renderiza no topo das
+  // SWATCHES no painel BG e no painel de texto pra acesso rapido.
+  const [brandColors, setBrandColors] = useState<BrandColor[]>([])
   // BG-2: multiplas BG layers empilhaveis (igual Photoshop). bgLayersRef =
   // fonte da verdade dos dados; bgRectsRef = Rects no canvas (mesma ordem).
   // bgColorRef/bgOpacityRef/bgRef continuam refletindo o BG[0] (fundo) pra
@@ -761,6 +766,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
     load()
   }, [campaignId, pieceId])
+
+  // Carrega a library de cores do cliente da campanha. Usado pra renderizar
+  // swatches "Marca" no topo dos color pickers (BG + texto).
+  useEffect(() => {
+    const clientId = campaign?.client?.id
+    if (!clientId) { setBrandColors([]); return }
+    let cancelled = false
+    fetch(`/api/clients/${clientId}`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(c => {
+        if (cancelled || !c) return
+        const arr: any[] = Array.isArray(c?.brandColors) ? c.brandColors : []
+        const cleaned: BrandColor[] = arr
+          .filter(x => typeof x?.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(x.hex))
+          .map(x => ({ hex: x.hex, name: x.name ?? null, role: x.role }))
+        setBrandColors(cleaned)
+      })
+      .catch(() => { if (!cancelled) setBrandColors([]) })
+    return () => { cancelled = true }
+  }, [campaign?.client?.id])
 
   // Sempre que voltar para o editor (foco), apenas atualiza campaignRef em memoria.
   // NAO toca no canvas: qualquer "sync" automatico apaga edicoes locais nao salvas
@@ -5393,6 +5418,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
                     />
                   </div>
+                  {/* Library de cores do cliente (BrandColors) — no topo */}
+                  {brandColors.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                        {brandColors.map((bc, i) => (
+                          <div key={`${bc.hex}-${i}`} onClick={() => changeBg(bc.hex)}
+                            title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
+                            style={{ width: 26, height: 26, borderRadius: 5, background: bc.hex, cursor: "pointer", border: bgColor.toLowerCase() === bc.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {brandColors.length > 0 && (
+                    <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
+                  )}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
                     {SWATCHES.map(c => (
                       <div key={c} onClick={() => changeBg(c)}
@@ -5863,6 +5904,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
                 />
               </div>
+              {/* Library de cores do cliente — no topo, antes da paleta padrão */}
+              {brandColors.length > 0 && (
+                <>
+                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                    {brandColors.map((bc, i) => (
+                      <div key={`${bc.hex}-${i}`} onClick={() => applyStyle("fill", bc.hex)}
+                        title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
+                        style={{ width: 24, height: 24, borderRadius: 4, background: bc.hex, cursor: "pointer", border: (selected.fill ?? "").toLowerCase() === bc.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
+                </>
+              )}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {SWATCHES.map(c => (
                   <div key={c} onClick={() => applyStyle("fill", c)}
