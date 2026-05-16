@@ -135,9 +135,31 @@ export async function cascadeBrandUpdate(
     })
   )
 
+  // KV de cada campanha (matriz): processa em paralelo com pieces. Cada KV
+  // conta como 1 "item" no progresso total. KV nao tem `data.steps` nem
+  // multi-step — eh sempre 1 layer set.
+  const kvWork: Array<{ campaignId: string; assets: any[] }> = []
+  await Promise.all(
+    campaigns.map(async (camp) => {
+      // Reusa o fetch de assets ja feito no allWork loop acima
+      const existing = allWork.find(w => w.piece?.campaignId === camp.id)
+      const assets = existing?.assets ?? []
+      // Se nao tinha pieces pra essa camp, ainda processa o KV (com fetch assets)
+      let resolvedAssets = assets
+      if (resolvedAssets.length === 0) {
+        try {
+          const c = await fetch(`/api/campaigns/${camp.id}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null)
+          resolvedAssets = Array.isArray(c?.assets) ? c.assets : []
+        } catch { resolvedAssets = [] }
+      }
+      kvWork.push({ campaignId: camp.id, assets: resolvedAssets })
+    })
+  )
+
   const touched: string[] = []
   let done = 0
-  onProgress?.({ total: allWork.length, done, pieceIds: [] })
+  const totalAll = allWork.length + kvWork.length
+  onProgress?.({ total: totalAll, done, pieceIds: [] })
 
   // 3. Processa cada piece em sequência (evita pico de memória ao renderizar
   //    muitas pieces em paralelo — cada thumb ~1600px é caro). Cada piece:
@@ -193,7 +215,57 @@ export async function cascadeBrandUpdate(
       console.warn("[cascadeBrandUpdate] piece falhou:", piece.id, e)
     } finally {
       done++
-      onProgress?.({ total: allWork.length, done, pieceIds: touched })
+      onProgress?.({ total: totalAll, done, pieceIds: touched })
+    }
+  }
+
+  // Processa KVs (matriz). Pra cada campanha:
+  //   1. GET /api/campaigns/[id]/key-vision
+  //   2. Aplica brand refs nas layers (texto fillBrandIdx)
+  //   3. PUT KV com layers atualizados
+  //   4. Regenera thumb via /api/campaigns/[id]/key-vision/thumbnail
+  for (const { campaignId, assets } of kvWork) {
+    try {
+      const kvRes = await fetch(`/api/campaigns/${campaignId}/key-vision`, { cache: "no-store" })
+      if (!kvRes.ok) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
+      const kv = await kvRes.json()
+      if (!kv || !Array.isArray(kv.layers)) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
+      const kvCopy = JSON.parse(JSON.stringify(kv))
+      const changed = resolveBrandRefsInBlock(kvCopy, brandColors)
+      if (!changed) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
+
+      // Persiste KV atualizado
+      await fetch(`/api/campaigns/${campaignId}/key-vision`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bgColor: kvCopy.bgColor,
+          layers: kvCopy.layers,
+          width: kvCopy.width,
+          height: kvCopy.height,
+          data: kvCopy.data,
+        }),
+      })
+
+      // Regenera thumb da matriz reusando renderPieceThumbBlob (KV vira
+      // "piece virtual" com layers+bgColor do KV).
+      const kvPiece = {
+        id: `kv-${campaignId}`,
+        data: { version: 2, width: kvCopy.width, height: kvCopy.height, bgColor: kvCopy.bgColor, layers: kvCopy.layers },
+        width: kvCopy.width, height: kvCopy.height,
+      }
+      const blob = await renderPieceThumbBlob(kvPiece, assets, 1600)
+      if (blob) {
+        const fd = new FormData()
+        fd.append("thumbnail", blob, "kv-thumb.jpg")
+        await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+      }
+      touched.push(`kv-${campaignId}`)
+    } catch (e) {
+      console.warn("[cascadeBrandUpdate] KV falhou:", campaignId, e)
+    } finally {
+      done++
+      onProgress?.({ total: totalAll, done, pieceIds: touched })
     }
   }
 
