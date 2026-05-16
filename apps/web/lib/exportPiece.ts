@@ -33,6 +33,72 @@ function buildFileName(campaignName: string | undefined, piece: { name: string; 
   return [camp, midia, dims].filter(Boolean).join("_")
 }
 
+// Renderiza todos os BG layers (BgLayerData[]) num CanvasRenderingContext2D.
+// Suporta solid, gradient linear/radial e image (cover/contain/fill/tile).
+// Respeita opacity, blendMode (globalCompositeOperation) e hidden.
+// Ignora mask por enquanto (mask só funciona no editor; export degraded).
+// Async pq image precisa carregar.
+async function renderBgLayersOntoCanvas(
+  ctx: CanvasRenderingContext2D, layers: any[], w: number, h: number,
+): Promise<void> {
+  for (const layer of layers) {
+    if (!layer || layer.hidden) continue
+    ctx.save()
+    ctx.globalAlpha = typeof layer.opacity === "number" ? layer.opacity : 1
+    ctx.globalCompositeOperation = (layer.blendMode ?? "source-over") as GlobalCompositeOperation
+    try {
+      if (layer.kind === "solid") {
+        ctx.fillStyle = layer.color ?? "#ffffff"
+        ctx.fillRect(0, 0, w, h)
+      } else if (layer.kind === "gradient") {
+        const angle = typeof layer.angle === "number" ? layer.angle : 90
+        const rad = (angle * Math.PI) / 180
+        const cx = w / 2, cy = h / 2
+        const r = Math.max(w, h) / 2
+        const grad = layer.gradientType === "radial"
+          ? ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(w, h) / 2)
+          : ctx.createLinearGradient(cx - Math.cos(rad) * r, cy - Math.sin(rad) * r, cx + Math.cos(rad) * r, cy + Math.sin(rad) * r)
+        for (const s of (layer.stops ?? [])) {
+          if (typeof s?.offset === "number" && typeof s?.color === "string") grad.addColorStop(s.offset, s.color)
+        }
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, w, h)
+      } else if (layer.kind === "image" && typeof layer.imageDataUrl === "string" && layer.imageDataUrl) {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const i = new window.Image()
+          i.crossOrigin = "anonymous"
+          i.onload = () => resolve(i)
+          i.onerror = () => reject(new Error("img load"))
+          i.src = layer.imageDataUrl
+        })
+        if (layer.fit === "tile") {
+          const pat = ctx.createPattern(img, "repeat")
+          if (pat) { ctx.fillStyle = pat; ctx.fillRect(0, 0, w, h) }
+        } else if (layer.fit === "fill") {
+          ctx.drawImage(img, 0, 0, w, h)
+        } else {
+          const iw = img.naturalWidth || img.width || 1
+          const ih = img.naturalHeight || img.height || 1
+          const s = layer.fit === "contain" ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih)
+          const dw = iw * s, dh = ih * s
+          ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh)
+        }
+      }
+    } catch (e) {
+      console.warn("[bg-export] falha renderizando BG layer:", e)
+    } finally {
+      ctx.restore()
+    }
+  }
+}
+
+// Pega bgLayers do data; se nao existir, migra do bgColor/bgOpacity legacy
+// pra um array com 1 BG solid (back-compat).
+function bgLayersFromData(data: any): any[] {
+  if (Array.isArray(data?.bgLayers) && data.bgLayers.length > 0) return data.bgLayers
+  return [{ kind: "solid", color: data?.bgColor ?? "#ffffff", opacity: typeof data?.bgOpacity === "number" ? data.bgOpacity : 1 }]
+}
+
 interface Asset {
   id: string; type: string; label: string; value: string | null; imageUrl: string | null; content: any
   smartObject?: {
@@ -86,11 +152,16 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
   const W = data?.width ?? piece.width ?? 1080
   const H = data?.height ?? piece.height ?? 1080
-  const bgColor = data?.bgColor ?? "#ffffff"
+  // BG-7: usa novo schema bgLayers se existir, senao migra do bgColor legacy.
+  // StaticCanvas tem backgroundColor apenas pra cor solida; pra gradient/image
+  // multilayer, a renderizacao completa do BG eh feita no ctx final ANTES do
+  // drawImage(fc) — ver bloco "ctx.fillStyle = bgColor[0]" mais abaixo.
+  const bgLayers = bgLayersFromData(data)
+  const fallbackBg = bgLayers[0]?.kind === "solid" ? bgLayers[0].color : "#ffffff"
 
   const el = document.createElement("canvas")
   el.width = W; el.height = H
-  const fc = new StaticCanvas(el, { width: W, height: H, enableRetinaScaling: false, backgroundColor: bgColor })
+  const fc = new StaticCanvas(el, { width: W, height: H, enableRetinaScaling: false, backgroundColor: fallbackBg })
 
   // V2: layers + assets
   if (data?.version === 2 && Array.isArray(data?.layers)) {
@@ -313,8 +384,9 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
   const out = document.createElement("canvas")
   out.width = W; out.height = H
   const ctx = out.getContext("2d", { alpha: false } as any)! as CanvasRenderingContext2D
-  ctx.fillStyle = data?.bgColor ?? "#ffffff"
-  ctx.fillRect(0, 0, W, H)
+  // BG-7: renderiza TODOS os BG layers (solid/gradient/image) antes dos
+  // asset layers do fc. Fallback automatico pra bgColor legacy se sem bgLayers.
+  await renderBgLayersOntoCanvas(ctx, bgLayersFromData(data), W, H)
   ctx.drawImage(fc.getElement() as HTMLCanvasElement, 0, 0)
   fc.dispose()
   return { canvas: out, dpi }
@@ -788,13 +860,16 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     }
   }
 
-  // BACKGROUND: adiciona como primeira layer (vai pro fundo no Photoshop) com a cor de fundo do canvas
-  const bgColor = data?.bgColor ?? "#ffffff"
+  // BACKGROUND: adiciona como primeira layer (vai pro fundo no Photoshop).
+  // BG-7: renderiza TODOS os BG layers (solid/gradient/image multilayer)
+  // num canvas único — o PSD recebe 1 layer "Background" rasterizada com
+  // tudo dentro. Round-trip 100% editavel no PSD nao eh possivel pra
+  // gradient/image multilayer sem mapear pra fill layers nativos do PSD
+  // (V2: implementar vectorFill writer no agPsd export).
   const bgCanvas = document.createElement("canvas")
   bgCanvas.width = W; bgCanvas.height = H
   const bgCtx = bgCanvas.getContext("2d")!
-  bgCtx.fillStyle = bgColor
-  bgCtx.fillRect(0, 0, W, H)
+  await renderBgLayersOntoCanvas(bgCtx, bgLayersFromData(data), W, H)
   psdLayers.push({
     name: "Background",
     top: 0, left: 0, bottom: H, right: W,
@@ -1034,13 +1109,12 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     }
   }
 
-  // Composite (preview)
+  // Composite (preview): BG-7 renderiza bgLayers completo antes do fc
   const compositeCanvas = document.createElement("canvas")
   compositeCanvas.width = W
   compositeCanvas.height = H
   const cctx = compositeCanvas.getContext("2d", { alpha: false } as any)! as CanvasRenderingContext2D
-  cctx.fillStyle = data?.bgColor ?? "#ffffff"
-  cctx.fillRect(0, 0, W, H)
+  await renderBgLayersOntoCanvas(cctx, bgLayersFromData(data), W, H)
   cctx.drawImage(fc.getElement(), 0, 0)
 
   const thumbCanvas = document.createElement("canvas")
