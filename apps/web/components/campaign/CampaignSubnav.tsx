@@ -57,6 +57,16 @@ export function CampaignSubnav({ campaignId, clientId, actions, inlineActions, a
             Campanha
           </Button>
         )}
+        {activeTab !== "assets" && (
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => router.push(`/campaigns/${campaignId}/assets`)}
+            title="Ver assets desta campanha"
+          >
+            Assets
+          </Button>
+        )}
         {activeTab !== "pieces" && (
           <Button
             variant="primary"
