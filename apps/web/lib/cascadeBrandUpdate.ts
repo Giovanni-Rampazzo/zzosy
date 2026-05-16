@@ -176,11 +176,13 @@ export async function cascadeBrandUpdate(
       const changed = resolveBrandRefsInData(dataCopy, brandColors)
       if (!changed) { done++; onProgress?.({ total: allWork.length, done, pieceIds: touched }); continue }
 
-      // Persiste novo data
+      // Persiste novo data. piece.data eh String? @db.LongText no schema,
+      // entao precisa ser stringified antes de mandar (Prisma update nao
+      // serializa objeto pra string automaticamente em campo Text).
       await fetch(`/api/pieces/${freshPiece.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: dataCopy }),
+        body: JSON.stringify({ data: JSON.stringify(dataCopy) }),
       })
 
       // Regenera thumb principal (do step ativo / single-step)
