@@ -58,6 +58,60 @@ function getSpans(asset: Asset): TextSpan[] {
   return [{ text, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: "Arial" } }]
 }
 
+// Cor ag-psd → hex. ag-psd ora retorna 0..255, ora 0..1; normalizamos pelos
+// dois.
+function psdColorToHex(color: any): string {
+  if (!color) return "#000000"
+  const rr = color.r > 1 ? Math.round(color.r) : Math.round(color.r * 255)
+  const gg = color.g > 1 ? Math.round(color.g) : Math.round(color.g * 255)
+  const bb = color.b > 1 ? Math.round(color.b) : Math.round(color.b * 255)
+  return "#" + [rr, gg, bb].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("")
+}
+
+// Extrai estilo de texto dum layer PSD pra um override do layer da peca.
+// Espelho simplificado da logica de lastOverride do PsdImporter (matriz): aqui
+// soh precisamos do default style (fontFamily, fontSize, fontWeight, fill)
+// porque o texto vem do asset (indices per-char nao bateriam).
+//
+// `pieceScale` = scale do espaco do PSD pro espaco da peca. `pieceW/pieceH` ja
+// vem escalados (uso so pra preencher width/height do override).
+function psdTextLayerToOverride(layer: any, pieceScale: number, pieceW: number, pieceH: number): any | null {
+  const td = layer?.text
+  if (!td) return null
+  const defStyle = td.style ?? {}
+  const defFontName = defStyle.font?.name ?? "Arial"
+  const defFontSize = defStyle.fontSize ?? 48
+  const defColor = defStyle.fillColor ? psdColorToHex(defStyle.fillColor) : "#000000"
+  const defWeight = (defStyle.fauxBold || defFontName.toLowerCase().includes("bold")) ? "bold" : "normal"
+
+  // ag-psd retorna fontSize NO ESPACO DO TEXTO (antes da transform). A
+  // transform 6-elem [a,b,c,d,e,f] aplica scale/rot/translate; pra fontSize
+  // visual real, multiplica pela magnitude de [a,b] (~= [c,d]). Sem isso,
+  // textos grandes saem com fontSize gigante (ex: 788 cru vs 189 visual).
+  const tform: number[] | undefined = td.transform
+  let textScale = 1
+  if (tform && tform.length >= 4) {
+    const sx = Math.hypot(tform[0] ?? 1, tform[1] ?? 0)
+    const sy = Math.hypot(tform[2] ?? 0, tform[3] ?? 1)
+    const avg = (sx + sy) / 2
+    if (Number.isFinite(avg) && avg > 0) textScale = avg
+  }
+  // Compoem: textScale (PSD interno → PSD visual) * pieceScale (PSD visual → peca).
+  const finalScale = textScale * pieceScale
+
+  return {
+    width: pieceW,
+    height: pieceH,
+    fontFamily: defFontName,
+    fontSize: Math.max(1, Math.round(defFontSize * finalScale)),
+    fontWeight: defWeight,
+    fill: defColor,
+    charSpacing: 0,
+    lineHeight: 1.0, // Adobe-style auto leading, mesmo default de addAssetToCanvas
+    textAlign: "left",
+  }
+}
+
 
 // Le os styles per-caractere de um Textbox e gera TextSpan[] fragmentado
 function textboxToSpans(obj: any): TextSpan[] {
@@ -204,11 +258,12 @@ function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: 
 }
 
 
-export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }: { campaignId: string; pieceId?: string; from?: string; initialStepIndex?: number }) {
+export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, openGenerator }: { campaignId: string; pieceId?: string; from?: string; initialStepIndex?: number; openGenerator?: boolean }) {
   const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fabricRef = useRef<any>(null)
+  const psdStepInputRef = useRef<HTMLInputElement>(null)
   const bgRef = useRef<any>(null)
   const campaignRef = useRef<Campaign | null>(null)
   const saveTimer = useRef<any>()
@@ -296,6 +351,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
   const [bgColor, setBgColor] = useState("#ffffff")
   const bgColorRef = useRef("#ffffff")
   const [modal, setModal] = useState(false)
+  // openGenerator=true vem do botao "Gerar peca" em /campaigns/[id]: depois do
+  // init do canvas, abre o modal automaticamente. Polling pq isInitialized eh
+  // ref (nao reativo). So aplica em modo matriz (sem pieceId).
+  useEffect(() => {
+    if (!openGenerator) return
+    if (pieceId) return
+    let cancelled = false
+    const t = setInterval(() => {
+      if (cancelled) return
+      if (isInitialized.current) {
+        clearInterval(t)
+        setModal(true)
+      }
+    }, 100)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [openGenerator, pieceId])
   const [saving, setSaving] = useState(false)
   const [assetId, setAssetId] = useState("")
   const assetIdRef = useRef("")
@@ -435,7 +506,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         const fs = active.fontSize ?? 48
         const curPt: number = (active.leadingPt !== undefined && active.leadingPt !== null)
           ? active.leadingPt
-          : Math.round((active.lineHeight ?? 1.2) * fs) // congela do auto
+          : Math.round((active.lineHeight ?? 1.0) * fs) // congela do auto (1:1 com fontSize)
         const next = Math.max(1, curPt + delta)
         active.leadingPt = next
         // Sincroniza lineHeight do Fabric (detalhe interno do motor)
@@ -986,10 +1057,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         delete (obj as any).__editStartText
         delete (obj as any).__editStartStyles
 
-        // Modelo final: edicao inline em texto (matriz ou peca) grava overrides
-        // locais (texto + styles per-char), nunca propaga pro asset (asset = texto cru).
-        // Excecao: na MATRIZ, atualiza tamem o asset.lastOverride (template visual).
+        // Modelo final:
+        //  - PECA: edicao grava overrides locais (texto + styles per-char) no layer,
+        //    nunca propaga pro asset.
+        //  - MATRIZ: propaga texto cru pro asset.content (fonte da verdade) E grava
+        //    estilo no asset.lastOverride (template visual aplicado em novas pecas).
         updateAssetLastOverride(obj)
+        updateAssetContent(obj)
         // CRITICO: marca dirty pra o ConfirmExit aparecer caso o user clique
         // 'Voltar' antes do debounce do doSave (800ms) disparar. Sem isso o
         // user perdia a edicao silenciosamente ao sair logo apos editar texto.
@@ -1057,14 +1131,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       window.addEventListener("keydown", onKey)
       cleanupFns.push(() => window.removeEventListener("keydown", onKey))
 
-      // Bloquear digitacao (matriz E peca) mas permitir selecao de caracteres
-      // (necessario pra mudar cor/tamanho de letras especificas, estilo Photoshop).
-      // Caracteres so podem ser alterados via pagina /assets — no editor o user
-      // edita APENAS overrides (BOX + CHARACTER), nao o texto cru.
+      // Matriz: edicao livre (chars vao pro asset via updateAssetContent, \n
+      // fica em layer.overrides.text local).
+      // Peca: bloqueia digitacao mas permite Enter (quebra de linha local) +
+      // navegacao/selecao. Chars na peca vem do asset — pra alterar caracteres
+      // o user edita na matriz (que propaga via asset.content pra todas as pecas).
       {
         const blockKey = (e: KeyboardEvent) => {
           const fcc = fabricRef.current
           if (!fcc) return
+          // Matriz: edicao livre, nao bloqueia nada.
+          if (!pieceId) return
           // Primeiro checa se algum textbox esta em edicao — se sim, bloqueia
           // mesmo que o evento venha do hiddenTextarea do Fabric (que e onde
           // o Fabric captura digitacao pra escrever no canvas).
@@ -1080,23 +1157,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
             }
             return
           }
-          // Esta em edicao do textbox no canvas. Bloquear digitacao mas permitir
-          // teclas de navegacao/selecao.
+          // Peca em edicao: bloquear digitacao mas permitir teclas de
+          // navegacao/selecao + Enter (quebra de linha local).
           const allowed = new Set([
             "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
             "Home", "End", "PageUp", "PageDown", "Tab", "Escape",
             "Shift", "Control", "Alt", "Meta",
+            "Enter",
           ])
           if (allowed.has(e.key)) return
           // Permitir Cmd/Ctrl+A, Cmd/Ctrl+C (selecionar/copiar)
           if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "c")) return
-          // Bloquear o resto (digitacao, paste, delete, backspace, enter)
+          // Bloquear o resto (digitacao, paste, delete, backspace)
           e.preventDefault()
           e.stopPropagation()
         }
         const onPaste = (e: ClipboardEvent) => {
           const fcc = fabricRef.current
           if (!fcc) return
+          // Matriz: paste livre. Peca: bloqueia paste em edicao de texto.
+          if (!pieceId) return
           const active = fcc.getActiveObject() as any
           if (active?.isEditing) { e.preventDefault(); e.stopPropagation() }
         }
@@ -1318,6 +1398,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       if (pieceId) {
         autoGenerateMissingStepThumbs().catch(e => console.warn("[auto-thumbs] erro:", e))
       }
+      // AUTO-REGEN ON OPEN: regera + sobe o thumb principal sempre que o user
+      // abre o editor (mesmo sem editar). Garante que apresentacao/cards refletem
+      // o estado atual — caso util quando o asset.content mudou em outra aba/
+      // chamada API e o thumb antigo ficou stale. Roda em background (1.2s pra
+      // dar tempo de fontes Google + imagens carregarem assincronamente).
+      setTimeout(() => {
+        const fcc = fabricRef.current
+        if (!alive || !fcc || !isInitialized.current) return
+        if (pieceId) {
+          uploadPieceThumb(fcc, pieceId).catch(e => console.warn("[auto-regen piece]", e))
+        } else {
+          uploadMatrixThumb(fcc).catch(e => console.warn("[auto-regen matrix]", e))
+        }
+      }, 1200)
     }
 
     init()
@@ -1855,12 +1949,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         ? (asset as any).lastOverride
         : null
       const ov: any = layerOv ?? assetTpl ?? null
-      // Texto SEMPRE vem do asset.content (data.text), tanto na matriz quanto na peca.
-      // Modelo: caracteres do texto sao fonte da verdade no ASSET. Layer (matriz ou peca)
-      // so guarda BOX e CHARACTER overrides (cor/fonte/styles per-char), nunca o texto.
-      // Sem isso, editar em /assets nao propagava pras pecas apos o primeiro save da peca
-      // (que congelava o texto em overrides.content).
-      const initialText = data.text
+      // Texto: PECA pode ter override per-instancia (layer.overrides.text), usado
+      // pra preservar quebras de linha inseridas localmente sem propagar pra matriz.
+      // Se nao houver override, texto vem do asset.content (data.text) — fonte da
+      // verdade dos caracteres. Matriz sempre cai no asset (matriz NAO grava
+      // overrides.text; edicoes propagam pra asset.content via updateAssetContent).
+      const initialText = (layerOv && typeof layerOv.text === "string") ? layerOv.text : data.text
 
       // Back-compat: pecas antigas geradas com scaleX!=1 (antes do fix da geracao). Consolida
       // scale no fontSize/width na hora de criar pra evitar que Fabric "salte" o tamanho ao
@@ -1901,6 +1995,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         fontFamily: (ov?.fontFamily ?? def.fontFamily ?? "Arial"),
         fontWeight: (ov?.fontWeight ?? def.fontWeight ?? "normal"),
         fill: (ov?.fill ?? def.color ?? "#111111"),
+        // Adobe-style "Auto" leading default = 1:1 com fontSize. Override pode mudar
+        // depois via ov.lineHeight ou ov.leadingPt. Fabric default eh 1.16 (estranho
+        // visualmente, gera espacamento extra).
+        lineHeight: 1.0,
         // editable: true permite duplo-clique pra SELECIONAR caracteres (necessario
         // pra aplicar styles per-char no painel direito). Mas digitar/apagar e
         // bloqueado por listener separado abaixo, porque caracteres so podem ser
@@ -2347,6 +2445,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
     }
   }
 
+  // Regenera + sobe o thumbnail do KV (matriz) sem persistir layers. Usado no
+  // auto-regen-on-open: garante preview da apresentacao/cards sempre atualizado
+  // mesmo se o usuario nao editou nada nesta sessao.
+  async function uploadMatrixThumb(fc: any) {
+    try {
+      const thumbScale = Math.min(1920 / canvasWRef.current, 1920 / canvasHRef.current, 1)
+      const z = zoomRef.current || 1
+      const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+      const offsetX = vt[4] ?? 0
+      const offsetY = vt[5] ?? 0
+      const dataUrl = fc.toDataURL({
+        format: "jpeg", quality: 0.92,
+        multiplier: thumbScale / z,
+        left: offsetX, top: offsetY,
+        width: canvasWRef.current * z,
+        height: canvasHRef.current * z,
+      })
+      const blob = await (await fetch(dataUrl)).blob()
+      const fd = new FormData()
+      fd.append("thumbnail", blob, "kv-thumb.jpg")
+      await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+    } catch (e) { console.warn("[uploadMatrixThumb] fail:", e) }
+  }
+
   async function uploadPieceThumb(fc: any, pId: string) {
     console.log("[uploadPieceThumb] inicio pra", pId)
     srvLog("uploadPieceThumb-START", { pieceId: pId, stepCount: stepCountRef.current, activeStep: activeStepIndexRef.current })
@@ -2477,11 +2599,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
             layer.mask = (o as any).__maskData
           }
           if (o.type === "textbox" || o.type === "i-text") {
-            // PECA: NAO salva overrides.content. Caracteres sao fonte da verdade
-            // no ASSET (sempre lidos do asset.content). Salvar texto aqui congelava
-            // o conteudo e impedia edicao em /assets de propagar pra peca apos o
-            // primeiro save. Modelo: peca tem overrides LOCAIS (cor, fonte, box,
-            // styles per-char) mas NAO mexe no texto cru.
+            // PECA: caracteres (asset.content) continuam vindo do asset, MAS quebras de
+            // linha (\n) e edicoes locais ficam em overrides.text per-instancia. Sem
+            // isso o \n inserido via Enter sumia no reload (load caia em asset.content).
+            // Edicao via /assets continua propagando pras pecas que NAO tem overrides.text.
+            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
+              layer.overrides.text = (o as any).text
+            }
             layer.overrides.fill = o.fill
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
@@ -2610,9 +2734,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
           // perdia mudancas de estilo (estilos sao salvos no asset.content e
           // sobrescritos por overrides do layer).
           if (o.type === "textbox" || o.type === "i-text") {
-            // Matriz: NAO salva overrides.content (texto cru vem do asset). Salvar
-            // o texto aqui congelava o conteudo e impedia edicao em /assets de
-            // propagar pra matriz. Caracteres = asset; styles = overrides.
+            // Matriz: caracteres vem do asset (updateAssetContent propaga edicoes,
+            // strip de \n). Mas se a matriz TEM \n, salva em overrides.text local
+            // pra preservar a quebra entre reloads (nao vaza pro asset). Novas
+            // pecas geradas a partir dessa matriz herdam essa \n via spread no
+            // GeneratePiecesModal.
+            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
+              layer.overrides.text = (o as any).text
+            }
             layer.overrides.fill = o.fill
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
@@ -2645,7 +2774,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       }
       await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
-        const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
+        // Thumb HIGH-RES (1920px max, JPEG 0.92). 480/0.85 ficava pixelado no
+        // preview de apresentacao e PPTX (slide widescreen tem 960px de largura
+        // a 72 DPI; pptxgenjs escala thumb pra 8-12" -> ampliacao 8x).
+        const thumbScale = Math.min(1920 / canvasWRef.current, 1920 / canvasHRef.current, 1)
         // CROP da area da peca. toDataURL aceita left/top/width/height em
         // coords do CANVAS DOM (px do canvas HTML). A peca renderiza
         // centralizada via viewportTransform[4,5] (offset). Le o offset real
@@ -2655,7 +2787,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
         const dataUrl = fc.toDataURL({
-          format: "jpeg", quality: 0.85,
+          format: "jpeg", quality: 0.92,
           multiplier: thumbScale / z,
           left: offsetX,
           top: offsetY,
@@ -2710,6 +2842,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
           layer.embeddedData = o.__embeddedData ?? null
         }
         // Overrides per-instancia: posicao + estilo de texto.
+        // overrides.text preserva quebras de linha (\n) locais ao step. Sem isso,
+        // alternar entre steps perdia o texto editado (load caia em asset.content).
+        if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
+          layer.overrides.text = (o as any).text
+        }
         if ((o as any).fill !== undefined) layer.overrides.fill = (o as any).fill
         if ((o as any).fontSize !== undefined) layer.overrides.fontSize = (o as any).fontSize
         if ((o as any).fontFamily !== undefined) layer.overrides.fontFamily = (o as any).fontFamily
@@ -2843,6 +2980,174 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
           if (pieceRef.current) pieceRef.current = fresh
         }
       } catch (e) {}
+    }
+  }
+
+  // Substitui o conteudo do step ATIVO por um PSD. Cada layer do PSD com nome
+  // que bater (case-insensitive) com asset.label dum CampaignAsset existente
+  // vira um layer linkado ao asset (mesma logica do PsdImporter da matriz).
+  //
+  // Filosofia: import PSD = OVERRIDE TOTAL da peca.
+  //  - BG: extraido do PSD (cor solida do layer "Background" top-level; fallback
+  //    pixel central do composite).
+  //  - Layers matched: posicao, dimensoes, fonte, peso, tamanho e cor vem do PSD
+  //    (vao pra layer.overrides). O texto CRU continua vindo do asset.content[]
+  //    (essa eh a UNICA excecao — assets sao fonte da verdade pro conteudo
+  //    textual; PSD so determina onde/como aparece).
+  //  - Layers sem match: IGNORADAS (precisam virar asset em /assets antes).
+  async function replaceStepFromPsd(file: File) {
+    const fc = fabricRef.current
+    if (!fc) return
+    const camp = campaignRef.current
+    if (!camp) return
+    try {
+      setSaving(true)
+      const agPsd: any = await import("ag-psd")
+      if (agPsd.initializeCanvas) {
+        agPsd.initializeCanvas(
+          (w: number, h: number) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c },
+          (c: any) => (c as HTMLCanvasElement).getContext("2d")
+        )
+      }
+      const buffer = await file.arrayBuffer()
+      // skipLayerImageData/skipCompositeImageData: false — precisamos do canvas
+      // pra amostrar a cor do BG (layer "Background" top-level OU composite).
+      const psd: any = (agPsd as any).readPsd(buffer, { skipLayerImageData: false, skipCompositeImageData: false, skipThumbnail: true })
+
+      // Recolhe folhas (layers leaf) visiveis. Folders intermediarios sao
+      // transparentes pra esse fluxo (so leaves tem posicao concreta).
+      function collectLeaves(layers: any[], parentHidden = false): any[] {
+        const out: any[] = []
+        for (const l of layers ?? []) {
+          const hidden = parentHidden || l.hidden === true
+          if (hidden) continue
+          if (l.children?.length) out.push(...collectLeaves(l.children, hidden))
+          else out.push(l)
+        }
+        return out
+      }
+      const leaves = collectLeaves(psd.children ?? [])
+
+      // === BG: extrai cor solida do PSD ===
+      // Photoshop cria um layer "Background" raster top-level (nao-SO) por
+      // default em PSDs novos. Amostra pixel central pra cor. Se nao houver
+      // (ou pixel transparente), fallback = pixel (0,0) do composite. Se
+      // nada disso der, mantem o BG anterior (raro).
+      function sampleHexAt(c: HTMLCanvasElement, x: number, y: number): string | null {
+        try {
+          const ctx = c.getContext("2d")
+          if (!ctx) return null
+          const cx = Math.max(0, Math.min(c.width - 1, Math.floor(x)))
+          const cy = Math.max(0, Math.min(c.height - 1, Math.floor(y)))
+          const px = ctx.getImageData(cx, cy, 1, 1).data
+          if (px[3] === 0) return null // pixel transparente nao serve como BG
+          const h = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")
+          return `#${h(px[0])}${h(px[1])}${h(px[2])}`
+        } catch { return null }
+      }
+      let newBg: string | null = null
+      for (const l of (psd.children ?? [])) {
+        const isSO = !!(l as any).placedLayer
+        if (l.name === "Background" && !isSO && (l as any).canvas) {
+          const c = (l as any).canvas as HTMLCanvasElement
+          newBg = sampleHexAt(c, c.width / 2, c.height / 2)
+          if (newBg) break
+        }
+      }
+      if (!newBg && psd.canvas) {
+        const cc = psd.canvas as HTMLCanvasElement
+        newBg = sampleHexAt(cc, cc.width / 2, cc.height / 2) || sampleHexAt(cc, 0, 0)
+      }
+
+      // Index de assets por nome normalizado pra match rapido
+      const assetsByName = new Map<string, any>()
+      for (const a of (camp.assets ?? [])) {
+        const k = (a.label ?? "").trim().toLowerCase()
+        if (k) assetsByName.set(k, a)
+      }
+
+      const psdW = psd.width || canvasWRef.current
+      const psdH = psd.height || canvasHRef.current
+      const pieceW = canvasWRef.current
+      const pieceH = canvasHRef.current
+      const scale = Math.min(pieceW / psdW, pieceH / psdH)
+      const offX = (pieceW - psdW * scale) / 2
+      const offY = (pieceH - psdH * scale) / 2
+
+      // Limpa canvas: remove tudo exceto BG e bleed overlay
+      const toRemove = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+      for (const obj of toRemove) fc.remove(obj)
+
+      // Aplica BG do PSD (mesmo padrao do changeBg, sem o doSave — vai junto
+      // no doSaveNow() do final dessa funcao).
+      if (newBg && bgRef.current) {
+        bgRef.current.set("fill", newBg)
+        bgColorRef.current = newBg
+        setBgColor(newBg)
+      }
+
+      let matched = 0, ignored = 0
+      const missingNames: string[] = []
+      for (const layer of leaves) {
+        const name = (layer.name ?? "").trim()
+        if (!name || name === "Background") { ignored++; continue }
+        const asset = assetsByName.get(name.toLowerCase())
+        if (!asset) {
+          ignored++
+          missingNames.push(name)
+          console.log("[psd-step] sem match no asset, ignorando:", name)
+          continue
+        }
+        const left = layer.left ?? 0
+        const top = layer.top ?? 0
+        const w = Math.max((layer.right ?? left + 200) - left, 10)
+        const h = Math.max((layer.bottom ?? top + 50) - top, 10)
+        const layerObj: any = {
+          assetId: asset.id,
+          posX: Math.round(left * scale + offX),
+          posY: Math.round(top * scale + offY),
+          scaleX: 1, scaleY: 1, rotation: 0,
+          width: Math.round(w * scale),
+          height: Math.round(h * scale),
+          overrides: {},
+        }
+        // TEXTO: extrai estilo (fonte/peso/tamanho/cor) do PSD pra overrides.
+        // NAO setamos overrides.text — addAssetToCanvas usa asset.content como
+        // fonte da verdade do texto cru. Tambem nao setamos styles per-char
+        // porque os indices dos caracteres do PSD nao batem com os do asset
+        // se o texto for diferente (caso comum: PSD = "Compre hoje", asset =
+        // "Compre amanha"). Estilo uniforme do default style do layer cobre
+        // 95% dos casos sem risco de bagunca visual.
+        if (asset.type === "TEXT" && layer.text) {
+          const ov = psdTextLayerToOverride(layer, scale, layerObj.width, layerObj.height)
+          if (ov) layerObj.overrides = ov
+        }
+        try {
+          await addAssetToCanvas(fc, asset, layerObj)
+          matched++
+        } catch (e) {
+          console.warn("[psd-step] falha addAssetToCanvas pra", name, e)
+          ignored++
+        }
+      }
+
+      fc.renderAll()
+      refreshLayers(fc)
+      isDirtyRef.current = true
+      setIsDirty(true)
+      // Save now pra persistir o step substituido + regenerar thumb
+      await doSaveNow()
+
+      const msg = `Step substituído: ${matched} layer(s) linkadas, ${ignored} ignoradas.`
+      const detail = missingNames.length > 0
+        ? `\n\nSem match no asset (nomeie os assets em /assets pra reusar):\n• ${missingNames.slice(0, 10).join("\n• ")}${missingNames.length > 10 ? `\n…+${missingNames.length - 10}` : ""}`
+        : ""
+      alert(msg + detail)
+    } catch (e: any) {
+      console.error("[replaceStepFromPsd] erro:", e)
+      alert(`Erro ao processar PSD: ${e?.message ?? e}`)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -3032,10 +3337,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
           }
           // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
           if (o.type === "textbox" || o.type === "i-text") {
-            // PECA: NAO salva overrides.content (caracteres vem do asset).
-            // Modelo: peca tem overrides LOCAIS (styles, cor, fonte, box) mas
-            // texto cru sempre vem de asset.content. Sem isso, edicoes em
-            // /assets nao propagavam apos primeiro save da peca.
+            // PECA: caracteres (asset.content) continuam vindo do asset, MAS
+            // overrides.text guarda quebras de linha e edicoes locais. Sem isso o
+            // Enter (\n) inserido pelo user sumia no reload. Pecas sem overrides.text
+            // continuam herdando texto do asset (compat com edicao em /assets).
+            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
+              layer.overrides.text = (o as any).text
+            }
             layer.overrides.fill = o.fill
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
@@ -3174,8 +3482,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
           // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
           // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset
           if (o.type === "textbox" || o.type === "i-text") {
-            // Matriz: NAO salva overrides.content (texto cru vem do asset).
-            // Caracteres = asset; styles = overrides.
+            // Matriz: caracteres vem do asset (updateAssetContent propaga, strip
+            // de \n). Quebras ficam locais em overrides.text — sem isso a matriz
+            // perdia o \n no reload (load caia em asset.content sem \n).
+            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
+              layer.overrides.text = (o as any).text
+            }
             layer.overrides.fill = o.fill
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
@@ -3213,9 +3525,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
       // Nao precisa propagar de novo aqui no doSave.
 
-      // Gerar e enviar thumbnail do KV (max 480px maior lado, JPEG 0.85)
+      // Gerar e enviar thumbnail do KV (max 1920px maior lado, JPEG 0.92).
+      // High-res necessario pro preview de apresentacao e PPTX exportado nao
+      // ficarem pixelados (slide widescreen escala thumb pra 8-12 polegadas).
       try {
-        const thumbScale = Math.min(480 / canvasWRef.current, 480 / canvasHRef.current, 1)
+        const thumbScale = Math.min(1920 / canvasWRef.current, 1920 / canvasHRef.current, 1)
         // CROP da area da peca. Le offset real do viewportTransform pra
         // cortar exatamente onde a peca renderiza no canvas DOM.
         const z = zoomRef.current || 1
@@ -3223,7 +3537,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
         const dataUrl = fc.toDataURL({
-          format: "jpeg", quality: 0.85,
+          format: "jpeg", quality: 0.92,
           multiplier: thumbScale / z,
           left: offsetX,
           top: offsetY,
@@ -3356,9 +3670,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
     }
     setFontSizeInput(String(Math.round(fs)))
 
-    // Sincroniza leadingInput tambem (Adobe-style: leadingPt explicito ou Auto computado)
+    // Sincroniza leadingInput tambem (Adobe-style: leadingPt explicito ou Auto = 1:1 com fontSize)
     if (isText) {
-      const lh = obj.lineHeight ?? 1.16
+      const lh = obj.lineHeight ?? 1.0
       const leadingPt = obj.leadingPt
       const effectiveLeading = (leadingPt === undefined || leadingPt === null)
         ? Math.round(lh * fs)
@@ -3410,6 +3724,88 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lastOverride }),
     }).catch(err => console.warn("[updateAssetLastOverride] failed:", err))
+  }
+
+  // Matriz: propaga caracteres editados pro asset.content (fonte da verdade
+  // dos caracteres em TODAS as pecas geradas — atuais e futuras). Chamado em
+  // text:editing:exited junto com updateAssetLastOverride.
+  // IMPORTANTE: quebras de linha (\n) sao STRIPADAS aqui — o asset nunca tem
+  // \n. Quebras ficam locais a matriz (em layer.overrides.text) e a cada peca
+  // (em layer.overrides.text na peca). Novas pecas geradas herdam o \n da
+  // matriz via spread em GeneratePiecesModal; depois disso ficam independentes.
+  // Cuidado com o \n entre palavras: se o user seleciona o espaco e aperta
+  // Enter ("Hello World" -> "Hello\nWorld"), strip puro vira "HelloWorld" e
+  // come o espaco. Solucao: \n entre dois nao-whitespace vira " "; entre
+  // whitespace+algo, e' removido (o whitespace ja separa as palavras).
+  function updateAssetContent(obj: any) {
+    if (pieceId) return // peca nao propaga pro asset
+    const aid = obj?.__assetId
+    if (!aid) return
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+    if (!isText) return
+    const fullText: string = obj.text ?? ""
+    const objStyles = obj.styles ?? {}
+    const defaultStyle = {
+      color: obj.fill ?? "#111111",
+      fontSize: obj.fontSize ?? 80,
+      fontWeight: obj.fontWeight ?? "normal",
+      fontFamily: obj.fontFamily ?? "Arial",
+    }
+    const lines = fullText.split("\n")
+    const chars: Array<{ ch: string; style: any }> = []
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      const line = lines[lineNum]
+      const lineStyles = objStyles[lineNum] ?? {}
+      for (let col = 0; col < line.length; col++) {
+        const cs = lineStyles[col] ?? {}
+        chars.push({
+          ch: line[col],
+          style: {
+            color: cs.fill ?? defaultStyle.color,
+            fontSize: cs.fontSize ?? defaultStyle.fontSize,
+            fontWeight: cs.fontWeight ?? defaultStyle.fontWeight,
+            fontFamily: cs.fontFamily ?? defaultStyle.fontFamily,
+          },
+        })
+      }
+      // Junta linhas: inserir " " se a quebra estiver entre dois nao-whitespace.
+      if (lineNum < lines.length - 1) {
+        const prev = line.length > 0 ? line[line.length - 1] : ""
+        const next = lines[lineNum + 1].length > 0 ? lines[lineNum + 1][0] : ""
+        if (prev && next && !/\s/.test(prev) && !/\s/.test(next)) {
+          const lastStyle = chars.length > 0 ? chars[chars.length - 1].style : defaultStyle
+          chars.push({ ch: " ", style: lastStyle })
+        }
+      }
+    }
+    // Agrupa chars consecutivos com mesmo style em spans
+    const spans: TextSpan[] = []
+    let buf = ""
+    let bufStyle: any = null
+    for (const { ch, style } of chars) {
+      if (bufStyle === null) {
+        buf = ch
+        bufStyle = style
+      } else if (JSON.stringify(bufStyle) === JSON.stringify(style)) {
+        buf += ch
+      } else {
+        spans.push({ text: buf, style: bufStyle })
+        buf = ch
+        bufStyle = style
+      }
+    }
+    if (buf) spans.push({ text: buf, style: bufStyle ?? defaultStyle })
+    const finalSpans: TextSpan[] = spans.length > 0 ? spans : [{ text: "", style: defaultStyle }]
+    // Atualiza cache local pra que swaps/reloads na mesma sessao usem o texto novo
+    const c = campaignRef.current
+    if (c?.assets) {
+      const asset = c.assets.find((a: Asset) => a.id === aid)
+      if (asset) (asset as any).content = finalSpans
+    }
+    fetch(`/api/campaigns/${campaignId}/assets/${aid}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: finalSpans }),
+    }).catch(err => console.warn("[updateAssetContent] failed:", err))
   }
 
   function applyStyle(key: string, val: any) {
@@ -3479,7 +3875,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
   /**
    * Sincroniza Fabric.lineHeight a partir do modelo de tipografia (Adobe-style):
    *   - Se leadingPt definido: lineHeight = leadingPt / fontSize
-   *   - Se Auto (leadingPt undefined/null): lineHeight = 1.2 (~120%)
+   *   - Se Auto (leadingPt undefined/null): lineHeight = 1.0 (1:1 com fontSize)
    *
    * Detalhe interno do motor — chamado quando muda leadingPt OU quando muda fontSize.
    * Usuario nao "sente" isso, ele soh pensa em pontos absolutos ou Auto.
@@ -3491,7 +3887,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
     const fs = obj.fontSize ?? 48
     const leadingPt = obj.leadingPt
     const lh = (leadingPt === undefined || leadingPt === null)
-      ? 1.2
+      ? 1.0
       : leadingPt / fs
     obj.set("lineHeight", lh)
   }
@@ -3511,7 +3907,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
     if (obj.initDimensions) obj.initDimensions()
     obj.setCoords()
     fc.renderAll()
-    setSelectedTick(t => t + 1)
+    // NAO disparar setSelectedTick aqui — isso re-roda o useEffect que
+    // reescreve `leadingInput` no meio da digitacao, quebrando o input.
+    // O reset ao Auto (botao "A") usa um caminho separado que sincroniza.
+    if (pt === null) setSelectedTick(t => t + 1)
     doSave()
   }
 
@@ -3756,6 +4155,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
             >
               + Step
             </button>
+            <button
+              onClick={() => psdStepInputRef.current?.click()}
+              title="Substituir o conteúdo do step ativo por um PSD (layers com mesmo nome de asset são linkadas; sem match = ignoradas)"
+              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+            >
+              📁 PSD
+            </button>
+            <input
+              ref={psdStepInputRef}
+              type="file"
+              accept=".psd,application/octet-stream,image/vnd.adobe.photoshop"
+              style={{ display: "none" }}
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                e.currentTarget.value = ""
+                if (!f) return
+                if (!window.confirm(`Substituir o conteúdo do Step ${activeStepIndex + 1} pelos layers de "${f.name}"? O conteúdo atual desse step será descartado.`)) return
+                await replaceStepFromPsd(f)
+              }}
+            />
             {stepCount > 1 && (
               <button
                 onClick={(e) => removeStep(activeStepIndex, e.altKey)}
@@ -4192,7 +4611,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex }:
             let mixedFill = false
             // lineHeight e textAlign sao propriedades do textbox inteiro (Fabric nao suporta
             // per-char nelas), entao nao tentam ler de getSelectionStyles.
-            const effectiveLineHeight: number = (selected as any).lineHeight ?? 1.16
+            const effectiveLineHeight: number = (selected as any).lineHeight ?? 1.0
             const effectiveTextAlign: string = (selected as any).textAlign ?? "left"
             // Photoshop-style leading em pt:
             // - Se leadingPt foi definido: usa direto
