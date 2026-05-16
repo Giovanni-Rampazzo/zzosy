@@ -436,26 +436,22 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
     }, 600)
   }
 
+  // Click handler aplicado SO na area da peca (nao no slide inteiro). Usuario
+  // pediu: clicar fora da peca (header amarelo, area de legenda) NAO abre o editor.
+  const pieceClickProps = clickable ? {
+    onClick,
+    role: "button" as const,
+    tabIndex: 0,
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.() } },
+    title: "Abrir no editor",
+    style: { cursor: "pointer" as const },
+  } : {}
+
   return (
     <div
-      onClick={onClick}
-      role={clickable ? "button" : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      onKeyDown={clickable ? (e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.() } }) : undefined}
       style={{
         ...slideShellBase, background: BG_LIGHT, containerType: "inline-size",
-        cursor: clickable ? "pointer" : "default",
-        transition: "transform 0.15s ease, box-shadow 0.15s ease",
       }}
-      onMouseEnter={clickable ? (e => {
-        e.currentTarget.style.transform = "translateY(-2px)"
-        e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.12)"
-      }) : undefined}
-      onMouseLeave={clickable ? (e => {
-        e.currentTarget.style.transform = "translateY(0)"
-        e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.08)"
-      }) : undefined}
-      title={clickable ? "Abrir no editor" : undefined}
     >
       {/* Header: box amarelo com nome + dimensao em texto puro ao lado.
           Estilo referencia visual: pequeno, discreto, top-left, dimensao
@@ -495,20 +491,24 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
       {/* CONTEUDO: imagem (e legenda, se houver ou se usuario adicionar) */}
       {showCard ? (
         // Layout split: peca a esquerda ~2/3, legenda a direita ~1/3.
-        // alignItems start: card de legenda ocupa apenas a altura necessaria
-        // pro conteudo (em vez de esticar 100% do slide).
+        // alignItems center: legenda SEMPRE centralizada verticalmente no
+        // slide, independente do tamanho do texto (UX consistente).
         <div style={{
           position: "absolute", inset: 0,
           display: "grid", gridTemplateColumns: "2fr 1fr",
           padding: "10% 3% 8% 3%",
           gap: "2.5%",
-          alignItems: "start",
+          alignItems: "center",
         }}>
-          {/* Peca */}
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            height: "100%", minHeight: 0,
-          }}>
+          {/* Peca — area clickable (resto do slide nao abre o editor) */}
+          <div
+            {...pieceClickProps}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              height: "100%", minHeight: 0,
+              ...(pieceClickProps.style ?? {}),
+            }}
+          >
             {renderPieceVisual()}
           </div>
           {/* Card legenda — header amarelo em cima, corpo branco embaixo.
@@ -597,7 +597,15 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           display: "flex", alignItems: "center", justifyContent: "center",
           padding: "10% 5% 8% 5%",
         }}>
-          {renderPieceVisual({ withShadow: true })}
+          <div
+            {...pieceClickProps}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              ...(pieceClickProps.style ?? {}),
+            }}
+          >
+            {renderPieceVisual({ withShadow: true })}
+          </div>
           {/* Botao '+ Legenda' aparece no canto inferior direito quando a peca
               tem pieceId (editavel) e ainda nao tem legenda. Clicar abre o card
               de legenda vazio pronto pra editar. */}
