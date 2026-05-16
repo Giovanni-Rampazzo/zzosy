@@ -2691,7 +2691,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Usado pra gerar thumbnails de steps inativos automaticamente quando a peca
   // abre. Sem isso, o user teria que ativar cada step manualmente.
   async function renderStepOffscreenToBlob(
-    step: { layers: any[]; bgColor: string; bgOpacity?: number }
+    step: { layers: any[]; bgColor: string; bgOpacity?: number; bgLayers?: BgLayerData[] }
   ): Promise<Blob | null> {
     const camp = campaignRef.current
     if (!camp) return null
@@ -2709,8 +2709,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const sfc = new StaticCanvas(canvasEl, {
         width: tw, height: th,
         enableRetinaScaling: false,
-        backgroundColor: step.bgColor,
       })
+      // BG layers: aplica via mesma logica do canvas principal pra suportar
+      // multi-BG / gradient / image. Fallback pra step.bgColor (legacy).
+      const stepBgLayers: BgLayerData[] = Array.isArray(step.bgLayers) && step.bgLayers.length > 0
+        ? step.bgLayers.map(migrateBgLayerJson)
+        : [{ kind: "solid", color: step.bgColor, opacity: typeof step.bgOpacity === "number" ? step.bgOpacity : 1 }]
+      for (const ld of stepBgLayers) {
+        if (ld.hidden) continue
+        const r = new Rect({
+          left: 0, top: 0, width: tw, height: th,
+          selectable: false, evented: false,
+        })
+        await syncBgLayerToRect(r, ld, tw, th, fabricMod)
+        sfc.add(r)
+      }
       // Re-cria cada layer manualmente. Replica a logica de addAssetToCanvas
       // de forma minima — soh o que precisamos pra render visual.
       for (const layer of step.layers) {
@@ -2740,24 +2753,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             sfc.add(fimg)
           } catch (e) { /* skip */ }
         } else if (asset.type === "TEXT") {
-          // Reconstroi text a partir do content + overrides
+          // Reconstroi text a partir do content + overrides.
+          // CRITICO: aplica TODOS os overrides (fontWeight, lineHeight, leadingPt,
+          // charSpacing, styles per-char) pra que o thumb reflita o que o user vê
+          // no editor. Antes faltava esses — thumb exportado pro PPT saia sem
+          // formatacao, mesmo com a peca formatada no editor.
           const content = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
           const spans = Array.isArray(content) ? content : []
-          const text = spans.map((s: any) => s.text ?? "").join("")
+          const text = (typeof overrides.text === "string" ? overrides.text : spans.map((s: any) => s.text ?? "").join(""))
           const firstStyle = spans[0]?.style ?? {}
-          // CRITICO: width DO TEXTO precisa ser escalada pelo mesmo 'scale' do
-          // canvas offscreen. Sem isso, o textbox excede o canvas e fica cortado.
-          // fontSize idem.
+          // Width DO TEXTO precisa ser escalada pelo mesmo 'scale' do canvas
+          // offscreen. fontSize idem.
           const baseFontSize = overrides.fontSize ?? firstStyle.fontSize ?? 80
           const tb = new Textbox(text || asset.label, {
             left, top, angle,
             fontFamily: overrides.fontFamily ?? firstStyle.fontFamily ?? "Arial",
             fontSize: baseFontSize * scale,
+            fontWeight: overrides.fontWeight ?? firstStyle.fontWeight ?? "normal",
             fill: overrides.fill ?? firstStyle.color ?? "#111111",
             width: (layer.width ?? 400) * scale,
             textAlign: overrides.textAlign ?? "left",
+            lineHeight: overrides.lineHeight ?? 1.0,
+            charSpacing: overrides.charSpacing ?? 0,
           })
-          if (overrides.styles) tb.set("styles", overrides.styles)
+          if (overrides.styles) {
+            // styles per-char tem fontSize na escala da peca; precisa re-escalar
+            // pelo offscreen scale antes de aplicar.
+            const scaledStyles: any = {}
+            for (const lineKey of Object.keys(overrides.styles)) {
+              scaledStyles[lineKey] = {}
+              for (const colKey of Object.keys(overrides.styles[lineKey])) {
+                const cs = { ...overrides.styles[lineKey][colKey] }
+                if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
+                scaledStyles[lineKey][colKey] = cs
+              }
+            }
+            tb.set("styles", scaledStyles)
+          }
+          // leadingPt (entrelinhas em pontos) — substitui o lineHeight quando
+          // setado. Conversao: lineHeight = leadingPt / fontSize.
+          if (typeof overrides.leadingPt === "number" && overrides.leadingPt > 0) {
+            const scaledLeading = overrides.leadingPt * scale
+            const effFontSize = baseFontSize * scale
+            if (effFontSize > 0) tb.set("lineHeight", scaledLeading / effFontSize)
+          }
+          if ((tb as any).initDimensions) (tb as any).initDimensions()
           sfc.add(tb)
         }
       }
