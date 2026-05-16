@@ -51,14 +51,18 @@ export async function POST(req: NextRequest) {
     const suffix = existing === 0 ? " (cópia)" : ` (cópia ${existing})`
     const newName = baseStripped + suffix
 
-    // Se trocou formato, atualiza data.width/height/dpi + descarta thumb antigo
-    let newData: any = orig.data ?? undefined
+    // Se trocou formato, atualiza data.width/height/dpi + descarta thumb antigo.
+    // piece.data eh LongText (string) no schema — sempre passar JSON.stringified.
+    let newData: string | undefined = (typeof orig.data === "string" ? orig.data : undefined)
     let newImageUrl: string | undefined = orig.imageUrl ?? undefined
     if (newFormat && newFormat.id !== orig.mediaFormatId) {
       try {
         const parsed = typeof orig.data === "string" ? JSON.parse(orig.data) : (orig.data ?? {})
-        newData = { ...parsed, width: newFormat.width, height: newFormat.height, dpi: newFormat.dpi }
-      } catch { newData = { width: newFormat.width, height: newFormat.height, dpi: newFormat.dpi } }
+        const merged = { ...parsed, width: newFormat.width, height: newFormat.height, dpi: newFormat.dpi }
+        newData = JSON.stringify(merged)
+      } catch {
+        newData = JSON.stringify({ width: newFormat.width, height: newFormat.height, dpi: newFormat.dpi })
+      }
       newImageUrl = undefined
     }
 
