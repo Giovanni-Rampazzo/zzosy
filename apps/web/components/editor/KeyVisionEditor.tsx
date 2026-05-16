@@ -48,9 +48,11 @@ type BgLayerCommon = {
   hidden?: boolean
   locked?: boolean
 }
+type BgImageFit = "cover" | "contain" | "fill" | "tile"
 type BgLayerData =
   | (BgLayerCommon & { kind: "solid"; color: string })
   | (BgLayerCommon & { kind: "gradient"; gradientType: "linear" | "radial"; angle: number; stops: BgGradientStop[] })
+  | (BgLayerCommon & { kind: "image"; imageDataUrl: string; fit: BgImageFit })
 
 // Constroi o `fill` pro Fabric a partir dos dados do BG. Pra gradient,
 // gera fabric.Gradient com coords calculadas pelo angulo + dimensoes do
@@ -80,6 +82,57 @@ function buildBgFill(layer: BgLayerData, w: number, h: number, Gradient: any): a
     })
   }
   return "#ffffff"
+}
+
+// Carrega um <img> a partir dum data URL ou URL publica. Usado pra preparar
+// o source do Pattern (BG kind="image").
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error("Falha ao carregar imagem"))
+    img.src = src
+  })
+}
+
+// Aplica o fill correto no Rect BG. Async porque image precisa carregar a
+// imagem + pre-renderizar (cover/contain/fill) ou montar Pattern (tile).
+async function applyBgFillAsync(rect: any, layer: BgLayerData, w: number, h: number, fabricMod: any): Promise<void> {
+  if (layer.kind !== "image") {
+    rect.set("fill", buildBgFill(layer, w, h, fabricMod.Gradient))
+    return
+  }
+  const { Pattern } = fabricMod
+  try {
+    const img = await loadImageElement(layer.imageDataUrl)
+    if (layer.fit === "tile") {
+      rect.set("fill", new Pattern({ source: img, repeat: "repeat" }))
+      return
+    }
+    // cover/contain/fill: pre-renderiza num canvas W×H com no-repeat
+    const aux = document.createElement("canvas")
+    aux.width = Math.max(1, Math.round(w))
+    aux.height = Math.max(1, Math.round(h))
+    const ctx = aux.getContext("2d")!
+    ctx.clearRect(0, 0, aux.width, aux.height)
+    if (layer.fit === "fill") {
+      ctx.drawImage(img, 0, 0, aux.width, aux.height)
+    } else {
+      const iw = img.naturalWidth || img.width || 1
+      const ih = img.naturalHeight || img.height || 1
+      const s = layer.fit === "cover"
+        ? Math.max(aux.width / iw, aux.height / ih)
+        : Math.min(aux.width / iw, aux.height / ih)
+      const dw = iw * s, dh = ih * s
+      const dx = (aux.width - dw) / 2, dy = (aux.height - dh) / 2
+      ctx.drawImage(img, dx, dy, dw, dh)
+    }
+    rect.set("fill", new Pattern({ source: aux, repeat: "no-repeat" }))
+  } catch (e) {
+    console.warn("[bg-image] falha ao aplicar imagem:", e)
+    rect.set("fill", "#ffffff")
+  }
 }
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
@@ -997,13 +1050,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // abaixo de qualquer asset). bgRef.current aponta pro fundo (compat
       // com save/export legacy que assumiam 1 BG so).
       const fabricForBg: any = await import("fabric")
-      const GradientForBg = fabricForBg.Gradient
       const bgRects: any[] = []
       for (let i = 0; i < bgLayersRef.current.length; i++) {
         const ld = bgLayersRef.current[i]
         const r = new Rect({
           left: 0, top: 0, width: cw, height: ch,
-          fill: buildBgFill(ld, cw, ch, GradientForBg),
           opacity: ld.opacity,
           visible: ld.hidden !== true,
           selectable: true, evented: true,
@@ -1012,6 +1063,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           lockScalingX: true, lockScalingY: true, lockRotation: true,
           excludeFromExport: true,
         })
+        await applyBgFillAsync(r, ld, cw, ch, fabricForBg)
         ;(r as any).__isBg = true
         ;(r as any).__bgIdx = i
         ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
@@ -1743,13 +1795,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
       // CRITICO 3: BGs tem excludeFromExport=true, ficam fora do snapshot.
       // Re-cria todos os BG layers (idx 0 = fundo).
-      const { Rect, Gradient } = await import("fabric") as any
+      const fabricMod: any = await import("fabric")
+      const { Rect } = fabricMod
       const newBgRects: any[] = []
       for (let i = 0; i < bgLayersRef.current.length; i++) {
         const ld = bgLayersRef.current[i]
         const r = new Rect({
           left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-          fill: buildBgFill(ld, canvasWRef.current, canvasHRef.current, Gradient),
           opacity: ld.opacity,
           visible: ld.hidden !== true,
           selectable: true, evented: true,
@@ -1758,6 +1810,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           lockScalingX: true, lockScalingY: true, lockRotation: true,
           excludeFromExport: true,
         })
+        await applyBgFillAsync(r, ld, canvasWRef.current, canvasHRef.current, fabricMod)
         ;(r as any).__isBg = true
         ;(r as any).__bgIdx = i
         ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
@@ -3120,13 +3173,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       bgOpacityRef.current = stepBgLayers[0].opacity
       setBgOpacity(stepBgLayers[0].opacity)
       // Re-cria todos os Rects BG
-      const { Rect, Gradient } = await import("fabric") as any
+      const fabricMod: any = await import("fabric")
+      const { Rect } = fabricMod
       const newBgRects: any[] = []
       for (let i = 0; i < stepBgLayers.length; i++) {
         const ld = stepBgLayers[i]
         const r = new Rect({
           left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-          fill: buildBgFill(ld, canvasWRef.current, canvasHRef.current, Gradient),
           opacity: ld.opacity, visible: ld.hidden !== true,
           selectable: true, evented: true,
           hasControls: false, hasBorders: true,
@@ -3134,6 +3187,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           lockScalingX: true, lockScalingY: true, lockRotation: true,
           excludeFromExport: true,
         })
+        await applyBgFillAsync(r, ld, canvasWRef.current, canvasHRef.current, fabricMod)
         ;(r as any).__isBg = true
         ;(r as any).__bgIdx = i
         ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
@@ -3896,8 +3950,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     bgLayersRef.current[idx] = next
     const rect = bgRectsRef.current[idx]
     if (rect) {
-      const { Gradient } = await import("fabric") as any
-      rect.set("fill", buildBgFill(next, canvasWRef.current, canvasHRef.current, Gradient))
+      const fabricMod: any = await import("fabric")
+      await applyBgFillAsync(rect, next, canvasWRef.current, canvasHRef.current, fabricMod)
       rect.set("opacity", next.opacity)
       rect.set("visible", next.hidden !== true)
       fc.renderAll()
@@ -3930,21 +3984,53 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     updateCurrentBg((l) => ({ ...l, opacity: v }))
   }
 
-  // BG-3: troca tipo do BG (solid/gradient). Preserva o que faz sentido:
-  // ao virar gradient pela 1a vez, cria 2 stops (cor atual + preto).
-  function changeBgKind(kind: "solid" | "gradient", gradientType: "linear" | "radial" = "linear") {
+  // BG-3/4: troca tipo do BG (solid/gradient/image). Preserva o que faz
+  // sentido entre as conversoes. Pra image sem upload previo, deixa
+  // imageDataUrl vazio — UI redireciona pro file picker.
+  function changeBgKind(kind: "solid" | "gradient" | "image", opts?: { gradientType?: "linear" | "radial"; fit?: BgImageFit }) {
     updateCurrentBg((l) => {
       if (kind === "solid") {
-        const color = l.kind === "solid" ? l.color : (l.stops[0]?.color ?? "#ffffff")
+        const color = l.kind === "solid"
+          ? l.color
+          : l.kind === "gradient" ? (l.stops[0]?.color ?? "#ffffff")
+          : "#ffffff"
         return { kind: "solid", color, opacity: l.opacity, hidden: l.hidden, locked: l.locked }
       }
-      if (l.kind === "gradient") return { ...l, gradientType }
-      return {
-        kind: "gradient", gradientType, angle: 90,
-        stops: [{ offset: 0, color: l.color }, { offset: 1, color: "#000000" }],
-        opacity: l.opacity, hidden: l.hidden, locked: l.locked,
+      if (kind === "gradient") {
+        const gradientType = opts?.gradientType ?? (l.kind === "gradient" ? l.gradientType : "linear")
+        if (l.kind === "gradient") return { ...l, gradientType }
+        const baseColor = l.kind === "solid" ? l.color : "#ffffff"
+        return {
+          kind: "gradient", gradientType, angle: 90,
+          stops: [{ offset: 0, color: baseColor }, { offset: 1, color: "#000000" }],
+          opacity: l.opacity, hidden: l.hidden, locked: l.locked,
+        }
       }
+      // kind === "image"
+      const fit = opts?.fit ?? (l.kind === "image" ? l.fit : "cover")
+      const imageDataUrl = l.kind === "image" ? l.imageDataUrl : ""
+      return { kind: "image", imageDataUrl, fit, opacity: l.opacity, hidden: l.hidden, locked: l.locked }
     })
+  }
+
+  // Le um File como dataURL e aplica como imagem do BG atual. Se o BG nao for
+  // do tipo "image" ainda, converte automaticamente (intencao do user eh clara).
+  function uploadBgImage(file: File, fit: BgImageFit = "cover") {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? "")
+      if (!dataUrl) return
+      updateCurrentBg((l) => ({
+        kind: "image", imageDataUrl: dataUrl, fit,
+        opacity: l.opacity, hidden: l.hidden, locked: l.locked,
+      }))
+    }
+    reader.onerror = () => alert("Falha ao ler imagem")
+    reader.readAsDataURL(file)
+  }
+
+  function changeBgImageFit(fit: BgImageFit) {
+    updateCurrentBg((l) => l.kind === "image" ? { ...l, fit } : l)
   }
 
   function changeBgGradientStop(stopIdx: number, patch: Partial<BgGradientStop>) {
@@ -5073,10 +5159,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 textTransform: "uppercase" as const, letterSpacing: "0.5px",
               })
               return (
-                <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+                <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
                   <button style={btnS(kind === "solid")} onClick={() => changeBgKind("solid")}>Sólido</button>
-                  <button style={btnS(kind === "gradient" && gType === "linear")} onClick={() => changeBgKind("gradient", "linear")}>Linear</button>
-                  <button style={btnS(kind === "gradient" && gType === "radial")} onClick={() => changeBgKind("gradient", "radial")}>Radial</button>
+                  <button style={btnS(kind === "gradient" && gType === "linear")} onClick={() => changeBgKind("gradient", { gradientType: "linear" })}>Linear</button>
+                  <button style={btnS(kind === "gradient" && gType === "radial")} onClick={() => changeBgKind("gradient", { gradientType: "radial" })}>Radial</button>
+                  <button style={btnS(kind === "image")} onClick={() => {
+                    // Se ja eh image, mantem; senao pede upload imediato
+                    const layer = bgLayersRef.current[currentBgIdx()]
+                    if (layer?.kind === "image" && layer.imageDataUrl) {
+                      changeBgKind("image")
+                    } else {
+                      // dispara file picker programaticamente
+                      const input = document.createElement("input")
+                      input.type = "file"
+                      input.accept = "image/*"
+                      input.onchange = () => {
+                        const f = input.files?.[0]
+                        if (f) uploadBgImage(f)
+                      }
+                      input.click()
+                    }
+                  }}>Imagem</button>
                 </div>
               )
             })()}
@@ -5171,6 +5274,61 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       <span style={{ width: 36, textAlign: "right", color: "#bbb", fontFamily: "monospace" }}>{Math.round(layer.angle)}°</span>
                     </div>
                   )}
+                </>
+              )
+            })()}
+            {/* IMAGE: preview + upload + fit */}
+            {(() => {
+              const layer = bgLayersRef.current[currentBgIdx()]
+              if (layer?.kind !== "image") return null
+              const fitBtn = (f: BgImageFit, label: string) => (
+                <button key={f} onClick={() => changeBgImageFit(f)}
+                  style={{ flex: 1, padding: "5px 4px", fontSize: 10, borderRadius: 3, cursor: "pointer",
+                    background: layer.fit === f ? "#F5C400" : "#1a1a1a",
+                    color: layer.fit === f ? "#000" : "#888",
+                    border: "1px solid " + (layer.fit === f ? "#F5C400" : "#333"),
+                    fontFamily: "inherit", textTransform: "uppercase" as const, letterSpacing: "0.4px",
+                  }}>{label}</button>
+              )
+              return (
+                <>
+                  {layer.imageDataUrl ? (
+                    <div style={{
+                      width: "100%", height: 120, borderRadius: 4, border: "1px solid #333",
+                      marginBottom: 8, overflow: "hidden",
+                      backgroundImage: `url(${layer.imageDataUrl})`,
+                      backgroundSize: layer.fit === "tile" ? "auto" : (layer.fit === "fill" ? "100% 100%" : layer.fit),
+                      backgroundRepeat: layer.fit === "tile" ? "repeat" : "no-repeat",
+                      backgroundPosition: "center",
+                      backgroundColor: "#0d0d0d",
+                    }} />
+                  ) : (
+                    <div style={{ width: "100%", height: 120, borderRadius: 4, border: "1px dashed #444",
+                      marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#555", fontSize: 11 }}>Sem imagem</div>
+                  )}
+                  <button onClick={() => {
+                    const input = document.createElement("input")
+                    input.type = "file"
+                    input.accept = "image/*"
+                    input.onchange = () => {
+                      const f = input.files?.[0]
+                      if (f) uploadBgImage(f, layer.fit)
+                    }
+                    input.click()
+                  }}
+                    style={{ width: "100%", padding: "6px 8px", fontSize: 11, marginBottom: 10,
+                      background: "#1a1a1a", color: "#bbb", border: "1px solid #333",
+                      borderRadius: 4, cursor: "pointer", fontFamily: "inherit",
+                      textTransform: "uppercase", letterSpacing: "0.5px",
+                    }}>{layer.imageDataUrl ? "Substituir imagem" : "Selecionar imagem"}</button>
+                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Encaixe</div>
+                  <div style={{ display: "flex", gap: 3, marginBottom: 14 }}>
+                    {fitBtn("cover", "Cover")}
+                    {fitBtn("contain", "Contain")}
+                    {fitBtn("fill", "Fill")}
+                    {fitBtn("tile", "Tile")}
+                  </div>
                 </>
               )
             })()}
