@@ -165,13 +165,43 @@ export default function PresentationPage() {
     if (!campaign) return
     setExporting(true)
     try {
+      // Garante que steps de peças multi-step tenham thumb gerado antes do
+      // PPT. Sem isso, peças que o usuário nunca abriu no editor saíam como
+      // "(sem preview)" no slide (autoGen do editor só roda na abertura).
+      const { ensureStepThumbsForPieces } = await import("@/lib/ensureStepThumbs")
+      const touched = await ensureStepThumbsForPieces(
+        orderedPieces.map(p => ({ id: p.id, campaignId: campaign.id, steps: p.steps })),
+        async (cid) => {
+          const r = await fetch(`/api/campaigns/${cid}`, { cache: "no-store" })
+          if (!r.ok) return []
+          const c = await r.json()
+          return Array.isArray(c?.assets) ? c.assets : []
+        },
+      )
+      // Se algum thumb foi regenerado, refetch a lista de peças pra pegar
+      // os novos step.imageUrl antes do export.
+      let piecesForPPT = orderedPieces
+      if (touched.length > 0) {
+        try {
+          const r = await fetch(`/api/pieces?campaignId=${campaign.id}`, { cache: "no-store" })
+          if (r.ok) {
+            const fresh: any[] = await r.json()
+            const byId = new Map(fresh.map(p => [p.id, p]))
+            piecesForPPT = orderedPieces.map(p => (byId.get(p.id) as Piece) ?? p)
+          }
+        } catch { /* segue com lista atual */ }
+      }
+
       const { generateCampaignPresentation } = await import("@/lib/generatePresentation")
       await generateCampaignPresentation({
         name: campaign.name,
         code: campaign.code ?? null,
-        pieces: orderedPieces.map(p => ({
+        pieces: piecesForPPT.map(p => ({
           id: p.id, name: p.name, segment: p.segment ?? null, copy: p.copy ?? null,
           imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
+          // CRITICO: passar steps[] — sem isso, generatePresentation nunca via
+          // os steps e exportava como peça single-step (perdendo todos os steps).
+          steps: p.steps ?? null,
         })),
         brand: slideBrand,
       })

@@ -142,7 +142,7 @@ function parseContent(raw: any): any[] {
 }
 
 // Constroi o canvas Fabric da peca a partir de layers + assets
-async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
+export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
   const fabric = await import("fabric")
   const StaticCanvas = (fabric as any).StaticCanvas
   const Textbox = (fabric as any).Textbox
