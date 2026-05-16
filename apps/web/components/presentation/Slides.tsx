@@ -390,6 +390,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                       width: "auto", height: "auto",
                       objectFit: "contain",
                       display: "block",
+                      border: "1px solid rgba(0,0,0,0.1)",
                       boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
                     }} />
                 ) : (
@@ -407,6 +408,9 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
         style={{
           maxWidth: "100%", maxHeight: "100%",
           objectFit: "contain",
+          // Stroke sutil 1px pra delimitar a peca dentro do slide branco
+          // (especialmente importante quando o BG da peca eh claro/branco).
+          border: "1px solid rgba(0,0,0,0.1)",
           boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
         }} />
     ) : (
@@ -587,13 +591,13 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
       ) : (
         // Layout sem legenda: peca centralizada.
         // padding top maior pra nao colidir com header (nome+dim em y 4%-7%).
-        // padding bottom maior pra nao colidir com Footer (bottom 2.2% + fonte 1.1cqw).
-        // Padding generoso lateral pra peças verticais (Story, Display) terem
-        // respiro e não comer toda a área do slide.
+        // Padding-top reserva espaço pro header amarelo (nome + dimensões) +
+        // bolinha. Padding-bottom reserva espaço pro Footer. Laterais
+        // generosas pra peça ter respiro e não estourar pelas bordas.
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "14% 12% 12% 12%",
+          padding: "16% 12% 10% 12%",
         }}>
           <div
             {...pieceClickProps}
