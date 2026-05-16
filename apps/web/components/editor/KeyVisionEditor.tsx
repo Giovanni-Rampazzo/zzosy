@@ -3100,11 +3100,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       const leaves = collectLeaves(psd.children ?? [])
 
-      // === BG: extrai cor solida do PSD ===
-      // Photoshop cria um layer "Background" raster top-level (nao-SO) por
-      // default em PSDs novos. Amostra pixel central pra cor. Se nao houver
-      // (ou pixel transparente), fallback = pixel (0,0) do composite. Se
-      // nada disso der, mantem o BG anterior (raro).
+      // === BG: extrai cor solida do PSD (igual Photoshop) ===
+      // Ordem de tentativa, do mais confiavel pro mais aproximativo:
+      //  1. Solid Color FILL LAYER top-level: layer.vectorFill.type === 'color'.
+      //     Eh o jeito profissional no PS (Layer > New Fill Layer > Solid Color).
+      //     Cor sai EXATA, sem amostragem.
+      //  2. Layer raster "Background" top-level (nao-SO): amostra pixel central.
+      //     Eh o que o PS auto-cria em PSDs novos.
+      //  3. PRIMEIRO layer top-level que cobrir o canvas inteiro (raster ou
+      //     vectorFill), independente do nome — pega quem tiver embaixo de
+      //     tudo. Cobre PSDs sem "Background" nomeado.
+      //  4. Pixel central do composite (fallback final).
+      // Se tudo falhar, mantem BG atual da peca.
       function sampleHexAt(c: HTMLCanvasElement, x: number, y: number): string | null {
         try {
           const ctx = c.getContext("2d")
@@ -3112,20 +3119,54 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const cx = Math.max(0, Math.min(c.width - 1, Math.floor(x)))
           const cy = Math.max(0, Math.min(c.height - 1, Math.floor(y)))
           const px = ctx.getImageData(cx, cy, 1, 1).data
-          if (px[3] === 0) return null // pixel transparente nao serve como BG
+          if (px[3] === 0) return null
           const h = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")
           return `#${h(px[0])}${h(px[1])}${h(px[2])}`
         } catch { return null }
       }
+      // Extrai cor dum layer no PS (vectorFill solid OU canvas raster).
+      // Retorna null se o layer nao tiver cor solida representavel.
+      function colorFromLayer(l: any): string | null {
+        const vf = l?.vectorFill
+        if (vf?.type === "color" && vf.color) return psdColorToHex(vf.color)
+        if (l?.canvas) {
+          const c = l.canvas as HTMLCanvasElement
+          return sampleHexAt(c, c.width / 2, c.height / 2)
+        }
+        return null
+      }
+      // Layer cobre o canvas inteiro? (vectorFill ocupa toda area; raster
+      // checa bounding box ≈ tamanho do PSD com 2% de folga pra arredondamento)
+      function layerCoversCanvas(l: any): boolean {
+        if (l?.vectorFill?.type === "color") return true
+        const lw = (l?.right ?? 0) - (l?.left ?? 0)
+        const lh = (l?.bottom ?? 0) - (l?.top ?? 0)
+        const tol = 0.02
+        return lw >= psdW * (1 - tol) && lh >= psdH * (1 - tol)
+      }
+      const psdW = psd.width || canvasWRef.current
+      const psdH = psd.height || canvasHRef.current
       let newBg: string | null = null
+      // 1+2: tenta layer "Background" top-level (qualquer tipo de fill)
       for (const l of (psd.children ?? [])) {
         const isSO = !!(l as any).placedLayer
-        if (l.name === "Background" && !isSO && (l as any).canvas) {
-          const c = (l as any).canvas as HTMLCanvasElement
-          newBg = sampleHexAt(c, c.width / 2, c.height / 2)
+        if (l.name === "Background" && !isSO) {
+          newBg = colorFromLayer(l)
           if (newBg) break
         }
       }
+      // 3: PRIMEIRO layer top-level que cobre o canvas (PSDs sem "Background"
+      // nomeado, mas com fill layer embaixo)
+      if (!newBg) {
+        for (const l of (psd.children ?? [])) {
+          const isSO = !!(l as any).placedLayer
+          if (isSO || l.hidden === true || l.children?.length) continue
+          if (!layerCoversCanvas(l)) continue
+          newBg = colorFromLayer(l)
+          if (newBg) break
+        }
+      }
+      // 4: composite
       if (!newBg && psd.canvas) {
         const cc = psd.canvas as HTMLCanvasElement
         newBg = sampleHexAt(cc, cc.width / 2, cc.height / 2) || sampleHexAt(cc, 0, 0)
@@ -3138,8 +3179,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (k) assetsByName.set(k, a)
       }
 
-      const psdW = psd.width || canvasWRef.current
-      const psdH = psd.height || canvasHRef.current
       const pieceW = canvasWRef.current
       const pieceH = canvasHRef.current
       const scale = Math.min(pieceW / psdW, pieceH / psdH)
