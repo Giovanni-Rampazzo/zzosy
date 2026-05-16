@@ -4195,6 +4195,43 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     setSaving(false)
   }
 
+  // Cria um asset TEXT novo na campanha + auto-seleciona ele no dropdown +
+  // adiciona ao canvas. UX: usuário pode criar texto direto do editor sem
+  // sair pra /campaigns/[id]/assets.
+  async function createTextAssetAndAdd() {
+    if (!campaignId) return
+    const defaultText = "Novo texto"
+    const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: "Arial" } }
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "TEXT", label: defaultText, value: defaultText, content: [span] }),
+      })
+      if (!res.ok) {
+        alert("Falha ao criar asset de texto")
+        return
+      }
+      const created = await res.json()
+      // Refetch campanha pra ter o novo asset no estado
+      const campRes = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+      if (campRes.ok) {
+        const camp = await campRes.json()
+        setCampaign(camp)
+        campaignRef.current = camp
+      }
+      // Seleciona o novo asset + adiciona ao canvas
+      setAssetId(created.id)
+      assetIdRef.current = created.id
+      // pequeno delay pra o state propagar
+      await new Promise(r => setTimeout(r, 50))
+      await addLayer()
+    } catch (e) {
+      console.warn("[createTextAssetAndAdd] falhou:", e)
+      alert("Erro ao criar texto")
+    }
+  }
+
   async function addLayer() {
     const fc = fabricRef.current
     const c = campaignRef.current
@@ -5300,6 +5337,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             >+ Adicionar ao canvas</button>
           )
         })()}
+        {/* Atalho: cria asset TEXT novo + auto-adiciona ao canvas. UX: o
+            user nao precisa ir ate /campaigns/[id]/assets pra adicionar
+            mais um texto na peca/matriz. */}
+        <button onClick={createTextAssetAndAdd}
+          title="Cria um asset de texto novo nesta campanha e ja adiciona ao canvas"
+          style={{
+            background: "#2a2a1a",
+            color: "#F5C400",
+            border: "1px solid #444",
+            padding: "5px 14px",
+            borderRadius: 4,
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >+ Texto novo</button>
         <div style={{ flex: 1 }} />
         <button onClick={() => changeZoom(-0.1)} style={bS}>−</button>
         <span style={{ fontSize: 11, color: "#555", minWidth: 40, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
