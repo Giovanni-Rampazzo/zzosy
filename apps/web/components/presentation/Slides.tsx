@@ -588,10 +588,12 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
         // Layout sem legenda: peca centralizada.
         // padding top maior pra nao colidir com header (nome+dim em y 4%-7%).
         // padding bottom maior pra nao colidir com Footer (bottom 2.2% + fonte 1.1cqw).
+        // Padding generoso lateral pra peças verticais (Story, Display) terem
+        // respiro e não comer toda a área do slide.
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "10% 5% 8% 5%",
+          padding: "14% 12% 12% 12%",
         }}>
           <div
             {...pieceClickProps}
