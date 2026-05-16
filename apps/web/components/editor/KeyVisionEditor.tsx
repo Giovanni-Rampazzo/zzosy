@@ -43,10 +43,19 @@ interface Campaign {
 // no array = ordem visual (idx 0 = fundo, ultimo = mais em cima dos BGs,
 // mas TODOS abaixo de qualquer asset).
 type BgGradientStop = { offset: number; color: string }
+// BlendMode usa nomes Canvas API (= valores aceitos em globalCompositeOperation).
+// "source-over" eh o default ("Normal" no Photoshop).
+type BgBlendMode =
+  | "source-over" | "multiply" | "screen" | "overlay"
+  | "darken" | "lighten" | "color-dodge" | "color-burn"
+  | "hard-light" | "soft-light" | "difference" | "exclusion"
+  | "hue" | "saturation" | "color" | "luminosity"
 type BgLayerCommon = {
   opacity: number
   hidden?: boolean
   locked?: boolean
+  blendMode?: BgBlendMode
+  mask?: any // reusa schema do __maskData dos asset layers
 }
 type BgImageFit = "cover" | "contain" | "fill" | "tile"
 type BgLayerData =
@@ -82,6 +91,26 @@ function buildBgFill(layer: BgLayerData, w: number, h: number, Gradient: any): a
     })
   }
   return "#ffffff"
+}
+
+// Sincroniza TODAS as props do BG layer no Rect Fabric: fill, opacity,
+// visible, blendMode (globalCompositeOperation), mask (clipPath via
+// applyMaskToFabricObject). Async pq fill pode envolver carregar imagem.
+async function syncBgLayerToRect(rect: any, layer: BgLayerData, w: number, h: number, fabricMod: any): Promise<void> {
+  await applyBgFillAsync(rect, layer, w, h, fabricMod)
+  rect.set("opacity", layer.opacity)
+  rect.set("visible", layer.hidden !== true)
+  rect.set("globalCompositeOperation", layer.blendMode ?? "source-over")
+  if (layer.mask) {
+    const { Image: FabImage, Path } = fabricMod
+    ;(rect as any).__maskData = layer.mask
+    ;(rect as any).clipPath = null
+    try { await applyMaskToFabricObject({ Image: FabImage, Path }, rect, layer.mask) }
+    catch (e) { console.warn("[bg-mask] falha:", e) }
+  } else {
+    delete (rect as any).__maskData
+    ;(rect as any).clipPath = null
+  }
 }
 
 // Carrega um <img> a partir dum data URL ou URL publica. Usado pra preparar
@@ -1055,15 +1084,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const ld = bgLayersRef.current[i]
         const r = new Rect({
           left: 0, top: 0, width: cw, height: ch,
-          opacity: ld.opacity,
-          visible: ld.hidden !== true,
           selectable: true, evented: true,
           hasControls: false, hasBorders: true,
           lockMovementX: true, lockMovementY: true,
           lockScalingX: true, lockScalingY: true, lockRotation: true,
           excludeFromExport: true,
         })
-        await applyBgFillAsync(r, ld, cw, ch, fabricForBg)
+        await syncBgLayerToRect(r, ld, cw, ch, fabricForBg)
         ;(r as any).__isBg = true
         ;(r as any).__bgIdx = i
         ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
@@ -1802,15 +1829,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const ld = bgLayersRef.current[i]
         const r = new Rect({
           left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-          opacity: ld.opacity,
-          visible: ld.hidden !== true,
           selectable: true, evented: true,
           hasControls: false, hasBorders: true,
           lockMovementX: true, lockMovementY: true,
           lockScalingX: true, lockScalingY: true, lockRotation: true,
           excludeFromExport: true,
         })
-        await applyBgFillAsync(r, ld, canvasWRef.current, canvasHRef.current, fabricMod)
+        await syncBgLayerToRect(r, ld, canvasWRef.current, canvasHRef.current, fabricMod)
         ;(r as any).__isBg = true
         ;(r as any).__bgIdx = i
         ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
@@ -3180,14 +3205,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const ld = stepBgLayers[i]
         const r = new Rect({
           left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-          opacity: ld.opacity, visible: ld.hidden !== true,
           selectable: true, evented: true,
           hasControls: false, hasBorders: true,
           lockMovementX: true, lockMovementY: true,
           lockScalingX: true, lockScalingY: true, lockRotation: true,
           excludeFromExport: true,
         })
-        await applyBgFillAsync(r, ld, canvasWRef.current, canvasHRef.current, fabricMod)
+        await syncBgLayerToRect(r, ld, canvasWRef.current, canvasHRef.current, fabricMod)
         ;(r as any).__isBg = true
         ;(r as any).__bgIdx = i
         ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
@@ -3951,9 +3975,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const rect = bgRectsRef.current[idx]
     if (rect) {
       const fabricMod: any = await import("fabric")
-      await applyBgFillAsync(rect, next, canvasWRef.current, canvasHRef.current, fabricMod)
-      rect.set("opacity", next.opacity)
-      rect.set("visible", next.hidden !== true)
+      await syncBgLayerToRect(rect, next, canvasWRef.current, canvasHRef.current, fabricMod)
       fc.renderAll()
     }
     // Espelhos legacy (BG[0]) — save/export antigo continua funcionando.
@@ -4031,6 +4053,39 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   function changeBgImageFit(fit: BgImageFit) {
     updateCurrentBg((l) => l.kind === "image" ? { ...l, fit } : l)
+  }
+
+  function changeBgBlendMode(blendMode: BgBlendMode) {
+    updateCurrentBg((l) => ({ ...l, blendMode }))
+  }
+
+  // Adiciona/remove mascara no BG. Pra MVP, mascara default = retangulo
+  // vetorial cobrindo metade superior da peca (UX pra ver que tem efeito;
+  // user ajusta depois via MaskPanel ou Photoshop-style edicao).
+  function setBgMaskDefault() {
+    updateCurrentBg((l) => ({
+      ...l,
+      mask: {
+        type: "vector" as const,
+        enabled: true,
+        vector: {
+          path: `M 0 0 L ${canvasWRef.current} 0 L ${canvasWRef.current} ${canvasHRef.current / 2} L 0 ${canvasHRef.current / 2} Z`,
+          posX: 0, posY: 0,
+          width: canvasWRef.current, height: canvasHRef.current / 2,
+        },
+      },
+    }))
+  }
+
+  function removeBgMask() {
+    updateCurrentBg((l) => ({ ...l, mask: undefined }))
+  }
+
+  function toggleBgMaskEnabled() {
+    updateCurrentBg((l) => {
+      if (!l.mask) return l
+      return { ...l, mask: { ...l.mask, enabled: !l.mask.enabled } }
+    })
   }
 
   function changeBgGradientStop(stopIdx: number, patch: Partial<BgGradientStop>) {
@@ -5333,7 +5388,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               )
             })()}
             {/* Opacity (sempre, igual painel de Layers do Photoshop) */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888", marginBottom: 10 }}>
               <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Opacity</span>
               <input
                 type="range" min={0} max={100} step={1}
@@ -5343,6 +5398,62 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               />
               <span style={{ width: 36, textAlign: "right", color: "#bbb", fontFamily: "monospace" }}>{Math.round(bgOpacity * 100)}%</span>
             </div>
+            {/* BlendMode + Mask (BG-5) */}
+            {(() => {
+              const layer = bgLayersRef.current[currentBgIdx()]
+              if (!layer) return null
+              const blend = layer.blendMode ?? "source-over"
+              return (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888", marginBottom: 10 }}>
+                    <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Blend</span>
+                    <select value={blend}
+                      onChange={e => changeBgBlendMode(e.target.value as BgBlendMode)}
+                      style={{ flex: 1, padding: "4px 6px", fontSize: 11, background: "#0d0d0d",
+                        color: "#bbb", border: "1px solid #333", borderRadius: 3,
+                        fontFamily: "inherit", outline: "none" }}>
+                      <option value="source-over">Normal</option>
+                      <option value="multiply">Multiply</option>
+                      <option value="screen">Screen</option>
+                      <option value="overlay">Overlay</option>
+                      <option value="darken">Darken</option>
+                      <option value="lighten">Lighten</option>
+                      <option value="color-dodge">Color Dodge</option>
+                      <option value="color-burn">Color Burn</option>
+                      <option value="hard-light">Hard Light</option>
+                      <option value="soft-light">Soft Light</option>
+                      <option value="difference">Difference</option>
+                      <option value="exclusion">Exclusion</option>
+                      <option value="hue">Hue</option>
+                      <option value="saturation">Saturation</option>
+                      <option value="color">Color</option>
+                      <option value="luminosity">Luminosity</option>
+                    </select>
+                  </div>
+                  {/* Mask */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888" }}>
+                    <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Mask</span>
+                    {layer.mask ? (
+                      <div style={{ flex: 1, display: "flex", gap: 4 }}>
+                        <button onClick={() => toggleBgMaskEnabled()}
+                          title={layer.mask.enabled ? "Desativar mascara" : "Ativar mascara"}
+                          style={{ flex: 1, padding: "4px 6px", fontSize: 11, background: layer.mask.enabled ? "#1a1a1a" : "#0d0d0d",
+                            color: layer.mask.enabled ? "#F5C400" : "#666", border: "1px solid #333", borderRadius: 3, cursor: "pointer", fontFamily: "inherit" }}>
+                          {layer.mask.enabled ? "Ativa" : "Desativada"}
+                        </button>
+                        <button onClick={() => removeBgMask()} title="Remover mascara"
+                          style={{ padding: "4px 8px", fontSize: 11, background: "#1a1a1a", color: "#bbb", border: "1px solid #333", borderRadius: 3, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setBgMaskDefault()}
+                        style={{ flex: 1, padding: "4px 6px", fontSize: 11, background: "#1a1a1a", color: "#bbb", border: "1px solid #333", borderRadius: 3, cursor: "pointer", fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        + Adicionar
+                      </button>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
           </div>
         ) : isText ? (
           (() => {
