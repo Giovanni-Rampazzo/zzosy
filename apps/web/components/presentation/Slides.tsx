@@ -390,7 +390,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                       width: "auto", height: "auto",
                       objectFit: "contain",
                       display: "block",
-                      border: "1px solid rgba(0,0,0,0.1)",
+                      border: "1px solid rgba(0,0,0,0.15)",
                       boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
                     }} />
                 ) : (
@@ -410,7 +410,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           objectFit: "contain",
           // Stroke sutil 1px pra delimitar a peca dentro do slide branco
           // (especialmente importante quando o BG da peca eh claro/branco).
-          border: "1px solid rgba(0,0,0,0.1)",
+          border: "1px solid rgba(0,0,0,0.15)",
           boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
         }} />
     ) : (
@@ -591,13 +591,14 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
       ) : (
         // Layout sem legenda: peca centralizada.
         // padding top maior pra nao colidir com header (nome+dim em y 4%-7%).
-        // Padding-top reserva espaço pro header amarelo (nome + dimensões) +
-        // bolinha. Padding-bottom reserva espaço pro Footer. Laterais
-        // generosas pra peça ter respiro e não estourar pelas bordas.
+        // Padding-top RESERVA espaço claro pro header amarelo (nome +
+        // dimensões) + bolinha — sem isso, label STEP N ou topo da peça
+        // colide com o header. Padding-bottom reserva pro Footer. Laterais
+        // generosas pra peça respirar.
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "16% 12% 10% 12%",
+          padding: "20% 14% 14% 14%",
         }}>
           <div
             {...pieceClickProps}
