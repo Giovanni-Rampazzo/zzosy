@@ -282,38 +282,45 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
     const CARD_X = 0.3 + PIECE_AREA_W + 0.25
     const CARD_W = 4.0
 
-    // Multi-step: se a peca tem >= 2 steps, renderiza todos lado a lado na
-    // area da peca com label "Step N" acima de cada um. Escala uniforme.
+    // Multi-step: renderiza todos lado a lado na area da peca, ALINHADOS AO
+    // TOPO (sem padding vertical centralizando) e ENCOSTADOS A ESQUERDA. Cada
+    // step ocupa exatamente o espaco da sua proporção; o conjunto se ajusta
+    // pra caber em PIECE_AREA_W. Sobra horizontal vai entre o ultimo step e
+    // a legenda (nao entre cells), evitando espacos brancos esquisitos.
     const hasMultiStep = Array.isArray(stepImages) && stepImages.length >= 2
     if (hasMultiStep) {
       const total = stepImages!.length
       const GAP = 0.1
       const LABEL_H = 0.25
-      const cellW = (PIECE_AREA_W - GAP * (total - 1)) / total
-      const cellH = SPLIT_AREA_H - LABEL_H - 0.1
+      const availH = SPLIT_AREA_H - LABEL_H - 0.1
+      const idealW = piece.width > 0 ? piece.width / PX_PER_INCH : 4
+      const idealH = piece.height > 0 ? piece.height / PX_PER_INCH : 4
+      // Escala preferencial: limitada pela altura disponivel. Se 3 steps lado
+      // a lado nessa escala extrapolam PIECE_AREA_W, reduz uniformemente.
+      const scaleByH = availH / idealH
+      const totalWByH = idealW * scaleByH * total + GAP * (total - 1)
+      const ratio = totalWByH <= PIECE_AREA_W
+        ? scaleByH
+        : (PIECE_AREA_W - GAP * (total - 1)) / (idealW * total)
+      const stepW = idealW * ratio
+      const stepH = idealH * ratio
       for (let i = 0; i < total; i++) {
-        const cellX = PIECE_AREA_X + i * (cellW + GAP)
+        const x = PIECE_AREA_X + i * (stepW + GAP)
+        const y = AREA_Y + LABEL_H + 0.1
         const globalIdx = ((piece as any).__stepIndexOffset ?? 0) + i
-        // Label "Step N"
+        // Label "Step N" alinhada a esquerda, do tamanho do step
         slide.addText(`STEP ${globalIdx + 1}`, {
-          x: cellX, y: AREA_Y, w: cellW, h: LABEL_H,
+          x, y: AREA_Y, w: stepW, h: LABEL_H,
           fontFace: "Calibri", fontSize: 8, bold: true,
           color: "888888", align: "center", valign: "middle",
           margin: 0,
         })
         const img = stepImages![i]
         if (img && piece.width > 0 && piece.height > 0) {
-          const idealW = piece.width / PX_PER_INCH
-          const idealH = piece.height / PX_PER_INCH
-          const ratio = Math.min(cellW / idealW, cellH / idealH)
-          const w = idealW * ratio
-          const h = idealH * ratio
-          const x = cellX + (cellW - w) / 2
-          const y = AREA_Y + LABEL_H + 0.1 + (cellH - h) / 2
-          slide.addImage({ data: img, x, y, w, h })
+          slide.addImage({ data: img, x, y, w: stepW, h: stepH })
         } else {
           slide.addText("(sem preview)", {
-            x: cellX, y: AREA_Y + LABEL_H + 0.1 + cellH / 2 - 0.15, w: cellW, h: 0.3,
+            x, y: y + stepH / 2 - 0.15, w: stepW, h: 0.3,
             fontFace: "Calibri", fontSize: 10, color: TEXT_GRAY, align: "center",
           })
         }
