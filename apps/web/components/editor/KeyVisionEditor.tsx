@@ -56,6 +56,10 @@ type BgLayerCommon = {
   locked?: boolean
   blendMode?: BgBlendMode
   mask?: any // reusa schema do __maskData dos asset layers
+  // Brand ref: indice em Client.brandColors. Quando setado, a cor solid
+  // (kind="solid") eh ressincronizada automaticamente com brandColors[idx].hex
+  // no load do canvas. Outros kinds ignoram esse campo.
+  colorBrandIdx?: number
 }
 type BgImageFit = "cover" | "contain" | "fill" | "tile"
 type BgLayerData =
@@ -79,6 +83,7 @@ function migrateBgLayerJson(l: any): BgLayerData {
   const opacity = typeof l?.opacity === "number" ? l.opacity : 1
   const hidden = l?.hidden === true ? true : undefined
   const locked = l?.locked === true ? true : undefined
+  const colorBrandIdx = typeof l?.colorBrandIdx === "number" ? l.colorBrandIdx : undefined
   if (l?.kind === "gradient" && Array.isArray(l.stops) && l.stops.length >= 2) {
     return {
       kind: "gradient",
@@ -93,7 +98,7 @@ function migrateBgLayerJson(l: any): BgLayerData {
     return { kind: "image", imageDataUrl: l.imageDataUrl, fit, opacity, hidden, locked }
   }
   // Solid (default + fallback de items sem kind)
-  return { kind: "solid", color: typeof l?.color === "string" ? l.color : "#ffffff", opacity, hidden, locked }
+  return { kind: "solid", color: typeof l?.color === "string" ? l.color : "#ffffff", opacity, hidden, locked, colorBrandIdx }
 }
 
 // Constroi o `fill` pro Fabric a partir dos dados do BG. Pra gradient,
@@ -683,6 +688,80 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Library de cores do cliente (Client.brandColors). Renderiza no topo das
   // SWATCHES no painel BG e no painel de texto pra acesso rapido.
   const [brandColors, setBrandColors] = useState<BrandColor[]>([])
+  // Ref pra acesso síncrono em handlers (resolve brand refs no load do canvas
+  // antes do React ter chance de re-renderizar).
+  const brandColorsRef = useRef<BrandColor[]>([])
+  useEffect(() => { brandColorsRef.current = brandColors }, [brandColors])
+
+  // Quando brandColors muda (depois do load do client), re-sincroniza fills
+  // de texto e cores de BG SOLID que tem brand ref. Renderiza + marca dirty
+  // pra proximo save persistir. Cobre o cenario: editor ja aberto E user
+  // mudou cores da brand em outra aba (fetched via 'zzosy:brand-updated' que
+  // ja faz refetch do client em alguns lugares — mas aqui dispara o sync).
+  useEffect(() => {
+    if (brandColors.length === 0) return
+    const fc = fabricRef.current
+    if (!fc) return
+    const bgChanged = syncBrandRefsInBgLayers()
+    const textChanged = syncBrandRefsInTextObjects(fc)
+    if (!bgChanged && !textChanged) return
+    // Re-renderiza os Rects BG que mudaram (cor solid pode ter mudado)
+    if (bgChanged) {
+      ;(async () => {
+        const fabricMod: any = await import("fabric")
+        for (let i = 0; i < bgRectsRef.current.length; i++) {
+          const r = bgRectsRef.current[i]
+          const l = bgLayersRef.current[i]
+          if (r && l) await syncBgLayerToRect(r, l, canvasWRef.current, canvasHRef.current, fabricMod)
+        }
+        fc.renderAll()
+      })()
+    } else {
+      fc.renderAll()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandColors])
+
+  // Re-sincroniza fill dos Textboxes com __fillBrandIdx contra brandColors
+  // atual. Retorna true se algum fill mudou.
+  function syncBrandRefsInTextObjects(fc: any): boolean {
+    if (!fc) return false
+    let changed = false
+    for (const o of fc.getObjects()) {
+      const bIdx = (o as any).__fillBrandIdx
+      if (typeof bIdx !== "number") continue
+      const live = brandColorsRef.current[bIdx]
+      if (!live || typeof live.hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(live.hex)) continue
+      if (typeof o.fill === "string" && live.hex.toLowerCase() !== o.fill.toLowerCase()) {
+        o.set("fill", live.hex)
+        changed = true
+      }
+    }
+    return changed
+  }
+
+  // Re-sincroniza as cores SOLID dos bgLayers com brandColors atual. Se algum
+  // BG referencia (colorBrandIdx) um brand color cuja cor mudou desde o ultimo
+  // save, atualiza color + marca dirty pra proximo auto-save persistir. Retorna
+  // true se alguma layer foi modificada.
+  function syncBrandRefsInBgLayers(): boolean {
+    let changed = false
+    for (let i = 0; i < bgLayersRef.current.length; i++) {
+      const l = bgLayersRef.current[i]
+      if (l.kind !== "solid" || typeof l.colorBrandIdx !== "number") continue
+      const live = brandColorsRef.current[l.colorBrandIdx]
+      if (!live || typeof live.hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(live.hex)) continue
+      if (live.hex.toLowerCase() !== l.color.toLowerCase()) {
+        bgLayersRef.current[i] = { ...l, color: live.hex }
+        changed = true
+      }
+    }
+    if (changed) {
+      isDirtyRef.current = true
+      setIsDirty(true)
+    }
+    return changed
+  }
   // BG-2: multiplas BG layers empilhaveis (igual Photoshop). bgLayersRef =
   // fonte da verdade dos dados; bgRectsRef = Rects no canvas (mesma ordem).
   // bgColorRef/bgOpacityRef/bgRef continuam refletindo o BG[0] (fundo) pra
@@ -801,23 +880,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   }, [campaignId, pieceId])
 
   // Carrega a library de cores do cliente da campanha. Usado pra renderizar
-  // swatches "Marca" no topo dos color pickers (BG + texto).
+  // swatches "Marca" no topo dos color pickers (BG + texto). Re-fetch
+  // automatico quando o evento 'zzosy:client-brand-updated' eh disparado
+  // (pra refletir mudancas no /clients/[id]/edit sem reload do editor).
   useEffect(() => {
     const clientId = campaign?.client?.id
     if (!clientId) { setBrandColors([]); return }
     let cancelled = false
-    fetch(`/api/clients/${clientId}`, { cache: "no-store" })
-      .then(r => r.ok ? r.json() : null)
-      .then(c => {
-        if (cancelled || !c) return
-        const arr: any[] = Array.isArray(c?.brandColors) ? c.brandColors : []
-        const cleaned: BrandColor[] = arr
-          .filter(x => typeof x?.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(x.hex))
-          .map(x => ({ hex: x.hex, name: x.name ?? null, role: x.role }))
-        setBrandColors(cleaned)
-      })
-      .catch(() => { if (!cancelled) setBrandColors([]) })
-    return () => { cancelled = true }
+    function load() {
+      fetch(`/api/clients/${clientId}`, { cache: "no-store" })
+        .then(r => r.ok ? r.json() : null)
+        .then(c => {
+          if (cancelled || !c) return
+          const arr: any[] = Array.isArray(c?.brandColors) ? c.brandColors : []
+          const cleaned: BrandColor[] = arr
+            .filter(x => typeof x?.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(x.hex))
+            .map(x => ({ hex: x.hex, name: x.name ?? null, role: x.role }))
+          setBrandColors(cleaned)
+        })
+        .catch(() => { if (!cancelled) setBrandColors([]) })
+    }
+    load()
+    function onUpdate(e: any) {
+      // Refetch so se o evento eh pro client desta campanha (ou sem detail = refetch sempre)
+      const detailId = e?.detail?.clientId
+      if (!detailId || detailId === clientId) load()
+    }
+    window.addEventListener("zzosy:client-brand-updated", onUpdate)
+    return () => { cancelled = true; window.removeEventListener("zzosy:client-brand-updated", onUpdate) }
   }, [campaign?.client?.id])
 
   // Sempre que voltar para o editor (foco), apenas atualiza campaignRef em memoria.
@@ -2414,13 +2504,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         effScaleY = 1
       }
 
+      // Brand ref: se override aponta pra um brand color via fillBrandIdx e
+      // brandColors[idx].hex difere do que esta salvo (brand mudou desde o
+      // ultimo save), prefere a cor LIVE da marca. Marca dirty pra proximo
+      // auto-save persistir o novo hex no overrides.fill.
+      let effFill: string = (ov?.fill ?? def.color ?? "#111111")
+      const fillBrandIdx = ov?.fillBrandIdx
+      if (typeof fillBrandIdx === "number" && brandColorsRef.current[fillBrandIdx]) {
+        const liveHex = brandColorsRef.current[fillBrandIdx].hex
+        if (typeof liveHex === "string" && /^#[0-9a-fA-F]{6}$/.test(liveHex)) {
+          if (liveHex.toLowerCase() !== String(effFill).toLowerCase()) {
+            effFill = liveHex
+            isDirtyRef.current = true
+            setIsDirty(true)
+          }
+        }
+      }
+
       const t = new Textbox(initialText, {
         left: posX, top: posY,
         width: Math.max(effWidth, 200),
         fontSize: effFontSize,
         fontFamily: (ov?.fontFamily ?? def.fontFamily ?? "Arial"),
         fontWeight: (ov?.fontWeight ?? def.fontWeight ?? "normal"),
-        fill: (ov?.fill ?? def.color ?? "#111111"),
+        fill: effFill,
         // Adobe-style "Auto" leading default = 1:1 com fontSize. Override pode mudar
         // depois via ov.lineHeight ou ov.leadingPt. Fabric default eh 1.16 (estranho
         // visualmente, gera espacamento extra).
@@ -2449,6 +2556,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if ((t as any).initDimensions) (t as any).initDimensions()
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
+      if (typeof fillBrandIdx === "number") (t as any).__fillBrandIdx = fillBrandIdx
       fc.add(t)
     }
   }
@@ -3083,6 +3191,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               layer.overrides.text = (o as any).text
             }
             layer.overrides.fill = o.fill
+            // Brand ref (cor vinculada a brand color do cliente): persiste o
+            // indice pra re-sync automatico quando brandColors mudam no Client.
+            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
@@ -3221,6 +3332,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               layer.overrides.text = (o as any).text
             }
             layer.overrides.fill = o.fill
+            // Brand ref (cor vinculada a brand color do cliente): persiste o
+            // indice pra re-sync automatico quando brandColors mudam no Client.
+            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
@@ -3326,6 +3440,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           layer.overrides.text = (o as any).text
         }
         if ((o as any).fill !== undefined) layer.overrides.fill = (o as any).fill
+        // Brand ref do fill: persiste o indice pra re-sync com brandColors
+        if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
         if ((o as any).fontSize !== undefined) layer.overrides.fontSize = (o as any).fontSize
         if ((o as any).fontFamily !== undefined) layer.overrides.fontFamily = (o as any).fontFamily
         if ((o as any).styles !== undefined) layer.overrides.styles = (o as any).styles
@@ -3863,6 +3979,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               layer.overrides.text = (o as any).text
             }
             layer.overrides.fill = o.fill
+            // Brand ref (cor vinculada a brand color do cliente): persiste o
+            // indice pra re-sync automatico quando brandColors mudam no Client.
+            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
@@ -4007,6 +4126,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               layer.overrides.text = (o as any).text
             }
             layer.overrides.fill = o.fill
+            // Brand ref (cor vinculada a brand color do cliente): persiste o
+            // indice pra re-sync automatico quando brandColors mudam no Client.
+            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
@@ -4140,11 +4262,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     doSave()
   }
 
-  function changeBg(c: string) {
-    updateCurrentBg((l) => l.kind === "solid"
-      ? { ...l, color: c }
-      // Se eh gradient e user clicou no color picker do header "Sólido", forca solid
-      : { kind: "solid", color: c, opacity: l.opacity, hidden: l.hidden, locked: l.locked })
+  function changeBg(c: string, brandIdx?: number) {
+    updateCurrentBg((l) => {
+      // Brand ref: se foi clicado num swatch da Marca, marca colorBrandIdx
+      // pra re-sync automatico. Senao, limpa pra desassociar.
+      const bIdx = typeof brandIdx === "number" ? brandIdx : undefined
+      if (l.kind === "solid") return { ...l, color: c, colorBrandIdx: bIdx }
+      // Vinha de gradient/image — forca pra solid
+      return { kind: "solid", color: c, colorBrandIdx: bIdx, opacity: l.opacity, hidden: l.hidden, locked: l.locked }
+    })
   }
 
   function changeBgOpacity(op: number) {
@@ -4623,11 +4749,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }).catch(err => console.warn("[updateAssetContent] failed:", err))
   }
 
-  function applyStyle(key: string, val: any) {
+  function applyStyle(key: string, val: any, brandIdx?: number) {
     const fc = fabricRef.current; const obj = selected
     if (!fc || !obj) return
     const value = key === "fontSize" ? Number(val) : val
     const styleKey = key === "fill" ? "fill" : key
+    // Brand ref: ao clicar num swatch de Marca, marca __fillBrandIdx. Em
+    // qualquer outra mudanca de fill (color picker, hex, swatch padrao),
+    // limpa pra desassociar. Persiste em overrides.fillBrandIdx no save.
+    if (key === "fill") {
+      if (typeof brandIdx === "number") {
+        ;(obj as any).__fillBrandIdx = brandIdx
+      } else {
+        delete (obj as any).__fillBrandIdx
+      }
+    }
 
     const isText = obj.type === "textbox" || obj.type === "i-text"
     const isEditing = (obj as any).isEditing
@@ -5483,11 +5619,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     <>
                       <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                        {brandColors.map((bc, i) => (
-                          <div key={`${bc.hex}-${i}`} onClick={() => changeBg(bc.hex)}
-                            title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
-                            style={{ width: 26, height: 26, borderRadius: 5, background: bc.hex, cursor: "pointer", border: bgColor.toLowerCase() === bc.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                        ))}
+                        {brandColors.map((bc, i) => {
+                          const currentBgLayer = bgLayersRef.current[currentBgIdx()]
+                          const activeByRef = currentBgLayer?.kind === "solid" && currentBgLayer.colorBrandIdx === i
+                          const activeByHex = !activeByRef && bgColor.toLowerCase() === bc.hex.toLowerCase()
+                          return (
+                            <div key={`${bc.hex}-${i}`} onClick={() => changeBg(bc.hex, i)}
+                              title={bc.name ? `${bc.name} (${bc.hex}) — vincula à marca` : `${bc.hex} — vincula à marca`}
+                              style={{ width: 26, height: 26, borderRadius: 5, background: bc.hex, cursor: "pointer", border: (activeByRef || activeByHex) ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                          )
+                        })}
                       </div>
                     </>
                   )}
@@ -5969,11 +6110,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 <>
                   <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                    {brandColors.map((bc, i) => (
-                      <div key={`${bc.hex}-${i}`} onClick={() => applyStyle("fill", bc.hex)}
-                        title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
-                        style={{ width: 24, height: 24, borderRadius: 4, background: bc.hex, cursor: "pointer", border: (selected.fill ?? "").toLowerCase() === bc.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                    ))}
+                    {brandColors.map((bc, i) => {
+                      const activeByRef = (selected as any).__fillBrandIdx === i
+                      const activeByHex = !activeByRef && (selected.fill ?? "").toLowerCase() === bc.hex.toLowerCase()
+                      return (
+                        <div key={`${bc.hex}-${i}`} onClick={() => applyStyle("fill", bc.hex, i)}
+                          title={bc.name ? `${bc.name} (${bc.hex}) — vincula à marca` : `${bc.hex} — vincula à marca`}
+                          style={{ width: 24, height: 24, borderRadius: 4, background: bc.hex, cursor: "pointer", border: (activeByRef || activeByHex) ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                      )
+                    })}
                   </div>
                   <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
                 </>

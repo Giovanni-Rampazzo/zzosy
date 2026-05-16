@@ -178,6 +178,9 @@ export default function EditClientPage() {
       if (ok) {
         setBrandSavedAt(Date.now())
         setTimeout(() => setBrandSavedAt(null), 2000)
+        // Avisa outros componentes abertos (editor de peça, etc) que o brand
+        // do cliente mudou pra refetch sem precisar de reload manual.
+        try { window.dispatchEvent(new CustomEvent("zzosy:client-brand-updated", { detail: { clientId: id } })) } catch {}
       } else {
         setError("Falha ao salvar identidade visual.")
       }
