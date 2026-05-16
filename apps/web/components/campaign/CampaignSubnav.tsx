@@ -23,14 +23,17 @@ import React from "react"
 interface Props {
   campaignId: string
   clientId?: string
-  // Acoes da pagina atual (opcional). Cada acao vira um Button na linha 2.
+  // Acoes da pagina atual na linha 2 (opcional).
   actions?: React.ReactNode
+  // Acoes INLINE na linha 1, ao lado dos botoes de nav. Use pra agrupar
+  // a acao principal da pagina (ex: "Apresentacao" em /pieces) com a nav.
+  inlineActions?: React.ReactNode
   // Marca a aba ativa (escondendo o respectivo botao da barra de nav, ja
   // que clicar nele seria no-op).
   activeTab?: "campaign" | "pieces" | "assets" | null
 }
 
-export function CampaignSubnav({ campaignId, clientId, actions, activeTab }: Props) {
+export function CampaignSubnav({ campaignId, clientId, actions, inlineActions, activeTab }: Props) {
   const router = useRouter()
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
@@ -64,6 +67,7 @@ export function CampaignSubnav({ campaignId, clientId, actions, activeTab }: Pro
             Peças
           </Button>
         )}
+        {inlineActions}
       </div>
 
       {/* Linha 2: acoes da pagina (opcional) — tambem alinhada a direita */}

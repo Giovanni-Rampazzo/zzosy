@@ -26,12 +26,15 @@ function EditorContent() {
   const initialStepIndex = stepIndexParam != null && !Number.isNaN(parseInt(stepIndexParam, 10))
     ? parseInt(stepIndexParam, 10)
     : undefined
+  // openGenerator=1: vem do botao "Gerar peca" em /campaigns/[id]. Abre o
+  // modal de geracao automaticamente depois do init.
+  const openGenerator = searchParams.get("openGenerator") === "1"
   if (!campaignId) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#111",color:"white"}}>
       Campaign ID não encontrado
     </div>
   )
-  return <KeyVisionEditor campaignId={campaignId} pieceId={pieceId} from={from} initialStepIndex={initialStepIndex} />
+  return <KeyVisionEditor campaignId={campaignId} pieceId={pieceId} from={from} initialStepIndex={initialStepIndex} openGenerator={openGenerator} />
 }
 
 export default function EditorPage() {

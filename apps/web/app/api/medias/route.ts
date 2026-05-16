@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const tenantId = (session.user as any).tenantId
     const body = await req.json()
-    const { vehicle, media, format, dpi, category } = body
+    const { vehicle, media, format, dpi, category, segment } = body
     const name = [vehicle, media, format].filter(Boolean).join(" - ") || "Formato"
 
     // Aceita 2 formatos no body:
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         widthValue, heightValue,
         widthUnit, heightUnit,
         dpi: dpiNum,
-        category, isDefault: false,
+        category, segment, isDefault: false,
       }
     })
     return NextResponse.json(mf)

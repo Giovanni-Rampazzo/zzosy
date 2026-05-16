@@ -9,7 +9,7 @@ interface MediaFormat {
   width: number; height: number; dpi: number
   widthValue?: number | null; heightValue?: number | null
   widthUnit?: string | null; heightUnit?: string | null
-  category: string; isDefault: boolean
+  category: string; segment?: string | null; isDefault: boolean
 }
 
 type FormState = {
@@ -17,14 +17,14 @@ type FormState = {
   // Valores na unidade escolhida (NAO em px).
   widthValue: string; heightValue: string;
   widthUnit: Unit; heightUnit: Unit;
-  dpi: string; category: string;
+  dpi: string; category: string; segment: string;
 }
 
 const emptyForm: FormState = {
   vehicle: "", media: "", format: "",
   widthValue: "", heightValue: "",
   widthUnit: "px", heightUnit: "px",
-  dpi: "72", category: "",
+  dpi: "72", category: "", segment: "",
 }
 
 /** Formata numero pra exibicao: inteiro sem decimais, decimal com 2 casas. */
@@ -40,10 +40,16 @@ export default function MediasPage() {
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
   const isEditing = editingId !== null
 
   useEffect(() => {
     fetch("/api/medias").then(r => r.json()).then(d => { setFormats(Array.isArray(d)?d:[]); setLoading(false) })
+    // Sugestoes de segmento: union dos segments ja usados em pecas + os ja
+    // setados em outros MediaFormats. Datalist mostra ambos.
+    fetch("/api/pieces/segments").then(r => r.json()).then(d => {
+      setSegmentSuggestions(Array.isArray(d?.segments) ? d.segments : [])
+    }).catch(() => {})
   }, [])
 
   function openCreate() {
@@ -70,6 +76,7 @@ export default function MediasPage() {
       heightUnit,
       dpi: String(dpiNum),
       category: f.category ?? "",
+      segment: f.segment ?? "",
     })
     setEditingId(f.id)
     setShowModal(true)
@@ -88,6 +95,7 @@ export default function MediasPage() {
       heightUnit: form.heightUnit,
       dpi: +form.dpi,
       category: form.category,
+      segment: form.segment.trim() || null,
     }
     if (isEditing) {
       const res = await fetch(`/api/medias/${editingId}`, {
@@ -126,6 +134,7 @@ export default function MediasPage() {
       widthUnit, heightUnit,
       dpi: dpiNum,
       category: f.category,
+      segment: f.segment ?? null,
     }
     const res = await fetch("/api/medias", {
       method: "POST",
@@ -256,6 +265,27 @@ export default function MediasPage() {
                     ))}
                   </datalist>
                 </div>
+              </div>
+              {/* Segmento: opcional. Datalist mostra sugestoes de pecas existentes
+                  + segments ja salvos em outros MediaFormats. */}
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>Segmento</label>
+                <input
+                  type="text"
+                  value={form.segment}
+                  onChange={e => setForm(f => ({...f,segment:e.target.value}))}
+                  placeholder="Opcional — ex: Lançamento, Promo..."
+                  list="media-segment-suggestions"
+                  style={inp}
+                />
+                <datalist id="media-segment-suggestions">
+                  {Array.from(new Set([
+                    ...segmentSuggestions,
+                    ...formats.map(f => f.segment ?? "").filter(s => s.length > 0),
+                  ])).sort().map(s => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
               </div>
               {/* Largura + unidade. Photoshop-style: valor numerico + dropdown de unidade. */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>

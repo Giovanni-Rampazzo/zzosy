@@ -104,7 +104,13 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
 
       if (asset.type === "TEXT") {
         const spans = parseContent(asset.content)
-        const fullText = spans.length ? spans.map((s: any) => s.text).join("") : (asset.value ?? asset.label)
+        // overrides.text: se a peca/matriz salvou quebras de linha locais (\n
+        // inserido pelo user no editor), usar esse texto em vez do raw do asset.
+        // Sem isso, o PSD exportado nao tem as quebras, e texto vem ofuscado.
+        const rawAssetText = spans.length ? spans.map((s: any) => s.text).join("") : (asset.value ?? asset.label)
+        const fullText: string = (typeof overrides.text === "string" && overrides.text.length > 0)
+          ? overrides.text
+          : rawAssetText
         const def = spans[0]?.style ?? {}
         // Calcular styles per-char a partir dos spans (usados quando peça NAO tem overrides.styles)
         let assetStyles: any = undefined
@@ -140,9 +146,18 @@ async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
           scaleY: layer.scaleY ?? 1,
           angle: layer.rotation ?? 0,
           charSpacing: overrides.charSpacing ?? 0,
-          lineHeight: overrides.lineHeight ?? 1.16,
+          // Default lineHeight 1.0 (1:1 com fontSize) pra bater com o editor.
+          // Antes era 1.16 (Fabric default) — gerava entrelinha errada no PSD.
+          lineHeight: overrides.lineHeight ?? 1.0,
           textAlign: overrides.textAlign ?? "left",
         })
+        // leadingPt: fonte da verdade pra entrelinha (Adobe-style). Aplica apos
+        // o construtor pra exporter conseguir ler em buildStyleRuns.
+        if (overrides.leadingPt !== undefined && overrides.leadingPt !== null) {
+          ;(t as any).leadingPt = overrides.leadingPt
+          const fs = t.fontSize ?? 48
+          ;(t as any).set("lineHeight", overrides.leadingPt / fs)
+        }
         // Aplicar styles per-char DEPOIS (Fabric Textbox ignora styles no construtor)
         // Prioridade: overrides.styles (peca) > assetStyles (matriz/asset)
         const finalStyles = overrides.styles ?? assetStyles
@@ -522,6 +537,14 @@ function toPSFont(family: string, isBold: boolean): { name: string; fauxBold: bo
   return { name: f.regular, fauxBold: false }
 }
 
+// Converte charSpacing do Fabric (1/1000 em — mesmo valor que letter-spacing CSS em em*1000?)
+// pra tracking do Photoshop (1/1000 em). Fabric usa 1/1000 em diretamente:
+// charSpacing 1000 = 1em de espaço extra. Photoshop tracking idem. Sem conversão.
+function fabricCharSpacingToPsTracking(cs: number | undefined): number {
+  if (cs === undefined || cs === null) return 0
+  return Math.round(cs)
+}
+
 function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[] {
   // IMPORTANTE: textbox.styles eh keyed pelo TEXTO CRU (obj.text), nao pelo
   // texto wrappeado pelo Fabric. Mas fullText aqui pode ser wrapped (com \n
@@ -579,11 +602,26 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
       if (runLength > 0 && runStyle) runs.push({ length: runLength, style: runStyle })
       const isBold = (fontWeight === "bold" || fontWeight === 700)
       const ps = toPSFont(fontFamily, isBold)
+      // Leading em px: usa leadingPt explicito da peca/matriz se setado,
+      // senao deriva de lineHeight*fontSize. Sem isso, Photoshop usa leading
+      // default da fonte (que pode ser muito diferente do que o user ve).
+      const objLeadingPt = (textbox as any).leadingPt
+      const lineH = textbox.lineHeight ?? 1.0
+      const leading = Math.round(
+        (objLeadingPt !== undefined && objLeadingPt !== null)
+          ? objLeadingPt * scale
+          : fontSize * lineH
+      )
+      const tracking = fabricCharSpacingToPsTracking(textbox.charSpacing)
       runStyle = {
         font: { name: ps.name },
         fontSize: Math.round(fontSize),
         fillColor: parseColor(fill),
         fauxBold: ps.fauxBold,
+        autoLeading: false,
+        leading,
+        tracking,
+        autoKerning: true,
       }
       prevStyleKey = styleKey
       runLength = 1
@@ -846,6 +884,21 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         styleRuns,
         boxFill: obj.fill,
       })
+      // Alinhamento real do textbox (Photoshop nao suporta "justify" no
+      // paragraphStyle, fallback pra left). Hoje hardcoded "left" — bug.
+      const psJust: "left" | "center" | "right" =
+        obj.textAlign === "center" ? "center" :
+        obj.textAlign === "right" ? "right" :
+        "left"
+      // Leading do default style (mesma logica que em buildStyleRuns).
+      const defLeadingPt = (obj as any).leadingPt
+      const defLineH = obj.lineHeight ?? 1.0
+      const defLeading = Math.round(
+        (defLeadingPt !== undefined && defLeadingPt !== null)
+          ? defLeadingPt * sY
+          : fontSize * defLineH
+      )
+      const defTracking = fabricCharSpacingToPsTracking(obj.charSpacing)
       psdLayers.push({
         name, top, left, bottom, right,
         canvas: layerCanvas,
@@ -859,9 +912,15 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             fontSize,
             fillColor: parseColor(obj.fill ?? "#000000"),
             fauxBold: ps.fauxBold,
+            // Sem esses campos, Photoshop usa leading metric default da fonte
+            // e tracking 0 — texto sai com entrelinha grande e sem char spacing.
+            autoLeading: false,
+            leading: defLeading,
+            tracking: defTracking,
+            autoKerning: true,
           },
           styleRuns,
-          paragraphStyle: { justification: "left" },
+          paragraphStyle: { justification: psJust },
         },
       })
       } catch (errText) {

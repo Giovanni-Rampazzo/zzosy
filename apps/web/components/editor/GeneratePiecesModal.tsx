@@ -78,9 +78,11 @@ async function renderPieceThumb(
     if (bgObj) fc.sendObjectToBack(bgObj)
     fc.renderAll()
 
-    // Tamanho menor para thumbnail (max 480px no maior lado)
-    const thumbScale = Math.min(480 / pieceW, 480 / pieceH, 1)
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.85, multiplier: thumbScale })
+    // Thumbnail HIGH-RES (1920px max maior lado, JPEG 0.92). Antes era 480/0.85 e
+    // ficava pixelado no preview da apresentacao e no PPTX exportado (pptxgenjs
+    // escala pra 8-12" no slide widescreen — original 480px virava 8x ampliado).
+    const thumbScale = Math.min(1920 / pieceW, 1920 / pieceH, 1)
+    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: thumbScale })
     fc.dispose()
     const res = await fetch(dataUrl)
     return await res.blob()

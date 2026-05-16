@@ -4,6 +4,7 @@ import { useRouter, useParams } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { SlideCover, SlideCode, SlideSegment, SlidePiece, SlideThanks } from "@/components/presentation/Slides"
+import { useBrand } from "@/lib/useBrand"
 
 interface Piece {
   id: string
@@ -60,6 +61,14 @@ export default function PresentationPage() {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
+  const brand = useBrand()
+  // Subset do brand passado aos slides (campos opcionais com fallback nos defaults).
+  const slideBrand = {
+    primaryColor: brand.raw.brandPrimaryColor ?? undefined,
+    logoUrl: brand.raw.brandLogoUrl ?? undefined,
+    secondaryLogoUrl: brand.raw.brandSecondaryLogoUrl ?? undefined,
+    footerText: brand.raw.brandFooterText ?? undefined,
+  }
 
   useEffect(() => {
     async function load() {
@@ -164,6 +173,7 @@ export default function PresentationPage() {
           id: p.id, name: p.name, segment: p.segment ?? null, copy: p.copy ?? null,
           imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
         })),
+        brand: slideBrand,
       })
     } catch (e: any) {
       console.error("[exportPPTX]", e)
@@ -235,22 +245,29 @@ export default function PresentationPage() {
         padding: "32px 24px 80px",
       }}>
         <div style={{
-          display: "flex", flexDirection: "column", gap: 24,
-          maxWidth: 935, margin: "0 auto",
+          display: "flex", flexDirection: "column", gap: 28,
+          maxWidth: 1400, width: "100%",
+          margin: "0 auto",
         }}>
           <SlideRow num={++slideNum} total={totalSlides} label="Capa">
-            <SlideCover />
+            <SlideCover brand={slideBrand} />
           </SlideRow>
 
           <SlideRow num={++slideNum} total={totalSlides} label="Código + Nome da campanha">
-            <SlideCode campaignName={campaign.name} code={campaign.code ?? null} />
+            <SlideCode
+              campaignName={campaign.name}
+              code={campaign.code ?? null}
+              brand={slideBrand}
+              campaignId={campaign.id}
+              onCampaignChange={(next) => setCampaign(c => c ? { ...c, ...(next.name !== undefined ? { name: next.name } : {}), ...(next.code !== undefined ? { code: next.code } : {}) } : c)}
+            />
           </SlideRow>
 
           {groups.map((group, gi) => (
             <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               {group.segment !== null && (
                 <SlideRow num={++slideNum} total={totalSlides} label={`Segmento: ${group.segment}`}>
-                  <SlideSegment segment={group.segment} />
+                  <SlideSegment segment={group.segment} brand={slideBrand} />
                 </SlideRow>
               )}
               {group.pieces.flatMap(p => {
@@ -287,6 +304,7 @@ export default function PresentationPage() {
                         copy={p.copy ?? null}
                         pieceId={p.id}
                         hideCard={!isLastChunk}
+                        brand={slideBrand}
                         onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
                         onStepClick={(stepIndex) => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation&stepIndex=${stepIndex}`)}
@@ -299,7 +317,7 @@ export default function PresentationPage() {
           ))}
 
           <SlideRow num={++slideNum} total={totalSlides} label="Obrigado">
-            <SlideThanks />
+            <SlideThanks brand={slideBrand} />
           </SlideRow>
         </div>
       </div>

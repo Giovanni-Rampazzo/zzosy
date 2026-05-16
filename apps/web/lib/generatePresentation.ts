@@ -29,18 +29,42 @@ interface Piece {
   steps?: Array<{ index: number; thumbnailUrl?: string | null; imageUrl?: string | null }> | null
 }
 
+export interface PptxBrand {
+  primaryColor?: string  // hex com ou sem #
+  logoUrl?: string       // path ou dataURI
+  secondaryLogoUrl?: string
+  footerText?: string
+}
+
 interface CampaignData {
   name: string
   code?: string | null
   pieces: Piece[]
+  brand?: PptxBrand
 }
 
-// Cores do template
+// Defaults do template (sobrescritos por brand do tenant quando white-label ativo)
 const YELLOW = "F5C400"
-const YELLOW_LIGHT = "F4B942" // box laranja claro arredondado dos slides 2/3
 const BG_LIGHT = "F8F8F8"
 const TEXT_DARK = "111111"
 const TEXT_GRAY = "888888"
+
+// pptxgenjs aceita hex sem '#'. Normaliza.
+function normalizeHex(h: string | undefined | null, fallback: string): string {
+  if (!h) return fallback
+  const s = h.trim().replace(/^#/, "")
+  return /^[0-9a-fA-F]{6}$/.test(s) ? s.toUpperCase() : fallback
+}
+// Lighten hex multiplicando os 3 canais por um fator (>1 = mais claro).
+// Resultado clampado em 0xFF. Usado pra gerar o "YELLOW_LIGHT" de boxes
+// arredondados no slide 2 e 3 a partir da cor primaria do brand.
+function lightenHex(hex: string, factor = 1.10): string {
+  const n = parseInt(hex, 16)
+  const r = Math.min(255, Math.round(((n >> 16) & 0xff) * factor))
+  const g = Math.min(255, Math.round(((n >> 8) & 0xff) * factor))
+  const b = Math.min(255, Math.round((n & 0xff) * factor))
+  return ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0").toUpperCase()
+}
 
 /**
  * Carrega imagem como dataURI (base64). pptxgenjs aceita dataURI direto via { data: "data:image/..." }.
@@ -65,11 +89,19 @@ async function imgToDataUri(src: string): Promise<string | null> {
   }
 }
 
+interface Palette {
+  primary: string       // hex sem '#'
+  primaryLight: string  // hex mais claro (boxes slide 2/3)
+  footerText: string
+  logoUri: string | null
+  secondaryLogoUri: string | null
+}
+
 /**
- * Footer "Classificação da informação: Uso Interno" em todos os slides.
+ * Footer (texto configuravel via brand) em todos os slides.
  */
-function addFooter(slide: any, pptx: PptxGenJS) {
-  slide.addText("Classificação da informação: Uso Interno", {
+function addFooter(slide: any, pptx: PptxGenJS, palette: Palette) {
+  slide.addText(palette.footerText, {
     x: 0, y: 7.0, w: 13.333, h: 0.4,
     fontFace: "Calibri", fontSize: 10, color: TEXT_GRAY,
     align: "center",
@@ -81,38 +113,26 @@ function addFooter(slide: any, pptx: PptxGenJS) {
  *  - Logo SUNO no topo direito
  *  - Logo UNITED CREATORS gigante embaixo
  */
-function addCoverSlide(pptx: PptxGenJS, sunoLogo: string | null, unitedLogo: string | null) {
+function addCoverSlide(pptx: PptxGenJS, palette: Palette) {
   const slide = pptx.addSlide()
   slide.background = { color: BG_LIGHT }
 
-  // Logo SUNO topo direito (830x278 = ratio 2.99). Altura ~1.0", largura 2.99"
-  if (sunoLogo) {
-    slide.addImage({ data: sunoLogo, x: 10.0, y: 0.5, w: 2.99, h: 1.0 })
+  // Logo principal topo direito (proporcional, altura fixa 1.0")
+  if (palette.logoUri) {
+    slide.addImage({ data: palette.logoUri, x: 10.0, y: 0.5, w: 2.99, h: 1.0, sizing: { type: "contain", w: 2.99, h: 1.0 } })
   } else {
-    // Fallback texto
-    slide.addText("SUNO", {
-      x: 9.5, y: 0.4, w: 2.6, h: 0.9,
-      fontFace: "Calibri", fontSize: 54, bold: true,
-      color: TEXT_DARK, align: "right", valign: "middle",
-    })
     slide.addShape("ellipse", {
       x: 12.2, y: 0.65, w: 0.45, h: 0.45,
-      fill: { color: YELLOW }, line: { color: YELLOW },
+      fill: { color: palette.primary }, line: { color: palette.primary },
     })
   }
 
-  // Logo UNITED CREATORS gigante no centro-baixo (1792x226 = ratio 7.93). Largura 12", altura 12/7.93 = 1.51"
-  if (unitedLogo) {
-    slide.addImage({ data: unitedLogo, x: 0.66, y: 5.4, w: 12.0, h: 1.51 })
-  } else {
-    slide.addText("UNITED CREATORS", {
-      x: 0.6, y: 5.2, w: 12.1, h: 1.4,
-      fontFace: "Calibri", fontSize: 80, bold: true,
-      color: TEXT_DARK, align: "left", valign: "middle",
-    })
+  // Logo grande centro-baixo (proporcional, largura 12")
+  if (palette.secondaryLogoUri) {
+    slide.addImage({ data: palette.secondaryLogoUri, x: 0.66, y: 5.4, w: 12.0, h: 1.51, sizing: { type: "contain", w: 12.0, h: 1.51 } })
   }
 
-  addFooter(slide, pptx)
+  addFooter(slide, pptx, palette)
 }
 
 /**
@@ -122,14 +142,14 @@ function addCoverSlide(pptx: PptxGenJS, sunoLogo: string | null, unitedLogo: str
  *  - "CÓDIGO CAMPANHA" bold (placeholder por enquanto)
  *  - Nome real abaixo, regular
  */
-function addCodeSlide(pptx: PptxGenJS, campaignName: string, code: string | null) {
+function addCodeSlide(pptx: PptxGenJS, palette: Palette, campaignName: string, code: string | null) {
   const slide = pptx.addSlide()
-  slide.background = { color: YELLOW }
+  slide.background = { color: palette.primary }
 
-  // Box arredondado laranja claro (60% transparente sobre amarelo)
+  // Box arredondado mais claro sobre a primary
   slide.addShape("roundRect", {
     x: 0.6, y: 4.5, w: 12.1, h: 2.0,
-    fill: { color: YELLOW_LIGHT },
+    fill: { color: palette.primaryLight },
     line: { color: "FFFFFF", width: 1 },
     rectRadius: 0.15,
   })
@@ -146,19 +166,19 @@ function addCodeSlide(pptx: PptxGenJS, campaignName: string, code: string | null
     color: "FFFFFF",
   })
 
-  addFooter(slide, pptx)
+  addFooter(slide, pptx, palette)
 }
 
 /**
  * Slide 3: Segmento
  */
-function addSegmentSlide(pptx: PptxGenJS, segment: string | null) {
+function addSegmentSlide(pptx: PptxGenJS, palette: Palette, segment: string | null) {
   const slide = pptx.addSlide()
-  slide.background = { color: YELLOW }
+  slide.background = { color: palette.primary }
 
   slide.addShape("roundRect", {
     x: 0.6, y: 5.2, w: 12.1, h: 1.2,
-    fill: { color: YELLOW_LIGHT },
+    fill: { color: palette.primaryLight },
     line: { color: "FFFFFF", width: 1 },
     rectRadius: 0.15,
   })
@@ -169,7 +189,7 @@ function addSegmentSlide(pptx: PptxGenJS, segment: string | null) {
     color: "FFFFFF",
   })
 
-  addFooter(slide, pptx)
+  addFooter(slide, pptx, palette)
 }
 
 /**
@@ -179,7 +199,7 @@ function addSegmentSlide(pptx: PptxGenJS, segment: string | null) {
  *  - Bolinha amarela top-right (decoracao)
  *  - Imagem centralizada (max 9.5 x 5.5, mantendo aspect)
  */
-function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null, stepImages?: Array<string | null>) {
+function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataUri: string | null, stepImages?: Array<string | null>) {
   const slide = pptx.addSlide()
   slide.background = { color: BG_LIGHT }
 
@@ -209,7 +229,7 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null,
   // Box amarelo nome (top-left)
   slide.addShape("roundRect", {
     x: 0.3, y: 0.3, w: nameW, h: nameH,
-    fill: { color: YELLOW }, line: { color: YELLOW },
+    fill: { color: palette.primary }, line: { color: palette.primary },
     rectRadius: 0.08,
   })
   slide.addText(name, {
@@ -230,7 +250,7 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null,
   // Bolinha amarela top-right
   slide.addShape("ellipse", {
     x: 12.5, y: 0.4, w: 0.5, h: 0.5,
-    fill: { color: YELLOW }, line: { color: YELLOW },
+    fill: { color: palette.primary }, line: { color: palette.primary },
   })
 
   // Imagem da peca + opcional card de legenda.
@@ -329,14 +349,14 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null,
     // Faixa amarela em cima (header "Legenda:")
     slide.addShape("roundRect", {
       x: CARD_X, y: AREA_Y, w: CARD_W, h: 0.4,
-      fill: { color: YELLOW }, line: { color: YELLOW },
+      fill: { color: palette.primary }, line: { color: palette.primary },
       rectRadius: 0.10,
     })
     // Pequeno rect amarelo embaixo da faixa pra "cortar" os cantos arredondados
     // de baixo (gambiarra do pptxgenjs que nao suporta border-radius parcial).
     slide.addShape("rect", {
       x: CARD_X, y: AREA_Y + 0.2, w: CARD_W, h: 0.2,
-      fill: { color: YELLOW }, line: { color: YELLOW, width: 0 },
+      fill: { color: palette.primary }, line: { color: palette.primary, width: 0 },
     })
     // Texto "Legenda:" italico no header amarelo
     slide.addText("Legenda:", {
@@ -412,28 +432,23 @@ function addPieceSlide(pptx: PptxGenJS, piece: Piece, imgDataUri: string | null,
     }
   }
 
-  addFooter(slide, pptx)
+  addFooter(slide, pptx, palette)
 }
 
 /**
  * Slide final: OBRIGADO + smiley + SUNO no topo
  */
-function addThanksSlide(pptx: PptxGenJS, sunoLogo: string | null) {
+function addThanksSlide(pptx: PptxGenJS, palette: Palette) {
   const slide = pptx.addSlide()
   slide.background = { color: BG_LIGHT }
 
-  // Logo SUNO topo direito (menor que na capa). Altura ~0.6", largura 0.6 * 2.99 = 1.79"
-  if (sunoLogo) {
-    slide.addImage({ data: sunoLogo, x: 11.0, y: 0.4, w: 1.79, h: 0.6 })
+  // Logo topo direito (proporcional)
+  if (palette.logoUri) {
+    slide.addImage({ data: palette.logoUri, x: 11.0, y: 0.4, w: 1.79, h: 0.6, sizing: { type: "contain", w: 1.79, h: 0.6 } })
   } else {
-    slide.addText("SUNO", {
-      x: 9.7, y: 0.35, w: 2.4, h: 0.7,
-      fontFace: "Calibri", fontSize: 32, bold: true,
-      color: TEXT_DARK, align: "right", valign: "middle",
-    })
     slide.addShape("ellipse", {
       x: 12.0, y: 0.5, w: 0.35, h: 0.35,
-      fill: { color: YELLOW }, line: { color: YELLOW },
+      fill: { color: palette.primary }, line: { color: palette.primary },
     })
   }
 
@@ -446,7 +461,7 @@ function addThanksSlide(pptx: PptxGenJS, sunoLogo: string | null) {
   // Carinha smiley simples (bolinha amarela com olhos)
   slide.addShape("ellipse", {
     x: 4.7, y: 5.75, w: 0.85, h: 0.85,
-    fill: { color: YELLOW }, line: { color: YELLOW },
+    fill: { color: palette.primary }, line: { color: palette.primary },
   })
   slide.addText(";)", {
     x: 4.7, y: 5.78, w: 0.85, h: 0.85,
@@ -454,7 +469,7 @@ function addThanksSlide(pptx: PptxGenJS, sunoLogo: string | null) {
     color: TEXT_DARK, align: "center", valign: "middle",
   })
 
-  addFooter(slide, pptx)
+  addFooter(slide, pptx, palette)
 }
 
 /**
@@ -484,14 +499,18 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
   pptx.title = `${data.name} - Apresentação`
   pptx.author = "ZZOSY"
 
-  // Pre-carrega logos servidos do /public/presentation. URL relativa funciona pq mesmo origin.
-  const [sunoLogo, unitedLogo] = await Promise.all([
-    imgToDataUri("/presentation/suno.png"),
-    imgToDataUri("/presentation/united-creators.png"),
-  ])
+  // Monta a palette baseada no brand do tenant (com fallback nos defaults).
+  const primary = normalizeHex(data.brand?.primaryColor, YELLOW)
+  const palette: Palette = {
+    primary,
+    primaryLight: lightenHex(primary, 1.10),
+    footerText: (data.brand?.footerText?.trim()) || "Classificação da informação: Uso Interno",
+    logoUri: await imgToDataUri(data.brand?.logoUrl?.trim() || "/presentation/suno.png"),
+    secondaryLogoUri: await imgToDataUri(data.brand?.secondaryLogoUrl?.trim() || "/presentation/united-creators.png"),
+  }
 
-  addCoverSlide(pptx, sunoLogo, unitedLogo)
-  addCodeSlide(pptx, data.name, data.code ?? null)
+  addCoverSlide(pptx, palette)
+  addCodeSlide(pptx, palette, data.name, data.code ?? null)
 
   // Pre-carrega todas as imagens em paralelo
   const imgs = await Promise.all(
@@ -533,7 +552,7 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
 
   for (const group of groups) {
     if (group.segment !== null) {
-      addSegmentSlide(pptx, group.segment)
+      addSegmentSlide(pptx, palette, group.segment)
     }
     for (const p of group.pieces) {
       const allStepImgs = stepImgsByPieceIdx.get(p.id)
@@ -556,15 +575,15 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
             __stepIndexOffset: chunkStart,
             copy: isLastChunk ? p.copy : null,
           }
-          addPieceSlide(pptx, chunkPiece, imgByPieceIdx.get(p.id) ?? null, chunk)
+          addPieceSlide(pptx, palette, chunkPiece, imgByPieceIdx.get(p.id) ?? null, chunk)
         }
       } else {
-        addPieceSlide(pptx, p, imgByPieceIdx.get(p.id) ?? null, allStepImgs)
+        addPieceSlide(pptx, palette, p, imgByPieceIdx.get(p.id) ?? null, allStepImgs)
       }
     }
   }
 
-  addThanksSlide(pptx, sunoLogo)
+  addThanksSlide(pptx, palette)
   return pptx
 }
 

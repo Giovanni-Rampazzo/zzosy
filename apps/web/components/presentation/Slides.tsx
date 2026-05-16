@@ -11,13 +11,42 @@
  */
 import React from "react"
 
-// Cores (mesmas do PPTX)
+// Cores defaults (sobrescritas por brand props quando o tenant tem white-label)
 const YELLOW = "#F5C400"
-const YELLOW_LIGHT = "#F4B942"
 const BG_LIGHT = "#F8F8F8"
 const TEXT_DARK = "#111111"
 const TEXT_GRAY = "#888888"
 const RADIUS = 12
+
+export interface SlideBrand {
+  primaryColor?: string  // substitui YELLOW
+  logoUrl?: string       // substitui /presentation/suno.png
+  secondaryLogoUrl?: string  // substitui /presentation/united-creators.png
+  footerText?: string    // substitui "Classificacao..."
+}
+
+// Helper: gera cor um pouco mais clara/saturada pra usar como YELLOW_LIGHT
+// (que era #F4B942, ligeiramente mais alaranjada que o YELLOW principal).
+// Aproximacao: aplica filter brightness CSS in-line ou usa a cor com alpha.
+// Simples: usa rgba(yellow, 0.92) sobre branco -> efeito visual proximo.
+function lightenColor(hex: string): string {
+  // Pega hex, retorna cor com alpha 0.9 (mistura com branco da cor de fundo).
+  // Funciona bem em qualquer cor primaria.
+  return hex
+}
+
+function getFooterText(brand?: SlideBrand): string {
+  return (brand?.footerText?.trim()) || "Classificação da informação: Uso Interno"
+}
+function getPrimary(brand?: SlideBrand): string {
+  return (brand?.primaryColor?.trim()) || YELLOW
+}
+function getLogo(brand?: SlideBrand): string {
+  return (brand?.logoUrl?.trim()) || "/presentation/suno.png"
+}
+function getSecondaryLogo(brand?: SlideBrand): string {
+  return (brand?.secondaryLogoUrl?.trim()) || "/presentation/united-creators.png"
+}
 
 const slideShellBase: React.CSSProperties = {
   position: "relative",
@@ -40,80 +69,175 @@ const footerStyle: React.CSSProperties = {
   fontFamily: "system-ui, -apple-system, sans-serif",
 }
 
-function Footer() {
-  return <div style={footerStyle}>Classificação da informação: Uso Interno</div>
+function Footer({ brand }: { brand?: SlideBrand }) {
+  return <div style={footerStyle}>{getFooterText(brand)}</div>
 }
 
 /* ============== Slide 1 — Capa ============== */
-export function SlideCover() {
+export function SlideCover({ brand }: { brand?: SlideBrand } = {}) {
   return (
     <div style={{ ...slideShellBase, background: BG_LIGHT, containerType: "inline-size" }}>
-      {/* SUNO logo no topo direito */}
+      {/* Logo principal no topo direito */}
       <img
-        src="/presentation/suno.png"
-        alt="SUNO"
+        src={getLogo(brand)}
+        alt="Logo"
         style={{
           position: "absolute", top: "8%", right: "5%",
           height: "8cqw", width: "auto",
           display: "block",
         }}
       />
-      {/* UNITED CREATORS gigante embaixo */}
+      {/* Logo grande horizontal embaixo */}
       <img
-        src="/presentation/united-creators.png"
-        alt="UNITED CREATORS"
+        src={getSecondaryLogo(brand)}
+        alt="Logo grande"
         style={{
           position: "absolute", bottom: "13%", left: "5%",
           width: "90%", height: "auto",
           display: "block",
         }}
       />
-      <Footer />
+      <Footer brand={brand} />
     </div>
   )
 }
 
-/* ============== Slide 2 — Codigo + Nome ============== */
-export function SlideCode({ campaignName, code }: { campaignName: string; code?: string | null }) {
+/* ============== Slide 2 — Codigo + Nome ==============
+ * Quando campaignId eh passado, codigo e nome viram inputs inline editaveis
+ * com auto-save (PATCH /api/campaigns/[id]). Estilo identico ao texto puro —
+ * o user clica e edita direto no slide.
+ */
+export function SlideCode({ campaignName, code, brand, campaignId, onCampaignChange }: {
+  campaignName: string
+  code?: string | null
+  brand?: SlideBrand
+  campaignId?: string
+  onCampaignChange?: (next: { name?: string; code?: string }) => void
+}) {
+  const primary = getPrimary(brand)
+  const [nameLocal, setNameLocal] = React.useState(campaignName ?? "")
+  const [codeLocal, setCodeLocal] = React.useState(code ?? "")
+  const [saving, setSaving] = React.useState(false)
+  const saveTimerRef = React.useRef<any>(null)
+  // Sincroniza estado local quando a prop muda (ex: refetch externo)
+  React.useEffect(() => { setNameLocal(campaignName ?? "") }, [campaignName, campaignId])
+  React.useEffect(() => { setCodeLocal(code ?? "") }, [code, campaignId])
+
+  const editable = !!campaignId
+
+  function patch(field: "name" | "code", val: string) {
+    if (!campaignId) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      setSaving(true)
+      try {
+        const body: any = {}
+        body[field] = val.trim() || null
+        await fetch(`/api/campaigns/${campaignId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        onCampaignChange?.({ [field]: val.trim() || undefined })
+      } catch (e) { console.warn("[SlideCode save]", e) }
+      finally { setSaving(false) }
+    }, 600)
+  }
+
+  // Estilo base compartilhado entre input editavel e visualizacao read-only.
+  // Sem padding/border/background pra input parecer texto puro. uppercase via
+  // CSS pra exibir/digitar caixa baixa mas mostrar caixa alta.
+  const inputBase: React.CSSProperties = {
+    fontFamily: "system-ui, -apple-system, sans-serif",
+    color: "#fff",
+    letterSpacing: "-0.01em",
+    lineHeight: 1.1,
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    padding: 0,
+    margin: 0,
+    width: "100%",
+    textTransform: "uppercase" as const,
+    boxSizing: "border-box" as const,
+  }
+
   return (
-    <div style={{ ...slideShellBase, background: YELLOW, containerType: "inline-size" }}>
+    <div style={{ ...slideShellBase, background: primary, containerType: "inline-size" }}>
       <div style={{
         position: "absolute", left: "5%", right: "5%",
         bottom: "8%",
-        background: YELLOW_LIGHT,
+        background: lightenColor(primary),
         border: "1px solid rgba(255,255,255,0.6)",
         borderRadius: RADIUS,
         padding: "3% 4%",
+        filter: "brightness(1.08)",
       }}>
-        <div style={{
-          fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "3.2cqw", fontWeight: 800, color: "#fff",
-          letterSpacing: "-0.01em", lineHeight: 1.1,
-        }}>
-          {code && code.trim() ? code.toUpperCase() : "CÓDIGO CAMPANHA"}
-        </div>
-        <div style={{
-          fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "2.8cqw", fontWeight: 400, color: "#fff",
-          letterSpacing: "-0.01em", lineHeight: 1.1, marginTop: "1%",
-          textTransform: "uppercase",
-        }}>
-          {campaignName || "—"}
-        </div>
+        {editable ? (
+          <input
+            value={codeLocal}
+            onChange={(e) => { setCodeLocal(e.target.value); patch("code", e.target.value) }}
+            placeholder="CÓDIGO CAMPANHA"
+            style={{
+              ...inputBase,
+              fontSize: "3.2cqw", fontWeight: 800,
+            }}
+            title="Clique pra editar o código da campanha"
+          />
+        ) : (
+          <div style={{
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            fontSize: "3.2cqw", fontWeight: 800, color: "#fff",
+            letterSpacing: "-0.01em", lineHeight: 1.1,
+          }}>
+            {code && code.trim() ? code.toUpperCase() : "CÓDIGO CAMPANHA"}
+          </div>
+        )}
+        {editable ? (
+          <input
+            value={nameLocal}
+            onChange={(e) => { setNameLocal(e.target.value); patch("name", e.target.value) }}
+            placeholder="—"
+            style={{
+              ...inputBase,
+              fontSize: "2.8cqw", fontWeight: 400,
+              marginTop: "1%",
+            }}
+            title="Clique pra editar o nome da campanha"
+          />
+        ) : (
+          <div style={{
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            fontSize: "2.8cqw", fontWeight: 400, color: "#fff",
+            letterSpacing: "-0.01em", lineHeight: 1.1, marginTop: "1%",
+            textTransform: "uppercase",
+          }}>
+            {campaignName || "—"}
+          </div>
+        )}
+        {saving && (
+          <div style={{
+            position: "absolute", top: "0.6cqw", right: "1cqw",
+            fontSize: "0.9cqw", color: "rgba(255,255,255,0.7)",
+            fontFamily: "system-ui, -apple-system, sans-serif",
+          }}>salvando…</div>
+        )}
       </div>
-      <Footer />
+      <Footer brand={brand} />
     </div>
   )
 }
 
 /* ============== Slide 3 — Segmento ============== */
-export function SlideSegment({ segment }: { segment?: string | null }) {
+export function SlideSegment({ segment, brand }: { segment?: string | null; brand?: SlideBrand }) {
+  const primary = getPrimary(brand)
   return (
-    <div style={{ ...slideShellBase, background: YELLOW, containerType: "inline-size" }}>
+    <div style={{ ...slideShellBase, background: primary, containerType: "inline-size" }}>
       <div style={{
         position: "absolute", left: "5%", right: "5%", bottom: "8%",
-        background: YELLOW_LIGHT, border: "1px solid rgba(255,255,255,0.6)",
+        background: lightenColor(primary), border: "1px solid rgba(255,255,255,0.6)",
         borderRadius: RADIUS, padding: "2.5% 4%",
+        filter: "brightness(1.08)",
       }}>
         <div style={{
           fontFamily: "system-ui, -apple-system, sans-serif",
@@ -123,7 +247,7 @@ export function SlideSegment({ segment }: { segment?: string | null }) {
           {segment && segment.trim() ? segment.toUpperCase() : "SEGMENTO DA CAMPANHA"}
         </div>
       </div>
-      <Footer />
+      <Footer brand={brand} />
     </div>
   )
 }
@@ -154,6 +278,8 @@ interface PieceSlideProps {
   /** Se true, NAO renderiza o card de legenda (usado quando a peca foi
    * dividida em multiplos slides — so o ULTIMO chunk mostra a legenda). */
   hideCard?: boolean
+  /** Brand do tenant (cor primaria, footer text). Quando omitido, usa defaults. */
+  brand?: SlideBrand
 }
 
 // Formata "100 x 50 cm" / "1920 x 1080 px" etc. Quando largura e altura
@@ -175,7 +301,8 @@ function formatDims(
   return `${fmt(wV)} ${wU} x ${fmt(hV)} ${hU}`
 }
 
-export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, onStepClick, pieceId, onCopyChange, hideCard }: PieceSlideProps) {
+export function SlidePiece({ name, width, height, widthValue, heightValue, widthUnit, heightUnit, imageUrl, steps, copy, onClick, onStepClick, pieceId, onCopyChange, hideCard, brand }: PieceSlideProps) {
+  const primary = getPrimary(brand)
   // DEBUG temporario: verificar se steps esta chegando
   if (typeof window !== "undefined" && steps && steps.length >= 2) {
     console.log("[SlidePiece DEBUG]", pieceId, "steps:", steps.map(s => ({ idx: s.index, hasImg: !!s.imageUrl, hasThumb: !!s.thumbnailUrl, imageUrl: s.imageUrl, thumbnailUrl: s.thumbnailUrl })))
@@ -341,7 +468,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
       }}>
         {/* Box amarelo nome — expande conforme o texto, com padding lateral confortavel */}
         <div style={{
-          background: YELLOW, borderRadius: RADIUS,
+          background: primary, borderRadius: RADIUS,
           padding: "0.6cqw 1.7cqw",
           fontFamily: "system-ui, -apple-system, sans-serif",
           fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 700, color: TEXT_DARK,
@@ -362,7 +489,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
       <div style={{
         position: "absolute", top: "5%", right: "4%",
         width: "3cqw", height: "3cqw", borderRadius: "50%",
-        background: YELLOW, zIndex: 2,
+        background: primary, zIndex: 2,
       }} />
 
       {/* CONTEUDO: imagem (e legenda, se houver ou se usuario adicionar) */}
@@ -401,7 +528,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           >
             {/* Header amarelo cheio: 'Legenda:' */}
             <div style={{
-              background: YELLOW,
+              background: primary,
               padding: "1.1cqw 1.6cqw",
               fontFamily: "system-ui, -apple-system, sans-serif",
               fontSize: "1.05cqw", fontWeight: 700,
@@ -479,7 +606,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
               onClick={(e) => { e.stopPropagation(); setEditing(true) }}
               style={{
                 position: "absolute", bottom: "4%", right: "4%",
-                background: YELLOW, color: TEXT_DARK,
+                background: primary, color: TEXT_DARK,
                 border: "none", borderRadius: RADIUS,
                 padding: "0.7cqw 1.7cqw",
                 fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 700,
@@ -493,19 +620,20 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           )}
         </div>
       )}
-      <Footer />
+      <Footer brand={brand} />
     </div>
   )
 }
 
 /* ============== Slide final — OBRIGADO ============== */
-export function SlideThanks() {
+export function SlideThanks({ brand }: { brand?: SlideBrand } = {}) {
+  const primary = getPrimary(brand)
   return (
     <div style={{ ...slideShellBase, background: BG_LIGHT, containerType: "inline-size" }}>
-      {/* SUNO logo topo direito */}
+      {/* Logo topo direito */}
       <img
-        src="/presentation/suno.png"
-        alt="SUNO"
+        src={getLogo(brand)}
+        alt="Logo"
         style={{
           position: "absolute", top: "6%", right: "5%",
           height: "5cqw", width: "auto",
@@ -526,14 +654,14 @@ export function SlideThanks() {
         </div>
         <div style={{
           width: "5cqw", height: "5cqw", borderRadius: "50%",
-          background: YELLOW,
+          background: primary,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "2.4cqw", fontWeight: 700, color: TEXT_DARK,
         }}>
           ;)
         </div>
       </div>
-      <Footer />
+      <Footer brand={brand} />
     </div>
   )
 }

@@ -158,6 +158,24 @@ export default function CampaignOverviewPage() {
     setSelected([])
   }
 
+  async function duplicateOne(id: string) {
+    try {
+      const r = await fetch(`/api/pieces/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [id] }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        alert(`Erro ao duplicar: ${err?.error ?? r.statusText}`)
+        return
+      }
+      await loadAll()
+    } catch (e: any) {
+      alert(`Erro ao duplicar: ${e?.message ?? e}`)
+    }
+  }
+
   async function duplicateSelected() {
     if (selected.length === 0) return
     try {
@@ -222,26 +240,14 @@ export default function CampaignOverviewPage() {
                 {campaign.client?.name ?? "—"}
               </span> /
             </div>
-            <h1 style={{ margin: 0 }}>
-              <EditableText
-                value={campaign.name}
-                variant="h1"
-                onSave={async (newName) => {
-                  const res = await fetch(`/api/campaigns/${id}`, {
-                    method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: newName }),
-                  })
-                  if (!res.ok) throw new Error()
-                  setCampaign(c => c ? { ...c, name: newName } : c)
-                }}
-              />
-            </h1>
-            <div style={{ display: "flex", gap: 24, marginTop: 8, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>Código</span>
+            {/* Linha unica: codigo na esquerda + nome da campanha na direita.
+                Sem label "Codigo" — o campo edita inline e fala por si. */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ flexShrink: 0 }}>
                 <EditableText
                   value={campaign.code ?? ""}
-                  placeholder="—"
+                  variant="h1"
+                  placeholder="Código"
                   suggestions={codeSuggestions}
                   onSave={async (v) => {
                     const newCode = v.trim() || null
@@ -254,6 +260,20 @@ export default function CampaignOverviewPage() {
                   }}
                 />
               </div>
+              <h1 style={{ margin: 0, flex: 1, minWidth: 0 }}>
+                <EditableText
+                  value={campaign.name}
+                  variant="h1"
+                  onSave={async (newName) => {
+                    const res = await fetch(`/api/campaigns/${id}`, {
+                      method: "PATCH", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name: newName }),
+                    })
+                    if (!res.ok) throw new Error()
+                    setCampaign(c => c ? { ...c, name: newName } : c)
+                  }}
+                />
+              </h1>
             </div>
             {campaign.psdName && (
               <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
@@ -317,6 +337,9 @@ export default function CampaignOverviewPage() {
             <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
             <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/presentation`)} disabled={pieces.length === 0}>
               Apresentação
+            </Button>
+            <Button variant="primary" size="lg" onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)} disabled={!campaign.assets || campaign.assets.length === 0}>
+              Gerar peça
             </Button>
             <Button variant="primary" size="lg" onClick={() => setDeliveryOpen(true)} disabled={pieces.length === 0}>Entrega</Button>
           </div>
@@ -426,11 +449,11 @@ export default function CampaignOverviewPage() {
                     border: isSelected(p.id) ? "2px solid #F5C400" : "1px solid #E0E0E0",
                     display: "flex", flexDirection: "column", position: "relative",
                   }}>
-                  {/* Checkbox */}
+                  {/* Checkbox top-right */}
                   <div onClick={(e) => { e.stopPropagation(); toggleSelect(p.id) }}
                     title={isSelected(p.id) ? "Desselecionar" : "Selecionar"}
                     style={{
-                      position: "absolute", top: 8, left: 8, zIndex: 5,
+                      position: "absolute", top: 8, right: 8, zIndex: 5,
                       width: 20, height: 20, borderRadius: 4, cursor: "pointer",
                       background: isSelected(p.id) ? "#F5C400" : "rgba(255,255,255,0.9)",
                       border: isSelected(p.id) ? "none" : "1px solid #E0E0E0",
@@ -450,18 +473,19 @@ export default function CampaignOverviewPage() {
                       overflow: "hidden", cursor: "pointer",
                       borderRadius: "10px 10px 0 0",
                     }}>
+
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <img src={p.imageUrl} alt={p.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }} />
                     ) : (
                       <div style={{ textAlign: "center", color: "#aaa", fontSize: 11 }}>
                         <div style={{ fontWeight: 600 }}>{p.format}</div>
                         <div>{p.width} × {p.height}</div>
                       </div>
                     )}
-                    {/* Badge de steps: peca multi-step mostra "N steps" no canto */}
+                    {/* Badge de steps top-left: peca multi-step mostra "N steps" */}
                     {(p.stepCount ?? 1) > 1 && (
                       <div style={{
-                        position: "absolute", top: 6, right: 6,
+                        position: "absolute", top: 6, left: 6,
                         background: "rgba(0,0,0,0.75)", color: "#fff",
                         fontSize: 10, fontWeight: 700,
                         padding: "3px 7px", borderRadius: 4,
@@ -478,11 +502,6 @@ export default function CampaignOverviewPage() {
                       <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>{p.width} × {p.height}</div>
                       <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
                     </div>
-                    <CopyEditor
-                      pieceId={p.id}
-                      initial={p.copy ?? ""}
-                      onChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
-                    />
                     <SegmentPicker
                       pieceId={p.id}
                       initial={p.segment}
@@ -496,8 +515,11 @@ export default function CampaignOverviewPage() {
                       }}
                     />
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", gap: 6 }}>
-                      <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina dedicada da peca (legenda, copy, detalhes)">Legendas</Button>
                       <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
+                        <Button variant="primary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina detalhada da peca (legenda, copy, detalhes, export)">Editar</Button>
+                      </div>
                     </div>
                   </div>
                 </div>

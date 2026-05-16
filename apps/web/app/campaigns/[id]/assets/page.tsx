@@ -125,14 +125,19 @@ export default function CampaignAssetsPage() {
       if (!t) return "Novo texto"
       return t.length > 64 ? t.substring(0, 64) + "…" : t
     })()
+    // Colapsa pra 1 unico span com o newText, preservando o style do primeiro
+    // span existente (que reflete o styling visivel do texto inteiro).
+    // Antes mantinhamos spans[1..N] inalterados, mas isso fazia o texto final
+    // virar newText + texto_dos_outros_spans (acrescentava conteudo apos editar).
+    function rebuildSpans(prev: any[]): any[] {
+      const baseStyle = prev?.[0]?.style ?? { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" }
+      return [{ text: newText, style: baseStyle }]
+    }
     setCampaign({
       ...campaign,
       assets: campaign.assets.map(a => {
         if (a.id !== assetId) return a
-        const spans = parseContent(a.content)
-        const newSpans = spans.length
-          ? [{ ...spans[0], text: newText }, ...spans.slice(1)]
-          : [{ text: newText, style: { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" } }]
+        const newSpans = rebuildSpans(parseContent(a.content))
         return { ...a, content: newSpans, value: newText, label: newLabel }
       })
     })
@@ -141,10 +146,7 @@ export default function CampaignAssetsPage() {
     setSavingMap(m => ({ ...m, [assetId]: true }))
     saveTimers.current[assetId] = setTimeout(async () => {
       const asset = campaign.assets.find(a => a.id === assetId)
-      const spans = parseContent(asset?.content)
-      const newSpans = spans.length
-        ? [{ ...spans[0], text: newText }, ...spans.slice(1)]
-        : [{ text: newText, style: { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" } }]
+      const newSpans = rebuildSpans(parseContent(asset?.content))
       await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

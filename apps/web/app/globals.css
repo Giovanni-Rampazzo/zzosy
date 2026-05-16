@@ -12,3 +12,15 @@ html, body { margin:0; padding:0; background:#F5F5F0; color:#111111; }
 .canvas-container {
   margin: 0 auto !important;
 }
+
+/* Setas dos inputs numericos SEMPRE visiveis (nao somem quando o mouse sai).
+   Default do Chrome/Safari mostra so no hover/focus — preferencia do usuario
+   eh sempre visivel. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1 !important;
+  -webkit-appearance: inner-spin-button;
+}
+input[type="number"] {
+  -moz-appearance: number-input;
+}

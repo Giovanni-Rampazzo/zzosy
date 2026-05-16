@@ -155,7 +155,7 @@ export default function PiecePage() {
   return (
     <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
       <TopNav />
-      <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 24px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
 
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
@@ -174,25 +174,40 @@ export default function PiecePage() {
           </div>
         </div>
 
-        {/* PREVIEW DA PEÇA — em cima, compacto pra dar foco no copy abaixo */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 12, marginBottom: 20 }}>
+        {/* Layout 2 colunas: preview a esquerda (sticky), form a direita.
+            Em telas estreitas mantém empilhado via grid-template responsivo. */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gap: 20,
+          alignItems: "start",
+        }}>
+        {/* PREVIEW DA PEÇA — coluna esquerda, sticky pra acompanhar scroll do form */}
+        <div style={{
+          background: "white", borderRadius: 10, border: "1px solid #E0E0E0",
+          padding: 16,
+          position: "sticky", top: 24,
+        }}>
           <div style={{
-            height: 140, background: "#F5F5F0", borderRadius: 6,
+            minHeight: 420, background: "#F5F5F0", borderRadius: 6,
             display: "flex", alignItems: "center", justifyContent: "center",
             overflow: "hidden",
           }}>
             {piece.imageUrl ? (
               <img src={`${piece.imageUrl}?v=${Date.now()}`} alt={piece.name ?? "Peça"}
-                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                style={{ maxWidth: "100%", maxHeight: 560, objectFit: "contain" }} />
             ) : (
               <div style={{ color: "#aaa", fontSize: 13 }}>Sem preview gerado ainda</div>
             )}
           </div>
         </div>
 
+        {/* COLUNA DIREITA: form (legenda + outros + abrir editor) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
         {/* CAMPO LEGENDAS — hero da pagina: foco maximo aqui. Hora do redator brilhar */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 28, marginBottom: 20 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "16px 24px" }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
             Legenda / Copy
             <span style={{ fontSize: 10, color: "#bbb", fontWeight: 500, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
               {copy.length} {copy.length === 1 ? "caractere" : "caracteres"}
@@ -202,10 +217,10 @@ export default function PiecePage() {
             value={copy}
             onChange={e => setCopy(e.target.value)}
             placeholder="Ex: Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black"
-            rows={14}
+            rows={6}
             style={{
               width: "100%",
-              padding: "14px 16px",
+              padding: "10px 14px",
               border: "1px solid #E0E0E0",
               borderRadius: 6,
               fontSize: 15,
@@ -214,7 +229,7 @@ export default function PiecePage() {
               boxSizing: "border-box",
               fontFamily: "inherit",
               resize: "vertical",
-              minHeight: 280,
+              minHeight: 140,
             }}
           />
           <div style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>
@@ -268,9 +283,12 @@ export default function PiecePage() {
         </div>
 
         {/* Abrir editor */}
-        <div style={{ marginTop: 16 }}>
+        <div>
           <Button variant="primary" size="lg" className="w-full" onClick={() => router.push(`/editor?campaignId=${piece.campaignId}&pieceId=${piece.id}`)}>Abrir no Editor</Button>
         </div>
+
+        </div>{/* fim coluna direita */}
+        </div>{/* fim grid 2 cols */}
       </div>
     </div>
   )

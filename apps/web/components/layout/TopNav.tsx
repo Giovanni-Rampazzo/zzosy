@@ -2,6 +2,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut, useSession } from "next-auth/react"
+import { useBrand } from "@/lib/useBrand"
 
 const navLinks = [
   { href: "/dashboard", label: "Clientes" },
@@ -15,10 +16,19 @@ const navLinks = [
 export function TopNav() {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const brand = useBrand()
+  const accent = brand.primaryColor
 
   return (
     <nav style={{height:52,background:"#111111",display:"flex",alignItems:"center",padding:"0 24px",gap:28,flexShrink:0,zIndex:50}}>
-      <span style={{color:"#F5C400",fontWeight:700,fontSize:15,letterSpacing:2,marginRight:8}}>ZZOSY</span>
+      {/* Brand: logo customizado (se houver) OU nome em texto. */}
+      <Link href="/dashboard" style={{display:"flex",alignItems:"center",gap:8,textDecoration:"none",marginRight:8}}>
+        {brand.hasCustomLogo ? (
+          <img src={brand.logoUrl} alt={brand.name} style={{height:24,width:"auto",objectFit:"contain"}} />
+        ) : (
+          <span style={{color:accent,fontWeight:700,fontSize:15,letterSpacing:2}}>{brand.name}</span>
+        )}
+      </Link>
       {navLinks.map(link => (
         <Link
           key={link.href}
@@ -29,7 +39,7 @@ export function TopNav() {
             fontSize: 12,
             fontWeight: 500,
             paddingBottom: 2,
-            borderBottom: pathname?.startsWith(link.href) ? "2px solid #F5C400" : "2px solid transparent",
+            borderBottom: pathname?.startsWith(link.href) ? `2px solid ${accent}` : "2px solid transparent",
           }}
         >
           {link.label}
@@ -44,7 +54,7 @@ export function TopNav() {
             fontSize: 12,
             fontWeight: 500,
             paddingBottom: 2,
-            borderBottom: pathname?.startsWith("/admin") ? "2px solid #F5C400" : "2px solid transparent",
+            borderBottom: pathname?.startsWith("/admin") ? `2px solid ${accent}` : "2px solid transparent",
           }}
         >
           Admin
@@ -56,7 +66,7 @@ export function TopNav() {
       </Link>
       <div
         onClick={() => signOut({ callbackUrl: "/login" })}
-        style={{width:28,height:28,borderRadius:"50%",background:"#F5C400",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#111111",cursor:"pointer"}}
+        style={{width:28,height:28,borderRadius:"50%",background:accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#111111",cursor:"pointer"}}
       >
         {session?.user?.name?.[0]?.toUpperCase() ?? "G"}
       </div>

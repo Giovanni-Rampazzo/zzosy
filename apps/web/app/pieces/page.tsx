@@ -99,6 +99,9 @@ function PiecesContent() {
             campaignId={campaignId}
             clientId={campaignClientId}
             activeTab="pieces"
+            inlineActions={
+              <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${campaignId}/presentation`)}>Apresentação</Button>
+            }
           />
         )}
         <div className="flex items-center justify-between mb-6">

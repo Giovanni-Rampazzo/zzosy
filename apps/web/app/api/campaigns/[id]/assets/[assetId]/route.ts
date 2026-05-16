@@ -17,6 +17,33 @@ function spansToText(spans: any[]): string {
   return Array.isArray(spans) ? spans.map(s => s?.text ?? "").join("") : ""
 }
 
+// Migra overrides.text quando asset.content muda. Preserva a estrutura de
+// quebras (\n) em termos de "tokens por linha": pega N tokens da nova asset
+// text por linha, onde N e' a quantidade de tokens da linha original. Sobras
+// vao pra ultima linha. Robust contra edicoes char-level (palavras mudam mas
+// boundaries continuam fazendo sentido).
+function migrateOverrideText(oldOverrideText: string, newAssetCleanText: string): string {
+  if (!oldOverrideText.includes("\n")) return ""
+  const oldLines = oldOverrideText.split("\n")
+  const lineTokenCounts = oldLines.map(line =>
+    line.trim().split(/\s+/).filter(t => t.length > 0).length
+  )
+  const newTokens = newAssetCleanText.trim().split(/\s+/).filter(t => t.length > 0)
+  if (newTokens.length === 0) return ""
+  const newLines: string[] = []
+  let cursor = 0
+  for (let i = 0; i < lineTokenCounts.length - 1; i++) {
+    const take = lineTokenCounts[i]
+    const lineTokens = newTokens.slice(cursor, cursor + take)
+    cursor += take
+    newLines.push(lineTokens.join(" "))
+  }
+  newLines.push(newTokens.slice(cursor).join(" "))
+  // Remove linhas vazias do fim (quando newTokens.length < total esperado)
+  while (newLines.length > 1 && newLines[newLines.length - 1] === "") newLines.pop()
+  return newLines.join("\n")
+}
+
 export async function PUT(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -73,10 +100,20 @@ export async function PUT(req: Request, ctx: Ctx) {
     }
     let kvTouched = false
     const newKvLayers = kvLayers.map((l: any) => {
-      if (l?.assetId === assetId && l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
-        const migrated = migrateStyles(oldText, newText, l.overrides.styles)
+      if (l?.assetId !== assetId) return l
+      const newOverrides = { ...(l.overrides ?? {}) }
+      let layerChanged = false
+      if (l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
+        newOverrides.styles = migrateStyles(oldText, newText, l.overrides.styles)
+        layerChanged = true
+      }
+      if (typeof l.overrides?.text === "string" && l.overrides.text.includes("\n")) {
+        newOverrides.text = migrateOverrideText(l.overrides.text, newText)
+        layerChanged = true
+      }
+      if (layerChanged) {
         kvTouched = true
-        return { ...l, overrides: { ...l.overrides, styles: migrated } }
+        return { ...l, overrides: newOverrides }
       }
       return l
     })
@@ -86,23 +123,27 @@ export async function PUT(req: Request, ctx: Ctx) {
   }
 
   const pieceUpdates: Array<{ id: string; data: string }> = []
-  // Pecas a invalidar thumbnail (imageUrl = null) — todas que usam esse asset.
-  // Sem isso, lista de pecas mostra thumb stale com texto antigo apos editar /assets.
-  const pieceInvalidateThumb: Array<string> = []
   if (textChanged) {
     for (const p of pieces) {
       let pdata: any = null
       try { pdata = typeof p.data === "string" ? JSON.parse(p.data as string) : p.data } catch {}
       if (!pdata || !Array.isArray(pdata.layers)) continue
-      // Se a peca usa esse asset (em qualquer layer), invalida o thumb
-      const usesAsset = pdata.layers.some((l: any) => l?.assetId === assetId)
-      if (usesAsset) pieceInvalidateThumb.push(p.id)
       let touched = false
       const newLayers = pdata.layers.map((l: any) => {
-        if (l?.assetId === assetId && l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
-          const migrated = migrateStyles(oldText, newText, l.overrides.styles)
+        if (l?.assetId !== assetId) return l
+        const newOverrides = { ...(l.overrides ?? {}) }
+        let layerChanged = false
+        if (l.overrides?.styles && Object.keys(l.overrides.styles).length > 0) {
+          newOverrides.styles = migrateStyles(oldText, newText, l.overrides.styles)
+          layerChanged = true
+        }
+        if (typeof l.overrides?.text === "string" && l.overrides.text.includes("\n")) {
+          newOverrides.text = migrateOverrideText(l.overrides.text, newText)
+          layerChanged = true
+        }
+        if (layerChanged) {
           touched = true
-          return { ...l, overrides: { ...l.overrides, styles: migrated } }
+          return { ...l, overrides: newOverrides }
         }
         return l
       })
@@ -113,25 +154,15 @@ export async function PUT(req: Request, ctx: Ctx) {
     }
   }
 
-  // Executar tudo numa única transação atômica
+  // Executar tudo numa única transação atômica.
+  // NOTA: NAO invalidamos imageUrl das pecas (= null) — antes faziamos isso pra
+  // forcar regeneracao, mas a presentation/preview mostrava "(Imagem nao
+  // disponivel)" quando o user nao reabria a peca no editor. Preferivel manter
+  // o thumb com texto stale ate o user abrir a peca (que regera).
   const ops: any[] = [prisma.campaignAsset.update({ where: { id: assetId }, data })]
   if (kvUpdate) ops.push(prisma.keyVision.update({ where: { campaignId }, data: kvUpdate }))
   for (const u of pieceUpdates) {
     ops.push(prisma.piece.update({ where: { id: u.id }, data: { data: u.data } }))
-  }
-  // Invalida thumb (imageUrl = null) das pecas afetadas. So da update se ainda
-  // nao foi atualizada por pieceUpdates (pra nao duplicar). Lista de pecas vai
-  // mostrar placeholder ate user abrir a peca (que re-gera o thumb).
-  const updatedIds = new Set(pieceUpdates.map(u => u.id))
-  for (const pid of pieceInvalidateThumb) {
-    if (updatedIds.has(pid)) {
-      // Ja vai atualizar 'data' — adicionar imageUrl: null junto
-      const existing = ops.find((op: any) => op?.args?.where?.id === pid)
-      // Simplificacao: faz update separado pra clareza
-      ops.push(prisma.piece.update({ where: { id: pid }, data: { imageUrl: null } }))
-    } else {
-      ops.push(prisma.piece.update({ where: { id: pid }, data: { imageUrl: null } }))
-    }
   }
 
   try {
