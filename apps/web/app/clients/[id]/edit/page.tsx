@@ -111,6 +111,10 @@ export default function EditClientPage() {
   const fontFileInputRef = useRef<HTMLInputElement | null>(null)
   const [savingBrand, setSavingBrand] = useState(false)
   const [brandSavedAt, setBrandSavedAt] = useState<number | null>(null)
+  // Progresso do cascade de atualização das peças após save de brandColors.
+  // null = sem cascade ativo. total/done = renderizando. touched (no fim) =
+  // mostra "N peças atualizadas" por alguns segundos.
+  const [cascadeProgress, setCascadeProgress] = useState<{ total: number; done: number; touched?: number } | null>(null)
   const brandFirstLoadRef = useRef(true)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -181,6 +185,23 @@ export default function EditClientPage() {
         // Avisa outros componentes abertos (editor de peça, etc) que o brand
         // do cliente mudou pra refetch sem precisar de reload manual.
         try { window.dispatchEvent(new CustomEvent("zzosy:client-brand-updated", { detail: { clientId: id } })) } catch {}
+        // Cascateia mudança em todas peças do cliente: atualiza piece.data
+        // resolvendo brand refs + regenera thumbs. Roda em background sem
+        // bloquear UI; usuário vê progresso via state cascadeProgress.
+        ;(async () => {
+          try {
+            const { cascadeBrandUpdate } = await import("@/lib/cascadeBrandUpdate")
+            setCascadeProgress({ total: 0, done: 0 })
+            const touched = await cascadeBrandUpdate(id, brandColors, (p) => {
+              setCascadeProgress({ total: p.total, done: p.done })
+            })
+            setCascadeProgress({ total: 0, done: 0, touched: touched.length })
+            setTimeout(() => setCascadeProgress(null), 4000)
+          } catch (e) {
+            console.warn("[brand-cascade] erro:", e)
+            setCascadeProgress(null)
+          }
+        })()
       } else {
         setError("Falha ao salvar identidade visual.")
       }
@@ -648,6 +669,10 @@ export default function EditClientPage() {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <div style={{fontSize:14,fontWeight:700}}>Identidade visual</div>
             {savingBrand ? <span style={{fontSize:10,color:"#888"}}>salvando…</span>
+              : cascadeProgress && cascadeProgress.total > 0 && cascadeProgress.done < cascadeProgress.total ?
+                  <span style={{fontSize:10,color:"#888"}}>atualizando peças… {cascadeProgress.done}/{cascadeProgress.total}</span>
+              : cascadeProgress && typeof cascadeProgress.touched === "number" ?
+                  <span style={{fontSize:10,color:"#15803d"}}>✓ {cascadeProgress.touched} peça{cascadeProgress.touched === 1 ? "" : "s"} atualizada{cascadeProgress.touched === 1 ? "" : "s"}</span>
               : brandSavedAt ? <span style={{fontSize:10,color:"#15803d"}}>✓ salvo</span>
               : null}
           </div>
