@@ -39,6 +39,18 @@ interface Campaign {
   keyVision: { bgColor: string; layers: Layer[] | null; width?: number; height?: number } | null
 }
 
+// BG vira layer real (igual Photoshop). Pode ter varias empilhadas; ordem
+// no array = ordem visual (idx 0 = fundo, ultimo = mais em cima dos BGs,
+// mas TODOS abaixo de qualquer asset). Hoje so suporta 'solid'; gradient/
+// image/pattern vem nas fases BG-3/4.
+type BgLayerData = {
+  kind: "solid"
+  color: string
+  opacity: number
+  hidden?: boolean
+  locked?: boolean
+}
+
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 const LW = 220, PW = 260, TH = 48, BH = 44
 const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
@@ -389,6 +401,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     setActiveStepIndex(value)
   }
   const [selected, setSelected] = useState<any>(null)
+  // selectedRef: usado em handlers/funcoes (changeBg, addBgLayer, etc) que
+  // precisam ler o selected atual sem depender de stale closure de re-renders.
+  const selectedRef = useRef<any>(null)
+  useEffect(() => { selectedRef.current = selected }, [selected])
   const [hexInput, setHexInput] = useState<string>("#111111")
   const [bgHexInput, setBgHexInput] = useState<string>("#ffffff")
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
@@ -424,6 +440,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const bgColorRef = useRef("#ffffff")
   const [bgOpacity, setBgOpacity] = useState(1)
   const bgOpacityRef = useRef(1)
+  // BG-2: multiplas BG layers empilhaveis (igual Photoshop). bgLayersRef =
+  // fonte da verdade dos dados; bgRectsRef = Rects no canvas (mesma ordem).
+  // bgColorRef/bgOpacityRef/bgRef continuam refletindo o BG[0] (fundo) pra
+  // back-compat com codigo legacy de save/export/import.
+  const bgLayersRef = useRef<BgLayerData[]>([{ kind: "solid", color: "#ffffff", opacity: 1 }])
+  const bgRectsRef = useRef<any[]>([])
   const [modal, setModal] = useState(false)
   // openGenerator=true vem do botao "Gerar peca" em /campaigns/[id]: depois do
   // init do canvas, abre o modal automaticamente. Polling pq isInitialized eh
@@ -473,6 +495,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const bop = typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1
         bgOpacityRef.current = bop
         setBgOpacity(bop)
+        // Migra legacy → bgLayers[]: se pdata.bgLayers existe usa, senao cria
+        // um BG solid com bgColor/bgOpacity (compat com pieces antigas).
+        bgLayersRef.current = Array.isArray(pdata?.bgLayers) && pdata.bgLayers.length > 0
+          ? pdata.bgLayers.map((l: any) => ({
+              kind: "solid",
+              color: typeof l.color === "string" ? l.color : "#ffffff",
+              opacity: typeof l.opacity === "number" ? l.opacity : 1,
+              hidden: l.hidden === true ? true : undefined,
+              locked: l.locked === true ? true : undefined,
+            }))
+          : [{ kind: "solid", color: bg, opacity: bop }]
         // STEPS: inicializa buffer dos steps inativos + indice ativo.
         // O save grava TODOS os steps em data.steps (incluindo o ativo). No load,
         // precisamos:
@@ -515,6 +548,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         canvasHRef.current = ch
         setBgColor(bg)
         setCanvasW(cw); setCanvasH(ch)
+        // Matriz so suporta 1 BG por enquanto (multi-BG eh por peca em V1)
+        bgLayersRef.current = [{ kind: "solid", color: bg, opacity: 1 }]
         if (camp.assets?.length) setAssetId(camp.assets[0].id)
         setCampaign(camp)
       }
@@ -926,23 +961,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(fabricRef as any).__canvasFullW = fullW
       ;(fabricRef as any).__canvasFullH = fullH
 
-      // BG: selecionavel (igual Photoshop — vira uma layer real), mas com
-      // controls de transform desabilitados (nao faz sentido scale/rotate BG).
-      // excludeFromExport mantido: BG eh persistido separado em piece.data via
-      // bgColor/bgOpacity, nao no JSON dos objetos.
-      const bg = new Rect({
-        left: 0, top: 0, width: cw, height: ch,
-        fill: bgColorRef.current, opacity: bgOpacityRef.current,
-        selectable: true, evented: true,
-        hasControls: false, hasBorders: true,
-        lockMovementX: true, lockMovementY: true,
-        lockScalingX: true, lockScalingY: true, lockRotation: true,
-        excludeFromExport: true,
-      })
-      ;(bg as any).__isBg = true
-      ;(bg as any).__assetLabel = "Background"
-      bgRef.current = bg
-      fc.add(bg)
+      // BG: vira layers REAIS (igual Photoshop). Cria 1 Rect por entry em
+      // bgLayersRef. Idx 0 = fundo; ultimo = topo do grupo de BGs (ainda
+      // abaixo de qualquer asset). bgRef.current aponta pro fundo (compat
+      // com save/export legacy que assumiam 1 BG so).
+      const bgRects: any[] = []
+      for (let i = 0; i < bgLayersRef.current.length; i++) {
+        const ld = bgLayersRef.current[i]
+        const r = new Rect({
+          left: 0, top: 0, width: cw, height: ch,
+          fill: ld.color, opacity: ld.opacity,
+          visible: ld.hidden !== true,
+          selectable: true, evented: true,
+          hasControls: false, hasBorders: true,
+          lockMovementX: true, lockMovementY: true,
+          lockScalingX: true, lockScalingY: true, lockRotation: true,
+          excludeFromExport: true,
+        })
+        ;(r as any).__isBg = true
+        ;(r as any).__bgIdx = i
+        ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
+        ;(r as any).__hidden = ld.hidden === true
+        ;(r as any).__locked = ld.locked === true
+        fc.add(r)
+        bgRects.push(r)
+      }
+      bgRectsRef.current = bgRects
+      bgRef.current = bgRects[0]
 
       // BLEED MASK dinamico: 4 overlays cobrindo tudo fora da peca dentro
       // do canvas. Tamanho deles depende do zoom e do espaco disponivel.
@@ -1301,12 +1346,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const bgOpToLoad = (loadIdx !== null && loadIdx !== savedActiveIdx)
           ? (typeof savedAllSteps[loadIdx]?.bgOpacity === "number" ? savedAllSteps[loadIdx].bgOpacity : 1)
           : (typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1)
-        // Atualiza bgColor/bgOpacity pra refletir o step carregado (se diferente do salvo).
+        const bgLayersToLoadRaw: any = (loadIdx !== null && loadIdx !== savedActiveIdx)
+          ? savedAllSteps[loadIdx]?.bgLayers
+          : pdata?.bgLayers
+        const bgLayersToLoad: BgLayerData[] = Array.isArray(bgLayersToLoadRaw) && bgLayersToLoadRaw.length > 0
+          ? bgLayersToLoadRaw.map((l: any) => ({
+              kind: "solid",
+              color: typeof l.color === "string" ? l.color : "#ffffff",
+              opacity: typeof l.opacity === "number" ? l.opacity : 1,
+              hidden: l.hidden === true ? true : undefined,
+              locked: l.locked === true ? true : undefined,
+            }))
+          : [{ kind: "solid", color: bgToLoad, opacity: bgOpToLoad }]
+        // Atualiza bgLayersRef SEMPRE — canvas init le isso pra criar os Rects.
+        // bgColorRef/bgOpacityRef sao espelhos do BG[0] pra back-compat.
+        bgLayersRef.current = bgLayersToLoad
+        bgColorRef.current = bgLayersToLoad[0].color
+        bgOpacityRef.current = bgLayersToLoad[0].opacity
         if (loadIdx !== null && loadIdx !== savedActiveIdx) {
-          bgColorRef.current = bgToLoad
-          setBgColor(bgToLoad)
-          bgOpacityRef.current = bgOpToLoad
-          setBgOpacity(bgOpToLoad)
+          setBgColor(bgLayersToLoad[0].color)
+          setBgOpacity(bgLayersToLoad[0].opacity)
         }
 
         if (pdata?.version === 2 && Array.isArray(layersToLoad)) {
@@ -1648,22 +1707,35 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         for (const orphan of orphansAfterRestore) fc.remove(orphan)
       }
 
-      // CRITICO 3: bg tem excludeFromExport=true, fica fora do snapshot. Re-adiciona no fundo.
+      // CRITICO 3: BGs tem excludeFromExport=true, ficam fora do snapshot.
+      // Re-cria todos os BG layers (idx 0 = fundo).
       const { Rect } = await import("fabric")
-      const newBg = new Rect({
-        left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-        fill: bgColorRef.current, opacity: bgOpacityRef.current,
-        selectable: true, evented: true,
-        hasControls: false, hasBorders: true,
-        lockMovementX: true, lockMovementY: true,
-        lockScalingX: true, lockScalingY: true, lockRotation: true,
-        excludeFromExport: true,
-      })
-      ;(newBg as any).__isBg = true
-      ;(newBg as any).__assetLabel = "Background"
-      bgRef.current = newBg
-      fc.add(newBg)
-      fc.sendObjectToBack(newBg)
+      const newBgRects: any[] = []
+      for (let i = 0; i < bgLayersRef.current.length; i++) {
+        const ld = bgLayersRef.current[i]
+        const r = new Rect({
+          left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
+          fill: ld.color, opacity: ld.opacity,
+          visible: ld.hidden !== true,
+          selectable: true, evented: true,
+          hasControls: false, hasBorders: true,
+          lockMovementX: true, lockMovementY: true,
+          lockScalingX: true, lockScalingY: true, lockRotation: true,
+          excludeFromExport: true,
+        })
+        ;(r as any).__isBg = true
+        ;(r as any).__bgIdx = i
+        ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
+        ;(r as any).__hidden = ld.hidden === true
+        ;(r as any).__locked = ld.locked === true
+        fc.add(r)
+        newBgRects.push(r)
+      }
+      bgRectsRef.current = newBgRects
+      bgRef.current = newBgRects[0]
+      // sendObjectToBack manda pro fundo. Iterando do topo pro fundo, o ultimo
+      // a ser enviado fica no fundo absoluto — assim idx 0 termina no fundo.
+      for (let i = newBgRects.length - 1; i >= 0; i--) fc.sendObjectToBack(newBgRects[i])
       // Recria os bleed overlays — tambem ficam fora do snapshot (excludeFromExport)
       // e precisam ser re-adicionados no topo do z-stack apos restore.
       const fc2 = fc
@@ -2731,7 +2803,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }
           return layer
         })
-      const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, layers: newLayers }
+      const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current, layers: newLayers }
       // (bgOpacity acima persiste a opacidade do BG no piece.data — back-compat:
       // peças antigas sem o campo são tratadas como 1.0 no load)
       // STEPS: mesmo tratamento do performSave. Sem isso, "Salvar e sair"
@@ -2750,7 +2822,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const oldActive = oldSteps[i] ?? {}
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
+              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
               // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
               // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
@@ -2880,7 +2952,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           return
         }
       }
-      await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
+      await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
         // Thumb HIGH-RES (1920px max, JPEG 0.92). 480/0.85 ficava pixelado no
         // preview de apresentacao e PPTX (slide widescreen tem 960px de largura
@@ -2920,9 +2992,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   // Serializa o canvas ATUAL no formato {layers, bgColor} pra salvar como
   // snapshot em inactiveStepsRef. Replica a logica do performSave modo peca.
-  function serializeCurrentStep(): { layers: any[]; bgColor: string; bgOpacity: number; imageUrl?: string | null; thumbnailUrl?: string | null } {
+  function serializeCurrentStep(): { layers: any[]; bgColor: string; bgOpacity: number; bgLayers: BgLayerData[]; imageUrl?: string | null; thumbnailUrl?: string | null } {
     const fc = fabricRef.current
-    if (!fc) return { layers: [], bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current }
+    if (!fc) return { layers: [], bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current }
     const layers = fc.getObjects()
       .filter((o: any) => {
         if (o.__isBg) return false
@@ -2978,33 +3050,65 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const fallbackImg = (!oldSteps.length && activeStepIndexRef.current === 0) ? (p?.imageUrl ?? null) : null
     return {
       layers,
-      bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
+      bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
       imageUrl: oldActive.imageUrl ?? fallbackImg,
       thumbnailUrl: oldActive.thumbnailUrl ?? fallbackImg,
     }
   }
 
   // Aplica um step {layers, bgColor} no canvas: limpa tudo e re-cria.
-  async function loadStepIntoCanvas(step: { layers: any[]; bgColor: string; bgOpacity?: number }) {
+  async function loadStepIntoCanvas(step: { layers: any[]; bgColor: string; bgOpacity?: number; bgLayers?: BgLayerData[] }) {
     const fc = fabricRef.current
     const camp = campaignRef.current
     if (!fc || !camp) return
     // Marca que esta aplicando para guards nao salvarem durante load
     isApplyingHistory.current = true
     try {
-      // Limpa todos os objetos exceto bg.
-      const toRemove = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+      // Limpa TODOS os objetos (inclusive BGs) exceto bleed overlay — vamos
+      // recriar os BGs do step abaixo.
+      const toRemove = fc.getObjects().filter((o: any) => !o.__isBleedOverlay)
       toRemove.forEach((o: any) => fc.remove(o))
-      // Aplica bgColor + bgOpacity.
-      bgColorRef.current = step.bgColor
-      setBgColor(step.bgColor)
-      const stepOp = typeof step.bgOpacity === "number" ? step.bgOpacity : 1
-      bgOpacityRef.current = stepOp
-      setBgOpacity(stepOp)
-      if (bgRef.current) {
-        bgRef.current.set("fill", step.bgColor)
-        bgRef.current.set("opacity", stepOp)
+      // Migra legacy → bgLayers se necessario
+      const stepBgLayers: BgLayerData[] = Array.isArray(step.bgLayers) && step.bgLayers.length > 0
+        ? step.bgLayers.map((l: any) => ({
+            kind: "solid",
+            color: typeof l.color === "string" ? l.color : "#ffffff",
+            opacity: typeof l.opacity === "number" ? l.opacity : 1,
+            hidden: l.hidden === true ? true : undefined,
+            locked: l.locked === true ? true : undefined,
+          }))
+        : [{ kind: "solid", color: step.bgColor, opacity: typeof step.bgOpacity === "number" ? step.bgOpacity : 1 }]
+      bgLayersRef.current = stepBgLayers
+      // Atualiza espelhos legacy (BG[0])
+      bgColorRef.current = stepBgLayers[0].color
+      setBgColor(stepBgLayers[0].color)
+      bgOpacityRef.current = stepBgLayers[0].opacity
+      setBgOpacity(stepBgLayers[0].opacity)
+      // Re-cria todos os Rects BG
+      const { Rect } = await import("fabric")
+      const newBgRects: any[] = []
+      for (let i = 0; i < stepBgLayers.length; i++) {
+        const ld = stepBgLayers[i]
+        const r = new Rect({
+          left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
+          fill: ld.color, opacity: ld.opacity, visible: ld.hidden !== true,
+          selectable: true, evented: true,
+          hasControls: false, hasBorders: true,
+          lockMovementX: true, lockMovementY: true,
+          lockScalingX: true, lockScalingY: true, lockRotation: true,
+          excludeFromExport: true,
+        })
+        ;(r as any).__isBg = true
+        ;(r as any).__bgIdx = i
+        ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
+        ;(r as any).__hidden = ld.hidden === true
+        ;(r as any).__locked = ld.locked === true
+        fc.add(r)
+        newBgRects.push(r)
       }
+      bgRectsRef.current = newBgRects
+      bgRef.current = newBgRects[0]
+      for (let i = newBgRects.length - 1; i >= 0; i--) fc.sendObjectToBack(newBgRects[i])
       // Re-cria layers.
       for (const layer of step.layers) {
         if (layer.embedded) {
@@ -3535,7 +3639,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         version: 2,
         width: canvasWRef.current,
         height: canvasHRef.current,
-        bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
+        bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
         layers: newLayers,
       }
       // STEPS: se a peca tem multiplos steps, persiste TODOS em data.steps[].
@@ -3564,7 +3668,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const oldActive = oldSteps[i] ?? {}
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
+              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
               // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
               // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
@@ -3671,7 +3775,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       await fetch(`/api/campaigns/${campaignId}/key-vision`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
+        body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
       })
       // Nota: lastOverride dos assets ja foi atualizado em tempo real via
       // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
@@ -3735,17 +3839,111 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     doSave()
   }
 
+  // Indice do BG atualmente sendo editado no painel. Se um BG esta selecionado
+  // no canvas, eh o __bgIdx dele. Senao, eh o 0 (fundo) — UX conservadora.
+  function currentBgIdx(): number {
+    const sel = selectedRef.current as any
+    if (sel?.__isBg && typeof sel.__bgIdx === "number") return sel.__bgIdx
+    return 0
+  }
+
   function changeBg(c: string) {
-    const bg = bgRef.current; const fc = fabricRef.current
-    if (!bg || !fc) return
-    bg.set("fill", c); fc.renderAll(); setBgColor(c); bgColorRef.current = c; doSave()
+    const fc = fabricRef.current
+    if (!fc) return
+    const idx = currentBgIdx()
+    const rect = bgRectsRef.current[idx]
+    if (!rect) return
+    rect.set("fill", c)
+    fc.renderAll()
+    if (bgLayersRef.current[idx]) bgLayersRef.current[idx].color = c
+    setBgColor(c)
+    setBgHexInput(c)
+    if (idx === 0) bgColorRef.current = c // back-compat (BG[0] = espelho legacy)
+    doSave()
   }
 
   function changeBgOpacity(op: number) {
     const v = Math.max(0, Math.min(1, op))
-    const bg = bgRef.current; const fc = fabricRef.current
-    if (!bg || !fc) return
-    bg.set("opacity", v); fc.renderAll(); setBgOpacity(v); bgOpacityRef.current = v; doSave()
+    const fc = fabricRef.current
+    if (!fc) return
+    const idx = currentBgIdx()
+    const rect = bgRectsRef.current[idx]
+    if (!rect) return
+    rect.set("opacity", v)
+    fc.renderAll()
+    if (bgLayersRef.current[idx]) bgLayersRef.current[idx].opacity = v
+    setBgOpacity(v)
+    if (idx === 0) bgOpacityRef.current = v // back-compat
+    doSave()
+  }
+
+  // Adiciona um BG layer ACIMA do atualmente selecionado (ou do topo dos BGs
+  // se nenhum estiver selecionado). Default: solid branco opacity 1.
+  async function addBgLayer() {
+    const fc = fabricRef.current
+    if (!fc) return
+    const { Rect } = await import("fabric")
+    const insertAt = (() => {
+      const sel = selectedRef.current as any
+      if (sel?.__isBg && typeof sel.__bgIdx === "number") return sel.__bgIdx + 1
+      return bgLayersRef.current.length
+    })()
+    const newLayer: BgLayerData = { kind: "solid", color: "#ffffff", opacity: 1 }
+    bgLayersRef.current.splice(insertAt, 0, newLayer)
+    const r = new Rect({
+      left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
+      fill: newLayer.color, opacity: newLayer.opacity,
+      selectable: true, evented: true,
+      hasControls: false, hasBorders: true,
+      lockMovementX: true, lockMovementY: true,
+      lockScalingX: true, lockScalingY: true, lockRotation: true,
+      excludeFromExport: true,
+    })
+    ;(r as any).__isBg = true
+    fc.add(r)
+    bgRectsRef.current.splice(insertAt, 0, r)
+    // Re-numera __bgIdx + labels + manda BGs pro fundo na ordem correta
+    rebuildBgStack(fc)
+    fc.setActiveObject(r)
+    setSelected(r)
+    refreshLayers(fc)
+    doSave()
+  }
+
+  // Remove o BG layer no idx informado. Nao permite remover o ULTIMO (sempre
+  // tem pelo menos 1 BG — igual o PS exige um Background na pilha).
+  function removeBgLayer(idx: number) {
+    const fc = fabricRef.current
+    if (!fc) return
+    if (bgLayersRef.current.length <= 1) return // protege o ultimo
+    const rect = bgRectsRef.current[idx]
+    if (rect) fc.remove(rect)
+    bgLayersRef.current.splice(idx, 1)
+    bgRectsRef.current.splice(idx, 1)
+    rebuildBgStack(fc)
+    setSelected(null)
+    refreshLayers(fc)
+    doSave()
+  }
+
+  // Re-numera __bgIdx + labels dos Rects BG e re-empilha no canvas (idx 0
+  // no fundo, idx N no topo dos BGs mas abaixo de qualquer asset). Tambem
+  // sincroniza bgColorRef/bgOpacityRef com o BG[0] (back-compat legacy).
+  function rebuildBgStack(fc: any) {
+    for (let i = 0; i < bgRectsRef.current.length; i++) {
+      const r = bgRectsRef.current[i]
+      ;(r as any).__bgIdx = i
+      ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
+    }
+    // sendObjectToBack do topo pro fundo deixa idx 0 no fundo absoluto
+    for (let i = bgRectsRef.current.length - 1; i >= 0; i--) {
+      fc.sendObjectToBack(bgRectsRef.current[i])
+    }
+    bgRef.current = bgRectsRef.current[0]
+    if (bgLayersRef.current[0]) {
+      bgColorRef.current = bgLayersRef.current[0].color
+      bgOpacityRef.current = bgLayersRef.current[0].opacity
+    }
   }
 
   // Sincroniza hexInput com a cor efetiva (do caractere ou do textbox)
@@ -3783,6 +3981,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   // Sincroniza bgHexInput com bgColor
   useEffect(() => { setBgHexInput(bgColor) }, [bgColor])
+
+  // Sincroniza bgColor/bgOpacity state com o BG layer ATUALMENTE selecionado.
+  // Quando nada esta selecionado, mostra os valores do BG[0] (fundo) — UX
+  // conservadora: o painel sempre mostra ALGUM BG, igual antes.
+  useEffect(() => {
+    const obj = selected as any
+    let idx = 0
+    if (obj?.__isBg && typeof obj.__bgIdx === "number") idx = obj.__bgIdx
+    const layer = bgLayersRef.current[idx]
+    if (!layer) return
+    setBgColor(layer.color)
+    setBgOpacity(layer.opacity)
+  }, [selected, selectedTick])
 
   // Sincroniza fontSizeInput com o tamanho efetivo do objeto selecionado.
   // - Se ha selecao parcial dentro do textbox: usa fontSize do caractere selecionado
@@ -4430,7 +4641,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const pseudoData = {
                 version: 2,
                 width: W, height: H,
-                bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
+                bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
                 layers,
                 sourceWidth: W,
                 sourceHeight: H,
@@ -4719,7 +4930,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Propriedades</div>
         {(!selected || (selected as any).__isBg) ? (
           <div style={{ padding: 16 }}>
-            <div style={{ ...secS, color: "#F5C400", marginBottom: 12 }}>Background</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ ...secS, color: "#F5C400" }}>
+                {(selected as any)?.__isBg && typeof (selected as any).__bgIdx === "number" && (selected as any).__bgIdx > 0
+                  ? `Background ${((selected as any).__bgIdx as number) + 1}`
+                  : "Background"}
+                {bgLayersRef.current.length > 1 && (
+                  <span style={{ color: "#555", marginLeft: 6, fontWeight: 400 }}>
+                    ({((selected as any)?.__isBg && typeof (selected as any).__bgIdx === "number" ? (selected as any).__bgIdx : 0) + 1}/{bgLayersRef.current.length})
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button title="Adicionar BG layer" onClick={() => addBgLayer()}
+                  style={{ width: 22, height: 22, borderRadius: 4, background: "#1a1a1a", border: "1px solid #333", color: "#bbb", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>+</button>
+                {bgLayersRef.current.length > 1 && (selected as any)?.__isBg && (
+                  <button title="Remover este BG" onClick={() => removeBgLayer((selected as any).__bgIdx ?? 0)}
+                    style={{ width: 22, height: 22, borderRadius: 4, background: "#1a1a1a", border: "1px solid #333", color: "#bbb", cursor: "pointer", fontSize: 12, lineHeight: 1, padding: 0 }}>✕</button>
+                )}
+              </div>
+            </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
               <label style={{ width: 36, height: 36, borderRadius: 6, background: bgColor, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
                 <input
