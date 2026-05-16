@@ -4851,6 +4851,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
         </button>
         <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
+        {/* Atalho direto pra apresentacao da campanha */}
+        {campaignId && (
+          <button
+            onClick={async () => {
+              if (isDirtyRef.current) {
+                try { await saveNow() } catch (e) { console.warn("[Apresentacao] save falhou:", e) }
+              }
+              if (typeof window !== "undefined") window.location.href = `/campaigns/${campaignId}/presentation`
+            }}
+            title="Ir direto para a apresentacao desta campanha"
+            style={{ background: "transparent", border: "1px solid #444", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", color: "#aaa", marginLeft: 4 }}
+          >
+            🎬 Apresentação
+          </button>
+        )}
         {/* STEPS NAVIGATION (modo peca apenas) */}
         {isPieceMode && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8, padding: "4px 8px", background: "#1a1a1a", borderRadius: 6, border: "1px solid #2a2a2a" }}>
