@@ -12,6 +12,7 @@ import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
+import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
 
 interface Piece {
   id: string
@@ -67,6 +68,46 @@ function PiecesContent() {
     await Promise.all(selected.map(id => fetch(`/api/pieces/${id}`, { method: "DELETE" })))
     setPieces(prev => prev.filter(p => !selected.includes(p.id)))
     setSelected([])
+  }
+
+  async function deleteOne(id: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm("Apagar esta peça?")) return
+    await fetch(`/api/pieces/${id}`, { method: "DELETE" })
+    setPieces(prev => prev.filter(p => p.id !== id))
+    setSelected(prev => prev.filter(x => x !== id))
+  }
+
+  // Dialog de duplicação: pergunta o formato (manter ou trocar).
+  const [dupDialog, setDupDialog] = useState<{ ids: string[]; originalFormat?: string } | null>(null)
+
+  function duplicateOne(id: string) {
+    const p = pieces.find(x => x.id === id)
+    setDupDialog({ ids: [id], originalFormat: p?.format })
+  }
+
+  async function confirmDuplicate(mediaFormatId: string | null) {
+    if (!dupDialog) return
+    try {
+      const body: any = { ids: dupDialog.ids }
+      if (mediaFormatId) body.mediaFormatId = mediaFormatId
+      const r = await fetch(`/api/pieces/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        alert(`Erro ao duplicar: ${err?.error ?? r.statusText}`)
+        return
+      }
+      setDupDialog(null)
+      // Refetch lista pra mostrar a nova peça
+      const url = campaignId ? `/api/pieces?campaignId=${campaignId}` : "/api/pieces"
+      const fresh = await fetch(url).then(r => r.json())
+      setPieces(fresh)
+    } catch (e: any) {
+      alert(`Erro ao duplicar: ${e?.message ?? e}`)
+    }
   }
 
   // Aplica filtros (status + categoria) e ordenacao
@@ -292,7 +333,13 @@ function PiecesContent() {
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.width}×{p.height}</td>
                     <td className="px-4 py-3 text-sm text-[#888888]">{p.dpi}</td>
                     <td className="px-4 py-3"><StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} /></td>
-                    <td className="px-4 py-3 text-right"><Button variant="view" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button></td>
+                    <td className="px-4 py-3 text-right">
+                      <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                        <Button variant="view" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button>
+                        <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça">Duplicar</Button>
+                        <Button variant="danger" size="sm" onClick={(e) => deleteOne(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -305,6 +352,14 @@ function PiecesContent() {
           pieces={pieces.filter(p => selected.includes(p.id)).map(p => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height }))}
           campaignName={campaignName}
           onClose={() => setExportOpen(false)}
+        />
+      )}
+      {dupDialog && (
+        <DuplicateFormatDialog
+          count={dupDialog.ids.length}
+          originalFormat={dupDialog.originalFormat ?? null}
+          onCancel={() => setDupDialog(null)}
+          onConfirm={confirmDuplicate}
         />
       )}
     </PageShell>
