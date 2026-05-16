@@ -26,6 +26,8 @@ interface Campaign {
   assets: Asset[]
 }
 
+interface BrandColor { hex: string; name?: string | null; role?: "primary" | "secondary" }
+
 function parseContent(raw: any): any[] {
   if (!raw) return []
   if (typeof raw === "string") { try { return JSON.parse(raw) } catch { return [] } }
@@ -45,6 +47,10 @@ export default function CampaignAssetsPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [loading, setLoading] = useState(true)
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({})
+  // Cores da marca (Client.brandColors). Carregadas quando a campanha resolve
+  // o clientId. Refetch automatico no evento 'zzosy:client-brand-updated' pra
+  // refletir mudancas feitas em /clients/[id]/edit sem reload.
+  const [brandColors, setBrandColors] = useState<BrandColor[]>([])
   const newImageInputRef = useRef<HTMLInputElement>(null)
   const saveTimers = useRef<Record<string, any>>({})
 
@@ -100,6 +106,35 @@ export default function CampaignAssetsPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  // Carrega brandColors do cliente quando a campanha resolve. Refetch no
+  // evento 'zzosy:client-brand-updated' (disparado pelo /clients/[id]/edit ao
+  // salvar) pra atualizar swatches sem reload manual.
+  useEffect(() => {
+    const clientId = campaign?.client?.id
+    if (!clientId) { setBrandColors([]); return }
+    let cancelled = false
+    function fetchBrand() {
+      fetch(`/api/clients/${clientId}`, { cache: "no-store" })
+        .then(r => r.ok ? r.json() : null)
+        .then(c => {
+          if (cancelled || !c) return
+          const arr: any[] = Array.isArray(c?.brandColors) ? c.brandColors : []
+          const cleaned: BrandColor[] = arr
+            .filter(x => typeof x?.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(x.hex))
+            .map(x => ({ hex: x.hex, name: x.name ?? null, role: x.role }))
+          setBrandColors(cleaned)
+        })
+        .catch(() => { if (!cancelled) setBrandColors([]) })
+    }
+    fetchBrand()
+    function onUpdate(e: any) {
+      const detailId = e?.detail?.clientId
+      if (!detailId || detailId === clientId) fetchBrand()
+    }
+    window.addEventListener("zzosy:client-brand-updated", onUpdate)
+    return () => { cancelled = true; window.removeEventListener("zzosy:client-brand-updated", onUpdate) }
+  }, [campaign?.client?.id])
 
   async function updateAssetLabel(assetId: string, newLabel: string) {
     if (!campaign) return
@@ -237,6 +272,34 @@ export default function CampaignAssetsPage() {
           <input ref={newImageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
             onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
         </div>
+
+        {/* Cores da Marca — sempre visível quando o cliente tem alguma cor
+            cadastrada. Read-only aqui; pra editar, link pra /clients/[id]/edit. */}
+        {brandColors.length > 0 && (
+          <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "16px 20px", marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <h2 style={{ fontSize: 13, fontWeight: 700, margin: 0, color: "#111", textTransform: "uppercase", letterSpacing: 0.6 }}>Cores da Marca</h2>
+                <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>({brandColors.length})</span>
+              </div>
+              <button onClick={() => router.push(`/clients/${campaign.client.id}/edit`)}
+                style={{ background: "transparent", border: "1px solid #E0E0E0", borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: "#666", fontFamily: "inherit", textTransform: "uppercase", letterSpacing: 0.4 }}
+                title="Editar cores da marca em /clients/[id]/edit">
+                Editar
+              </button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              {brandColors.map((bc, i) => (
+                <div key={`${bc.hex}-${i}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 64 }}>
+                  <div title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
+                    style={{ width: 48, height: 48, borderRadius: 8, background: bc.hex, border: "1px solid #E0E0E0", cursor: "default" }} />
+                  <div style={{ fontSize: 11, color: "#444", fontWeight: 600, fontFamily: "monospace", textTransform: "uppercase" }}>{bc.hex}</div>
+                  {bc.name && <div style={{ fontSize: 10, color: "#888", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bc.name}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {campaign.assets.length === 0 ? (
           <div style={{ textAlign: "center", padding: "80px 0", color: "#888" }}>
