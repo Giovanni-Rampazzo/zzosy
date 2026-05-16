@@ -41,14 +41,45 @@ interface Campaign {
 
 // BG vira layer real (igual Photoshop). Pode ter varias empilhadas; ordem
 // no array = ordem visual (idx 0 = fundo, ultimo = mais em cima dos BGs,
-// mas TODOS abaixo de qualquer asset). Hoje so suporta 'solid'; gradient/
-// image/pattern vem nas fases BG-3/4.
-type BgLayerData = {
-  kind: "solid"
-  color: string
+// mas TODOS abaixo de qualquer asset).
+type BgGradientStop = { offset: number; color: string }
+type BgLayerCommon = {
   opacity: number
   hidden?: boolean
   locked?: boolean
+}
+type BgLayerData =
+  | (BgLayerCommon & { kind: "solid"; color: string })
+  | (BgLayerCommon & { kind: "gradient"; gradientType: "linear" | "radial"; angle: number; stops: BgGradientStop[] })
+
+// Constroi o `fill` pro Fabric a partir dos dados do BG. Pra gradient,
+// gera fabric.Gradient com coords calculadas pelo angulo + dimensoes do
+// canvas (raio = max(w,h)/2 garante cobertura total em qualquer angulo).
+// Convencao do angulo: 0deg = horizontal esquerda→direita; 90deg =
+// vertical cima→baixo. Mesma convencao de editores graficos modernos.
+function buildBgFill(layer: BgLayerData, w: number, h: number, Gradient: any): any {
+  if (layer.kind === "solid") return layer.color
+  if (layer.kind === "gradient") {
+    const rad = (layer.angle * Math.PI) / 180
+    const cx = w / 2, cy = h / 2
+    if (layer.gradientType === "radial") {
+      const r = Math.hypot(w, h) / 2
+      return new Gradient({
+        type: "radial",
+        coords: { x1: cx, y1: cy, x2: cx, y2: cy, r1: 0, r2: r },
+        colorStops: layer.stops.map(s => ({ offset: s.offset, color: s.color })),
+      })
+    }
+    const r = Math.max(w, h) / 2
+    const dx = Math.cos(rad) * r
+    const dy = Math.sin(rad) * r
+    return new Gradient({
+      type: "linear",
+      coords: { x1: cx - dx, y1: cy - dy, x2: cx + dx, y2: cy + dy },
+      colorStops: layer.stops.map(s => ({ offset: s.offset, color: s.color })),
+    })
+  }
+  return "#ffffff"
 }
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
@@ -965,12 +996,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // bgLayersRef. Idx 0 = fundo; ultimo = topo do grupo de BGs (ainda
       // abaixo de qualquer asset). bgRef.current aponta pro fundo (compat
       // com save/export legacy que assumiam 1 BG so).
+      const fabricForBg: any = await import("fabric")
+      const GradientForBg = fabricForBg.Gradient
       const bgRects: any[] = []
       for (let i = 0; i < bgLayersRef.current.length; i++) {
         const ld = bgLayersRef.current[i]
         const r = new Rect({
           left: 0, top: 0, width: cw, height: ch,
-          fill: ld.color, opacity: ld.opacity,
+          fill: buildBgFill(ld, cw, ch, GradientForBg),
+          opacity: ld.opacity,
           visible: ld.hidden !== true,
           selectable: true, evented: true,
           hasControls: false, hasBorders: true,
@@ -1709,13 +1743,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
       // CRITICO 3: BGs tem excludeFromExport=true, ficam fora do snapshot.
       // Re-cria todos os BG layers (idx 0 = fundo).
-      const { Rect } = await import("fabric")
+      const { Rect, Gradient } = await import("fabric") as any
       const newBgRects: any[] = []
       for (let i = 0; i < bgLayersRef.current.length; i++) {
         const ld = bgLayersRef.current[i]
         const r = new Rect({
           left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-          fill: ld.color, opacity: ld.opacity,
+          fill: buildBgFill(ld, canvasWRef.current, canvasHRef.current, Gradient),
+          opacity: ld.opacity,
           visible: ld.hidden !== true,
           selectable: true, evented: true,
           hasControls: false, hasBorders: true,
@@ -3085,13 +3120,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       bgOpacityRef.current = stepBgLayers[0].opacity
       setBgOpacity(stepBgLayers[0].opacity)
       // Re-cria todos os Rects BG
-      const { Rect } = await import("fabric")
+      const { Rect, Gradient } = await import("fabric") as any
       const newBgRects: any[] = []
       for (let i = 0; i < stepBgLayers.length; i++) {
         const ld = stepBgLayers[i]
         const r = new Rect({
           left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-          fill: ld.color, opacity: ld.opacity, visible: ld.hidden !== true,
+          fill: buildBgFill(ld, canvasWRef.current, canvasHRef.current, Gradient),
+          opacity: ld.opacity, visible: ld.hidden !== true,
           selectable: true, evented: true,
           hasControls: false, hasBorders: true,
           lockMovementX: true, lockMovementY: true,
@@ -3847,34 +3883,107 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     return 0
   }
 
-  function changeBg(c: string) {
+  // Helper unificado pra mutar o BG atualmente selecionado. Aplica updater no
+  // bgLayersRef, recalcula fill (suporta solid + gradient via buildBgFill),
+  // sincroniza espelhos legacy (BG[0]) e dispara save + re-render do painel.
+  async function updateCurrentBg(updater: (layer: BgLayerData) => BgLayerData) {
     const fc = fabricRef.current
     if (!fc) return
     const idx = currentBgIdx()
+    const current = bgLayersRef.current[idx]
+    if (!current) return
+    const next = updater(current)
+    bgLayersRef.current[idx] = next
     const rect = bgRectsRef.current[idx]
-    if (!rect) return
-    rect.set("fill", c)
-    fc.renderAll()
-    if (bgLayersRef.current[idx]) bgLayersRef.current[idx].color = c
-    setBgColor(c)
-    setBgHexInput(c)
-    if (idx === 0) bgColorRef.current = c // back-compat (BG[0] = espelho legacy)
+    if (rect) {
+      const { Gradient } = await import("fabric") as any
+      rect.set("fill", buildBgFill(next, canvasWRef.current, canvasHRef.current, Gradient))
+      rect.set("opacity", next.opacity)
+      rect.set("visible", next.hidden !== true)
+      fc.renderAll()
+    }
+    // Espelhos legacy (BG[0]) — save/export antigo continua funcionando.
+    if (idx === 0) {
+      bgOpacityRef.current = next.opacity
+      bgColorRef.current = next.kind === "solid"
+        ? next.color
+        : (next.stops[0]?.color ?? "#ffffff") // gradient: usa 1o stop como espelho
+    }
+    if (next.kind === "solid") {
+      setBgColor(next.color)
+      setBgHexInput(next.color)
+    }
+    setBgOpacity(next.opacity)
+    setSelectedTick(t => t + 1)
     doSave()
+  }
+
+  function changeBg(c: string) {
+    updateCurrentBg((l) => l.kind === "solid"
+      ? { ...l, color: c }
+      // Se eh gradient e user clicou no color picker do header "Sólido", forca solid
+      : { kind: "solid", color: c, opacity: l.opacity, hidden: l.hidden, locked: l.locked })
   }
 
   function changeBgOpacity(op: number) {
     const v = Math.max(0, Math.min(1, op))
-    const fc = fabricRef.current
-    if (!fc) return
-    const idx = currentBgIdx()
-    const rect = bgRectsRef.current[idx]
-    if (!rect) return
-    rect.set("opacity", v)
-    fc.renderAll()
-    if (bgLayersRef.current[idx]) bgLayersRef.current[idx].opacity = v
-    setBgOpacity(v)
-    if (idx === 0) bgOpacityRef.current = v // back-compat
-    doSave()
+    updateCurrentBg((l) => ({ ...l, opacity: v }))
+  }
+
+  // BG-3: troca tipo do BG (solid/gradient). Preserva o que faz sentido:
+  // ao virar gradient pela 1a vez, cria 2 stops (cor atual + preto).
+  function changeBgKind(kind: "solid" | "gradient", gradientType: "linear" | "radial" = "linear") {
+    updateCurrentBg((l) => {
+      if (kind === "solid") {
+        const color = l.kind === "solid" ? l.color : (l.stops[0]?.color ?? "#ffffff")
+        return { kind: "solid", color, opacity: l.opacity, hidden: l.hidden, locked: l.locked }
+      }
+      if (l.kind === "gradient") return { ...l, gradientType }
+      return {
+        kind: "gradient", gradientType, angle: 90,
+        stops: [{ offset: 0, color: l.color }, { offset: 1, color: "#000000" }],
+        opacity: l.opacity, hidden: l.hidden, locked: l.locked,
+      }
+    })
+  }
+
+  function changeBgGradientStop(stopIdx: number, patch: Partial<BgGradientStop>) {
+    updateCurrentBg((l) => {
+      if (l.kind !== "gradient") return l
+      const stops = l.stops.map((s, i) => i === stopIdx ? { ...s, ...patch } : s)
+        .sort((a, b) => a.offset - b.offset)
+      return { ...l, stops }
+    })
+  }
+
+  function changeBgGradientAngle(angle: number) {
+    updateCurrentBg((l) => l.kind === "gradient" ? { ...l, angle } : l)
+  }
+
+  function addBgGradientStop() {
+    updateCurrentBg((l) => {
+      if (l.kind !== "gradient") return l
+      // Adiciona stop no meio do espaco vazio mais largo entre stops vizinhos
+      const sorted = [...l.stops].sort((a, b) => a.offset - b.offset)
+      let bestGap = 0, bestMid = 0.5, bestColor = "#888888"
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const gap = sorted[i + 1].offset - sorted[i].offset
+        if (gap > bestGap) {
+          bestGap = gap
+          bestMid = (sorted[i].offset + sorted[i + 1].offset) / 2
+          // Cor interpolada entre vizinhos (so visual; user pode trocar depois)
+          bestColor = sorted[i].color
+        }
+      }
+      return { ...l, stops: [...l.stops, { offset: bestMid, color: bestColor }].sort((a, b) => a.offset - b.offset) }
+    })
+  }
+
+  function removeBgGradientStop(stopIdx: number) {
+    updateCurrentBg((l) => {
+      if (l.kind !== "gradient" || l.stops.length <= 2) return l
+      return { ...l, stops: l.stops.filter((_, i) => i !== stopIdx) }
+    })
   }
 
   // Adiciona um BG layer ACIMA do atualmente selecionado (ou do topo dos BGs
@@ -4950,37 +5059,122 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-              <label style={{ width: 36, height: 36, borderRadius: 6, background: bgColor, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                <input
-                  type="color"
-                  value={/^#[0-9a-fA-F]{6}$/.test(bgColor) ? bgColor : "#ffffff"}
-                  onChange={e => changeBg(e.target.value)}
-                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }}
-                />
-              </label>
-              <input
-                type="text"
-                value={bgHexInput}
-                onChange={e => {
-                  const v = e.target.value
-                  setBgHexInput(v)
-                  if (/^#[0-9a-fA-F]{6}$/.test(v)) changeBg(v)
-                }}
-                onBlur={() => {
-                  if (!/^#[0-9a-fA-F]{6}$/.test(bgHexInput)) setBgHexInput(bgColor)
-                }}
-                placeholder="#RRGGBB"
-                style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
-              />
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-              {SWATCHES.map(c => (
-                <div key={c} onClick={() => changeBg(c)}
-                  style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgColor.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-              ))}
-            </div>
-            {/* Opacity (igual painel de Layers do Photoshop) */}
+            {/* Tipo do BG: Sólido / Gradiente Linear / Gradiente Radial */}
+            {(() => {
+              const layer = bgLayersRef.current[currentBgIdx()]
+              const kind = layer?.kind ?? "solid"
+              const gType = layer?.kind === "gradient" ? layer.gradientType : null
+              const btnS = (active: boolean) => ({
+                flex: 1, padding: "6px 8px", fontSize: 11,
+                background: active ? "#F5C400" : "#1a1a1a",
+                color: active ? "#000" : "#888",
+                border: "1px solid " + (active ? "#F5C400" : "#333"),
+                borderRadius: 4, cursor: "pointer", fontFamily: "inherit",
+                textTransform: "uppercase" as const, letterSpacing: "0.5px",
+              })
+              return (
+                <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+                  <button style={btnS(kind === "solid")} onClick={() => changeBgKind("solid")}>Sólido</button>
+                  <button style={btnS(kind === "gradient" && gType === "linear")} onClick={() => changeBgKind("gradient", "linear")}>Linear</button>
+                  <button style={btnS(kind === "gradient" && gType === "radial")} onClick={() => changeBgKind("gradient", "radial")}>Radial</button>
+                </div>
+              )
+            })()}
+            {/* SOLID: color picker + hex + swatches */}
+            {(() => {
+              const layer = bgLayersRef.current[currentBgIdx()]
+              if (layer?.kind !== "solid") return null
+              return (
+                <>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <label style={{ width: 36, height: 36, borderRadius: 6, background: bgColor, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                      <input
+                        type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(bgColor) ? bgColor : "#ffffff"}
+                        onChange={e => changeBg(e.target.value)}
+                        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }}
+                      />
+                    </label>
+                    <input
+                      type="text"
+                      value={bgHexInput}
+                      onChange={e => {
+                        const v = e.target.value
+                        setBgHexInput(v)
+                        if (/^#[0-9a-fA-F]{6}$/.test(v)) changeBg(v)
+                      }}
+                      onBlur={() => {
+                        if (!/^#[0-9a-fA-F]{6}$/.test(bgHexInput)) setBgHexInput(bgColor)
+                      }}
+                      placeholder="#RRGGBB"
+                      style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                    {SWATCHES.map(c => (
+                      <div key={c} onClick={() => changeBg(c)}
+                        style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgColor.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                    ))}
+                  </div>
+                </>
+              )
+            })()}
+            {/* GRADIENT: stops + angulo (se linear) */}
+            {(() => {
+              const layer = bgLayersRef.current[currentBgIdx()]
+              if (layer?.kind !== "gradient") return null
+              const stops = layer.stops
+              return (
+                <>
+                  {/* Preview do gradient */}
+                  <div style={{
+                    height: 24, borderRadius: 4, border: "1px solid #333", marginBottom: 10,
+                    background: layer.gradientType === "linear"
+                      ? `linear-gradient(${layer.angle + 90}deg, ${stops.map(s => `${s.color} ${s.offset * 100}%`).join(", ")})`
+                      : `radial-gradient(circle, ${stops.map(s => `${s.color} ${s.offset * 100}%`).join(", ")})`,
+                  }} />
+                  {/* Stops */}
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Stops</span>
+                      <button onClick={() => addBgGradientStop()}
+                        style={{ background: "#1a1a1a", border: "1px solid #333", color: "#bbb", cursor: "pointer", fontSize: 11, padding: "2px 8px", borderRadius: 3 }}>+ Stop</button>
+                    </div>
+                    {stops.map((s, si) => (
+                      <div key={si} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                        <label style={{ width: 24, height: 24, borderRadius: 4, background: s.color, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                          <input type="color"
+                            value={/^#[0-9a-fA-F]{6}$/.test(s.color) ? s.color : "#ffffff"}
+                            onChange={e => changeBgGradientStop(si, { color: e.target.value })}
+                            style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }} />
+                        </label>
+                        <input type="range" min={0} max={100} step={1}
+                          value={Math.round(s.offset * 100)}
+                          onChange={e => changeBgGradientStop(si, { offset: Number(e.target.value) / 100 })}
+                          style={{ flex: 1 }} />
+                        <span style={{ width: 32, textAlign: "right", color: "#bbb", fontFamily: "monospace", fontSize: 11 }}>{Math.round(s.offset * 100)}%</span>
+                        {stops.length > 2 && (
+                          <button title="Remover stop" onClick={() => removeBgGradientStop(si)}
+                            style={{ width: 18, height: 18, borderRadius: 3, background: "transparent", border: "none", color: "#555", cursor: "pointer", fontSize: 11, padding: 0, lineHeight: 1 }}>✕</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Angulo (so linear) */}
+                  {layer.gradientType === "linear" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888", marginBottom: 14 }}>
+                      <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Ângulo</span>
+                      <input type="range" min={0} max={360} step={1}
+                        value={Math.round(layer.angle)}
+                        onChange={e => changeBgGradientAngle(Number(e.target.value))}
+                        style={{ flex: 1 }} />
+                      <span style={{ width: 36, textAlign: "right", color: "#bbb", fontFamily: "monospace" }}>{Math.round(layer.angle)}°</span>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+            {/* Opacity (sempre, igual painel de Layers do Photoshop) */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888" }}>
               <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Opacity</span>
               <input
