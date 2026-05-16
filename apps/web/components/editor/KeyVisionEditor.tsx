@@ -69,20 +69,43 @@ function psdColorToHex(color: any): string {
 }
 
 // Extrai estilo de texto dum layer PSD pra um override do layer da peca.
-// Espelho simplificado da logica de lastOverride do PsdImporter (matriz): aqui
-// soh precisamos do default style (fontFamily, fontSize, fontWeight, fill)
-// porque o texto vem do asset (indices per-char nao bateriam).
+//
+// Cores/fontes/pesos: ag-psd guarda o estilo em DOIS lugares:
+//  - td.style: "default" do layer (frequentemente VAZIO ou so com campos
+//    parciais quando o designer usou Character panel pra estilizar)
+//  - td.styleRuns[]: lista de runs (segmentos contiguos) com style proprio
+//    cada. Quando o texto tem 1 cor so, ha 1 run cobrindo tudo. Quando tem
+//    cores diferentes (ex: "Robo" rosa + "jento" verde), ha varios runs.
+// Logica: pegamos defaults do 1o styleRun (fallback td.style). Se ha >1 run,
+// distribuimos as cores per-char no texto do ASSET proporcionalmente ao texto
+// do PSD (porque o texto do asset pode ter length diferente do PSD).
 //
 // `pieceScale` = scale do espaco do PSD pro espaco da peca. `pieceW/pieceH` ja
-// vem escalados (uso so pra preencher width/height do override).
-function psdTextLayerToOverride(layer: any, pieceScale: number, pieceW: number, pieceH: number): any | null {
+// vem escalados. `assetText` = texto que vai renderizar (do asset.content) —
+// usado pra mapear styles per-char quando ha multiplos runs.
+function psdTextLayerToOverride(
+  layer: any, pieceScale: number, pieceW: number, pieceH: number, assetText: string,
+): any | null {
   const td = layer?.text
   if (!td) return null
-  const defStyle = td.style ?? {}
-  const defFontName = defStyle.font?.name ?? "Arial"
-  const defFontSize = defStyle.fontSize ?? 48
-  const defColor = defStyle.fillColor ? psdColorToHex(defStyle.fillColor) : "#000000"
-  const defWeight = (defStyle.fauxBold || defFontName.toLowerCase().includes("bold")) ? "bold" : "normal"
+  const fallbackStyle = td.style ?? {}
+  const runs: any[] = td.styleRuns ?? []
+  const primary = runs[0]?.style ?? fallbackStyle
+
+  const pickFontName = (s: any) => s?.font?.name ?? fallbackStyle?.font?.name ?? "Arial"
+  const pickFontSize = (s: any) => s?.fontSize ?? fallbackStyle?.fontSize ?? 48
+  const pickColor = (s: any) => {
+    if (s?.fillColor) return psdColorToHex(s.fillColor)
+    if (fallbackStyle?.fillColor) return psdColorToHex(fallbackStyle.fillColor)
+    return "#000000"
+  }
+  const pickWeight = (s: any, fontName: string) =>
+    (s?.fauxBold || fontName.toLowerCase().includes("bold")) ? "bold" : "normal"
+
+  const defFontName = pickFontName(primary)
+  const defFontSize = pickFontSize(primary)
+  const defColor = pickColor(primary)
+  const defWeight = pickWeight(primary, defFontName)
 
   // ag-psd retorna fontSize NO ESPACO DO TEXTO (antes da transform). A
   // transform 6-elem [a,b,c,d,e,f] aplica scale/rot/translate; pra fontSize
@@ -98,18 +121,67 @@ function psdTextLayerToOverride(layer: any, pieceScale: number, pieceW: number, 
   }
   // Compoem: textScale (PSD interno → PSD visual) * pieceScale (PSD visual → peca).
   const finalScale = textScale * pieceScale
+  const sizeOf = (s: any) => Math.max(1, Math.round(pickFontSize(s) * finalScale))
 
-  return {
+  const ov: any = {
     width: pieceW,
     height: pieceH,
     fontFamily: defFontName,
-    fontSize: Math.max(1, Math.round(defFontSize * finalScale)),
+    fontSize: sizeOf(primary),
     fontWeight: defWeight,
     fill: defColor,
     charSpacing: 0,
     lineHeight: 1.0, // Adobe-style auto leading, mesmo default de addAssetToCanvas
     textAlign: "left",
   }
+
+  // Multi-run: mapeia proporcionalmente ao texto do asset. Texto do asset pode
+  // ter qualquer length (≠ do PSD); convertemos a posicao de cada run em %
+  // do texto do PSD e aplicamos no range correspondente no texto do asset.
+  // Mantemos a estrutura linha-por-linha do Fabric (styles[lineIdx][colIdx]),
+  // pulando \n na contagem de chars estilizaveis (newlines nao tem style).
+  if (runs.length > 1 && assetText.length > 0) {
+    const psdTextLen = runs.reduce((acc, r) => acc + (r.length ?? 0), 0)
+    if (psdTextLen > 0) {
+      // Lista chars do asset com posicao (line,col) pra cada char nao-\n.
+      const cells: Array<{ line: number; col: number }> = []
+      let line = 0, col = 0
+      for (const ch of assetText) {
+        if (ch === "\n") { line++; col = 0; continue }
+        cells.push({ line, col })
+        col++
+      }
+      const assetCharLen = cells.length
+      if (assetCharLen > 0) {
+        const styles: Record<number, Record<number, any>> = {}
+        let psdCursor = 0
+        for (const run of runs) {
+          const rLen = run.length ?? 0
+          if (rLen <= 0) continue
+          const rStyle = run.style ?? {}
+          const fontName = pickFontName(rStyle)
+          const charStyle = {
+            fill: pickColor(rStyle),
+            fontSize: sizeOf(rStyle),
+            fontFamily: fontName,
+            fontWeight: pickWeight(rStyle, fontName),
+          }
+          // Range no asset proporcional ao range desse run no PSD
+          const startIdx = Math.floor((psdCursor / psdTextLen) * assetCharLen)
+          const endIdx = Math.floor(((psdCursor + rLen) / psdTextLen) * assetCharLen)
+          for (let i = startIdx; i < endIdx && i < assetCharLen; i++) {
+            const { line: ln, col: cl } = cells[i]
+            if (!styles[ln]) styles[ln] = {}
+            styles[ln][cl] = charStyle
+          }
+          psdCursor += rLen
+        }
+        if (Object.keys(styles).length > 0) ov.styles = styles
+      }
+    }
+  }
+
+  return ov
 }
 
 
@@ -3111,15 +3183,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           height: Math.round(h * scale),
           overrides: {},
         }
-        // TEXTO: extrai estilo (fonte/peso/tamanho/cor) do PSD pra overrides.
-        // NAO setamos overrides.text — addAssetToCanvas usa asset.content como
-        // fonte da verdade do texto cru. Tambem nao setamos styles per-char
-        // porque os indices dos caracteres do PSD nao batem com os do asset
-        // se o texto for diferente (caso comum: PSD = "Compre hoje", asset =
-        // "Compre amanha"). Estilo uniforme do default style do layer cobre
-        // 95% dos casos sem risco de bagunca visual.
+        // TEXTO: extrai estilo do PSD (fonte/peso/tamanho/cor + styles per-char
+        // quando ha multiplas cores) pra overrides. NAO setamos overrides.text
+        // — addAssetToCanvas usa asset.content como fonte da verdade do texto
+        // cru. styles per-char sao distribuidos PROPORCIONALMENTE no texto do
+        // asset (asset pode ter length diferente do PSD).
         if (asset.type === "TEXT" && layer.text) {
-          const ov = psdTextLayerToOverride(layer, scale, layerObj.width, layerObj.height)
+          const assetText = getSpans(asset).map(s => s.text).join("")
+          const ov = psdTextLayerToOverride(layer, scale, layerObj.width, layerObj.height, assetText)
           if (ov) layerObj.overrides = ov
         }
         try {
