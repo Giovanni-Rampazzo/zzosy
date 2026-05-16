@@ -193,6 +193,54 @@ function psdColorToHex(color: any): string {
   return "#" + [rr, gg, bb].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("")
 }
 
+// Amostra pixel central dum canvas raster; retorna null se transparente.
+function sampleHexAt(c: HTMLCanvasElement, x: number, y: number): string | null {
+  try {
+    const ctx = c.getContext("2d")
+    if (!ctx) return null
+    const cx = Math.max(0, Math.min(c.width - 1, Math.floor(x)))
+    const cy = Math.max(0, Math.min(c.height - 1, Math.floor(y)))
+    const px = ctx.getImageData(cx, cy, 1, 1).data
+    if (px[3] === 0) return null
+    const h = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")
+    return `#${h(px[0])}${h(px[1])}${h(px[2])}`
+  } catch { return null }
+}
+
+// Tenta extrair um BG layer (BgLayerData) a partir dum layer PSD top-level.
+// Suporta:
+//  - Solid Color fill layer (vectorFill.type === 'color') → BG solid exato
+//  - Gradient fill layer (vectorFill.type === 'solid' + colorStops) → BG gradient
+//  - Layer raster cobrindo canvas → BG solid amostrado (pixel central)
+// Retorna null se nao for um BG candidato.
+function extractPsdBgLayer(layer: any, psdW: number, psdH: number): BgLayerData | null {
+  if (!layer) return null
+  const vf = layer.vectorFill
+  if (vf?.type === "color" && vf.color) {
+    return { kind: "solid", color: psdColorToHex(vf.color), opacity: 1 }
+  }
+  if (vf?.type === "solid" && Array.isArray(vf.colorStops) && vf.colorStops.length >= 2) {
+    // ag-psd normaliza location pra 0..1 (apos divisao por interpolation)
+    const stops: BgGradientStop[] = vf.colorStops.map((s: any) => ({
+      offset: Math.max(0, Math.min(1, s.location ?? 0)),
+      color: psdColorToHex(s.color),
+    }))
+    // ExtraGradientInfo: style + angle. Convencao PS: angle em graus, 0=cima.
+    // Nossa convencao: 0=L→R, 90=cima→baixo. Conversao: nosso = (psd - 180) % 360
+    const psStyle = vf.style ?? "linear"
+    const gradientType: "linear" | "radial" = psStyle === "radial" ? "radial" : "linear"
+    const psAngle = typeof vf.angle === "number" ? vf.angle : 0
+    const angle = ((psAngle - 180) % 360 + 360) % 360
+    return { kind: "gradient", gradientType, angle, stops, opacity: 1 }
+  }
+  if (layer.canvas) {
+    const c = layer.canvas as HTMLCanvasElement
+    const color = sampleHexAt(c, c.width / 2, c.height / 2)
+    if (color) return { kind: "solid", color, opacity: 1 }
+  }
+  return null
+}
+
 // Extrai estilo de texto dum layer PSD pra um override do layer da peca.
 //
 // Cores/fontes/pesos: ag-psd guarda o estilo em DOIS lugares:
@@ -3360,76 +3408,47 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       const leaves = collectLeaves(psd.children ?? [])
 
-      // === BG: extrai cor solida do PSD (igual Photoshop) ===
-      // Ordem de tentativa, do mais confiavel pro mais aproximativo:
-      //  1. Solid Color FILL LAYER top-level: layer.vectorFill.type === 'color'.
-      //     Eh o jeito profissional no PS (Layer > New Fill Layer > Solid Color).
-      //     Cor sai EXATA, sem amostragem.
-      //  2. Layer raster "Background" top-level (nao-SO): amostra pixel central.
-      //     Eh o que o PS auto-cria em PSDs novos.
-      //  3. PRIMEIRO layer top-level que cobrir o canvas inteiro (raster ou
-      //     vectorFill), independente do nome — pega quem tiver embaixo de
-      //     tudo. Cobre PSDs sem "Background" nomeado.
-      //  4. Pixel central do composite (fallback final).
-      // Se tudo falhar, mantem BG atual da peca.
-      function sampleHexAt(c: HTMLCanvasElement, x: number, y: number): string | null {
-        try {
-          const ctx = c.getContext("2d")
-          if (!ctx) return null
-          const cx = Math.max(0, Math.min(c.width - 1, Math.floor(x)))
-          const cy = Math.max(0, Math.min(c.height - 1, Math.floor(y)))
-          const px = ctx.getImageData(cx, cy, 1, 1).data
-          if (px[3] === 0) return null
-          const h = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")
-          return `#${h(px[0])}${h(px[1])}${h(px[2])}`
-        } catch { return null }
-      }
-      // Extrai cor dum layer no PS (vectorFill solid OU canvas raster).
-      // Retorna null se o layer nao tiver cor solida representavel.
-      function colorFromLayer(l: any): string | null {
-        const vf = l?.vectorFill
-        if (vf?.type === "color" && vf.color) return psdColorToHex(vf.color)
-        if (l?.canvas) {
-          const c = l.canvas as HTMLCanvasElement
-          return sampleHexAt(c, c.width / 2, c.height / 2)
-        }
-        return null
-      }
-      // Layer cobre o canvas inteiro? (vectorFill ocupa toda area; raster
-      // checa bounding box ≈ tamanho do PSD com 2% de folga pra arredondamento)
+      // === BG: extrai BG layer (BgLayerData) do PSD igual Photoshop ===
+      // Ordem de tentativa (do mais confiavel pro fallback):
+      //  1. Layer "Background" top-level (nao-SO): pode ser Solid Color FILL,
+      //     Gradient FILL ou raster — extractPsdBgLayer escolhe o tipo certo
+      //  2. PRIMEIRO layer top-level que cobre o canvas inteiro
+      //  3. Pixel central do composite (cor solida fallback)
+      // Suporta SOLID, GRADIENT e raster→solid amostrado. Image fica pra V2
+      // (geraria piece.data inchada com base64 do raster gigante do PSD).
+      const psdW = psd.width || canvasWRef.current
+      const psdH = psd.height || canvasHRef.current
       function layerCoversCanvas(l: any): boolean {
-        if (l?.vectorFill?.type === "color") return true
+        if (l?.vectorFill?.type === "color" || l?.vectorFill?.type === "solid") return true
         const lw = (l?.right ?? 0) - (l?.left ?? 0)
         const lh = (l?.bottom ?? 0) - (l?.top ?? 0)
         const tol = 0.02
         return lw >= psdW * (1 - tol) && lh >= psdH * (1 - tol)
       }
-      const psdW = psd.width || canvasWRef.current
-      const psdH = psd.height || canvasHRef.current
-      let newBg: string | null = null
-      // 1+2: tenta layer "Background" top-level (qualquer tipo de fill)
+      let psdBg: BgLayerData | null = null
+      // 1: layer "Background" top-level
       for (const l of (psd.children ?? [])) {
         const isSO = !!(l as any).placedLayer
         if (l.name === "Background" && !isSO) {
-          newBg = colorFromLayer(l)
-          if (newBg) break
+          psdBg = extractPsdBgLayer(l, psdW, psdH)
+          if (psdBg) break
         }
       }
-      // 3: PRIMEIRO layer top-level que cobre o canvas (PSDs sem "Background"
-      // nomeado, mas com fill layer embaixo)
-      if (!newBg) {
+      // 2: PRIMEIRO layer top-level que cobre canvas
+      if (!psdBg) {
         for (const l of (psd.children ?? [])) {
           const isSO = !!(l as any).placedLayer
           if (isSO || l.hidden === true || l.children?.length) continue
           if (!layerCoversCanvas(l)) continue
-          newBg = colorFromLayer(l)
-          if (newBg) break
+          psdBg = extractPsdBgLayer(l, psdW, psdH)
+          if (psdBg) break
         }
       }
-      // 4: composite
-      if (!newBg && psd.canvas) {
+      // 3: composite fallback
+      if (!psdBg && psd.canvas) {
         const cc = psd.canvas as HTMLCanvasElement
-        newBg = sampleHexAt(cc, cc.width / 2, cc.height / 2) || sampleHexAt(cc, 0, 0)
+        const c = sampleHexAt(cc, cc.width / 2, cc.height / 2) || sampleHexAt(cc, 0, 0)
+        if (c) psdBg = { kind: "solid", color: c, opacity: 1 }
       }
 
       // Index de assets por nome normalizado pra match rapido
@@ -3449,12 +3468,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const toRemove = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
       for (const obj of toRemove) fc.remove(obj)
 
-      // Aplica BG do PSD (mesmo padrao do changeBg, sem o doSave — vai junto
-      // no doSaveNow() do final dessa funcao).
-      if (newBg && bgRef.current) {
-        bgRef.current.set("fill", newBg)
-        bgColorRef.current = newBg
-        setBgColor(newBg)
+      // Aplica BG do PSD via replaceBgLayers (cria novo BG layer real,
+      // suporta solid/gradient/etc). Se nada foi extraido, mantem o BG atual.
+      if (psdBg) {
+        await replaceBgLayers([psdBg])
       }
 
       let matched = 0, ignored = 0
@@ -4174,6 +4191,55 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     setSelected(null)
     refreshLayers(fc)
     doSave()
+  }
+
+  // Substitui TODA a lista de BG layers da peca (usado pelo import PSD e
+  // futuras features). Remove os Rects antigos, cria novos, atualiza
+  // bgLayersRef + bgRectsRef + espelhos legacy.
+  async function replaceBgLayers(layers: BgLayerData[]) {
+    const fc = fabricRef.current
+    if (!fc || layers.length === 0) return
+    for (const r of bgRectsRef.current) fc.remove(r)
+    bgRectsRef.current = []
+    bgLayersRef.current = layers
+    const fabricMod: any = await import("fabric")
+    const { Rect } = fabricMod
+    const newRects: any[] = []
+    for (let i = 0; i < layers.length; i++) {
+      const ld = layers[i]
+      const r = new Rect({
+        left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
+        selectable: true, evented: true,
+        hasControls: false, hasBorders: true,
+        lockMovementX: true, lockMovementY: true,
+        lockScalingX: true, lockScalingY: true, lockRotation: true,
+        excludeFromExport: true,
+      })
+      await syncBgLayerToRect(r, ld, canvasWRef.current, canvasHRef.current, fabricMod)
+      ;(r as any).__isBg = true
+      ;(r as any).__bgIdx = i
+      ;(r as any).__assetLabel = i === 0 ? "Background" : `Background ${i + 1}`
+      ;(r as any).__hidden = ld.hidden === true
+      ;(r as any).__locked = ld.locked === true
+      fc.add(r)
+      newRects.push(r)
+    }
+    bgRectsRef.current = newRects
+    bgRef.current = newRects[0]
+    // BGs sempre no fundo (idx 0 = mais embaixo)
+    for (let i = newRects.length - 1; i >= 0; i--) fc.sendObjectToBack(newRects[i])
+    // Espelhos legacy
+    bgOpacityRef.current = layers[0].opacity
+    setBgOpacity(layers[0].opacity)
+    if (layers[0].kind === "solid") {
+      bgColorRef.current = layers[0].color
+      setBgColor(layers[0].color)
+    } else if (layers[0].kind === "gradient") {
+      const c = layers[0].stops[0]?.color ?? "#ffffff"
+      bgColorRef.current = c
+      setBgColor(c)
+    }
+    fc.renderAll()
   }
 
   // Re-numera __bgIdx + labels dos Rects BG e re-empilha no canvas (idx 0
