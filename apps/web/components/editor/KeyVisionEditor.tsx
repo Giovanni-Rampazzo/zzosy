@@ -375,7 +375,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // pode estar STALE — use sempre o ref pra logica de save/step.
   const stepCountRef = useRef(1)
   const activeStepIndexRef = useRef(0)
-  const inactiveStepsRef = useRef<Array<{ layers: any[]; bgColor: string; thumbnailUrl?: string | null; imageUrl?: string | null }>>([])
+  const inactiveStepsRef = useRef<Array<{ layers: any[]; bgColor: string; bgOpacity?: number; thumbnailUrl?: string | null; imageUrl?: string | null }>>([])
   // Setters que mantem ref e state em sincrono. Use sempre estes pra mudar
   // stepCount/activeStepIndex (NUNCA setStepCount diretamente — quebra o ref).
   function setStepCountSync(next: number | ((prev: number) => number)) {
@@ -422,6 +422,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const zoomRef = useRef(0.5)
   const [bgColor, setBgColor] = useState("#ffffff")
   const bgColorRef = useRef("#ffffff")
+  const [bgOpacity, setBgOpacity] = useState(1)
+  const bgOpacityRef = useRef(1)
   const [modal, setModal] = useState(false)
   // openGenerator=true vem do botao "Gerar peca" em /campaigns/[id]: depois do
   // init do canvas, abre o modal automaticamente. Polling pq isInitialized eh
@@ -468,6 +470,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         canvasHRef.current = ph
         const bg = pdata?.bgColor ?? camp.keyVision?.bgColor ?? "#ffffff"
         bgColorRef.current = bg
+        const bop = typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1
+        bgOpacityRef.current = bop
+        setBgOpacity(bop)
         // STEPS: inicializa buffer dos steps inativos + indice ativo.
         // O save grava TODOS os steps em data.steps (incluindo o ativo). No load,
         // precisamos:
@@ -921,12 +926,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(fabricRef as any).__canvasFullW = fullW
       ;(fabricRef as any).__canvasFullH = fullH
 
+      // BG: selecionavel (igual Photoshop — vira uma layer real), mas com
+      // controls de transform desabilitados (nao faz sentido scale/rotate BG).
+      // excludeFromExport mantido: BG eh persistido separado em piece.data via
+      // bgColor/bgOpacity, nao no JSON dos objetos.
       const bg = new Rect({
         left: 0, top: 0, width: cw, height: ch,
-        fill: bgColorRef.current,
-        selectable: false, evented: false, excludeFromExport: true,
+        fill: bgColorRef.current, opacity: bgOpacityRef.current,
+        selectable: true, evented: true,
+        hasControls: false, hasBorders: true,
+        lockMovementX: true, lockMovementY: true,
+        lockScalingX: true, lockScalingY: true, lockRotation: true,
+        excludeFromExport: true,
       })
       ;(bg as any).__isBg = true
+      ;(bg as any).__assetLabel = "Background"
       bgRef.current = bg
       fc.add(bg)
 
@@ -1284,10 +1298,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const bgToLoad = (loadIdx !== null && loadIdx !== savedActiveIdx)
           ? (savedAllSteps[loadIdx]?.bgColor ?? pdata?.bgColor ?? "#ffffff")
           : (pdata?.bgColor ?? "#ffffff")
-        // Atualiza bgColor pra refletir o step carregado (se diferente do salvo).
+        const bgOpToLoad = (loadIdx !== null && loadIdx !== savedActiveIdx)
+          ? (typeof savedAllSteps[loadIdx]?.bgOpacity === "number" ? savedAllSteps[loadIdx].bgOpacity : 1)
+          : (typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1)
+        // Atualiza bgColor/bgOpacity pra refletir o step carregado (se diferente do salvo).
         if (loadIdx !== null && loadIdx !== savedActiveIdx) {
           bgColorRef.current = bgToLoad
           setBgColor(bgToLoad)
+          bgOpacityRef.current = bgOpToLoad
+          setBgOpacity(bgOpToLoad)
         }
 
         if (pdata?.version === 2 && Array.isArray(layersToLoad)) {
@@ -1633,10 +1652,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const { Rect } = await import("fabric")
       const newBg = new Rect({
         left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
-        fill: bgColorRef.current,
-        selectable: false, evented: false, excludeFromExport: true,
+        fill: bgColorRef.current, opacity: bgOpacityRef.current,
+        selectable: true, evented: true,
+        hasControls: false, hasBorders: true,
+        lockMovementX: true, lockMovementY: true,
+        lockScalingX: true, lockScalingY: true, lockRotation: true,
+        excludeFromExport: true,
       })
       ;(newBg as any).__isBg = true
+      ;(newBg as any).__assetLabel = "Background"
       bgRef.current = newBg
       fc.add(newBg)
       fc.sendObjectToBack(newBg)
@@ -2100,16 +2124,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   }
 
   function refreshLayers(fc: any) {
+    // Igual Photoshop: layers visiveis aparecem no painel, BG sempre embaixo
+    // (no fim da lista — UI renderiza top→bottom matching o z-stack do canvas).
+    const objs = fc.getObjects().filter((o: any) => !o.__isBleedOverlay)
     setLayers(
-      fc.getObjects()
-        .filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
-        .map((o: any, i: number) => ({
+      objs.map((o: any, i: number) => ({
           id: i,
           label: o.__assetLabel ?? o.type,
           type: o.type,
           obj: o,
           hidden: o.__hidden === true,
           locked: o.__locked === true,
+          isBg: o.__isBg === true,
         }))
         .reverse()
     )
@@ -2118,8 +2144,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   function moveLayer(obj: any, direction: "up" | "down") {
     const fc = fabricRef.current
     if (!fc || !obj) return
+    if ((obj as any).__isBg) return // BG fica sempre embaixo (igual Photoshop)
     if (direction === "up") fc.bringObjectForward(obj)
     else fc.sendObjectBackwards(obj)
+    // BG sempre no fundo apos qualquer reorder
+    const bgObj = fc.getObjects().find((o: any) => o.__isBg)
+    if (bgObj) fc.sendObjectToBack(bgObj)
     fc.renderAll()
     refreshLayers(fc)
     doSave()
@@ -2131,6 +2161,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   function reorderLayer(obj: any, targetVisualIndex: number) {
     const fc = fabricRef.current
     if (!fc || !obj) return
+    if ((obj as any).__isBg) return // BG nao se move (igual Photoshop)
     // Painel mostra os objetos invertidos (topo painel = topo canvas), entao o
     // indice "real" na lista de objects (de tras pra frente) eh: (total-1) - visualIdx
     const objects = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
@@ -2146,6 +2177,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (!targetObj) return
     const targetIndexInAll = allObjs.indexOf(targetObj)
     fc.moveObjectTo(obj, targetIndexInAll)
+    // BG sempre embaixo apos reorder
+    const bgObj = fc.getObjects().find((o: any) => o.__isBg)
+    if (bgObj) fc.sendObjectToBack(bgObj)
     fc.renderAll()
     refreshLayers(fc)
     doSave()
@@ -2327,7 +2361,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Usado pra gerar thumbnails de steps inativos automaticamente quando a peca
   // abre. Sem isso, o user teria que ativar cada step manualmente.
   async function renderStepOffscreenToBlob(
-    step: { layers: any[]; bgColor: string }
+    step: { layers: any[]; bgColor: string; bgOpacity?: number }
   ): Promise<Blob | null> {
     const camp = campaignRef.current
     if (!camp) return null
@@ -2697,7 +2731,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }
           return layer
         })
-      const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, layers: newLayers }
+      const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, layers: newLayers }
+      // (bgOpacity acima persiste a opacidade do BG no piece.data — back-compat:
+      // peças antigas sem o campo são tratadas como 1.0 no load)
       // STEPS: mesmo tratamento do performSave. Sem isso, "Salvar e sair"
       // gravaria a peca SEM o campo steps, destruindo todos os steps inativos.
       if (stepCountRef.current > 1) {
@@ -2714,7 +2750,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const oldActive = oldSteps[i] ?? {}
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current,
+              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
               // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
               // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
@@ -2844,7 +2880,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           return
         }
       }
-      await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
+      await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
         // Thumb HIGH-RES (1920px max, JPEG 0.92). 480/0.85 ficava pixelado no
         // preview de apresentacao e PPTX (slide widescreen tem 960px de largura
@@ -2884,9 +2920,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   // Serializa o canvas ATUAL no formato {layers, bgColor} pra salvar como
   // snapshot em inactiveStepsRef. Replica a logica do performSave modo peca.
-  function serializeCurrentStep(): { layers: any[]; bgColor: string; imageUrl?: string | null; thumbnailUrl?: string | null } {
+  function serializeCurrentStep(): { layers: any[]; bgColor: string; bgOpacity: number; imageUrl?: string | null; thumbnailUrl?: string | null } {
     const fc = fabricRef.current
-    if (!fc) return { layers: [], bgColor: bgColorRef.current }
+    if (!fc) return { layers: [], bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current }
     const layers = fc.getObjects()
       .filter((o: any) => {
         if (o.__isBg) return false
@@ -2942,14 +2978,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const fallbackImg = (!oldSteps.length && activeStepIndexRef.current === 0) ? (p?.imageUrl ?? null) : null
     return {
       layers,
-      bgColor: bgColorRef.current,
+      bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
       imageUrl: oldActive.imageUrl ?? fallbackImg,
       thumbnailUrl: oldActive.thumbnailUrl ?? fallbackImg,
     }
   }
 
   // Aplica um step {layers, bgColor} no canvas: limpa tudo e re-cria.
-  async function loadStepIntoCanvas(step: { layers: any[]; bgColor: string }) {
+  async function loadStepIntoCanvas(step: { layers: any[]; bgColor: string; bgOpacity?: number }) {
     const fc = fabricRef.current
     const camp = campaignRef.current
     if (!fc || !camp) return
@@ -2959,10 +2995,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Limpa todos os objetos exceto bg.
       const toRemove = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
       toRemove.forEach((o: any) => fc.remove(o))
-      // Aplica bgColor.
+      // Aplica bgColor + bgOpacity.
       bgColorRef.current = step.bgColor
       setBgColor(step.bgColor)
-      if (bgRef.current) bgRef.current.set("fill", step.bgColor)
+      const stepOp = typeof step.bgOpacity === "number" ? step.bgOpacity : 1
+      bgOpacityRef.current = stepOp
+      setBgOpacity(stepOp)
+      if (bgRef.current) {
+        bgRef.current.set("fill", step.bgColor)
+        bgRef.current.set("opacity", stepOp)
+      }
       // Re-cria layers.
       for (const layer of step.layers) {
         if (layer.embedded) {
@@ -3493,7 +3535,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         version: 2,
         width: canvasWRef.current,
         height: canvasHRef.current,
-        bgColor: bgColorRef.current,
+        bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
         layers: newLayers,
       }
       // STEPS: se a peca tem multiplos steps, persiste TODOS em data.steps[].
@@ -3522,7 +3564,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const oldActive = oldSteps[i] ?? {}
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current,
+              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
               // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
               // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
@@ -3629,7 +3671,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       await fetch(`/api/campaigns/${campaignId}/key-vision`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bgColor: bgColorRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
+        body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
       })
       // Nota: lastOverride dos assets ja foi atualizado em tempo real via
       // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
@@ -3697,6 +3739,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const bg = bgRef.current; const fc = fabricRef.current
     if (!bg || !fc) return
     bg.set("fill", c); fc.renderAll(); setBgColor(c); bgColorRef.current = c; doSave()
+  }
+
+  function changeBgOpacity(op: number) {
+    const v = Math.max(0, Math.min(1, op))
+    const bg = bgRef.current; const fc = fabricRef.current
+    if (!bg || !fc) return
+    bg.set("opacity", v); fc.renderAll(); setBgOpacity(v); bgOpacityRef.current = v; doSave()
   }
 
   // Sincroniza hexInput com a cor efetiva (do caractere ou do textbox)
@@ -4381,7 +4430,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const pseudoData = {
                 version: 2,
                 width: W, height: H,
-                bgColor: bgColorRef.current,
+                bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current,
                 layers,
                 sourceWidth: W,
                 sourceHeight: H,
@@ -4468,9 +4517,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             return (
               <div
                 key={i}
-                draggable={!isEditingThis}
+                draggable={!isEditingThis && !layer.isBg}
                 onDragStart={e => {
-                  if (isEditingThis) { e.preventDefault(); return }
+                  if (isEditingThis || layer.isBg) { e.preventDefault(); return }
                   setDragLayerIdx(i)
                   e.dataTransfer.effectAllowed = "move"
                   // Firefox precisa de dataTransfer.setData pra ativar drag
@@ -4656,8 +4705,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     style={{ fontSize: 12, color: isSel ? "#fff" : "#888", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
                   >{layer.label}</span>
                 )}
-                <button title="Remover" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
-                  style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
+                {!layer.isBg && (
+                  <button title="Remover" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
+                    style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
+                )}
               </div>
             )
           })}
@@ -4666,7 +4717,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
       <div style={{ ...pS, right: 0, width: PW, borderLeft: "1px solid #2a2a2a", paddingTop: TH }}>
         <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Propriedades</div>
-        {!selected ? (
+        {(!selected || (selected as any).__isBg) ? (
           <div style={{ padding: 16 }}>
             <div style={{ ...secS, color: "#F5C400", marginBottom: 12 }}>Background</div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -4693,11 +4744,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
               />
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
               {SWATCHES.map(c => (
                 <div key={c} onClick={() => changeBg(c)}
                   style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgColor.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
               ))}
+            </div>
+            {/* Opacity (igual painel de Layers do Photoshop) */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888" }}>
+              <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Opacity</span>
+              <input
+                type="range" min={0} max={100} step={1}
+                value={Math.round(bgOpacity * 100)}
+                onChange={e => changeBgOpacity(Number(e.target.value) / 100)}
+                style={{ flex: 1 }}
+              />
+              <span style={{ width: 36, textAlign: "right", color: "#bbb", fontFamily: "monospace" }}>{Math.round(bgOpacity * 100)}%</span>
             </div>
           </div>
         ) : isText ? (
