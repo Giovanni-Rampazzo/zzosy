@@ -33,6 +33,24 @@ function buildFileName(campaignName: string | undefined, piece: { name: string; 
   return [camp, midia, dims].filter(Boolean).join("_")
 }
 
+// Inverso do psdBlendToCanvas do PsdImporter: canvas globalCompositeOperation
+// → blendMode nativo do PSD (string com espaços). Pra preservar opacidade/blend
+// na round-trip ZZOSY → PSD → Photoshop.
+function canvasBlendToPsd(bm: string | undefined): string | undefined {
+  if (!bm || bm === "source-over") return undefined
+  const m: Record<string, string> = {
+    "multiply": "multiply", "screen": "screen", "overlay": "overlay",
+    "darken": "darken", "lighten": "lighten",
+    "color-dodge": "color dodge", "color-burn": "color burn",
+    "hard-light": "hard light", "soft-light": "soft light",
+    "difference": "difference", "exclusion": "exclusion",
+    "hue": "hue", "saturation": "saturation",
+    "color": "color", "luminosity": "luminosity",
+    "lighter": "linear dodge",
+  }
+  return m[bm] ?? undefined
+}
+
 // Renderiza todos os BG layers (BgLayerData[]) num CanvasRenderingContext2D.
 // Suporta solid, gradient linear/radial e image (cover/contain/fill/tile).
 // Respeita opacity, blendMode (globalCompositeOperation) e hidden.
@@ -171,7 +189,14 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
     for (const layer of sorted) {
       const asset = assetMap[layer.assetId]
       if (!asset) continue
+      // Layers hidden no PSD não devem renderizar (mas continuam no JSON pra
+      // round-trip preservar o estado).
+      if (layer.hidden === true) continue
       const overrides = layer.overrides ?? {}
+      // PSD opacity/blendMode (capturados no import) → Fabric props.
+      // Fabric aceita "opacity" 0..1 e "globalCompositeOperation" (canvas spec).
+      const layerOpacity = typeof layer.opacity === "number" ? layer.opacity : 1
+      const layerBlend = typeof layer.blendMode === "string" && layer.blendMode ? layer.blendMode : "source-over"
 
       if (asset.type === "TEXT") {
         const spans = parseContent(asset.content)
@@ -221,6 +246,8 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
           // Antes era 1.16 (Fabric default) — gerava entrelinha errada no PSD.
           lineHeight: overrides.lineHeight ?? 1.0,
           textAlign: overrides.textAlign ?? "left",
+          opacity: layerOpacity,
+          globalCompositeOperation: layerBlend,
         })
         // leadingPt: fonte da verdade pra entrelinha (Adobe-style). Aplica apos
         // o construtor pra exporter conseguir ler em buildStyleRuns.
@@ -287,6 +314,8 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
                 left: layer.posX, top: layer.posY,
                 scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1,
                 angle: layer.rotation ?? 0,
+                opacity: layerOpacity,
+                globalCompositeOperation: layerBlend,
               }))
               ie.onerror = reject
               ie.src = imgSrc
@@ -942,6 +971,12 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     const w = Math.max(1, right - left)
     const h = Math.max(1, bottom - top)
     let name = (obj as any).__assetLabel ?? obj.type ?? "Layer"
+    // Opacity/blendMode do Fabric → PSD nativo (round-trip completo).
+    // PSD opacity = 0..255; defaults (1.0 e source-over) omitidos pra não inflar JSON.
+    const psdLayerOpacity = typeof obj.opacity === "number" && obj.opacity < 1
+      ? Math.max(0, Math.min(255, Math.round(obj.opacity * 255)))
+      : undefined
+    const psdLayerBlend = canvasBlendToPsd(obj.globalCompositeOperation)
 
     if (obj.type === "textbox" || obj.type === "i-text" || obj.type === "text") {
       try {
@@ -1000,6 +1035,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       psdLayers.push({
         name, top, left, bottom, right,
         canvas: layerCanvas,
+        ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
+        ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
@@ -1068,6 +1105,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             name,
             top, left, bottom, right,
             canvas: layerCanvas,
+            ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
+            ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
             placedLayer: {
               id: linked.guid,
               type: "raster",
@@ -1089,7 +1128,11 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       }
 
       // Fallback: imagem raster comum (PNG/JPG ou SVG que nao deu pra embeddar)
-      psdLayers.push({ name, top, left, bottom, right, canvas: layerCanvas })
+      psdLayers.push({
+        name, top, left, bottom, right, canvas: layerCanvas,
+        ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
+        ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
+      })
     }
   }
 

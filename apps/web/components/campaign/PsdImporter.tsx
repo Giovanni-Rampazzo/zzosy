@@ -54,6 +54,66 @@ function collectAllLayers(
   return result
 }
 
+// Converte um BezierPath do ag-psd em SVG path "d=" attribute.
+// ag-psd BezierKnot.points = [cpLeft.x, cpLeft.y, anchor.x, anchor.y, cpRight.x, cpRight.y]
+// (coords como fração 0..1 do canvas — multiplicar por psdW/H).
+type BezierPt = { cpL: { x: number; y: number }; anchor: { x: number; y: number }; cpR: { x: number; y: number } }
+function bezierPathToSvg(path: any, psdW: number, psdH: number): string {
+  const knots = path?.knots
+  if (!Array.isArray(knots) || knots.length === 0) return ""
+  const pts: BezierPt[] = knots.map((k: any): BezierPt | null => {
+    const p = k?.points
+    if (!Array.isArray(p) || p.length < 6) return null
+    return {
+      cpL: { x: p[0] * psdW, y: p[1] * psdH },
+      anchor: { x: p[2] * psdW, y: p[3] * psdH },
+      cpR: { x: p[4] * psdW, y: p[5] * psdH },
+    }
+  }).filter((x: BezierPt | null): x is BezierPt => x !== null)
+  if (pts.length === 0) return ""
+  let d = `M ${pts[0].anchor.x.toFixed(2)} ${pts[0].anchor.y.toFixed(2)}`
+  for (let i = 1; i < pts.length; i++) {
+    const prev = pts[i - 1]
+    const cur = pts[i]
+    d += ` C ${prev.cpR.x.toFixed(2)} ${prev.cpR.y.toFixed(2)}, ${cur.cpL.x.toFixed(2)} ${cur.cpL.y.toFixed(2)}, ${cur.anchor.x.toFixed(2)} ${cur.anchor.y.toFixed(2)}`
+  }
+  if (!path.open) {
+    const last = pts[pts.length - 1]
+    const first = pts[0]
+    d += ` C ${last.cpR.x.toFixed(2)} ${last.cpR.y.toFixed(2)}, ${first.cpL.x.toFixed(2)} ${first.cpL.y.toFixed(2)}, ${first.anchor.x.toFixed(2)} ${first.anchor.y.toFixed(2)}`
+    d += " Z"
+  }
+  return d
+}
+
+// Concatena todos os paths do vectorMask num único SVG path d-attribute.
+// Boolean operations (combine/subtract/exclude/intersect) NÃO suportadas
+// completamente — apenas concatena. Sub-paths Z separados respeitam
+// fillRule "evenodd" naturalmente (forma com furo).
+function vectorMaskToSvgPath(vm: any, psdW: number, psdH: number): { d: string; bbox: { minX: number; minY: number; maxX: number; maxY: number } | null } {
+  if (!vm?.paths?.length) return { d: "", bbox: null }
+  const parts: string[] = []
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of vm.paths) {
+    const d = bezierPathToSvg(p, psdW, psdH)
+    if (!d) continue
+    parts.push(d)
+    // bbox grosseiro via anchors
+    for (const k of (p.knots ?? [])) {
+      const pts = k?.points
+      if (Array.isArray(pts) && pts.length >= 4) {
+        const ax = pts[2] * psdW, ay = pts[3] * psdH
+        if (ax < minX) minX = ax
+        if (ay < minY) minY = ay
+        if (ax > maxX) maxX = ax
+        if (ay > maxY) maxY = ay
+      }
+    }
+  }
+  if (parts.length === 0 || !isFinite(minX)) return { d: "", bbox: null }
+  return { d: parts.join(" "), bbox: { minX, minY, maxX, maxY } }
+}
+
 function buildRasterAssetMask(m: any) {
   const mLeft = m.left ?? 0
   const mTop = m.top ?? 0
@@ -65,6 +125,33 @@ function buildRasterAssetMask(m: any) {
     enabled: !m.disabled,
     raster: { dataUrl, posX: mLeft, posY: mTop, width: mRight - mLeft, height: mBottom - mTop },
   }
+}
+
+// Mapeia blendMode do PSD pra globalCompositeOperation do Canvas2D.
+// PSD usa nomes com espaço ("color dodge"); canvas usa hífen ("color-dodge").
+// "pass through" e "dissolve" não tem equivalente puro — caem em "source-over".
+function psdBlendToCanvas(bm: string | undefined): string | null {
+  if (!bm) return null
+  const m: Record<string, string> = {
+    "normal": "source-over",
+    "multiply": "multiply",
+    "screen": "screen",
+    "overlay": "overlay",
+    "darken": "darken",
+    "lighten": "lighten",
+    "color dodge": "color-dodge",
+    "color burn": "color-burn",
+    "hard light": "hard-light",
+    "soft light": "soft-light",
+    "difference": "difference",
+    "exclusion": "exclusion",
+    "hue": "hue",
+    "saturation": "saturation",
+    "color": "color",
+    "luminosity": "luminosity",
+    "linear dodge": "lighter",
+  }
+  return m[bm.toLowerCase()] ?? null
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -176,34 +263,18 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             assetMask = buildRasterAssetMask(layer.mask)
           } catch (e) { console.warn("[psd-mask] falha lendo raster mask de", name, e) }
         }
-        // Vector mask: layer.vectorMask tem paths (objetos com knots/curves).
-        // Por enquanto extraimos o bounding box como retangulo. Suporte completo
-        // a paths arbitrarios sera adicionado depois.
+        // Vector mask: layer.vectorMask tem paths bezier completos. Convertemos
+        // pra SVG path real (curvas, polígonos, formas arbitrárias). Antes
+        // extraíamos só bounding box retangular — mask saía como retângulo
+        // mesmo se o path real era um círculo ou shape custom.
         if (!assetMask && (layer as any).vectorMask?.paths?.length) {
           try {
             const vm = (layer as any).vectorMask
-            // Compute bounding box dos paths
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-            for (const p of vm.paths) {
-              const knots = p.knots ?? []
-              for (const k of knots) {
-                const pt = k.anchor ?? k.points?.[0] ?? null
-                if (pt && Array.isArray(pt) && pt.length >= 2) {
-                  // ag-psd retorna coords como fracoes 0..1 do canvas
-                  const x = pt[0] * psd.width
-                  const y = pt[1] * psd.height
-                  if (x < minX) minX = x
-                  if (y < minY) minY = y
-                  if (x > maxX) maxX = x
-                  if (y > maxY) maxY = y
-                }
-              }
-            }
-            if (isFinite(minX) && isFinite(minY)) {
-              const vWidth = Math.max(maxX - minX, 1)
-              const vHeight = Math.max(maxY - minY, 1)
-              // SVG path retangular pra bounding box (path completo virá em V2)
-              const pathStr = `M ${minX} ${minY} L ${minX + vWidth} ${minY} L ${minX + vWidth} ${minY + vHeight} L ${minX} ${minY + vHeight} Z`
+            const { d: pathStr, bbox } = vectorMaskToSvgPath(vm, psd.width, psd.height)
+            if (pathStr && bbox && isFinite(bbox.minX)) {
+              const minX = bbox.minX, minY = bbox.minY
+              const vWidth = Math.max(bbox.maxX - minX, 1)
+              const vHeight = Math.max(bbox.maxY - minY, 1)
               assetMask = {
                 type: "vector" as const,
                 enabled: !vm.disabled,
@@ -237,6 +308,13 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             if (cached) assetMask = cached
           } catch (e) { console.warn("[psd-mask] falha aplicando inherited mask em", name, e) }
         }
+
+        // Opacity (0-255 no PSD → 0-1 pro canvas) e blendMode (string PSD → canvas op).
+        // Persistimos como propriedades do layer pra cada peça poder ter sua própria
+        // opacity/blend depois (override). Na importação inicial, todos os layers
+        // da matriz herdam direto do PSD.
+        const psdOpacity = typeof (layer as any).opacity === "number" ? Math.max(0, Math.min(1, (layer as any).opacity / 255)) : undefined
+        const psdBlend = psdBlendToCanvas((layer as any).blendMode) ?? undefined
 
         if (layer.text) {
           const td = layer.text
@@ -331,6 +409,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             mask: assetMask,
             hidden: layer.hidden === true ? true : undefined,
             locked: (layer as any).transparencyProtected === true ? true : undefined,
+            opacity: psdOpacity,
+            blendMode: psdBlend,
           })
         } else if (layer.canvas) {
           try {
@@ -350,6 +430,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               mask: assetMask,
               hidden: layer.hidden === true ? true : undefined,
               locked: (layer as any).transparencyProtected === true ? true : undefined,
+              opacity: psdOpacity,
+              blendMode: psdBlend,
             })
           } catch (e) {
             console.warn("Falha ao extrair imagem do layer", name, e)

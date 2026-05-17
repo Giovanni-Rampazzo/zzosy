@@ -47,10 +47,31 @@ function colorToHex(color: any): string {
   return "#" + [rr, gg, bb].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("")
 }
 
-// Aplica hidden/locked do PSD ao layer da peca (round-trip Photoshop ↔ ZZOSY).
+// PSD blendMode → canvas globalCompositeOperation (mesma tabela do PsdImporter).
+function psdBlendToCanvas(bm: string | undefined): string | null {
+  if (!bm) return null
+  const m: Record<string, string> = {
+    "normal": "source-over", "multiply": "multiply", "screen": "screen",
+    "overlay": "overlay", "darken": "darken", "lighten": "lighten",
+    "color dodge": "color-dodge", "color burn": "color-burn",
+    "hard light": "hard-light", "soft light": "soft-light",
+    "difference": "difference", "exclusion": "exclusion",
+    "hue": "hue", "saturation": "saturation",
+    "color": "color", "luminosity": "luminosity", "linear dodge": "lighter",
+  }
+  return m[bm.toLowerCase()] ?? null
+}
+
+// Aplica hidden/locked/opacity/blendMode do PSD ao layer da peca (round-trip Photoshop ↔ ZZOSY).
 function applyPsdHiddenLocked(layerData: any, psdLayer: any) {
   if (psdLayer?.hidden === true) layerData.hidden = true
   if (psdLayer?.transparencyProtected === true) layerData.locked = true
+  if (typeof psdLayer?.opacity === "number") {
+    const op = Math.max(0, Math.min(1, psdLayer.opacity / 255))
+    if (op < 1) layerData.opacity = op
+  }
+  const bm = psdBlendToCanvas(psdLayer?.blendMode)
+  if (bm && bm !== "source-over") layerData.blendMode = bm
 }
 
 function collectAllLayers(layers: any[]): any[] {

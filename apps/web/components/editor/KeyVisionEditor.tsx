@@ -2431,6 +2431,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const scaleX = layer?.scaleX ?? 1
     const scaleY = layer?.scaleY ?? 1
     const angle = layer?.rotation ?? 0
+    // PSD opacity/blendMode (extraídos no import) preservados como props do
+    // Fabric object. Fabric usa "opacity" (0..1) e "globalCompositeOperation"
+    // (canvas spec). Default omitido pra não inflar JSON.
+    const psdOpacity = typeof layer?.opacity === "number" ? layer.opacity : 1
+    const psdBlend = typeof layer?.blendMode === "string" && layer.blendMode ? layer.blendMode : "source-over"
 
     if (asset.type === "IMAGE") {
       if (asset.imageUrl) {
@@ -2495,7 +2500,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 const ratio = width / naturalW
                 sx = ratio; sy = ratio
               }
-              resolve(new FabricImage(el, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle }))
+              resolve(new FabricImage(el, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle, opacity: psdOpacity, globalCompositeOperation: psdBlend }))
             }
             el.onerror = reject
             el.src = imgSrc
@@ -2512,7 +2517,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const r = new Rect({
         left: posX, top: posY, width, height: layer?.height ?? 300,
         fill: "#d0d0d0", stroke: "#999", strokeWidth: 1,
-        scaleX, scaleY, angle
+        scaleX, scaleY, angle,
+        opacity: psdOpacity, globalCompositeOperation: psdBlend,
       })
       ;(r as any).__assetId = asset.id
       ;(r as any).__assetLabel = asset.label
@@ -2629,6 +2635,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // alterados via /assets.
         editable: true,
         scaleX: effScaleX, scaleY: effScaleY, angle,
+        opacity: psdOpacity,
+        globalCompositeOperation: psdBlend,
       })
       // Aplica overrides do layer (estilos editados pelo usuário no editor)
       if (ov) {
@@ -3405,6 +3413,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // sem mask. Espelha o save da peca (linha ~2476).
           if ((o as any).__maskData) {
             layer.mask = (o as any).__maskData
+          }
+          // Opacity (0..1) e blendMode (canvas globalCompositeOperation) por
+          // layer (round-trip PSD). Defaults omitidos pra não inflar JSON.
+          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
+          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
+            layer.blendMode = o.globalCompositeOperation
           }
           // DEBUG: log do que tah indo pra matriz
           console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "__hidden:", o.__hidden, "__locked:", o.__locked, "-> hidden:", layer.hidden, "locked:", layer.locked)
@@ -4244,6 +4258,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if ((o as any).__maskData) {
             layer.mask = (o as any).__maskData
           }
+          // Opacity/blendMode por layer (round-trip PSD). Defaults omitidos.
+          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
+          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
+            layer.blendMode = o.globalCompositeOperation
+          }
           // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
           if (o.type === "textbox" || o.type === "i-text") {
             // PECA: caracteres (asset.content) continuam vindo do asset, MAS
@@ -4390,6 +4409,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // dirty trigger) sobrescrevia o banco perdendo as masks do PSD.
           if ((o as any).__maskData) {
             layer.mask = (o as any).__maskData
+          }
+          // Opacity/blendMode por layer (round-trip PSD). Defaults omitidos.
+          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
+          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
+            layer.blendMode = o.globalCompositeOperation
           }
           // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
           // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset

@@ -55,6 +55,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       mask?: any
       hidden?: boolean
       locked?: boolean
+      opacity?: number
+      blendMode?: string
     }>
 
     const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
@@ -192,6 +194,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       // Estados de visibilidade e lock do Photoshop preservados pra round-trip.
       ...(assets[i].hidden === true ? { hidden: true } : {}),
       ...(assets[i].locked === true ? { locked: true } : {}),
+      // Opacity (0..1) e blendMode (canvas globalCompositeOperation) extraídos
+      // do PSD. Defaults (1 e "source-over") são omitidos pra não inflar JSON.
+      ...(typeof assets[i].opacity === "number" && assets[i].opacity < 1 ? { opacity: assets[i].opacity } : {}),
+      ...(assets[i].blendMode && assets[i].blendMode !== "source-over" ? { blendMode: assets[i].blendMode } : {}),
     }))
 
     // KeyVision (Matriz)
