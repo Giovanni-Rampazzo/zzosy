@@ -93,6 +93,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       imageUrls.push(`/uploads/campaigns/${id}/${imgFilename}`)
     }
 
+    // Snapshot dos assets antigos ANTES de deletar — precisamos do par
+    // {oldId, label, order} pra remapear layers nas peças existentes depois
+    // que os novos assets forem criados. Sem isso, re-importar PSD orfaniza
+    // todas as peças (assetIds quebrados → canvas vazio → save sobrescreve).
+    const oldAssetsSnapshot = await prisma.campaignAsset.findMany({
+      where: { campaignId: id },
+      select: { id: true, label: true, order: true },
+    })
+    const piecesSnapshot = await prisma.piece.findMany({
+      where: { campaignId: id },
+      select: { id: true, data: true },
+    })
+
     // Apagar assets antigos. SmartObjectFiles NAO sao apagados em cascata aqui
     // (FK eh SetNull). Vamos limpar manualmente as antigas pra nao acumular orfaos
     // ao reimportar PSD na mesma campanha.
@@ -222,6 +235,76 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       },
     })
 
+    // Remapear assetIds das peças existentes: old → new.
+    // Match primário por LABEL (case-insensitive, trim) — labels do PSD são
+    // estáveis entre re-imports. Tie-break por ORDER dentro do mesmo label
+    // (cobre PSDs com layers homônimos tipo "Layer 1"). Fallback final por
+    // ORDER posicional pra olds sem match de label.
+    const oldByLabel = new Map<string, Array<{ id: string; order: number }>>()
+    for (const o of oldAssetsSnapshot) {
+      const k = (o.label ?? "").trim().toLowerCase()
+      const arr = oldByLabel.get(k) ?? []
+      arr.push({ id: o.id, order: o.order ?? 0 })
+      oldByLabel.set(k, arr)
+    }
+    const newByLabel = new Map<string, Array<{ id: string; order: number }>>()
+    for (const n of created) {
+      const k = (n.label ?? "").trim().toLowerCase()
+      const arr = newByLabel.get(k) ?? []
+      arr.push({ id: n.id, order: n.order ?? 0 })
+      newByLabel.set(k, arr)
+    }
+    const assetIdMap: Record<string, string> = {}
+    for (const [label, olds] of oldByLabel.entries()) {
+      const news = newByLabel.get(label) ?? []
+      const sortedOlds = [...olds].sort((a, b) => a.order - b.order)
+      const sortedNews = [...news].sort((a, b) => a.order - b.order)
+      for (let i = 0; i < sortedOlds.length; i++) {
+        const tgt = sortedNews[i]
+        if (tgt) assetIdMap[sortedOlds[i].id] = tgt.id
+      }
+    }
+    // Fallback posicional pros olds que não bateram label
+    const newByOrderArr = [...created].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    for (const o of oldAssetsSnapshot) {
+      if (assetIdMap[o.id]) continue
+      const tgt = newByOrderArr[o.order ?? 0]
+      if (tgt) assetIdMap[o.id] = tgt.id
+    }
+
+    // Reescrever assetIds em todas as peças (layers do canvas + layers de cada step).
+    let piecesRewritten = 0
+    for (const p of piecesSnapshot) {
+      if (!p.data) continue
+      let pdata: any
+      try { pdata = JSON.parse(p.data) } catch { continue }
+      let changed = false
+      const rewriteLayers = (layers: any[]): any[] => {
+        if (!Array.isArray(layers)) return layers
+        return layers.map((l) => {
+          if (l && typeof l.assetId === "string" && assetIdMap[l.assetId]) {
+            changed = true
+            return { ...l, assetId: assetIdMap[l.assetId] }
+          }
+          return l
+        })
+      }
+      if (Array.isArray(pdata.layers)) pdata.layers = rewriteLayers(pdata.layers)
+      if (Array.isArray(pdata.steps)) {
+        pdata.steps = pdata.steps.map((s: any) =>
+          s && Array.isArray(s.layers) ? { ...s, layers: rewriteLayers(s.layers) } : s
+        )
+      }
+      if (changed) {
+        await prisma.piece.update({
+          where: { id: p.id },
+          data: { data: JSON.stringify(pdata) },
+        })
+        piecesRewritten++
+      }
+    }
+    console.log("[import-psd] peças remapeadas:", piecesRewritten, "/", piecesSnapshot.length, "(mapeamentos:", Object.keys(assetIdMap).length, ")")
+
     // Atualizar Campaign com PSD master (se foi salvo).
     // psdName preservado mesmo sem psdUrl (pra UI mostrar o nome do arquivo
     // original ate o chunked upload terminar).
@@ -239,6 +322,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       smartObjectsCreated: smartObjectIds.filter(Boolean).length,
       psdUrl,
       masterPending: skipMaster, // sinaliza pro cliente que precisa fazer upload chunked
+      piecesRewritten,
+      piecesTotal: piecesSnapshot.length,
     })
   } catch (err: any) {
     console.error("import-psd error:", err)
