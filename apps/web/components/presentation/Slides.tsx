@@ -589,34 +589,32 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           </div>
         </div>
       ) : (
-        // Layout sem legenda: peca centralizada.
-        // padding top maior pra nao colidir com header (nome+dim em y 4%-7%).
-        // Padding-top RESERVA espaço claro pro header amarelo (nome +
-        // dimensões) + bolinha — sem isso, label STEP N ou topo da peça
-        // colide com o header. Padding-bottom reserva pro Footer. Laterais
-        // generosas pra peça respirar.
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "20% 14% 14% 14%",
-        }}>
-          {/* Peça NUNCA passa de 65% da altura nem 70% da largura do slide.
-              Garante respiro visual mesmo em peças muito verticais (Story,
-              Display) ou horizontais largas (banners). objectFit:contain no
-              <img> interno preserva proporção dentro desse box. */}
-          <div
-            {...pieceClickProps}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              maxWidth: "70%", maxHeight: "65%",
-              ...(pieceClickProps.style ?? {}),
-            }}
-          >
-            {renderPieceVisual({ withShadow: true })}
+        // Layout sem legenda: área da peça definida ABSOLUTAMENTE no slide
+        // com inset top/bottom/left/right — mais previsível que padding+flex
+        // (max-% no wrapper interno não funciona bem com flex intrinsic
+        // size do <img>). Top 22% reserva pro header amarelo + bolinha.
+        // Bottom 22% pro Footer + respiro. Sides 24% pra peças verticais
+        // (Story 1080x1920) não ficarem coladas nas bordas.
+        <>
+          <div style={{
+            position: "absolute",
+            top: "22%", bottom: "22%", left: "24%", right: "24%",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div
+              {...pieceClickProps}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: "100%", height: "100%",
+                ...(pieceClickProps.style ?? {}),
+              }}
+            >
+              {renderPieceVisual({ withShadow: true })}
+            </div>
           </div>
-          {/* Botao '+ Legenda' aparece no canto inferior direito quando a peca
-              tem pieceId (editavel) e ainda nao tem legenda. Clicar abre o card
-              de legenda vazio pronto pra editar. */}
+          {/* Botão '+ Legenda' relativo ao SLIDE inteiro (não ao container
+              da peça) pra ficar no canto inferior direito visível, fora da
+              area restrita da peça. */}
           {editable && !hideCard && (
             <button
               onClick={(e) => { e.stopPropagation(); setEditing(true) }}
@@ -634,7 +632,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
               + Legenda
             </button>
           )}
-        </div>
+        </>
       )}
       <Footer brand={brand} />
     </div>
