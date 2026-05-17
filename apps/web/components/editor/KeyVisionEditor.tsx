@@ -1657,7 +1657,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (allowed.has(e.key)) return
           // Permitir Cmd/Ctrl+A, Cmd/Ctrl+C (selecionar/copiar)
           if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "c")) return
-          // Bloquear o resto (digitacao, paste, delete, backspace)
+          // Backspace/Delete: PERMITIDOS apenas quando vão apagar um \n —
+          // user precisa poder desfazer quebras de linha que ele mesmo
+          // adicionou. Caracteres do asset continuam protegidos (asset.content
+          // é fonte da verdade).
+          if (e.key === "Backspace" || e.key === "Delete") {
+            const text: string = active.text ?? ""
+            const start: number = active.selectionStart ?? 0
+            const end: number = active.selectionEnd ?? start
+            // Selection range: permite só se TODA a seleção for \n
+            if (start !== end) {
+              const selected = text.slice(start, end)
+              if (selected.length > 0 && /^\n+$/.test(selected)) return
+              e.preventDefault(); e.stopPropagation(); return
+            }
+            // Sem range: olha o char a ser apagado
+            const charToDelete = e.key === "Backspace"
+              ? (start > 0 ? text[start - 1] : "")
+              : (start < text.length ? text[start] : "")
+            if (charToDelete === "\n") return
+            e.preventDefault(); e.stopPropagation(); return
+          }
+          // Bloquear o resto (digitacao, paste, etc)
           e.preventDefault()
           e.stopPropagation()
         }
