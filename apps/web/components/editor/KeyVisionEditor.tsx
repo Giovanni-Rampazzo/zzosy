@@ -6150,6 +6150,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   placeholder={mixedFontSize ? "—" : ""}
                   onFocus={() => { numericInputFocusedRef.current = true }}
                   onBlur={() => { numericInputFocusedRef.current = false }}
+                  // CRITICO pra char-level edit: captura a seleção do textbox
+                  // ANTES do click no input remover o foco (saindo do edit mode).
+                  // Sem isso, applyStyle vê isEditing=false e savedTextSelection
+                  // pode estar stale (polling roda só a cada 100ms — clique rápido
+                  // perde a seleção).
+                  onMouseDown={() => {
+                    const fc = fabricRef.current
+                    const active = fc?.getActiveObject() as any
+                    if (active?.isEditing && active.selectionStart !== active.selectionEnd) {
+                      savedTextSelection.current = { obj: active, start: active.selectionStart, end: active.selectionEnd }
+                    }
+                  }}
                   onChange={e => {
                     const raw = e.target.value
                     setFontSizeInput(raw)
@@ -6198,6 +6210,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     value={leadingInput}
                     onFocus={() => { numericInputFocusedRef.current = true }}
                     onBlur={() => { numericInputFocusedRef.current = false }}
+                    onMouseDown={() => {
+                      const fc = fabricRef.current
+                      const active = fc?.getActiveObject() as any
+                      if (active?.isEditing && active.selectionStart !== active.selectionEnd) {
+                        savedTextSelection.current = { obj: active, start: active.selectionStart, end: active.selectionEnd }
+                      }
+                    }}
                     onChange={e => {
                       const raw = e.target.value
                       setLeadingInput(raw)
