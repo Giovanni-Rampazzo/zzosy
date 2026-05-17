@@ -295,6 +295,93 @@ function extractPsdEffects(layer: any): any | undefined {
   return Object.keys(out).length > 0 ? out : undefined
 }
 
+// Renderiza um shape layer (vectorMask + vectorFill/vectorStroke) num canvas
+// local da bbox do layer. Resolve o caso em que ag-psd entrega layer.canvas
+// vazio/parcial (só com stroke, sem fill) — comum quando o fill vem de Color
+// Overlay ou vectorFill puro. Estrategia: renderiza shape UNDER, depois
+// composita ag-psd canvas (se houver) POR CIMA. Se ag-psd já tem fill, nada
+// muda visualmente; se transparente, o vector preenche.
+function renderShapeLayerCanvas(
+  layer: any,
+  bboxW: number,
+  bboxH: number,
+  bboxLeft: number,
+  bboxTop: number,
+): HTMLCanvasElement | null {
+  const vm = (layer as any).vectorMask
+  if (!vm?.paths?.length) return null
+  const vf = (layer as any).vectorFill
+  const vs = (layer as any).vectorStroke
+  if (!vf && !vs) return null
+
+  const w = Math.max(1, Math.round(bboxW))
+  const h = Math.max(1, Math.round(bboxH))
+  const c = document.createElement("canvas")
+  c.width = w; c.height = h
+  const ctx = c.getContext("2d")
+  if (!ctx) return null
+
+  // Constrói Path2D a partir dos sub-paths bezier. Coords PSD-globais →
+  // translada por (-bboxLeft, -bboxTop) pra ficar relativo ao canvas local.
+  const pathStr = vectorMaskToSvgPath(vm).d
+  if (!pathStr) return null
+  let path2d: Path2D
+  try {
+    path2d = new Path2D(pathStr)
+  } catch {
+    return null
+  }
+  // Aplica translação via transform (Path2D não tem método translate)
+  ctx.save()
+  ctx.translate(-bboxLeft, -bboxTop)
+
+  // FILL: cor sólida (mais comum). Gradiente: TODO (suporta linear simples
+  // se aparecer no piloto). Pattern: TODO (precisa do pattern asset).
+  if (vf) {
+    if ((vf as any).type === "color" && (vf as any).color) {
+      ctx.fillStyle = colorToHex((vf as any).color)
+      ctx.fill(path2d, "evenodd")
+    } else if ((vf as any).type === "solid" && Array.isArray((vf as any).colorStops)) {
+      // Gradient linear simples horizontal (não respeita angle ainda)
+      try {
+        const grad = ctx.createLinearGradient(bboxLeft, bboxTop, bboxLeft + w, bboxTop)
+        for (const cs of (vf as any).colorStops) {
+          const stop = Math.max(0, Math.min(1, cs.location ?? 0))
+          grad.addColorStop(stop, colorToHex(cs))
+        }
+        ctx.fillStyle = grad
+        ctx.fill(path2d, "evenodd")
+      } catch { /* ignora */ }
+    }
+  }
+
+  // STROKE
+  if (vs && (vs as any).strokeEnabled !== false) {
+    const sc = (vs as any).content
+    if (sc && (sc as any).type === "color" && (sc as any).color) {
+      ctx.strokeStyle = colorToHex((sc as any).color)
+      const lw = typeof (vs as any).lineWidth === "number" ? (vs as any).lineWidth : ((vs as any).lineWidth?.value ?? 1)
+      ctx.lineWidth = lw
+      const cap = (vs as any).lineCapType
+      ctx.lineCap = cap === "round" ? "round" : cap === "square" ? "square" : "butt"
+      const join = (vs as any).lineJoinType
+      ctx.lineJoin = join === "round" ? "round" : join === "bevel" ? "bevel" : "miter"
+      const ml = (vs as any).miterLimit
+      if (typeof ml === "number") ctx.miterLimit = ml
+      ctx.stroke(path2d)
+    }
+  }
+  ctx.restore()
+
+  // Composita ag-psd canvas POR CIMA (se houver). Se ele tem fill, fica
+  // visualmente igual. Se só tem stroke + transparência, nosso fill aparece.
+  const existing = layer.canvas as HTMLCanvasElement | undefined
+  if (existing) {
+    try { ctx.drawImage(existing, 0, 0) } catch {}
+  }
+  return c
+}
+
 // Mapeia blendMode do PSD pra globalCompositeOperation do Canvas2D.
 // PSD usa nomes com espaço ("color dodge"); canvas usa hífen ("color-dodge").
 // "pass through" e "dissolve" não tem equivalente puro — caem em "source-over".
@@ -586,9 +673,15 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             effects: psdEffects,
             groupPath: groupPath.length > 0 ? groupPath : undefined,
           })
-        } else if (layer.canvas) {
+        } else if (layer.canvas || ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke))) {
           try {
-            const blob = await canvasToBlob(layer.canvas as HTMLCanvasElement)
+            // Shape layer com vectorFill/vectorStroke: ag-psd às vezes entrega
+            // canvas só com stroke (fill vem de Color Overlay) ou nem isso.
+            // Re-renderizamos vector UNDER + ag-psd canvas POR CIMA pra garantir
+            // o visual completo (escudo verde do piloto Sicredi caía nesse caso).
+            const renderedShape = renderShapeLayerCanvas(layer, width, height, left, top)
+            const finalCanvas: HTMLCanvasElement = renderedShape ?? (layer.canvas as HTMLCanvasElement)
+            const blob = await canvasToBlob(finalCanvas)
             const imageIndex = imageBlobs.length
             imageBlobs.push(blob)
             // Smart Object: se layer tem placedLayer.id, linkamos ao linkedFile
