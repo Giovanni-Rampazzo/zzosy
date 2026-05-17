@@ -654,6 +654,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [bgHexInput, setBgHexInput] = useState<string>("#ffffff")
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
   const [leadingInput, setLeadingInput] = useState<string>("96")
+  // Ref pra rastrear se algum input numérico do painel está em digitação.
+  // Mais confiável que document.activeElement (que pode estar stale em
+  // re-renders concorrentes do React 18). Usado pra impedir o useEffect
+  // de sobrescrever fontSizeInput/leadingInput durante a digitação do user.
+  const numericInputFocusedRef = useRef(false)
   const [selectedTick, setSelectedTick] = useState(0)
   // Estado do drag-and-drop no painel Layers (visualIndex sendo arrastado / sobre)
   const [dragLayerIdx, setDragLayerIdx] = useState<number | null>(null)
@@ -4639,9 +4644,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // em curso (ex: user tipo "8", reload do useEffect colocaria "5" antigo).
   useEffect(() => {
     if (!selected) return
-    // Se um input numerico do painel esta focado, NAO sincroniza — o user esta digitando
-    const ae = document.activeElement
-    if (ae && ae.tagName === "INPUT" && (ae as HTMLInputElement).type === "number") return
+    // Se algum input numérico do painel está em digitação, NÃO sincroniza —
+    // sobrescrever fontSizeInput/leadingInput durante a digitação reseta o
+    // input pro valor antigo e quebra o input visualmente.
+    // Ref é mais confiável que document.activeElement (que pode estar stale
+    // entre renders concorrentes do React 18).
+    if (numericInputFocusedRef.current) return
 
     const obj = selected as any
     const isText = obj.type === "textbox" || obj.type === "i-text"
@@ -6075,6 +6083,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   type="number"
                   value={mixedFontSize ? "" : fontSizeInput}
                   placeholder={mixedFontSize ? "—" : ""}
+                  onFocus={() => { numericInputFocusedRef.current = true }}
+                  onBlur={() => { numericInputFocusedRef.current = false }}
                   onChange={e => {
                     const raw = e.target.value
                     setFontSizeInput(raw)
@@ -6121,6 +6131,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     type="number"
                     step="1"
                     value={leadingInput}
+                    onFocus={() => { numericInputFocusedRef.current = true }}
+                    onBlur={() => { numericInputFocusedRef.current = false }}
                     onChange={e => {
                       const raw = e.target.value
                       setLeadingInput(raw)

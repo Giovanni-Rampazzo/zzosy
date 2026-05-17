@@ -6,17 +6,25 @@ import { listFontFamilies, FontFamily, findFamilyAndVariant, ensureFontLoaded } 
 // Garante que ambos vejam exatamente a mesma lista de familias/variantes.
 let _familiesCache: FontFamily[] | null = null
 let _loadPromise: Promise<FontFamily[]> | null = null
+// Marca se a ultima chamada bem-sucedida foi a versao "local fonts" (com
+// permission) ou so o fallback. Quando triggerPermission=true e o cache atual
+// eh fallback, tenta de novo (cobre cenario: mount populou cache com fallback
+// porque nao tinha gesture do user, depois user clica picker = gesture valida).
+let _cacheIsLocalFonts = false
 
 function loadFamilies(triggerPermission: boolean): Promise<FontFamily[]> {
-  if (_familiesCache) return Promise.resolve(_familiesCache)
+  if (_familiesCache && (!triggerPermission || _cacheIsLocalFonts)) {
+    return Promise.resolve(_familiesCache)
+  }
   if (_loadPromise) return _loadPromise
   _loadPromise = listFontFamilies(triggerPermission).then(f => {
     _familiesCache = f
+    _cacheIsLocalFonts = triggerPermission && f.length > 0
     _loadPromise = null
     return f
   }).catch(() => {
     _loadPromise = null
-    return []
+    return _familiesCache ?? []
   })
   return _loadPromise
 }

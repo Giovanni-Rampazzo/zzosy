@@ -182,17 +182,28 @@ async function tryLocalFontAccess(): Promise<FontFamily[] | null> {
  * fontes reais do sistema, ou as do fallback inteiramente.
  */
 export async function listFontFamilies(triggerPermissionRequest = false): Promise<FontFamily[]> {
-  if (cache) return cache
-  if (!triggerPermissionRequest && askedThisSession) return FALLBACK_FONT_FAMILIES
-  if (triggerPermissionRequest) askedThisSession = true
-
+  // Se o cache JA contem fontes locais (nao-fallback), reusa.
+  if (cache && cache !== FALLBACK_FONT_FAMILIES) return cache
+  // Sem triggerPermissionRequest: retorna o que tem (cache fallback ou fallback novo)
+  // sem tentar pedir permission de novo. Sem isso, o componente faria prompt no
+  // mount (sem gesture) e queimaria a chance de pedir corretamente no click.
+  if (!triggerPermissionRequest) {
+    if (cache) return cache
+    cache = FALLBACK_FONT_FAMILIES
+    return FALLBACK_FONT_FAMILIES
+  }
+  // triggerPermissionRequest=true (gesture do user): tenta de novo, MESMO que
+  // cache atual seja FALLBACK. Sem essa retentativa, o picker ficava preso na
+  // lista limitada apos a primeira tentativa silenciosa no mount falhar.
+  askedThisSession = true
   const local = await tryLocalFontAccess()
   if (local && local.length > 0) {
     cache = local
     return local
   }
-  cache = FALLBACK_FONT_FAMILIES
-  return FALLBACK_FONT_FAMILIES
+  // Fallback: mantém o que ja tinha (FALLBACK) — nao perde nada.
+  if (!cache) cache = FALLBACK_FONT_FAMILIES
+  return cache
 }
 
 /**
