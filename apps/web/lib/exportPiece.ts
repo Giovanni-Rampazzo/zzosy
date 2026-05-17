@@ -166,6 +166,7 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
   const Textbox = (fabric as any).Textbox
   const FabricImage = (fabric as any).FabricImage ?? (fabric as any).Image
   const Rect = (fabric as any).Rect
+  const Shadow = (fabric as any).Shadow
 
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
   const W = data?.width ?? piece.width ?? 1080
@@ -198,11 +199,13 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
       const layerOpacity = typeof layer.opacity === "number" ? layer.opacity : 1
       const layerBlend = typeof layer.blendMode === "string" && layer.blendMode ? layer.blendMode : "source-over"
       const layerEffects = (layer.effects && typeof layer.effects === "object") ? layer.effects : null
+      // Fabric v7 exige Shadow INSTANCE — passar plain object faz o render
+      // sair em branco silenciosamente.
       const fabricShadow = (() => {
         if (!layerEffects) return undefined
         const d = layerEffects.dropShadow ?? layerEffects.outerGlow
         if (!d) return undefined
-        return { color: d.color ?? "rgba(0,0,0,0.5)", offsetX: d.offsetX ?? 0, offsetY: d.offsetY ?? 0, blur: d.blur ?? 5 }
+        return new Shadow({ color: d.color ?? "rgba(0,0,0,0.5)", offsetX: d.offsetX ?? 0, offsetY: d.offsetY ?? 0, blur: d.blur ?? 5 })
       })()
       const fabricStroke = layerEffects?.stroke ? { stroke: layerEffects.stroke.color, strokeWidth: layerEffects.stroke.width ?? 1 } : null
 

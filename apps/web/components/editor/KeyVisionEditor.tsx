@@ -2429,23 +2429,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Fabric object. Drop shadow e outer glow viram shadow nativo (ZZOSY só
   // suporta UM shadow por object — drop shadow ganha precedência sobre glow).
   // Stroke vira stroke nativo do Fabric.
-  function applyFabricEffects(obj: any, effects: any) {
+  // ShadowClass passada como param: Fabric v7 exige Shadow INSTANCE (não plain
+  // object) — passar {color,blur,...} cru faz render virar branco silenciosamente.
+  function applyFabricEffects(obj: any, effects: any, ShadowClass: any) {
     if (!effects) return
     if (effects.dropShadow) {
       const d = effects.dropShadow
-      obj.set("shadow", {
+      obj.set("shadow", new ShadowClass({
         color: d.color ?? "rgba(0,0,0,0.5)",
         offsetX: d.offsetX ?? 0,
         offsetY: d.offsetY ?? 0,
         blur: d.blur ?? 5,
-      })
+      }))
     } else if (effects.outerGlow) {
       const g = effects.outerGlow
-      obj.set("shadow", {
+      obj.set("shadow", new ShadowClass({
         color: g.color ?? "rgba(255,255,255,0.5)",
         offsetX: 0, offsetY: 0,
         blur: g.blur ?? 5,
-      })
+      }))
     }
     if (effects.stroke && effects.stroke.color) {
       obj.set("stroke", effects.stroke.color)
@@ -2454,7 +2456,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   }
 
   async function addAssetToCanvas(fc: any, asset: Asset, layer: any) {
-    const { Rect, Textbox, FabricImage } = await import("fabric")
+    const fabricMod = await import("fabric")
+    const { Rect, Textbox, FabricImage, Shadow } = fabricMod as any
     const posX = layer?.posX ?? 100
     const posY = layer?.posY ?? 100
     const width = layer?.width ?? 400
@@ -2541,7 +2544,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ;(img as any).__assetId = asset.id
           ;(img as any).__assetLabel = asset.label
           if (psdEffects) (img as any).__psdEffects = psdEffects
-          applyFabricEffects(img, psdEffects)
+          applyFabricEffects(img, psdEffects, Shadow)
           fc.add(img)
           fc.requestRenderAll()
           return
@@ -2690,7 +2693,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(t as any).__assetLabel = asset.label
       if (typeof fillBrandIdx === "number") (t as any).__fillBrandIdx = fillBrandIdx
       if (psdEffects) (t as any).__psdEffects = psdEffects
-      applyFabricEffects(t, psdEffects)
+      applyFabricEffects(t, psdEffects, Shadow)
       fc.add(t)
     }
   }
