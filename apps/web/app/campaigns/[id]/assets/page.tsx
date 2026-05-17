@@ -211,30 +211,30 @@ export default function CampaignAssetsPage() {
       if (buf) result.push({ text: buf, style: bufStyle ?? defaultStyle })
       return result.length > 0 ? result : [{ text: newText, style: defaultStyle }]
     }
+    // Salva IMEDIATO ao clicar "Salvar" (sem debounce). Antes era debounce
+    // 600ms — mas dispara em texto intermediário ("" durante apagar+digitar)
+    // e destrói overrides.text das peças. Agora user controla via botão.
+    const currentAsset = campaign.assets.find(a => a.id === assetId)
+    const newSpans = rebuildSpans(parseContent(currentAsset?.content))
     setCampaign({
       ...campaign,
-      assets: campaign.assets.map(a => {
-        if (a.id !== assetId) return a
-        const newSpans = rebuildSpans(parseContent(a.content))
-        return { ...a, content: newSpans, value: newText, label: newLabel }
-      })
+      assets: campaign.assets.map(a => a.id === assetId ? { ...a, content: newSpans, value: newText, label: newLabel } : a)
     })
-
-    clearTimeout(saveTimers.current[assetId])
     setSavingMap(m => ({ ...m, [assetId]: true }))
-    saveTimers.current[assetId] = setTimeout(async () => {
-      const asset = campaign.assets.find(a => a.id === assetId)
-      const newSpans = rebuildSpans(parseContent(asset?.content))
-      await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: newSpans, value: newText, label: newLabel })
-      })
-      setSavingMap(m => ({ ...m, [assetId]: false }))
+    ;(async () => {
+      try {
+        await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: newSpans, value: newText, label: newLabel })
+        })
+      } finally {
+        setSavingMap(m => ({ ...m, [assetId]: false }))
+      }
       // Regerar thumbs das peças afetadas em segundo plano
       regeneratePieceThumbsForAsset(id, assetId).catch(e => console.warn("regen thumbs:", e))
       regenerateKVThumb(id).catch(e => console.warn("regen KV thumb:", e))
-    }, 600)
+    })()
   }
 
   async function uploadAssetImage(assetId: string, file: File) {
@@ -441,6 +441,14 @@ interface RowProps {
 function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onDelete }: RowProps) {
   const isText = asset.type === "TEXT"
   const text = isText ? getText(asset) : ""
+  // Edit local (uncontrolled visualmente — só salva ao clicar "Salvar").
+  // Evita auto-save com debounce que disparava migrate em texto intermediário
+  // (vazio) e destruía quebras de linha das peças geradas.
+  const [localText, setLocalText] = useState(text)
+  // Re-sincroniza localText quando o asset.content muda externamente (ex:
+  // outro user editou, refresh, etc).
+  useEffect(() => { setLocalText(text) }, [text])
+  const dirty = isText && localText !== text
   return (
     <div style={{
       display: "grid",
@@ -494,15 +502,34 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
           <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
         </div>
         {isText ? (
-          <textarea
-            defaultValue={text}
-            onChange={e => onTextChange(asset.id, e.target.value)}
-            style={{
-              width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #E0E0E0",
-              fontSize: 13, color: "#111", fontFamily: "inherit", resize: "vertical", outline: "none",
-              minHeight: 64, maxHeight: 200,
-            }}
-          />
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <textarea
+              value={localText}
+              onChange={e => setLocalText(e.target.value)}
+              onKeyDown={e => {
+                // Cmd/Ctrl+Enter = atalho pra salvar
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) {
+                  e.preventDefault()
+                  onTextChange(asset.id, localText)
+                }
+              }}
+              style={{
+                width: "100%", padding: "8px 10px", borderRadius: 6,
+                border: dirty ? "1px solid #F5C400" : "1px solid #E0E0E0",
+                fontSize: 13, color: "#111", fontFamily: "inherit", resize: "vertical", outline: "none",
+                minHeight: 64, maxHeight: 200,
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 10, color: dirty ? "#F5C400" : "#aaa" }}>
+                {dirty ? "Alterações não salvas (Cmd+Enter pra salvar)" : "Salvo"}
+              </span>
+              <Button variant="primary" size="sm" disabled={!dirty}
+                onClick={() => onTextChange(asset.id, localText)}>
+                Salvar
+              </Button>
+            </div>
+          </div>
         ) : (
           <div>
             <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }}>
