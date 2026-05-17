@@ -1177,6 +1177,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         : (obj.text ?? "")
       const styleRuns = buildStyleRuns(obj, fullText, sY)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
+      const isItalic = (obj as any).fontStyle === "italic"
       const ps = toPSFont(obj.fontFamily ?? "Arial", isBold)
       const layerCanvas = document.createElement("canvas")
       layerCanvas.width = w
@@ -1219,6 +1220,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             fontSize,
             fillColor: parseColor(obj.fill ?? "#000000"),
             fauxBold: ps.fauxBold,
+            fauxItalic: isItalic,
             // Sem esses campos, Photoshop usa leading metric default da fonte
             // e tracking 0 — texto sai com entrelinha grande e sem char spacing.
             autoLeading: false,

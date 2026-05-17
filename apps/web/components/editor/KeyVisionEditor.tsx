@@ -1784,6 +1784,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 if (layer.overrides.fontSize !== undefined) created.set("fontSize", layer.overrides.fontSize)
                 if (layer.overrides.fontFamily !== undefined) created.set("fontFamily", layer.overrides.fontFamily)
                 if (layer.overrides.fontWeight !== undefined) created.set("fontWeight", layer.overrides.fontWeight)
+                if (layer.overrides.fontStyle !== undefined) created.set("fontStyle", layer.overrides.fontStyle)
                 if (layer.overrides.charSpacing !== undefined) created.set("charSpacing", layer.overrides.charSpacing)
                 if (layer.overrides.lineHeight !== undefined) created.set("lineHeight", layer.overrides.lineHeight)
                 if (layer.overrides.textAlign !== undefined) created.set("textAlign", layer.overrides.textAlign)
@@ -1891,6 +1892,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               if (ov.fontSize !== undefined) created.set("fontSize", ov.fontSize)
               if (ov.fontFamily !== undefined) created.set("fontFamily", ov.fontFamily)
               if (ov.fontWeight !== undefined) created.set("fontWeight", ov.fontWeight)
+              if (ov.fontStyle !== undefined) created.set("fontStyle", ov.fontStyle)
               if (ov.charSpacing !== undefined) created.set("charSpacing", ov.charSpacing)
               if (ov.lineHeight !== undefined) created.set("lineHeight", ov.lineHeight)
               if (ov.textAlign !== undefined) created.set("textAlign", ov.textAlign)
@@ -2753,6 +2755,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         fontSize: effFontSize,
         fontFamily: (ov?.fontFamily ?? def.fontFamily ?? "Arial"),
         fontWeight: (ov?.fontWeight ?? def.fontWeight ?? "normal"),
+        fontStyle: (ov?.fontStyle ?? (def as any).fontStyle ?? "normal"),
         fill: effFill,
         // Adobe-style "Auto" leading default = 1:1 com fontSize. Override pode mudar
         // depois via ov.lineHeight ou ov.leadingPt. Fabric default eh 1.16 (estranho
@@ -3442,6 +3445,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
+            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
             if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
             if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
             if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
@@ -3598,6 +3602,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
+            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
             if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
             if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
             if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
@@ -4443,6 +4448,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
+            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
             if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
             if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
             if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
@@ -4604,6 +4610,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             layer.overrides.fontSize = o.fontSize
             layer.overrides.fontFamily = o.fontFamily
             layer.overrides.fontWeight = o.fontWeight
+            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
             if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
             if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
             if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign

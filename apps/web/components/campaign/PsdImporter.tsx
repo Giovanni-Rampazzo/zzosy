@@ -582,7 +582,17 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           const defFontName = defStyle.font?.name ?? "Arial"
           const defFontSize = defStyle.fontSize ?? 48
           const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
-          const defWeight = (defStyle.fauxBold || defFontName.toLowerCase().includes("bold")) ? "bold" : "normal"
+          const isItalicByName = /italic|oblique|kursiv|cursiv/i.test(defFontName)
+          const isBoldByName = /bold|black|heavy|extrabold/i.test(defFontName) || /-(bd|b|black)$/i.test(defFontName)
+          const defWeight = (defStyle.fauxBold || isBoldByName) ? "bold" : "normal"
+          const defStyleItalic = (defStyle.fauxItalic || isItalicByName) ? "italic" : "normal"
+          // Alinhamento real do paragraphStyle (era hardcoded "left" — texto
+          // PSD centralizado virava esquerdo, bug visivel no painel verde Sicredi).
+          const psJust = td.paragraphStyle?.justification
+          const defAlign: "left" | "center" | "right" = psJust === "center" ? "center" : psJust === "right" ? "right" : "left"
+          // Leading absoluto em PONTOS (Adobe-style). leadingPt eh fonte da verdade
+          // no editor; lineHeight derivado pra Fabric. ag-psd: defStyle.leading vem
+          // em PONTOS pre-transform — multiplica por textScale pra ficar correto.
 
           // Fix #1: ag-psd retorna fontSize NO ESPACO DO TEXTO (antes da transform).
           // A transform 6-elem [a,b,c,d,e,f] aplica scale/rot/translate; pra fontSize
@@ -597,6 +607,11 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             if (Number.isFinite(avg) && avg > 0) textScale = avg
           }
           const scaledDefFontSize = defFontSize * textScale
+          // Leading em PONTOS já escalado. autoLeading=true (Adobe Auto) → derivar
+          // do fontSize com fator 1.2 (Adobe default). Caso contrário usa o valor.
+          const defLeadingRaw = typeof defStyle.leading === "number" ? defStyle.leading : undefined
+          const defAutoLeading = defStyle.autoLeading === true || defLeadingRaw === undefined
+          const defLeadingPt = defAutoLeading ? Math.round(scaledDefFontSize * 1.2) : Math.round((defLeadingRaw ?? scaledDefFontSize) * textScale)
 
           let spans: any[] = []
           const runs = td.styleRuns ?? []
@@ -610,15 +625,18 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               const fontName = rs.font?.name ?? defFontName
               const fontSize = (rs.fontSize ?? defFontSize) * textScale
               const color = rs.fillColor ? colorToHex(rs.fillColor) : defColor
-              const fontWeight = (rs.fauxBold || fontName.toLowerCase().includes("bold")) ? "bold" : defWeight
-              spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontFamily: fontName } })
+              const isBoldRs = /bold|black|heavy|extrabold/i.test(fontName) || /-(bd|b|black)$/i.test(fontName)
+              const isItalicRs = /italic|oblique|kursiv|cursiv/i.test(fontName)
+              const fontWeight = (rs.fauxBold || isBoldRs) ? "bold" : defWeight
+              const fontStyle = (rs.fauxItalic || isItalicRs) ? "italic" : defStyleItalic
+              spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontStyle, fontFamily: fontName } })
               cursor += len
             }
             if (cursor < rawText.length) {
-              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontFamily: defFontName } })
+              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFontName } })
             }
           } else {
-            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontFamily: defFontName } }]
+            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFontName } }]
           }
 
           // Fix #1 (cont): td.boundingBox vem em PONTOS no espaco PRE-transform —
@@ -636,10 +654,13 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             fontFamily: defFontName,
             fontSize: Math.round(scaledDefFontSize),
             fontWeight: defWeight,
+            fontStyle: defStyleItalic,
             fill: defColor,
             charSpacing: 0,
-            lineHeight: 1.16,
-            textAlign: "left",
+            // lineHeight derivado de leadingPt/fontSize (Fabric usa multiplier).
+            lineHeight: scaledDefFontSize > 0 ? defLeadingPt / scaledDefFontSize : 1.0,
+            leadingPt: defLeadingPt,
+            textAlign: defAlign,
           }
           if (spans.length > 1) {
             const styles: any = { 0: {} }
@@ -653,6 +674,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
                   fontSize: span.style.fontSize,
                   fontFamily: span.style.fontFamily,
                   fontWeight: span.style.fontWeight,
+                  fontStyle: span.style.fontStyle,
                 }
                 charIdx++
               }
