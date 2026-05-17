@@ -135,47 +135,161 @@ function buildRasterAssetMask(m: any) {
   }
 }
 
-// Extrai layer effects do PSD: drop shadow, stroke, outer glow.
-// Outros effects (bevel, satin, gradient overlay, color overlay, inner shadow,
-// inner glow) ainda não suportados — adicionar conforme aparecer no piloto.
-// Convenção: angle PSD = 0 (direita), aumenta sentido horário; offsetY positivo
-// vai PRA BAIXO no canvas. PSD entrega distance + angle; convertemos pra dx/dy.
+// Helper: extrai number opcional de UnitsValue do ag-psd ({value, units} ou number cru)
+function numU(v: any, def = 0): number {
+  if (typeof v === "number") return v
+  if (v && typeof v.value === "number") return v.value
+  return def
+}
+// Helper: extrai color do ag-psd (pode vir aninhado em .color)
+function colorOf(v: any): string {
+  return colorToHex(v?.color ?? v)
+}
+// Helper: pega a primeira instância habilitada de um efeito (array ou objeto)
+function pickEnabled(v: any): any | null {
+  if (!v) return null
+  if (Array.isArray(v)) return v.find((s: any) => s?.enabled) ?? null
+  return v.enabled ? v : null
+}
+
+// Extrai layer effects do PSD pra round-trip ZZOSY ↔ Photoshop.
+// COBERTURA:
+//  - dropShadow, innerShadow         (sombras externa/interna)
+//  - outerGlow, innerGlow            (brilhos)
+//  - stroke                          (borda)
+//  - colorOverlay (ag-psd: solidFill) (cor sobreposta)
+//  - gradientOverlay                 (gradiente sobreposto)
+//  - bevel                           (chanfro/relevo) — só metadados
+//  - satin                           (cetim) — só metadados
+//  - patternOverlay                  (padrão) — só metadados
+// Convenção angles: PSD 0°=direita, aumenta sentido horário; sombra cai oposta
+// à luz (sinal negativo no cos). offsetY positivo = pra baixo no canvas.
 function extractPsdEffects(layer: any): any | undefined {
   const fx = (layer as any)?.effects
   if (!fx) return undefined
   const out: any = {}
-  const ds = Array.isArray(fx.dropShadow) ? fx.dropShadow.find((s: any) => s?.enabled) : (fx.dropShadow?.enabled ? fx.dropShadow : null)
+
+  const ds = pickEnabled(fx.dropShadow)
   if (ds) {
-    const distance = typeof ds.distance === "number" ? ds.distance : 0
-    // PSD angle: 0=direita, 90=baixo (luz vinda de cima). Canvas usa o mesmo
-    // sistema: cos→x, sin→y (com y crescendo pra baixo). Sombra cai na DIREÇÃO
-    // OPOSTA à luz, então sinal negativo.
-    const angleRad = ((ds.useGlobalLight === false ? (ds.angle ?? 120) : (ds.angle ?? 120)) * Math.PI) / 180
+    const distance = numU(ds.distance, 0)
+    const angleRad = ((ds.angle ?? 120) * Math.PI) / 180
     out.dropShadow = {
-      color: colorToHex(ds.color),
-      opacity: typeof ds.opacity === "number" ? ds.opacity : 0.75,
+      color: colorOf(ds), opacity: ds.opacity ?? 0.75,
       offsetX: Math.round(-Math.cos(angleRad) * distance),
       offsetY: Math.round(Math.sin(angleRad) * distance),
-      blur: typeof ds.size === "number" ? ds.size : 5,
+      blur: numU(ds.size, 5),
+      blendMode: ds.blendMode ?? "normal",
     }
   }
-  const st = Array.isArray(fx.stroke) ? fx.stroke.find((s: any) => s?.enabled) : (fx.stroke?.enabled ? fx.stroke : null)
+  const is = pickEnabled(fx.innerShadow)
+  if (is) {
+    const distance = numU(is.distance, 0)
+    const angleRad = ((is.angle ?? 120) * Math.PI) / 180
+    out.innerShadow = {
+      color: colorOf(is), opacity: is.opacity ?? 0.75,
+      offsetX: Math.round(-Math.cos(angleRad) * distance),
+      offsetY: Math.round(Math.sin(angleRad) * distance),
+      blur: numU(is.size, 5),
+      choke: numU(is.choke, 0),
+      blendMode: is.blendMode ?? "multiply",
+    }
+  }
+  const og = pickEnabled(fx.outerGlow)
+  if (og) {
+    out.outerGlow = {
+      color: colorOf(og), opacity: og.opacity ?? 0.5,
+      blur: numU(og.size, 5),
+      choke: numU(og.choke, 0),
+      blendMode: og.blendMode ?? "screen",
+    }
+  }
+  const ig = pickEnabled(fx.innerGlow)
+  if (ig) {
+    out.innerGlow = {
+      color: colorOf(ig), opacity: ig.opacity ?? 0.5,
+      blur: numU(ig.size, 5),
+      choke: numU(ig.choke, 0),
+      source: ig.source ?? "edge",
+      blendMode: ig.blendMode ?? "screen",
+    }
+  }
+  const st = pickEnabled(fx.stroke)
   if (st) {
     const fc = st.fillColor?.color ?? st.fillColor ?? st.color
     out.stroke = {
       color: colorToHex(fc),
-      width: typeof st.size === "number" ? st.size : 1,
+      width: numU(st.size, 1),
       position: st.position ?? "outside",
-      opacity: typeof st.opacity === "number" ? st.opacity : 1,
+      opacity: st.opacity ?? 1,
+      blendMode: st.blendMode ?? "normal",
     }
   }
-  const og = Array.isArray(fx.outerGlow) ? fx.outerGlow.find((s: any) => s?.enabled) : (fx.outerGlow?.enabled ? fx.outerGlow : null)
-  if (og && !out.dropShadow) {
-    const oc = og.color?.color ?? og.color
-    out.outerGlow = {
-      color: colorToHex(oc),
-      opacity: typeof og.opacity === "number" ? og.opacity : 0.5,
-      blur: typeof og.size === "number" ? og.size : 5,
+  // Color Overlay no Photoshop ↔ solidFill no ag-psd
+  const co = pickEnabled(fx.solidFill)
+  if (co) {
+    out.colorOverlay = {
+      color: colorOf(co), opacity: co.opacity ?? 1,
+      blendMode: co.blendMode ?? "normal",
+    }
+  }
+  const go = pickEnabled(fx.gradientOverlay)
+  if (go) {
+    const grad = go.gradient
+    out.gradientOverlay = {
+      opacity: go.opacity ?? 1,
+      blendMode: go.blendMode ?? "normal",
+      type: go.type ?? "linear",
+      angle: go.angle ?? 90,
+      scale: go.scale ?? 100,
+      reverse: go.reverse === true,
+      align: go.align !== false,
+      stops: Array.isArray(grad?.colorStops)
+        ? grad.colorStops.map((cs: any) => ({ color: colorOf(cs), offset: cs.location ?? 0 }))
+        : [],
+      opacityStops: Array.isArray(grad?.opacityStops)
+        ? grad.opacityStops.map((os: any) => ({ opacity: os.opacity ?? 1, offset: os.location ?? 0 }))
+        : [],
+    }
+  }
+  // Bevel/Satin/PatternOverlay: preserva metadados pro round-trip (sem render
+  // visual no editor — Fabric não tem equivalente nativo, exigiria offscreen
+  // canvas custom. Designer vê o efeito ao re-abrir no Photoshop).
+  const bv = pickEnabled(fx.bevel)
+  if (bv) {
+    out.bevel = {
+      style: bv.style ?? "inner bevel",
+      direction: bv.direction ?? "up",
+      size: numU(bv.size, 5),
+      angle: bv.angle ?? 120,
+      altitude: bv.altitude ?? 30,
+      highlightColor: colorOf(bv.highlightColor),
+      highlightOpacity: bv.highlightOpacity ?? 0.75,
+      highlightBlendMode: bv.highlightBlendMode ?? "screen",
+      shadowColor: colorOf(bv.shadowColor),
+      shadowOpacity: bv.shadowOpacity ?? 0.75,
+      shadowBlendMode: bv.shadowBlendMode ?? "multiply",
+      strength: bv.strength ?? 100,
+      soften: numU(bv.soften, 0),
+    }
+  }
+  const sa = pickEnabled(fx.satin)
+  if (sa) {
+    out.satin = {
+      color: colorOf(sa), opacity: sa.opacity ?? 0.5,
+      angle: sa.angle ?? 19, distance: numU(sa.distance, 11),
+      size: numU(sa.size, 14), invert: sa.invert === true,
+      blendMode: sa.blendMode ?? "multiply",
+    }
+  }
+  const po = pickEnabled(fx.patternOverlay)
+  if (po) {
+    out.patternOverlay = {
+      opacity: po.opacity ?? 1,
+      scale: po.scale ?? 100,
+      align: po.align !== false,
+      blendMode: po.blendMode ?? "normal",
+      // pattern asset não é preservado aqui (precisaria ID + bytes do PSD).
+      // Round-trip parcial — designer reaplica no Photoshop se necessário.
     }
   }
   return Object.keys(out).length > 0 ? out : undefined

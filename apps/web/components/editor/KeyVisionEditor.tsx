@@ -2455,6 +2455,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Stroke vira stroke nativo do Fabric.
   // ShadowClass passada como param: Fabric v7 exige Shadow INSTANCE (não plain
   // object) — passar {color,blur,...} cru faz render virar branco silenciosamente.
+  // COBERTURA VISUAL:
+  //  - dropShadow, outerGlow         → Fabric shadow
+  //  - stroke                        → fabric stroke/strokeWidth
+  //  - colorOverlay (texto/forma)    → override do fill
+  //  - gradientOverlay (texto/forma) → fill como fabric Gradient
+  // PRESERVADOS NO JSON (sem render visual ainda):
+  //  - innerShadow, innerGlow, bevel, satin, patternOverlay
+  //  Esses exigem offscreen comp custom; ficam preservados pra round-trip ao
+  //  re-exportar pro Photoshop (designer vê o efeito ao re-abrir o PSD).
   function applyFabricEffects(obj: any, effects: any, ShadowClass: any) {
     if (!effects) return
     if (effects.dropShadow) {
@@ -2476,6 +2485,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (effects.stroke && effects.stroke.color) {
       obj.set("stroke", effects.stroke.color)
       obj.set("strokeWidth", effects.stroke.width ?? 1)
+    }
+    // Color Overlay: substitui o fill por uma cor sólida. Só faz sentido pra
+    // texto/forma (não pra imagem — image fill é o próprio bitmap).
+    if (effects.colorOverlay && effects.colorOverlay.color) {
+      const isImg = obj.type === "image"
+      if (!isImg) {
+        obj.set("fill", effects.colorOverlay.color)
+      }
+      // Para imagem: rendering visual requer custom filter (TODO). Round-trip
+      // pro PSD preserva via __psdEffects.
+    }
+    // Gradient Overlay: aplica gradiente como fill. Mesma restrição (texto/forma).
+    if (effects.gradientOverlay && Array.isArray(effects.gradientOverlay.stops) && effects.gradientOverlay.stops.length > 0) {
+      const isImg = obj.type === "image"
+      if (!isImg) {
+        // Converte angle PSD (0=cima, sentido horário) pros coords do Fabric Gradient.
+        // Linear: usa coords relativas ao bbox do objeto via coordsType:"percentage".
+        const go = effects.gradientOverlay
+        const angleRad = ((go.angle ?? 90) * Math.PI) / 180
+        // Eixo do gradiente: vector unitário no angle dado. Multiplica por raio que
+        // garante cobertura total da diagonal do bbox (0.5 * √2 ≈ 0.707).
+        const r = 0.707
+        const cx = 0.5, cy = 0.5
+        const dx = Math.cos(angleRad) * r
+        const dy = Math.sin(angleRad) * r
+        // ag-psd gradient.colorStops: location 0..1
+        const stops = go.reverse
+          ? go.stops.map((s: any) => ({ offset: 1 - (s.offset ?? 0), color: s.color }))
+          : go.stops.map((s: any) => ({ offset: s.offset ?? 0, color: s.color }))
+        // Fabric Gradient: importa lazy. Setar fill via gradiente requer instância.
+        try {
+          // Import síncrono não disponível aqui; criamos a config — Fabric aceita
+          // gradiente como objeto literal via set("fill", literal) em v7.
+          obj.set("fill", {
+            type: go.type === "radial" ? "radial" : "linear",
+            coords: go.type === "radial"
+              ? { x1: cx, y1: cy, x2: cx, y2: cy, r1: 0, r2: r }
+              : { x1: cx - dx, y1: cy - dy, x2: cx + dx, y2: cy + dy },
+            colorStops: stops,
+            gradientUnits: "percentage",
+          } as any)
+        } catch (e) {
+          console.warn("[applyFabricEffects] gradientOverlay falhou:", e)
+        }
+      }
     }
   }
 

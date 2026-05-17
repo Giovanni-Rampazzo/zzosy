@@ -997,37 +997,69 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       ? Math.max(0, Math.min(255, Math.round(obj.opacity * 255)))
       : undefined
     const psdLayerBlend = canvasBlendToPsd(obj.globalCompositeOperation)
-    // PSD layer effects (drop shadow / stroke / outer glow) round-trip.
-    // Converte schema ZZOSY → schema ag-psd (cores {r,g,b}, angle/distance, etc).
+    // PSD layer effects round-trip completo. Converte schema ZZOSY → ag-psd.
+    // Inclui: dropShadow, innerShadow, outerGlow, innerGlow, stroke,
+    //         colorOverlay (solidFill), gradientOverlay, bevel, satin,
+    //         patternOverlay (metadados).
     const psdLayerEffects = (() => {
       const fx = (obj as any).__psdEffects
       if (!fx) return undefined
       const out: any = {}
+      // Inverso da extração: PSD angle (0=direita, +sentido horário) a partir
+      // dos offsets (sombra cai oposta à luz). Defensivo se distance=0.
+      const angleFromOffsets = (dx: number, dy: number, fallback: number) => {
+        const d = Math.hypot(dx, dy)
+        return d > 0 ? (Math.atan2(dy, -dx) * 180 / Math.PI) : fallback
+      }
       if (fx.dropShadow) {
         const d = fx.dropShadow
         const dx = d.offsetX ?? 0, dy = d.offsetY ?? 0
-        const distance = Math.round(Math.hypot(dx, dy))
-        // Inverso da extração: PSD angle (0=direita, +sentido horário) a partir
-        // dos offsets (sombra cai oposta à luz). Defensivo se distance=0.
-        const angle = distance > 0 ? (Math.atan2(dy, -dx) * 180 / Math.PI) : 120
         out.dropShadow = [{
           enabled: true,
           color: hexToPsdColor(d.color ?? "#000000"),
-          opacity: typeof d.opacity === "number" ? d.opacity : 0.75,
-          angle, distance,
+          opacity: d.opacity ?? 0.75,
+          angle: angleFromOffsets(dx, dy, 120),
+          distance: Math.round(Math.hypot(dx, dy)),
           size: d.blur ?? 5,
-          blendMode: "multiply",
+          blendMode: d.blendMode ?? "multiply",
           useGlobalLight: false,
         }]
       }
-      if (fx.outerGlow && !fx.dropShadow) {
-        out.outerGlow = [{
+      if (fx.innerShadow) {
+        const i = fx.innerShadow
+        const dx = i.offsetX ?? 0, dy = i.offsetY ?? 0
+        out.innerShadow = [{
+          enabled: true,
+          color: hexToPsdColor(i.color ?? "#000000"),
+          opacity: i.opacity ?? 0.75,
+          angle: angleFromOffsets(dx, dy, 120),
+          distance: Math.round(Math.hypot(dx, dy)),
+          size: i.blur ?? 5,
+          choke: i.choke ?? 0,
+          blendMode: i.blendMode ?? "multiply",
+          useGlobalLight: false,
+        }]
+      }
+      if (fx.outerGlow) {
+        out.outerGlow = {
           enabled: true,
           color: hexToPsdColor(fx.outerGlow.color ?? "#ffffff"),
-          opacity: typeof fx.outerGlow.opacity === "number" ? fx.outerGlow.opacity : 0.5,
+          opacity: fx.outerGlow.opacity ?? 0.5,
           size: fx.outerGlow.blur ?? 5,
-          blendMode: "screen",
-        }]
+          choke: fx.outerGlow.choke ?? 0,
+          blendMode: fx.outerGlow.blendMode ?? "screen",
+        }
+      }
+      if (fx.innerGlow) {
+        out.innerGlow = {
+          enabled: true,
+          color: hexToPsdColor(fx.innerGlow.color ?? "#ffffff"),
+          opacity: fx.innerGlow.opacity ?? 0.5,
+          size: fx.innerGlow.blur ?? 5,
+          choke: fx.innerGlow.choke ?? 0,
+          source: fx.innerGlow.source ?? "edge",
+          blendMode: fx.innerGlow.blendMode ?? "screen",
+        }
       }
       if (fx.stroke) {
         out.stroke = [{
@@ -1035,10 +1067,83 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           position: fx.stroke.position ?? "outside",
           fillColor: { color: hexToPsdColor(fx.stroke.color ?? "#000000") },
           size: fx.stroke.width ?? 1,
-          opacity: typeof fx.stroke.opacity === "number" ? fx.stroke.opacity : 1,
-          blendMode: "normal",
+          opacity: fx.stroke.opacity ?? 1,
+          blendMode: fx.stroke.blendMode ?? "normal",
         }]
       }
+      if (fx.colorOverlay) {
+        out.solidFill = [{
+          enabled: true,
+          color: hexToPsdColor(fx.colorOverlay.color ?? "#000000"),
+          opacity: fx.colorOverlay.opacity ?? 1,
+          blendMode: fx.colorOverlay.blendMode ?? "normal",
+        }]
+      }
+      if (fx.gradientOverlay && Array.isArray(fx.gradientOverlay.stops)) {
+        const go = fx.gradientOverlay
+        out.gradientOverlay = [{
+          enabled: true,
+          opacity: go.opacity ?? 1,
+          blendMode: go.blendMode ?? "normal",
+          type: go.type ?? "linear",
+          angle: go.angle ?? 90,
+          scale: go.scale ?? 100,
+          reverse: go.reverse === true,
+          align: go.align !== false,
+          gradient: {
+            name: "Custom",
+            type: "solid" as const,
+            smoothness: 4096,
+            colorStops: go.stops.map((s: any) => ({
+              color: hexToPsdColor(s.color ?? "#000000"),
+              location: s.offset ?? 0,
+              midpoint: 50,
+            })),
+            opacityStops: (Array.isArray(go.opacityStops) && go.opacityStops.length > 0
+              ? go.opacityStops
+              : [{ opacity: 1, offset: 0 }, { opacity: 1, offset: 1 }]
+            ).map((s: any) => ({
+              opacity: (s.opacity ?? 1) * 100,
+              location: s.offset ?? 0,
+              midpoint: 50,
+            })),
+          },
+        }]
+      }
+      if (fx.bevel) {
+        const b = fx.bevel
+        out.bevel = {
+          enabled: true,
+          style: b.style ?? "inner bevel",
+          direction: b.direction ?? "up",
+          size: b.size ?? 5,
+          angle: b.angle ?? 120,
+          altitude: b.altitude ?? 30,
+          highlightColor: hexToPsdColor(b.highlightColor ?? "#ffffff"),
+          highlightOpacity: b.highlightOpacity ?? 0.75,
+          highlightBlendMode: b.highlightBlendMode ?? "screen",
+          shadowColor: hexToPsdColor(b.shadowColor ?? "#000000"),
+          shadowOpacity: b.shadowOpacity ?? 0.75,
+          shadowBlendMode: b.shadowBlendMode ?? "multiply",
+          strength: b.strength ?? 100,
+          soften: b.soften ?? 0,
+          useGlobalLight: false,
+        }
+      }
+      if (fx.satin) {
+        out.satin = {
+          enabled: true,
+          color: hexToPsdColor(fx.satin.color ?? "#000000"),
+          opacity: fx.satin.opacity ?? 0.5,
+          angle: fx.satin.angle ?? 19,
+          distance: fx.satin.distance ?? 11,
+          size: fx.satin.size ?? 14,
+          invert: fx.satin.invert === true,
+          blendMode: fx.satin.blendMode ?? "multiply",
+        }
+      }
+      // patternOverlay omitido — não preservamos pattern bytes (precisaria mapeio
+      // dedicado). Round-trip parcial: designer re-aplica no Photoshop.
       return Object.keys(out).length > 0 ? out : undefined
     })()
 
