@@ -160,13 +160,56 @@ export default function CampaignAssetsPage() {
       if (!t) return "Novo texto"
       return t.length > 64 ? t.substring(0, 64) + "…" : t
     })()
-    // Colapsa pra 1 unico span com o newText, preservando o style do primeiro
-    // span existente (que reflete o styling visivel do texto inteiro).
-    // Antes mantinhamos spans[1..N] inalterados, mas isso fazia o texto final
-    // virar newText + texto_dos_outros_spans (acrescentava conteudo apos editar).
+    // Re-monta spans preservando styles per-char por DIFF de prefix/suffix:
+    //  - Common prefix entre prevText e newText: mantém styles originais
+    //  - Common suffix: mantém styles originais
+    //  - Meio (diferente): usa style default (do primeiro span)
+    //  - Agrupa chars consecutivos com mesmo style em spans
+    // Sem isso, cada edição colapsava tudo em 1 span único com 1 cor.
     function rebuildSpans(prev: any[]): any[] {
-      const baseStyle = prev?.[0]?.style ?? { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" }
-      return [{ text: newText, style: baseStyle }]
+      const defaultStyle = prev?.[0]?.style ?? { color: "#111111", fontSize: 48, fontWeight: "normal", fontFamily: "Arial" }
+      const prevText = (prev ?? []).map((s: any) => s?.text ?? "").join("")
+      if (prevText === newText) return prev ?? [{ text: newText, style: defaultStyle }]
+      // Style char-by-char do prev (expansão dos spans)
+      const prevStyles: any[] = []
+      for (const span of (prev ?? [])) {
+        const t = span?.text ?? ""
+        const st = span?.style ?? defaultStyle
+        for (let i = 0; i < t.length; i++) prevStyles.push(st)
+      }
+      // Common prefix
+      let prefixLen = 0
+      const minLen = Math.min(prevText.length, newText.length)
+      while (prefixLen < minLen && prevText[prefixLen] === newText[prefixLen]) prefixLen++
+      // Common suffix (sem invadir o prefix em qualquer lado)
+      let suffixLen = 0
+      while (
+        suffixLen < (prevText.length - prefixLen) &&
+        suffixLen < (newText.length - prefixLen) &&
+        prevText[prevText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
+      ) suffixLen++
+      // Style char-by-char pro newText
+      const newStyles: any[] = []
+      for (let i = 0; i < newText.length; i++) {
+        if (i < prefixLen) newStyles.push(prevStyles[i] ?? defaultStyle)
+        else if (i >= newText.length - suffixLen) {
+          const prevIdx = prevText.length - (newText.length - i)
+          newStyles.push(prevStyles[prevIdx] ?? defaultStyle)
+        } else newStyles.push(defaultStyle)
+      }
+      // Agrupa chars consecutivos com mesmo style em spans
+      const result: any[] = []
+      let buf = ""
+      let bufStyle: any = null
+      const sameStyle = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b)
+      for (let i = 0; i < newText.length; i++) {
+        const cs = newStyles[i]
+        if (bufStyle === null) { buf = newText[i]; bufStyle = cs; continue }
+        if (sameStyle(bufStyle, cs)) buf += newText[i]
+        else { result.push({ text: buf, style: bufStyle }); buf = newText[i]; bufStyle = cs }
+      }
+      if (buf) result.push({ text: buf, style: bufStyle ?? defaultStyle })
+      return result.length > 0 ? result : [{ text: newText, style: defaultStyle }]
     }
     setCampaign({
       ...campaign,
