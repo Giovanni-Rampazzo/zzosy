@@ -125,13 +125,45 @@ function vectorMaskToSvgPath(vm: any): { d: string; bbox: { minX: number; minY: 
 function buildRasterAssetMask(m: any) {
   const mLeft = m.left ?? 0
   const mTop = m.top ?? 0
-  const mRight = m.right ?? (mLeft + (m.canvas as HTMLCanvasElement).width)
-  const mBottom = m.bottom ?? (mTop + (m.canvas as HTMLCanvasElement).height)
-  const dataUrl = (m.canvas as HTMLCanvasElement).toDataURL("image/png")
+  const src = m.canvas as HTMLCanvasElement
+  const mRight = m.right ?? (mLeft + src.width)
+  const mBottom = m.bottom ?? (mTop + src.height)
+  // PSD raster mask: grayscale onde branco=opaco, preto=transparente. Fabric
+  // clipPath usa o CANAL ALPHA (não grayscale RGB) pra blending parcial. Sem
+  // converter, masks com feather/blur do PS chegavam BINARIAS (borda dura) no
+  // editor. Conversão: rgb(g,g,g) → rgba(255,255,255, g). Branco com alpha
+  // encoded da grayscale original preserva os tons intermediários do feather.
+  const w = src.width, h = src.height
+  let outDataUrl: string
+  try {
+    const conv = document.createElement("canvas")
+    conv.width = w; conv.height = h
+    const cctx = conv.getContext("2d")
+    if (!cctx) throw new Error("no 2d ctx")
+    const srcCtx = src.getContext("2d")
+    if (!srcCtx) throw new Error("no src ctx")
+    const srcData = srcCtx.getImageData(0, 0, w, h)
+    const outData = cctx.createImageData(w, h)
+    const sd = srcData.data, od = outData.data
+    for (let i = 0; i < sd.length; i += 4) {
+      // sd[i] = R (grayscale, R=G=B); usamos como alpha.
+      // Se a imagem ja tem alpha < 255 (mask com transparencia nativa),
+      // multiplicamos grayscale * alpha pra preservar ambas as info.
+      const gray = sd[i]
+      const srcA = sd[i + 3]
+      od[i] = 255; od[i + 1] = 255; od[i + 2] = 255
+      od[i + 3] = Math.round((gray * srcA) / 255)
+    }
+    cctx.putImageData(outData, 0, 0)
+    outDataUrl = conv.toDataURL("image/png")
+  } catch (e) {
+    console.warn("[psd-mask] falha convertendo grayscale→alpha, fallback raw:", e)
+    outDataUrl = src.toDataURL("image/png")
+  }
   return {
     type: "raster" as const,
     enabled: !m.disabled,
-    raster: { dataUrl, posX: mLeft, posY: mTop, width: mRight - mLeft, height: mBottom - mTop },
+    raster: { dataUrl: outDataUrl, posX: mLeft, posY: mTop, width: mRight - mLeft, height: mBottom - mTop },
   }
 }
 
