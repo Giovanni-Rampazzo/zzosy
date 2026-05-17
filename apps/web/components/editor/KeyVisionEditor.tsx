@@ -1917,7 +1917,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked"]))
+        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -1993,14 +1993,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (!fc) return
     try {
       // SAUDE: detecta objetos orfaos (sem __assetId nem __embedded) no canvas.
-      // Esses sao "fantasmas" criados por bugs de paste antigos ou caminhos quebrados.
-      // Layers validos tem __assetId (linkado) OU __embedded (peca importada PSD avulsa).
+      // Esses sao "fantasmas" — podem aparecer brevemente apos applySnapshot
+      // se loadFromJSON nao restaurou __assetId direito. NAO REMOVER aqui:
+      // se o user esta editando logo apos undo, o texto pode estar
+      // momentaneamente "orfao" pra Fabric mas o user ve no canvas.
+      // Em vez disso, SKIP o push (nao corrompe stack). O save em si tambem
+      // filtra orphans depois — vai re-detectar la se ainda for problema.
       const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
       if (orphans.length > 0) {
-        editorLog("[UNDO-CLEAN] removendo", orphans.length, "objetos orfaos antes de pushHistory")
-        for (const orphan of orphans) fc.remove(orphan)
+        console.warn("[pushHistory] skip — encontrei", orphans.length, "objetos orfaos. Estado nao foi adicionado ao undo stack.")
+        return
       }
-      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked"]))
+      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -2058,17 +2062,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Solucao: filtra BG dos snapObjects tambem antes de iterar.
       const restored = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
       const snapObjectsNoBg = snapObjects.filter((s: any) => !s?.__isBg && !s?.__isBleedOverlay)
+      // Sanidade: se a contagem de objetos restaurados não bate com o que tem
+      // no snap, há mismatch que vai bagunçar o iterate-by-index abaixo. Loga
+      // pra detectar bugs futuros do loadFromJSON.
+      if (restored.length !== snapObjectsNoBg.length) {
+        console.warn("[applySnapshot] mismatch: restored=", restored.length, "vs snap=", snapObjectsNoBg.length)
+      }
       for (let i = 0; i < restored.length; i++) {
         const obj: any = restored[i]
         const src = snapObjectsNoBg[i]
         if (!src) continue
-        // Restaurar props customizadas (sempre que existirem no snapshot, mesmo undefined no obj)
-        if (src.__assetId) obj.__assetId = src.__assetId
-        if (src.__assetLabel) obj.__assetLabel = src.__assetLabel
+        // CRITICO: Fabric loadFromJSON pode NÃO restaurar props customizadas
+        // mesmo passando-as no toJSON. Restaurar EXPLICITAMENTE preservando
+        // o valor original (mesmo se o obj atual já tem — sobrescreve com o
+        // src pra garantir consistência com o snap).
+        if (src.__assetId !== undefined) obj.__assetId = src.__assetId
+        if (src.__assetLabel !== undefined) obj.__assetLabel = src.__assetLabel
         if (src.__isImage !== undefined) obj.__isImage = src.__isImage
+        if (src.__hidden !== undefined) obj.__hidden = src.__hidden
+        if (src.__locked !== undefined) obj.__locked = src.__locked
         // Layers embedded (PSD avulso importado): preserva flag + dataUrl da imagem
         if (src.__embedded) obj.__embedded = true
         if (src.imageDataUrl) obj.imageDataUrl = src.imageDataUrl
+        // Brand ref do fill (texto vinculado a brand color do cliente)
+        if (typeof src.__fillBrandIdx === "number") obj.__fillBrandIdx = src.__fillBrandIdx
         // Restaurar styles per-char em textboxes
         if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
           obj.set("styles", src.styles)
