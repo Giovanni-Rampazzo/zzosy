@@ -67,7 +67,8 @@ function applyPsdHiddenLocked(layerData: any, psdLayer: any) {
   if (psdLayer?.hidden === true) layerData.hidden = true
   if (psdLayer?.transparencyProtected === true) layerData.locked = true
   if (typeof psdLayer?.opacity === "number") {
-    const op = Math.max(0, Math.min(1, psdLayer.opacity / 255))
+    // ag-psd ja normaliza opacity (0..1). Nao dividir por 255 de novo.
+    const op = Math.max(0, Math.min(1, psdLayer.opacity))
     if (op < 1) layerData.opacity = op
   }
   const bm = psdBlendToCanvas(psdLayer?.blendMode)

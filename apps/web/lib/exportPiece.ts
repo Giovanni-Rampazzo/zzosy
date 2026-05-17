@@ -196,7 +196,10 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
       const overrides = layer.overrides ?? {}
       // PSD opacity/blendMode (capturados no import) → Fabric props.
       // Fabric aceita "opacity" 0..1 e "globalCompositeOperation" (canvas spec).
-      const layerOpacity = typeof layer.opacity === "number" ? layer.opacity : 1
+      // Sanity check: opacity < 0.01 = bug do importer antigo (divisão 2x por 255).
+      // Trata como 1 pra render sair visível mesmo em KV/peças não-reimportados.
+      const rawOpacity = typeof layer.opacity === "number" ? layer.opacity : 1
+      const layerOpacity = (rawOpacity > 0 && rawOpacity < 0.01) ? 1 : rawOpacity
       const layerBlend = typeof layer.blendMode === "string" && layer.blendMode ? layer.blendMode : "source-over"
       const layerEffects = (layer.effects && typeof layer.effects === "object") ? layer.effects : null
       // Fabric v7 exige Shadow INSTANCE — passar plain object faz o render

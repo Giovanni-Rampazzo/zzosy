@@ -361,7 +361,10 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // Persistimos como propriedades do layer pra cada peça poder ter sua própria
         // opacity/blend depois (override). Na importação inicial, todos os layers
         // da matriz herdam direto do PSD.
-        const psdOpacity = typeof (layer as any).opacity === "number" ? Math.max(0, Math.min(1, (layer as any).opacity / 255)) : undefined
+        // ag-psd JÁ normaliza opacity pra 0..1 (psdReader.js: readUint8 / 0xff).
+        // Não dividir de novo — antes virava 1/255 ≈ 0.004 e os layers ficavam
+        // invisíveis no canvas.
+        const psdOpacity = typeof (layer as any).opacity === "number" ? Math.max(0, Math.min(1, (layer as any).opacity)) : undefined
         const psdBlend = psdBlendToCanvas((layer as any).blendMode) ?? undefined
         const psdEffects = extractPsdEffects(layer)
 

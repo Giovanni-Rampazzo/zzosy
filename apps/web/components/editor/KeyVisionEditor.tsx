@@ -2490,7 +2490,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // Canvas interativo pode trigerar render anômalo (canvas em branco)
     // mesmo sendo equivalente aos defaults.
     const psdExtraProps: any = {}
-    if (typeof layer?.opacity === "number" && layer.opacity < 1) psdExtraProps.opacity = layer.opacity
+    // Sanity: opacity exatamente 1/255 (≈ 0.0039) ou < 0.01 = bug do importer
+    // antigo (dividia opacity 2x por 255). Descarta o valor, trata como visível.
+    // Re-importe o PSD pra grudar opacities reais corretamente.
+    if (typeof layer?.opacity === "number" && layer.opacity < 1 && layer.opacity >= 0.01) {
+      psdExtraProps.opacity = layer.opacity
+    }
     if (typeof layer?.blendMode === "string" && layer.blendMode && layer.blendMode !== "source-over") {
       psdExtraProps.globalCompositeOperation = layer.blendMode
     }
