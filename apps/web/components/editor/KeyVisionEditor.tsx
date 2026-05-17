@@ -2465,10 +2465,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const scaleY = layer?.scaleY ?? 1
     const angle = layer?.rotation ?? 0
     // PSD opacity/blendMode (extraídos no import) preservados como props do
-    // Fabric object. Fabric usa "opacity" (0..1) e "globalCompositeOperation"
-    // (canvas spec). Default omitido pra não inflar JSON.
-    const psdOpacity = typeof layer?.opacity === "number" ? layer.opacity : 1
-    const psdBlend = typeof layer?.blendMode === "string" && layer.blendMode ? layer.blendMode : "source-over"
+    // Fabric object. Só repassa quando há valor explícito (não-default) —
+    // setar `opacity: 1` ou `globalCompositeOperation: "source-over"` no
+    // Canvas interativo pode trigerar render anômalo (canvas em branco)
+    // mesmo sendo equivalente aos defaults.
+    const psdExtraProps: any = {}
+    if (typeof layer?.opacity === "number" && layer.opacity < 1) psdExtraProps.opacity = layer.opacity
+    if (typeof layer?.blendMode === "string" && layer.blendMode && layer.blendMode !== "source-over") {
+      psdExtraProps.globalCompositeOperation = layer.blendMode
+    }
     const psdEffects = (layer?.effects && typeof layer.effects === "object") ? layer.effects : null
 
     if (asset.type === "IMAGE") {
@@ -2534,7 +2539,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 const ratio = width / naturalW
                 sx = ratio; sy = ratio
               }
-              resolve(new FabricImage(el, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle, opacity: psdOpacity, globalCompositeOperation: psdBlend }))
+              resolve(new FabricImage(el, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle, ...psdExtraProps }))
             }
             el.onerror = reject
             el.src = imgSrc
@@ -2554,7 +2559,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         left: posX, top: posY, width, height: layer?.height ?? 300,
         fill: "#d0d0d0", stroke: "#999", strokeWidth: 1,
         scaleX, scaleY, angle,
-        opacity: psdOpacity, globalCompositeOperation: psdBlend,
+        ...psdExtraProps,
       })
       ;(r as any).__assetId = asset.id
       ;(r as any).__assetLabel = asset.label
@@ -2671,8 +2676,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // alterados via /assets.
         editable: true,
         scaleX: effScaleX, scaleY: effScaleY, angle,
-        opacity: psdOpacity,
-        globalCompositeOperation: psdBlend,
+        ...psdExtraProps,
       })
       // Aplica overrides do layer (estilos editados pelo usuário no editor)
       if (ov) {
