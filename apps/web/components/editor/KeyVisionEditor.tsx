@@ -726,7 +726,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // undo stack. Sem isso, undo até o início "desfaz" também o brand
       // sync — que mudou outros textos sem o user ter feito.
       try {
-        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx"]))
+        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects"]))
         undoStack.current = [snap]
         redoStack.current = []
         setHistoryTick(t => t + 1)
@@ -1923,7 +1923,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx"]))
+        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -2010,7 +2010,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         console.warn("[pushHistory] skip — encontrei", orphans.length, "objetos orfaos. Estado nao foi adicionado ao undo stack.")
         return
       }
-      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx"]))
+      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -2092,6 +2092,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (src.imageDataUrl) obj.imageDataUrl = src.imageDataUrl
         // Brand ref do fill (texto vinculado a brand color do cliente)
         if (typeof src.__fillBrandIdx === "number") obj.__fillBrandIdx = src.__fillBrandIdx
+        // PSD layer effects (dropShadow/stroke/outerGlow) — round-trip
+        if (src.__psdEffects && typeof src.__psdEffects === "object") obj.__psdEffects = src.__psdEffects
         // Restaurar styles per-char em textboxes
         if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
           obj.set("styles", src.styles)
@@ -2423,6 +2425,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
   }
 
+  // Aplica layer effects do PSD (drop shadow, stroke, outer glow) num
+  // Fabric object. Drop shadow e outer glow viram shadow nativo (ZZOSY só
+  // suporta UM shadow por object — drop shadow ganha precedência sobre glow).
+  // Stroke vira stroke nativo do Fabric.
+  function applyFabricEffects(obj: any, effects: any) {
+    if (!effects) return
+    if (effects.dropShadow) {
+      const d = effects.dropShadow
+      obj.set("shadow", {
+        color: d.color ?? "rgba(0,0,0,0.5)",
+        offsetX: d.offsetX ?? 0,
+        offsetY: d.offsetY ?? 0,
+        blur: d.blur ?? 5,
+      })
+    } else if (effects.outerGlow) {
+      const g = effects.outerGlow
+      obj.set("shadow", {
+        color: g.color ?? "rgba(255,255,255,0.5)",
+        offsetX: 0, offsetY: 0,
+        blur: g.blur ?? 5,
+      })
+    }
+    if (effects.stroke && effects.stroke.color) {
+      obj.set("stroke", effects.stroke.color)
+      obj.set("strokeWidth", effects.stroke.width ?? 1)
+    }
+  }
+
   async function addAssetToCanvas(fc: any, asset: Asset, layer: any) {
     const { Rect, Textbox, FabricImage } = await import("fabric")
     const posX = layer?.posX ?? 100
@@ -2436,6 +2466,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // (canvas spec). Default omitido pra não inflar JSON.
     const psdOpacity = typeof layer?.opacity === "number" ? layer.opacity : 1
     const psdBlend = typeof layer?.blendMode === "string" && layer.blendMode ? layer.blendMode : "source-over"
+    const psdEffects = (layer?.effects && typeof layer.effects === "object") ? layer.effects : null
 
     if (asset.type === "IMAGE") {
       if (asset.imageUrl) {
@@ -2509,6 +2540,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // em re-renders/exports. Browser libera o blob no GC quando nada mais usa.
           ;(img as any).__assetId = asset.id
           ;(img as any).__assetLabel = asset.label
+          if (psdEffects) (img as any).__psdEffects = psdEffects
+          applyFabricEffects(img, psdEffects)
           fc.add(img)
           fc.requestRenderAll()
           return
@@ -2656,6 +2689,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
       if (typeof fillBrandIdx === "number") (t as any).__fillBrandIdx = fillBrandIdx
+      if (psdEffects) (t as any).__psdEffects = psdEffects
+      applyFabricEffects(t, psdEffects)
       fc.add(t)
     }
   }
@@ -3419,6 +3454,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
           if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
             layer.blendMode = o.globalCompositeOperation
+          }
+          // PSD layer effects (drop shadow / stroke / outer glow) preservados
+          // em __psdEffects pra round-trip ZZOSY ↔ PSD.
+          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
+            layer.effects = (o as any).__psdEffects
           }
           // DEBUG: log do que tah indo pra matriz
           console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "__hidden:", o.__hidden, "__locked:", o.__locked, "-> hidden:", layer.hidden, "locked:", layer.locked)
@@ -4263,6 +4303,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
             layer.blendMode = o.globalCompositeOperation
           }
+          // PSD layer effects (drop shadow / stroke / outer glow) preservados
+          // em __psdEffects pra round-trip ZZOSY ↔ PSD.
+          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
+            layer.effects = (o as any).__psdEffects
+          }
           // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
           if (o.type === "textbox" || o.type === "i-text") {
             // PECA: caracteres (asset.content) continuam vindo do asset, MAS
@@ -4414,6 +4459,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
           if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
             layer.blendMode = o.globalCompositeOperation
+          }
+          // PSD layer effects (drop shadow / stroke / outer glow) preservados
+          // em __psdEffects pra round-trip ZZOSY ↔ PSD.
+          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
+            layer.effects = (o as any).__psdEffects
           }
           // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
           // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset

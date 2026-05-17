@@ -127,6 +127,52 @@ function buildRasterAssetMask(m: any) {
   }
 }
 
+// Extrai layer effects do PSD: drop shadow, stroke, outer glow.
+// Outros effects (bevel, satin, gradient overlay, color overlay, inner shadow,
+// inner glow) ainda não suportados — adicionar conforme aparecer no piloto.
+// Convenção: angle PSD = 0 (direita), aumenta sentido horário; offsetY positivo
+// vai PRA BAIXO no canvas. PSD entrega distance + angle; convertemos pra dx/dy.
+function extractPsdEffects(layer: any): any | undefined {
+  const fx = (layer as any)?.effects
+  if (!fx) return undefined
+  const out: any = {}
+  const ds = Array.isArray(fx.dropShadow) ? fx.dropShadow.find((s: any) => s?.enabled) : (fx.dropShadow?.enabled ? fx.dropShadow : null)
+  if (ds) {
+    const distance = typeof ds.distance === "number" ? ds.distance : 0
+    // PSD angle: 0=direita, 90=baixo (luz vinda de cima). Canvas usa o mesmo
+    // sistema: cos→x, sin→y (com y crescendo pra baixo). Sombra cai na DIREÇÃO
+    // OPOSTA à luz, então sinal negativo.
+    const angleRad = ((ds.useGlobalLight === false ? (ds.angle ?? 120) : (ds.angle ?? 120)) * Math.PI) / 180
+    out.dropShadow = {
+      color: colorToHex(ds.color),
+      opacity: typeof ds.opacity === "number" ? ds.opacity : 0.75,
+      offsetX: Math.round(-Math.cos(angleRad) * distance),
+      offsetY: Math.round(Math.sin(angleRad) * distance),
+      blur: typeof ds.size === "number" ? ds.size : 5,
+    }
+  }
+  const st = Array.isArray(fx.stroke) ? fx.stroke.find((s: any) => s?.enabled) : (fx.stroke?.enabled ? fx.stroke : null)
+  if (st) {
+    const fc = st.fillColor?.color ?? st.fillColor ?? st.color
+    out.stroke = {
+      color: colorToHex(fc),
+      width: typeof st.size === "number" ? st.size : 1,
+      position: st.position ?? "outside",
+      opacity: typeof st.opacity === "number" ? st.opacity : 1,
+    }
+  }
+  const og = Array.isArray(fx.outerGlow) ? fx.outerGlow.find((s: any) => s?.enabled) : (fx.outerGlow?.enabled ? fx.outerGlow : null)
+  if (og && !out.dropShadow) {
+    const oc = og.color?.color ?? og.color
+    out.outerGlow = {
+      color: colorToHex(oc),
+      opacity: typeof og.opacity === "number" ? og.opacity : 0.5,
+      blur: typeof og.size === "number" ? og.size : 5,
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 // Mapeia blendMode do PSD pra globalCompositeOperation do Canvas2D.
 // PSD usa nomes com espaço ("color dodge"); canvas usa hífen ("color-dodge").
 // "pass through" e "dissolve" não tem equivalente puro — caem em "source-over".
@@ -315,6 +361,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // da matriz herdam direto do PSD.
         const psdOpacity = typeof (layer as any).opacity === "number" ? Math.max(0, Math.min(1, (layer as any).opacity / 255)) : undefined
         const psdBlend = psdBlendToCanvas((layer as any).blendMode) ?? undefined
+        const psdEffects = extractPsdEffects(layer)
 
         if (layer.text) {
           const td = layer.text
@@ -411,6 +458,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             locked: (layer as any).transparencyProtected === true ? true : undefined,
             opacity: psdOpacity,
             blendMode: psdBlend,
+            effects: psdEffects,
           })
         } else if (layer.canvas) {
           try {

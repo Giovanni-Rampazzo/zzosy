@@ -197,6 +197,14 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
       // Fabric aceita "opacity" 0..1 e "globalCompositeOperation" (canvas spec).
       const layerOpacity = typeof layer.opacity === "number" ? layer.opacity : 1
       const layerBlend = typeof layer.blendMode === "string" && layer.blendMode ? layer.blendMode : "source-over"
+      const layerEffects = (layer.effects && typeof layer.effects === "object") ? layer.effects : null
+      const fabricShadow = (() => {
+        if (!layerEffects) return undefined
+        const d = layerEffects.dropShadow ?? layerEffects.outerGlow
+        if (!d) return undefined
+        return { color: d.color ?? "rgba(0,0,0,0.5)", offsetX: d.offsetX ?? 0, offsetY: d.offsetY ?? 0, blur: d.blur ?? 5 }
+      })()
+      const fabricStroke = layerEffects?.stroke ? { stroke: layerEffects.stroke.color, strokeWidth: layerEffects.stroke.width ?? 1 } : null
 
       if (asset.type === "TEXT") {
         const spans = parseContent(asset.content)
@@ -248,6 +256,8 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
           textAlign: overrides.textAlign ?? "left",
           opacity: layerOpacity,
           globalCompositeOperation: layerBlend,
+          ...(fabricStroke ?? {}),
+          ...(fabricShadow ? { shadow: fabricShadow } : {}),
         })
         // leadingPt: fonte da verdade pra entrelinha (Adobe-style). Aplica apos
         // o construtor pra exporter conseguir ler em buildStyleRuns.
@@ -266,6 +276,7 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
         ;(t as any).__assetId = asset.id
         ;(t as any).__assetLabel = asset.label
         if (layer.mask) (t as any).__maskData = layer.mask
+        if (layerEffects) (t as any).__psdEffects = layerEffects
         fc.add(t)
       } else if (asset.type === "IMAGE") {
         if (asset.imageUrl) {
@@ -316,6 +327,8 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
                 angle: layer.rotation ?? 0,
                 opacity: layerOpacity,
                 globalCompositeOperation: layerBlend,
+                ...(fabricStroke ?? {}),
+                ...(fabricShadow ? { shadow: fabricShadow } : {}),
               }))
               ie.onerror = reject
               ie.src = imgSrc
@@ -324,6 +337,7 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             ;(img as any).__assetLabel = asset.label
             // Preserva mask do layer pro export PSD reproduzi-la no arquivo.
             if (layer.mask) (img as any).__maskData = layer.mask
+            if (layerEffects) (img as any).__psdEffects = layerEffects
             fc.add(img)
           } catch (e) { console.warn("img load fail:", asset.label, e) }
         } else {
@@ -977,6 +991,50 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       ? Math.max(0, Math.min(255, Math.round(obj.opacity * 255)))
       : undefined
     const psdLayerBlend = canvasBlendToPsd(obj.globalCompositeOperation)
+    // PSD layer effects (drop shadow / stroke / outer glow) round-trip.
+    // Converte schema ZZOSY → schema ag-psd (cores {r,g,b}, angle/distance, etc).
+    const psdLayerEffects = (() => {
+      const fx = (obj as any).__psdEffects
+      if (!fx) return undefined
+      const out: any = {}
+      if (fx.dropShadow) {
+        const d = fx.dropShadow
+        const dx = d.offsetX ?? 0, dy = d.offsetY ?? 0
+        const distance = Math.round(Math.hypot(dx, dy))
+        // Inverso da extração: PSD angle (0=direita, +sentido horário) a partir
+        // dos offsets (sombra cai oposta à luz). Defensivo se distance=0.
+        const angle = distance > 0 ? (Math.atan2(dy, -dx) * 180 / Math.PI) : 120
+        out.dropShadow = [{
+          enabled: true,
+          color: hexToPsdColor(d.color ?? "#000000"),
+          opacity: typeof d.opacity === "number" ? d.opacity : 0.75,
+          angle, distance,
+          size: d.blur ?? 5,
+          blendMode: "multiply",
+          useGlobalLight: false,
+        }]
+      }
+      if (fx.outerGlow && !fx.dropShadow) {
+        out.outerGlow = [{
+          enabled: true,
+          color: hexToPsdColor(fx.outerGlow.color ?? "#ffffff"),
+          opacity: typeof fx.outerGlow.opacity === "number" ? fx.outerGlow.opacity : 0.5,
+          size: fx.outerGlow.blur ?? 5,
+          blendMode: "screen",
+        }]
+      }
+      if (fx.stroke) {
+        out.stroke = [{
+          enabled: true,
+          position: fx.stroke.position ?? "outside",
+          fillColor: { color: hexToPsdColor(fx.stroke.color ?? "#000000") },
+          size: fx.stroke.width ?? 1,
+          opacity: typeof fx.stroke.opacity === "number" ? fx.stroke.opacity : 1,
+          blendMode: "normal",
+        }]
+      }
+      return Object.keys(out).length > 0 ? out : undefined
+    })()
 
     if (obj.type === "textbox" || obj.type === "i-text" || obj.type === "text") {
       try {
@@ -1037,6 +1095,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         canvas: layerCanvas,
         ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
         ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
+        ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
@@ -1107,6 +1166,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             canvas: layerCanvas,
             ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
             ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
+            ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
             placedLayer: {
               id: linked.guid,
               type: "raster",
@@ -1132,6 +1192,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         name, top, left, bottom, right, canvas: layerCanvas,
         ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
         ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
+        ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
       })
     }
   }

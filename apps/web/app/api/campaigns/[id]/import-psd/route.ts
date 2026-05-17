@@ -57,6 +57,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       locked?: boolean
       opacity?: number
       blendMode?: string
+      effects?: any
     }>
 
     const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
@@ -198,6 +199,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       // do PSD. Defaults (1 e "source-over") são omitidos pra não inflar JSON.
       ...(typeof assets[i].opacity === "number" && assets[i].opacity < 1 ? { opacity: assets[i].opacity } : {}),
       ...(assets[i].blendMode && assets[i].blendMode !== "source-over" ? { blendMode: assets[i].blendMode } : {}),
+      // Layer effects (drop shadow, stroke, outer glow) extraídos do PSD.
+      ...(assets[i].effects && Object.keys(assets[i].effects).length > 0 ? { effects: assets[i].effects } : {}),
     }))
 
     // KeyVision (Matriz)
