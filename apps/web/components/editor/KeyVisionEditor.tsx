@@ -665,6 +665,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const undoStack = useRef<string[]>([])
   const redoStack = useRef<string[]>([])
+  // historyTick: força re-render dos botões undo/redo quando push/undo/redo
+  // muda o stack. Refs não disparam re-render — sem isso, botões disabled
+  // ficam stale.
+  const [historyTick, setHistoryTick] = useState(0)
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
@@ -1049,11 +1053,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         return
       }
 
+      // Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z OU Cmd/Ctrl+Y = redo.
+      // Stack mantém 30 entradas (ver pushHistory).
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault() // undo desabilitado
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+        return
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
-        e.preventDefault() // redo desabilitado
+        e.preventDefault()
+        redo()
+        return
       }
       // Cmd+Shift+> / Cmd+Shift+< (Photoshop-style font size)
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === ">" || e.key === "." || e.key === "<" || e.key === ",")) {
@@ -1994,8 +2005,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
       undoStack.current.push(snap)
-      if (undoStack.current.length > 16) undoStack.current.shift() // mantem 15 + estado atual
+      // Mantém 31 entradas: 30 undos + estado atual.
+      if (undoStack.current.length > 31) undoStack.current.shift()
       redoStack.current = []
+      setHistoryTick(t => t + 1)
       isDirtyRef.current = true
       setIsDirty(true)
     } catch (e) { /* ignora */ }
@@ -2143,6 +2156,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const previous = undoStack.current[undoStack.current.length - 1]
     if (previous) await applySnapshot(previous)
     setSelected(null)
+    setHistoryTick(t => t + 1)
   }
 
   async function redo() {
@@ -2151,6 +2165,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     undoStack.current.push(next)
     await applySnapshot(next)
     setSelected(null)
+    setHistoryTick(t => t + 1)
   }
 
   function fitLayerToCanvas() {
@@ -5378,6 +5393,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         {!isPieceMode && (
           <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>▶ Gerar Peças</button>
         )}
+        {/* Undo / Redo — 30 estados no stack. Atalhos: Cmd/Ctrl+Z (undo),
+            Cmd/Ctrl+Shift+Z ou Cmd/Ctrl+Y (redo). */}
+        <button onClick={undo} disabled={undoStack.current.length < 2}
+          title="Desfazer (Cmd+Z)"
+          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontWeight: 600, fontSize: 14, cursor: undoStack.current.length < 2 ? "not-allowed" : "pointer", color: undoStack.current.length < 2 ? "#444" : "#aaa", marginLeft: 4 }}>
+          ↶
+        </button>
+        <button onClick={redo} disabled={redoStack.current.length === 0}
+          title="Refazer (Cmd+Shift+Z)"
+          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontWeight: 600, fontSize: 14, cursor: redoStack.current.length === 0 ? "not-allowed" : "pointer", color: redoStack.current.length === 0 ? "#444" : "#aaa" }}>
+          ↷
+        </button>
       </div>
 
       <div style={{ position: "fixed", top: TH, left: LW, right: PW, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
