@@ -715,6 +715,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const textChanged = syncBrandRefsInTextObjects(fc)
     if (!bgChanged && !textChanged) return
     // Re-renderiza os Rects BG que mudaram (cor solid pode ter mudado)
+    const reSnapInit = () => {
+      // Após sync automático, RE-SNAP o estado atual como novo "init" do
+      // undo stack. Sem isso, undo até o início "desfaz" também o brand
+      // sync — que mudou outros textos sem o user ter feito.
+      try {
+        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx"]))
+        undoStack.current = [snap]
+        redoStack.current = []
+        setHistoryTick(t => t + 1)
+      } catch {}
+    }
     if (bgChanged) {
       ;(async () => {
         const fabricMod: any = await import("fabric")
@@ -724,9 +735,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (r && l) await syncBgLayerToRect(r, l, canvasWRef.current, canvasHRef.current, fabricMod)
         }
         fc.renderAll()
+        reSnapInit()
       })()
     } else {
       fc.renderAll()
+      reSnapInit()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandColors])
