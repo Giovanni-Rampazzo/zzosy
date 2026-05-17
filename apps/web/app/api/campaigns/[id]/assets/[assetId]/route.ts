@@ -81,6 +81,13 @@ export async function PUT(req: Request, ctx: Ctx) {
   const newSpansParsed = parseContent(newContent)
   const newText = spansToText(newSpansParsed)
   const textChanged = oldText !== newText
+  // Edge: newText vazio (user apagou tudo pra re-escrever). NÃO migrar
+  // overrides.text/styles agora — preservar quebras de linha que o user
+  // criou nas peças. Próximo save (quando ele digitar de novo) faz o
+  // migrate com o NOVO texto não-vazio. Sem essa guarda, o save
+  // intermediário "" zerava o override.text e o save seguinte não
+  // achava \n pra migrar.
+  const skipMigrate = newText.trim().length === 0
 
   // Pre-buscar matriz e peças (fora da transação para reduzir tempo de lock)
   const [kv, pieces] = await Promise.all([
@@ -90,7 +97,7 @@ export async function PUT(req: Request, ctx: Ctx) {
 
   // Calcular layers atualizados (sem tocar no banco ainda)
   let kvUpdate: any = null
-  if (kv && textChanged) {
+  if (kv && textChanged && !skipMigrate) {
     let kvLayersRaw: any = kv.layers
     let kvLayers: any[] = []
     if (typeof kvLayersRaw === "string") {
@@ -123,7 +130,7 @@ export async function PUT(req: Request, ctx: Ctx) {
   }
 
   const pieceUpdates: Array<{ id: string; data: string }> = []
-  if (textChanged) {
+  if (textChanged && !skipMigrate) {
     for (const p of pieces) {
       let pdata: any = null
       try { pdata = typeof p.data === "string" ? JSON.parse(p.data as string) : p.data } catch {}
