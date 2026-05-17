@@ -3714,18 +3714,98 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   //    textual; PSD so determina onde/como aparece).
   //  - Layers sem match: IGNORADAS (precisam virar asset em /assets antes).
 
-  // Editar externamente: exporta o PSD da peça pro disco do user (via
-  // File System Access API quando disponível, senão download normal).
-  // Browsers em sandbox não podem ABRIR Photoshop diretamente — o user
-  // tem que abrir o arquivo manualmente. Com FSA, mantemos referência ao
-  // arquivo pra sync depois (re-leitura).
-  async function openInExternalApp() {
+  // Persistência do handle da pasta raiz pra organizar PSDs externos em
+  // hierarquia (cliente/campanha/veiculo/midia/peca.psd). User escolhe a
+  // pasta raiz UMA vez (showDirectoryPicker) — handle persistido em
+  // IndexedDB. Próximas chamadas reusam a mesma pasta.
+  async function idbGet(key: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("zzysy-handles", 1)
+      req.onupgradeneeded = () => req.result.createObjectStore("h")
+      req.onsuccess = () => {
+        try {
+          const db = req.result
+          const tx = db.transaction("h", "readonly")
+          const g = tx.objectStore("h").get(key)
+          g.onsuccess = () => resolve(g.result)
+          g.onerror = () => reject(g.error)
+        } catch (e) { reject(e) }
+      }
+      req.onerror = () => reject(req.error)
+    })
+  }
+  async function idbSet(key: string, value: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("zzysy-handles", 1)
+      req.onupgradeneeded = () => req.result.createObjectStore("h")
+      req.onsuccess = () => {
+        try {
+          const db = req.result
+          const tx = db.transaction("h", "readwrite")
+          tx.objectStore("h").put(value, key)
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+        } catch (e) { reject(e) }
+      }
+      req.onerror = () => reject(req.error)
+    })
+  }
+
+  async function ensurePsdRootDir(force = false): Promise<any | null> {
+    if (!force) {
+      let cached: any = null
+      try { cached = await idbGet("psd-root-dir") } catch {}
+      if (cached) {
+        try {
+          const p = await cached.queryPermission({ mode: "readwrite" })
+          if (p === "granted") return cached
+          const r = await cached.requestPermission({ mode: "readwrite" })
+          if (r === "granted") return cached
+        } catch {}
+      }
+    }
+    try {
+      const h = await (window as any).showDirectoryPicker({
+        mode: "readwrite",
+        startIn: "documents",
+      })
+      await idbSet("psd-root-dir", h)
+      return h
+    } catch { return null }
+  }
+
+  // Editar externamente: exporta o PSD da peça pro disco do user, criando
+  // a hierarquia cliente/campanha/veiculo/midia/peca.psd automaticamente.
+  // Browsers em sandbox não podem ABRIR Photoshop — user tem que abrir
+  // manualmente. Sync depois via re-leitura do file handle persistido.
+  async function openInExternalApp(forceNewRoot = false) {
     if (!pieceId || !pieceRef.current) {
       alert("Disponível apenas pra peças geradas (não pra matriz)")
       return
     }
     const piece = pieceRef.current
+    const camp = campaignRef.current
     try {
+      // Sanitiza nomes pra filesystem (remove chars proibidos em paths)
+      const safe = (s: string | undefined | null) =>
+        (s ?? "").replace(/[\\/:*?"<>| -]+/g, "_").trim() || "Sem nome"
+      // Busca info de MediaFormat (vehicle/media) — não vem direto no piece
+      let vehicle = "Sem veiculo"
+      let media = "Sem midia"
+      const mfId = (piece as any).mediaFormatId
+      if (mfId) {
+        try {
+          const r = await fetch("/api/medias", { cache: "no-store" })
+          if (r.ok) {
+            const all = await r.json()
+            const mf = Array.isArray(all) ? all.find((m: any) => m.id === mfId) : null
+            if (mf) {
+              vehicle = mf.vehicle || vehicle
+              media = mf.media || media
+            }
+          }
+        } catch (e) { console.warn("[external-edit] fetch medias falhou:", e) }
+      }
       const { exportPSDBlob } = await import("@/lib/exportPiece")
       const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
       const blob = await exportPSDBlob({
@@ -3733,31 +3813,39 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         data,
         width: canvasWRef.current, height: canvasHRef.current,
       })
-      const safeName = (piece.name ?? "peca").replace(/[^\w-]+/g, "_")
-      const filename = `${safeName}.psd`
-      const supportsFSA = typeof window !== "undefined" && "showSaveFilePicker" in window
+      const fileName = `${safe(piece.name)}.psd`
+      const supportsFSA = typeof window !== "undefined" && "showDirectoryPicker" in window
       if (supportsFSA) {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: filename,
-          types: [{ description: "Photoshop", accept: { "image/vnd.adobe.photoshop": [".psd"] } }],
-        })
-        const writable = await handle.createWritable()
+        const root = await ensurePsdRootDir(forceNewRoot)
+        if (!root) { return /* user cancelou */ }
+        // Cria subfolders: client / campanha / veiculo / midia
+        const clientName = safe(camp?.client?.name ?? "Cliente")
+        const campName = safe(camp?.name ?? "Campanha")
+        const vehName = safe(vehicle)
+        const mediaName = safe(media)
+        const clientDir = await root.getDirectoryHandle(clientName, { create: true })
+        const campDir = await clientDir.getDirectoryHandle(campName, { create: true })
+        const vehDir = await campDir.getDirectoryHandle(vehName, { create: true })
+        const mediaDir = await vehDir.getDirectoryHandle(mediaName, { create: true })
+        const fileHandle = await mediaDir.getFileHandle(fileName, { create: true })
+        const writable = await fileHandle.createWritable()
         await writable.write(blob)
         await writable.close()
-        externalPsdHandle.current = handle
-        setExternalPsdName(handle.name ?? filename)
-        alert(`✅ PSD salvo!\n\nAgora:\n1. Abra "${handle.name ?? filename}" no Photoshop\n2. Edite + salve (Cmd+S)\n3. Volta aqui e clica "🔄 Sync"\n\nPS: O Photoshop tem que ser seu app padrão pra .psd OU abre ele manualmente.`)
+        externalPsdHandle.current = fileHandle
+        setExternalPsdName(fileName)
+        const path = `${clientName} / ${campName} / ${vehName} / ${mediaName} / ${fileName}`
+        alert(`✅ PSD salvo em:\n${path}\n\n1. Abra o arquivo no Photoshop\n2. Edite + salve (Cmd+S)\n3. Volta e clica 🔄 Sync`)
       } else {
         // Fallback: download
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
-        a.href = url; a.download = filename
+        a.href = url; a.download = fileName
         document.body.appendChild(a); a.click()
         setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 100)
-        alert(`📁 PSD baixado: ${filename}\n\nSeu browser não suporta sync automático (use Chrome ou Edge).\nDepois de editar no Photoshop, re-importe o arquivo via "📁 PSD".`)
+        alert(`📁 PSD baixado: ${fileName}\n\nSeu browser não suporta sync automático (use Chrome ou Edge).\nDepois de editar no Photoshop, re-importe o arquivo via "📁 PSD".`)
       }
     } catch (e: any) {
-      if (e?.name === "AbortError") return // user cancelou
+      if (e?.name === "AbortError") return
       console.error("[external-edit] falha:", e)
       alert("Erro ao exportar PSD: " + (e?.message ?? e))
     }
@@ -5378,11 +5466,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             >
               📁 PSD
             </button>
-            {/* Editar Externo: exporta PSD pro disco (FSA API) e mantém ref
-                pra sync após user editar no Photoshop. */}
+            {/* Editar Externo: exporta PSD pro disco (FSA API) com hierarquia
+                cliente/campanha/veiculo/midia automática. Option/Alt+click
+                pra trocar a pasta raiz. */}
             <button
-              onClick={openInExternalApp}
-              title="Exporta esta peça como PSD pro seu disco. Edita no Photoshop, salva, clica 'Sync' pra atualizar a peça aqui."
+              onClick={(e) => openInExternalApp(e.altKey)}
+              title="Exporta esta peça como PSD organizada em cliente/campanha/veiculo/midia. Option+click pra trocar pasta raiz. Depois edita no Photoshop, salva, clica 'Sync'."
               style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
             >
               🎨 Editar Externo
