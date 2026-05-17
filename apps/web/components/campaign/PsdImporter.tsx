@@ -56,18 +56,20 @@ function collectAllLayers(
 
 // Converte um BezierPath do ag-psd em SVG path "d=" attribute.
 // ag-psd BezierKnot.points = [cpLeft.x, cpLeft.y, anchor.x, anchor.y, cpRight.x, cpRight.y]
-// (coords como fração 0..1 do canvas — multiplicar por psdW/H).
+// JÁ EM PIXELS — readBezierKnot em additionalInfo.js multiplica internamente
+// por psdW/H ao parsear. Multiplicar de novo gera coords absurdas (psdW²),
+// Fabric.Path cria bbox gigantesco e o canvas inteiro fica branco.
 type BezierPt = { cpL: { x: number; y: number }; anchor: { x: number; y: number }; cpR: { x: number; y: number } }
-function bezierPathToSvg(path: any, psdW: number, psdH: number): string {
+function bezierPathToSvg(path: any): string {
   const knots = path?.knots
   if (!Array.isArray(knots) || knots.length === 0) return ""
   const pts: BezierPt[] = knots.map((k: any): BezierPt | null => {
     const p = k?.points
     if (!Array.isArray(p) || p.length < 6) return null
     return {
-      cpL: { x: p[0] * psdW, y: p[1] * psdH },
-      anchor: { x: p[2] * psdW, y: p[3] * psdH },
-      cpR: { x: p[4] * psdW, y: p[5] * psdH },
+      cpL: { x: p[0], y: p[1] },
+      anchor: { x: p[2], y: p[3] },
+      cpR: { x: p[4], y: p[5] },
     }
   }).filter((x: BezierPt | null): x is BezierPt => x !== null)
   if (pts.length === 0) return ""
@@ -90,19 +92,19 @@ function bezierPathToSvg(path: any, psdW: number, psdH: number): string {
 // Boolean operations (combine/subtract/exclude/intersect) NÃO suportadas
 // completamente — apenas concatena. Sub-paths Z separados respeitam
 // fillRule "evenodd" naturalmente (forma com furo).
-function vectorMaskToSvgPath(vm: any, psdW: number, psdH: number): { d: string; bbox: { minX: number; minY: number; maxX: number; maxY: number } | null } {
+function vectorMaskToSvgPath(vm: any): { d: string; bbox: { minX: number; minY: number; maxX: number; maxY: number } | null } {
   if (!vm?.paths?.length) return { d: "", bbox: null }
   const parts: string[] = []
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const p of vm.paths) {
-    const d = bezierPathToSvg(p, psdW, psdH)
+    const d = bezierPathToSvg(p)
     if (!d) continue
     parts.push(d)
-    // bbox grosseiro via anchors
+    // bbox grosseiro via anchors (knots já em pixels — não multiplicar)
     for (const k of (p.knots ?? [])) {
       const pts = k?.points
       if (Array.isArray(pts) && pts.length >= 4) {
-        const ax = pts[2] * psdW, ay = pts[3] * psdH
+        const ax = pts[2], ay = pts[3]
         if (ax < minX) minX = ax
         if (ay < minY) minY = ay
         if (ax > maxX) maxX = ax
@@ -316,7 +318,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         if (!assetMask && (layer as any).vectorMask?.paths?.length) {
           try {
             const vm = (layer as any).vectorMask
-            const { d: pathStr, bbox } = vectorMaskToSvgPath(vm, psd.width, psd.height)
+            const { d: pathStr, bbox } = vectorMaskToSvgPath(vm)
             if (pathStr && bbox && isFinite(bbox.minX)) {
               const minX = bbox.minX, minY = bbox.minY
               const vWidth = Math.max(bbox.maxX - minX, 1)

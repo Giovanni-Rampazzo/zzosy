@@ -20,6 +20,20 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
 
   try {
     if (mask.type === "vector" && mask.vector) {
+      // Sanity check: vector masks importadas com bug do bezier (knots multiplicados
+      // 2x por psdW/H antes do fix de 2026-05-17) vinham com coords na casa de 10⁷.
+      // Fabric.Path com path absurdo cria bbox gigantesco e o canvas inteiro vira
+      // branco. Descartamos a mask em vez de quebrar o canvas; usuário re-importa
+      // o PSD pra regenerar corretamente.
+      const maxCoord = 1_000_000
+      const w = mask.vector.width ?? 0
+      const h = mask.vector.height ?? 0
+      const px = mask.vector.posX ?? 0
+      const py = mask.vector.posY ?? 0
+      if (Math.abs(px) > maxCoord || Math.abs(py) > maxCoord || w > maxCoord || h > maxCoord) {
+        console.warn("[mask] vector mask com coords absurdas — descartando. Re-importe o PSD.")
+        return
+      }
       // Vector mask: cria fabric.Path com o SVG path d="..."
       // absolutePositioned=true faz o clipPath usar coordenadas absolutas do canvas
       // (nao relativas ao objeto). Assim a mascara fica onde estava no PSD.
