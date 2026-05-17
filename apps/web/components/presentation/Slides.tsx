@@ -592,13 +592,13 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
         // Layout sem legenda: área da peça definida ABSOLUTAMENTE no slide
         // com inset top/bottom/left/right — mais previsível que padding+flex
         // (max-% no wrapper interno não funciona bem com flex intrinsic
-        // size do <img>). Top 22% reserva pro header amarelo + bolinha.
-        // Bottom 22% pro Footer + respiro. Sides 24% pra peças verticais
-        // (Story 1080x1920) não ficarem coladas nas bordas.
+        // size do <img>). Top 18% pro header amarelo + bolinha. Bottom 18%
+        // pro Footer + respiro. Sides 18% pra peças verticais não colarem
+        // nas bordas. Área útil ~64% × 64% do slide.
         <>
           <div style={{
             position: "absolute",
-            top: "22%", bottom: "22%", left: "24%", right: "24%",
+            top: "18%", bottom: "18%", left: "18%", right: "18%",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <div
