@@ -1936,6 +1936,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // RESET do flag pra rodar de novo nesta peca (cada init = nova oportunidade).
       autoGenDoneRef.current = false
       console.log("[init] terminou. pieceId:", pieceId, "vai chamar autoGen:", !!pieceId)
+      try {
+        const objs = fc.getObjects()
+        const sample = objs.slice(0, 5).map((o: any) => ({
+          t: o.type, vis: o.visible, op: o.opacity, hid: o.__hidden,
+          l: Math.round(o.left ?? 0), tp: Math.round(o.top ?? 0),
+          w: Math.round(o.width ?? 0), h: Math.round(o.height ?? 0),
+          sx: o.scaleX, sy: o.scaleY,
+          clip: !!o.clipPath, mask: !!o.__maskData,
+        }))
+        const vt = fc.viewportTransform
+        console.log("[init-health] objects:", objs.length, "canvas:", fc.getWidth(), "x", fc.getHeight(), "zoom:", fc.getZoom(), "vt:", vt, "first5:", sample)
+        ;(window as any).__fc = fc
+      } catch (e) { console.warn("[init-health] erro:", e) }
       if (pieceId) {
         autoGenerateMissingStepThumbs().catch(e => console.warn("[auto-thumbs] erro:", e))
       }
