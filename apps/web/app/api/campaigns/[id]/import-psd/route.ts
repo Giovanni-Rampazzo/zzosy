@@ -33,6 +33,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const skipMaster = formData.get("skipMaster") === "1"
     const psdNameOnly = formData.get("psdName") as string | null
 
+    // Lista de fontes referenciadas em text layers do PSD. Cliente usa pra
+    // alertar user quando alguma não estiver instalada (browser cai em fallback
+    // → métricas diferem do PSD → wrap/overflow visual).
+    const fontsRequiredJson = formData.get("fontsRequired") as string | null
+    const fontsRequired: string[] = fontsRequiredJson ? (() => { try { return JSON.parse(fontsRequiredJson) } catch { return [] } })() : []
+
     if (!assetsJson) {
       return NextResponse.json({ error: "Assets sao obrigatorios" }, { status: 400 })
     }
@@ -319,7 +325,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       data: campaignUpdate,
     })
 
-    console.log("[import-psd] concluido, assets criados:", created.length, "imageUrls:", imageUrls)
+    // Busca clientId pra cliente UI montar link direto pra /clients/{id}/edit
+    // (página de upload das fontes da marca).
+    const camp = await prisma.campaign.findUnique({
+      where: { id },
+      select: { clientId: true },
+    })
+
+    console.log("[import-psd] concluido, assets criados:", created.length, "imageUrls:", imageUrls, "fontsRequired:", fontsRequired.length)
     return NextResponse.json({
       ok: true,
       assetsCreated: created.length,
@@ -328,6 +341,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       masterPending: skipMaster, // sinaliza pro cliente que precisa fazer upload chunked
       piecesRewritten,
       piecesTotal: piecesSnapshot.length,
+      fontsRequired,
+      clientId: camp?.clientId ?? null,
     })
   } catch (err: any) {
     console.error("import-psd error:", err)

@@ -95,6 +95,8 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState("")
   const [error, setError] = useState("")
+  // Acumula fontes de TODOS os PSDs do batch — alert único no final.
+  const fontsAccumulated = new Set<string>()
 
   // Map normalizado pra match rapido: normalized(label) -> Asset
   const assetIndex = new Map<string, Asset>()
@@ -148,6 +150,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
         const rawText = String(td.text ?? layerName).split("\r\n").join("\n").split("\r").join("\n")
         const defStyle = td.style ?? {}
         const defFontName = defStyle.font?.name ?? "Arial"
+        if (defStyle.font?.name) fontsAccumulated.add(defStyle.font.name)
         const defFontSize = defStyle.fontSize ?? 48
         const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
         const defWeight = (defStyle.fauxBold || defFontName.toLowerCase().includes("bold")) ? "bold" : "normal"
@@ -162,6 +165,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
             if (!segment) { cursor += len; continue }
             const rs = run.style ?? {}
             const fontName = rs.font?.name ?? defFontName
+            if (rs.font?.name) fontsAccumulated.add(rs.font.name)
             const fontSize = rs.fontSize ?? defFontSize
             const color = rs.fillColor ? colorToHex(rs.fillColor) : defColor
             const fontWeight = (rs.fauxBold || fontName.toLowerCase().includes("bold")) ? "bold" : defWeight
@@ -361,6 +365,28 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
     if (errors.length > 0) {
       setError(`${imported} importadas, ${errors.length} falharam: ${errors.join("; ")}`)
     }
+    // Checa fontes do batch contra as instaladas no browser. Alerta uma vez
+    // só com a lista completa (evita N popups pra N PSDs).
+    try {
+      const fonts = Array.from(fontsAccumulated)
+      const missing: string[] = []
+      if (fonts.length > 0 && typeof document !== "undefined" && (document as any).fonts?.check) {
+        for (const fname of fonts) {
+          const probe = `12px "${fname.replace(/"/g, '\\"')}"`
+          try {
+            if (!(document as any).fonts.check(probe)) missing.push(fname)
+          } catch { missing.push(fname) }
+        }
+      }
+      if (missing.length > 0) {
+        window.alert(
+          `PSD(s) usa(m) fonte(s) não instalada(s):\n• ${missing.join("\n• ")}\n\n` +
+          `Sem essas fontes o editor renderiza com fallback (métricas diferentes).\n` +
+          `Faça upload dos .ttf/.otf na página de edição do cliente, aba 'Fontes da marca'.`
+        )
+      }
+      fontsAccumulated.clear()
+    } catch (e) { console.warn("[font-check] piece importer falhou:", e) }
     onImported()
   }
 

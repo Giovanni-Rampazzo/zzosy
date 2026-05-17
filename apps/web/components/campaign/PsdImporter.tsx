@@ -619,6 +619,11 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       const assets: any[] = []
       const imageBlobs: Blob[] = []
       const folderMaskCache = new Map<any, any>() // raw mask obj → asset mask (deduplica entre filhos do mesmo folder)
+      // Set de fontes únicas referenciadas por text layers (default style + runs).
+      // Após o import, alerta o user pra fazer upload das que não estão instaladas
+      // — sem isso o browser cai em fallback (Arial), métricas diferem do PSD e o
+      // texto wrappa em pontos diferentes / overflows visual no editor.
+      const fontsRequired = new Set<string>()
       let zIndex = 0
 
       // Smart Objects: extrai linkedFiles do PSD (bytes originais embeddados)
@@ -753,6 +758,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           const rawText = String(td.text ?? name).split("\r\n").join("\n").split("\r").join("\n")
           const defStyle = td.style ?? {}
           const defFontName = defStyle.font?.name ?? "Arial"
+          if (defStyle.font?.name) fontsRequired.add(defStyle.font.name)
           const defFontSize = defStyle.fontSize ?? 48
           const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
           const isItalicByName = /italic|oblique|kursiv|cursiv/i.test(defFontName)
@@ -805,6 +811,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               if (!segment) { cursor += len; continue }
               const rs = run.style ?? {}
               const fontName = rs.font?.name ?? defFontName
+              if (rs.font?.name) fontsRequired.add(rs.font.name)
               const fontSize = (rs.fontSize ?? defFontSize) * textScale
               const color = rs.fillColor ? colorToHex(rs.fillColor) : defColor
               const isBoldRs = /bold|black|heavy|extrabold/i.test(fontName) || /-(bd|b|black)$/i.test(fontName)
@@ -970,6 +977,10 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       fd.append("canvasWidth", String(psd.width))
       fd.append("canvasHeight", String(psd.height))
       fd.append("bgColor", "#ffffff")
+      // Fontes referenciadas no PSD (defStyle + runs). Backend devolve no
+      // payload pra UI alertar o user que precisa fazer upload das ausentes.
+      const fontsList = Array.from(fontsRequired).sort()
+      fd.append("fontsRequired", JSON.stringify(fontsList))
       imageBlobs.forEach((b, i) => fd.append("images", b, `layer-${i}.png`))
       // Smart objects: bytes + metadados (mesmo index na lista do backend)
       fd.append("linkedMeta", JSON.stringify(linkedMeta))
@@ -1016,6 +1027,36 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       } catch (thumbErr) {
         console.warn("KV thumb post-import upload failed:", thumbErr)
       }
+
+      // Alerta sobre fontes do PSD que NÃO estão disponíveis no navegador.
+      // document.fonts.check("12px FontName") retorna false se o browser não
+      // tem essa fonte (system + brand fonts carregadas via @font-face).
+      // Se faltar, browser cai em fallback (Arial) → métricas diferentes →
+      // wrap+altura do texto destoam do PSD original.
+      try {
+        const fonts: string[] = Array.isArray(data?.fontsRequired) ? data.fontsRequired : []
+        const missing: string[] = []
+        if (fonts.length > 0 && typeof document !== "undefined" && (document as any).fonts?.check) {
+          for (const fname of fonts) {
+            // Testa com weight padrão; check é exato no nome da família.
+            const probe = `12px "${fname.replace(/"/g, '\\"')}"`
+            try {
+              if (!(document as any).fonts.check(probe)) missing.push(fname)
+            } catch { missing.push(fname) }
+          }
+        }
+        if (missing.length > 0) {
+          const cid = data?.clientId
+          const link = cid ? `/clients/${cid}/edit` : null
+          const msg =
+            `PSD usa fonte(s) não instalada(s):\n• ${missing.join("\n• ")}\n\n` +
+            `Sem essas fontes o editor renderiza com fallback (métricas diferentes do PSD).\n\n` +
+            (link
+              ? `Faça upload dos arquivos .ttf/.otf em:\n${window.location.origin}${link}\n(Aba 'Fontes da marca')`
+              : `Faça upload na página de edição do cliente, aba 'Fontes da marca'.`)
+          window.alert(msg)
+        }
+      } catch (fontWarnErr) { console.warn("[font-check] falhou:", fontWarnErr) }
 
       onImported()
     } catch (e: any) {
