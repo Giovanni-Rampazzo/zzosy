@@ -3903,9 +3903,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           continue
         }
         const left = layer.left ?? 0
-        const top = layer.top ?? 0
+        let top = layer.top ?? 0
         const w = Math.max((layer.right ?? left + 200) - left, 10)
         const h = Math.max((layer.bottom ?? top + 50) - top, 10)
+        // Pra TEXTO: quando o PSD tem text.transform com translateY (caso
+        // típico de PSDs gerados pelo ZZOSY que usam baseline anchor com
+        // translateY = top + fontSize), `layer.top` pode incluir o offset
+        // do baseline — texto cairia ~fontSize px abaixo do esperado.
+        // Compensa usando transform[5] - fontSize quando disponível.
+        if (asset.type === "TEXT" && layer.text) {
+          const tform: number[] | undefined = layer.text.transform
+          const fontSize = layer.text.style?.fontSize ?? 0
+          if (Array.isArray(tform) && tform.length >= 6 && typeof tform[5] === "number" && fontSize > 0) {
+            const visualTop = tform[5] - fontSize
+            // Só compensa se a diferença bate (~fontSize). Sem isso, PSDs
+            // de outras fontes (Photoshop original) que tem transform[5]
+            // SEMANTIC diferente não seriam afetados.
+            if (Math.abs(visualTop - top) > fontSize * 0.3) {
+              top = visualTop
+            }
+          }
+        }
         const layerObj: any = {
           assetId: asset.id,
           posX: Math.round(left * scale + offX),
