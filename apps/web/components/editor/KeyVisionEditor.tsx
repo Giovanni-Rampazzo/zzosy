@@ -2520,6 +2520,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }
         }
       }
+      // Brand refs PER-CHAR: itera styles[line][col].fillBrandIdx e re-resolve
+      // contra brandColors atual. Sem isso, caracteres pintados via swatch
+      // Marca com seleção parcial mantém cor velha após mudança de brand.
+      if (effStyles && typeof effStyles === "object") {
+        const newPerCharStyles: any = {}
+        let perCharChanged = false
+        for (const lineKey of Object.keys(effStyles)) {
+          newPerCharStyles[lineKey] = {}
+          for (const colKey of Object.keys(effStyles[lineKey])) {
+            const cs = { ...effStyles[lineKey][colKey] }
+            if (typeof cs.fillBrandIdx === "number" && brandColorsRef.current[cs.fillBrandIdx]) {
+              const charLive = brandColorsRef.current[cs.fillBrandIdx].hex
+              if (typeof charLive === "string" && /^#[0-9a-fA-F]{6}$/.test(charLive)
+                  && charLive.toLowerCase() !== String(cs.fill ?? "").toLowerCase()) {
+                cs.fill = charLive
+                perCharChanged = true
+              }
+            }
+            newPerCharStyles[lineKey][colKey] = cs
+          }
+        }
+        if (perCharChanged) {
+          effStyles = newPerCharStyles
+          isDirtyRef.current = true
+          setIsDirty(true)
+        }
+      }
 
       const t = new Textbox(initialText, {
         left: posX, top: posY,
@@ -4812,7 +4839,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
     if (isText && hasSelection) {
       // Photoshop: aplica so nos caracteres selecionados
-      obj.setSelectionStyles({ [styleKey]: value }, selStart, selEnd)
+      // Brand ref per-char: quando fill vem via swatch Marca + tem seleção,
+      // grava `fillBrandIdx` JUNTO no style do char pra que o cascade possa
+      // re-resolver no futuro. Sem isso, char fica com fill literal e
+      // perdemos o vinculo com a brand.
+      const charStyle: any = { [styleKey]: value }
+      if (key === "fill") {
+        if (typeof brandIdx === "number") charStyle.fillBrandIdx = brandIdx
+        else charStyle.fillBrandIdx = null // sinaliza pro merge desabilitar ref antigo
+      }
+      obj.setSelectionStyles(charStyle, selStart, selEnd)
+      // Limpa fillBrandIdx=null nos styles (Fabric guarda null como valor real;
+      // pra "nao ter" o campo, deletar). Itera styles afetados.
+      if (key === "fill" && typeof brandIdx !== "number") {
+        try {
+          const styles = (obj as any).styles ?? {}
+          for (const lineKey of Object.keys(styles)) {
+            for (const colKey of Object.keys(styles[lineKey])) {
+              if (styles[lineKey][colKey]?.fillBrandIdx === null) {
+                delete styles[lineKey][colKey].fillBrandIdx
+              }
+            }
+          }
+        } catch {}
+      }
       // initDimensions so eh necessario quando mudanca afeta layout (fontSize, fontFamily).
       // Mudar cor (fill) nao muda layout — chamar initDimensions a toa pode trigger bugs
       // (ex: ate observado que pode "comer" espacos em algumas situacoes de styles per-char).

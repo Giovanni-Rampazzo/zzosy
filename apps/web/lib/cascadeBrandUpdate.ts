@@ -21,12 +21,35 @@ interface BrandColorLike { hex: string; name?: string | null }
 // Aplica brand refs num objeto (layer override OU bg layer). Retorna true se
 // alguma cor foi atualizada in-place.
 function resolveOverrideFill(ov: any, brandColors: BrandColorLike[]): boolean {
-  if (!ov || typeof ov.fillBrandIdx !== "number") return false
-  const live = brandColors[ov.fillBrandIdx]
-  if (!live?.hex || !/^#[0-9a-fA-F]{6}$/.test(live.hex)) return false
-  if (live.hex.toLowerCase() === String(ov.fill ?? "").toLowerCase()) return false
-  ov.fill = live.hex
-  return true
+  let changed = false
+  // Fill DEFAULT do textbox (fillBrandIdx no override raiz)
+  if (ov && typeof ov.fillBrandIdx === "number") {
+    const live = brandColors[ov.fillBrandIdx]
+    if (live?.hex && /^#[0-9a-fA-F]{6}$/.test(live.hex)
+        && live.hex.toLowerCase() !== String(ov.fill ?? "").toLowerCase()) {
+      ov.fill = live.hex
+      changed = true
+    }
+  }
+  // Styles per-char com fillBrandIdx (quando swatch Marca foi aplicado via
+  // seleção parcial). Atualiza fill de cada char vinculado.
+  if (ov?.styles && typeof ov.styles === "object") {
+    for (const lineKey of Object.keys(ov.styles)) {
+      const lineStyles = ov.styles[lineKey]
+      if (!lineStyles || typeof lineStyles !== "object") continue
+      for (const colKey of Object.keys(lineStyles)) {
+        const cs = lineStyles[colKey]
+        if (!cs || typeof cs.fillBrandIdx !== "number") continue
+        const live = brandColors[cs.fillBrandIdx]
+        if (!live?.hex || !/^#[0-9a-fA-F]{6}$/.test(live.hex)) continue
+        if (live.hex.toLowerCase() !== String(cs.fill ?? "").toLowerCase()) {
+          cs.fill = live.hex
+          changed = true
+        }
+      }
+    }
+  }
+  return changed
 }
 
 function resolveBgLayer(bg: any, brandColors: BrandColorLike[]): boolean {
