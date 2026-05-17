@@ -593,6 +593,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fabricRef = useRef<any>(null)
   const psdStepInputRef = useRef<HTMLInputElement>(null)
+  // File System Access API: handle pro PSD externo vinculado pra sync.
+  // Quando user clica "Editar Externo", exporta PSD + salva via showSaveFilePicker
+  // + guarda handle. Botão "Sync" depois re-lê o arquivo (depois do user salvar
+  // no Photoshop) e re-importa.
+  const externalPsdHandle = useRef<any>(null)
+  const [externalPsdName, setExternalPsdName] = useState<string | null>(null)
   const bgRef = useRef<any>(null)
   const campaignRef = useRef<Campaign | null>(null)
   const saveTimer = useRef<any>()
@@ -3707,6 +3713,84 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   //    (essa eh a UNICA excecao — assets sao fonte da verdade pro conteudo
   //    textual; PSD so determina onde/como aparece).
   //  - Layers sem match: IGNORADAS (precisam virar asset em /assets antes).
+
+  // Editar externamente: exporta o PSD da peça pro disco do user (via
+  // File System Access API quando disponível, senão download normal).
+  // Browsers em sandbox não podem ABRIR Photoshop diretamente — o user
+  // tem que abrir o arquivo manualmente. Com FSA, mantemos referência ao
+  // arquivo pra sync depois (re-leitura).
+  async function openInExternalApp() {
+    if (!pieceId || !pieceRef.current) {
+      alert("Disponível apenas pra peças geradas (não pra matriz)")
+      return
+    }
+    const piece = pieceRef.current
+    try {
+      const { exportPSDBlob } = await import("@/lib/exportPiece")
+      const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
+      const blob = await exportPSDBlob({
+        id: piece.id, name: piece.name ?? "Peça",
+        data,
+        width: canvasWRef.current, height: canvasHRef.current,
+      })
+      const safeName = (piece.name ?? "peca").replace(/[^\w-]+/g, "_")
+      const filename = `${safeName}.psd`
+      const supportsFSA = typeof window !== "undefined" && "showSaveFilePicker" in window
+      if (supportsFSA) {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: "Photoshop", accept: { "image/vnd.adobe.photoshop": [".psd"] } }],
+        })
+        const writable = await handle.createWritable()
+        await writable.write(blob)
+        await writable.close()
+        externalPsdHandle.current = handle
+        setExternalPsdName(handle.name ?? filename)
+        alert(`✅ PSD salvo!\n\nAgora:\n1. Abra "${handle.name ?? filename}" no Photoshop\n2. Edite + salve (Cmd+S)\n3. Volta aqui e clica "🔄 Sync"\n\nPS: O Photoshop tem que ser seu app padrão pra .psd OU abre ele manualmente.`)
+      } else {
+        // Fallback: download
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url; a.download = filename
+        document.body.appendChild(a); a.click()
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 100)
+        alert(`📁 PSD baixado: ${filename}\n\nSeu browser não suporta sync automático (use Chrome ou Edge).\nDepois de editar no Photoshop, re-importe o arquivo via "📁 PSD".`)
+      }
+    } catch (e: any) {
+      if (e?.name === "AbortError") return // user cancelou
+      console.error("[external-edit] falha:", e)
+      alert("Erro ao exportar PSD: " + (e?.message ?? e))
+    }
+  }
+
+  // Sync: re-lê o PSD vinculado e re-importa pra dentro da peça atual.
+  // Requer permission de leitura (concedida no salvar inicial; pode pedir
+  // de novo se o browser invalidou).
+  async function syncFromExternalApp() {
+    const handle = externalPsdHandle.current
+    if (!handle) {
+      alert("Nenhum PSD externo vinculado. Use '🎨 Editar Externo' primeiro.")
+      return
+    }
+    try {
+      const perm = await handle.queryPermission({ mode: "read" })
+      if (perm !== "granted") {
+        const req = await handle.requestPermission({ mode: "read" })
+        if (req !== "granted") {
+          alert("Permissão de leitura negada — não dá pra sincronizar")
+          return
+        }
+      }
+      const file = await handle.getFile()
+      const mtime = file.lastModified ? new Date(file.lastModified).toLocaleTimeString() : "?"
+      if (!confirm(`Sincronizar com "${file.name}" (modificado em ${mtime})?\n\nO conteúdo do Step ativo será substituído pelos layers do PSD.`)) return
+      await replaceStepFromPsd(file)
+    } catch (e: any) {
+      console.error("[external-sync] falha:", e)
+      alert("Falha ao sincronizar: " + (e?.message ?? e))
+    }
+  }
+
   async function replaceStepFromPsd(file: File) {
     const fc = fabricRef.current
     if (!fc) return
@@ -5276,6 +5360,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             >
               📁 PSD
             </button>
+            {/* Editar Externo: exporta PSD pro disco (FSA API) e mantém ref
+                pra sync após user editar no Photoshop. */}
+            <button
+              onClick={openInExternalApp}
+              title="Exporta esta peça como PSD pro seu disco. Edita no Photoshop, salva, clica 'Sync' pra atualizar a peça aqui."
+              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+            >
+              🎨 Editar Externo
+            </button>
+            {externalPsdName && (
+              <button
+                onClick={syncFromExternalApp}
+                title={`Re-importa "${externalPsdName}" do disco (use após salvar no Photoshop)`}
+                style={{ background: "#2a2a1a", border: "1px solid #F5C400", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+              >
+                🔄 Sync
+              </button>
+            )}
             <input
               ref={psdStepInputRef}
               type="file"
