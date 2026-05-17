@@ -327,6 +327,147 @@ function extractPsdEffects(layer: any): any | undefined {
   return Object.keys(out).length > 0 ? out : undefined
 }
 
+// Mapeia blendMode PSD pra Canvas2D globalCompositeOperation. Subset comum.
+function psdBlendToCompositeOp(bm: string | undefined): GlobalCompositeOperation {
+  if (!bm) return "source-over"
+  const m: Record<string, GlobalCompositeOperation> = {
+    "normal": "source-over",
+    "multiply": "multiply",
+    "screen": "screen",
+    "overlay": "overlay",
+    "darken": "darken",
+    "lighten": "lighten",
+    "color dodge": "color-dodge",
+    "color burn": "color-burn",
+    "hard light": "hard-light",
+    "soft light": "soft-light",
+    "difference": "difference",
+    "exclusion": "exclusion",
+  }
+  return m[bm.toLowerCase()] ?? "source-over"
+}
+
+// Bake de effects no bitmap de uma image layer. Photoshop aplica color/gradient
+// overlay, drop shadow, etc no RENDER do layer; ag-psd entrega o raster base
+// SEM essas effects. Pra fidelidade visual no editor (Fabric não tem nativo
+// pra source-atop tint em image fill), compomos as effects no PNG antes de
+// salvar. Resultado: logo/shape com colorOverlay verde aparece preenchido
+// no editor (antes só outline).
+//
+// Estratégia (ordem que Photoshop usa, simplificada):
+//   1. Drop shadow ATRÁS do silhueta (composite separado)
+//   2. Base bitmap
+//   3. Color overlay (source-atop tint, preserva alpha)
+//   4. Gradient overlay (source-atop com gradient)
+//   5. Inner shadow (apenas tint escuro nas bordas internas — aproximação)
+//
+// Round-trip: effects PERMANECEM no JSON pra export PSD. Em re-import, o
+// PSD original (não o nosso baked PNG) volta. Risco de "double-bake" só se
+// re-importarmos NOSSO export — caso raro, aceitável.
+function bakeImageEffects(src: HTMLCanvasElement, effects: any): { canvas: HTMLCanvasElement; pad: number } {
+  if (!effects || !src) return { canvas: src, pad: 0 }
+  const co = effects.colorOverlay
+  const go = effects.gradientOverlay
+  const ds = effects.dropShadow
+  const isOG = effects.outerGlow
+  if (!co && !go && !ds && !isOG) return { canvas: src, pad: 0 } // sem effects bake-able
+
+  const w = src.width, h = src.height
+  // Padding pra acomodar shadow/glow externos. Calcula max blur+offset.
+  const dsPad = ds ? Math.ceil(Math.max(Math.abs(ds.offsetX ?? 0), Math.abs(ds.offsetY ?? 0)) + (ds.blur ?? 0) * 2) : 0
+  const ogPad = isOG ? Math.ceil((isOG.blur ?? 0) * 2 + (isOG.choke ?? 0)) : 0
+  const pad = Math.max(dsPad, ogPad, 0)
+  const outW = w + pad * 2
+  const outH = h + pad * 2
+
+  const out = document.createElement("canvas")
+  out.width = outW; out.height = outH
+  const ctx = out.getContext("2d")
+  if (!ctx) return { canvas: src, pad: 0 }
+
+  // 1. DROP SHADOW: silhueta colorida + blur + offset, ATRÁS do bitmap base
+  if (ds) {
+    const sc = document.createElement("canvas")
+    sc.width = outW; sc.height = outH
+    const sctx = sc.getContext("2d")
+    if (sctx) {
+      // Desenha base shifted pelo offset
+      sctx.drawImage(src, pad + (ds.offsetX ?? 0), pad + (ds.offsetY ?? 0))
+      // Tint pra cor da shadow (source-atop preserva alpha)
+      sctx.globalCompositeOperation = "source-atop"
+      sctx.fillStyle = ds.color ?? "rgba(0,0,0,0.5)"
+      sctx.globalAlpha = ds.opacity ?? 0.75
+      sctx.fillRect(0, 0, outW, outH)
+      sctx.globalAlpha = 1
+      // Aplica blur via filter na composição final
+      ctx.filter = `blur(${(ds.blur ?? 5) / 2}px)`
+      ctx.drawImage(sc, 0, 0)
+      ctx.filter = "none"
+    }
+  }
+  // 2. OUTER GLOW (similar, sem offset, sempre atrás)
+  if (isOG) {
+    const sc = document.createElement("canvas")
+    sc.width = outW; sc.height = outH
+    const sctx = sc.getContext("2d")
+    if (sctx) {
+      sctx.drawImage(src, pad, pad)
+      sctx.globalCompositeOperation = "source-atop"
+      sctx.fillStyle = isOG.color ?? "rgba(255,255,255,0.5)"
+      sctx.globalAlpha = isOG.opacity ?? 0.5
+      sctx.fillRect(0, 0, outW, outH)
+      sctx.globalAlpha = 1
+      ctx.filter = `blur(${(isOG.blur ?? 5) / 2}px)`
+      ctx.drawImage(sc, 0, 0)
+      ctx.filter = "none"
+    }
+  }
+  // 3. BASE BITMAP (desenha com offset pro pad)
+  ctx.drawImage(src, pad, pad)
+
+  // 4. COLOR OVERLAY: tint do bitmap existente
+  if (co && co.color) {
+    ctx.globalCompositeOperation = psdBlendToCompositeOp(co.blendMode)
+    // source-atop garante que só pinta onde tem alpha (preserva silhueta)
+    if (ctx.globalCompositeOperation === "source-over") ctx.globalCompositeOperation = "source-atop"
+    ctx.fillStyle = co.color
+    ctx.globalAlpha = co.opacity ?? 1
+    ctx.fillRect(0, 0, outW, outH)
+    ctx.globalAlpha = 1
+  }
+
+  // 5. GRADIENT OVERLAY
+  if (go && Array.isArray(go.stops) && go.stops.length > 0) {
+    try {
+      const angleRad = ((go.angle ?? 90) * Math.PI) / 180
+      // Centro do bbox da imagem
+      const cx = pad + w / 2, cy = pad + h / 2
+      // Half-diagonal pra cobrir tudo
+      const r = Math.hypot(w, h) / 2
+      const dx = Math.cos(angleRad) * r
+      const dy = Math.sin(angleRad) * r
+      const grad = go.type === "radial"
+        ? ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
+        : ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy)
+      const stops = go.reverse
+        ? go.stops.map((s: any) => ({ offset: 1 - (s.offset ?? 0), color: s.color }))
+        : go.stops.map((s: any) => ({ offset: s.offset ?? 0, color: s.color }))
+      for (const s of stops) {
+        grad.addColorStop(Math.max(0, Math.min(1, s.offset)), s.color ?? "#000")
+      }
+      ctx.globalCompositeOperation = psdBlendToCompositeOp(go.blendMode)
+      if (ctx.globalCompositeOperation === "source-over") ctx.globalCompositeOperation = "source-atop"
+      ctx.fillStyle = grad
+      ctx.globalAlpha = go.opacity ?? 1
+      ctx.fillRect(0, 0, outW, outH)
+      ctx.globalAlpha = 1
+    } catch (e) { console.warn("[bakeImageEffects] gradientOverlay falhou:", e) }
+  }
+
+  ctx.globalCompositeOperation = "source-over"
+  return { canvas: out, pad }
+}
+
 // Renderiza um shape layer (vectorMask + vectorFill/vectorStroke) num canvas
 // local da bbox do layer. Resolve o caso em que ag-psd entrega layer.canvas
 // vazio/parcial (só com stroke, sem fill) — comum quando o fill vem de Color
@@ -734,7 +875,29 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             // Re-renderizamos vector UNDER + ag-psd canvas POR CIMA pra garantir
             // o visual completo (escudo verde do piloto Sicredi caía nesse caso).
             const renderedShape = renderShapeLayerCanvas(layer, width, height, left, top)
-            const finalCanvas: HTMLCanvasElement = renderedShape ?? (layer.canvas as HTMLCanvasElement)
+            const preBake: HTMLCanvasElement = renderedShape ?? (layer.canvas as HTMLCanvasElement)
+            // Bake colorOverlay/gradientOverlay/dropShadow/outerGlow no bitmap.
+            // Fabric não tem source-atop tint pra image fill — só fazendo bake
+            // o logo Sicredi (outline raster + colorOverlay verde) aparece com
+            // o fill correto no editor.
+            const baked = bakeImageEffects(preBake, psdEffects)
+            const finalCanvas = baked.canvas
+            const bakePad = baked.pad
+            // Effects que foram embutidas no bitmap: REMOVE do JSON pra evitar
+            // dupla aplicação (Fabric shadow + bitmap shadow, color overlay já
+            // tintado + tint novamente). Mantém innerShadow/innerGlow/bevel/
+            // satin/stroke pra render/round-trip (não bakeamos esses).
+            let effectsForLayer = psdEffects
+            if (bakePad > 0 || (psdEffects && (psdEffects.colorOverlay || psdEffects.gradientOverlay))) {
+              if (psdEffects) {
+                effectsForLayer = { ...psdEffects }
+                delete effectsForLayer.colorOverlay
+                delete effectsForLayer.gradientOverlay
+                delete effectsForLayer.dropShadow
+                delete effectsForLayer.outerGlow
+                if (Object.keys(effectsForLayer).length === 0) effectsForLayer = undefined
+              }
+            }
             const blob = await canvasToBlob(finalCanvas)
             const imageIndex = imageBlobs.length
             imageBlobs.push(blob)
@@ -743,17 +906,23 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             // continua usado como imageUrl pro editor renderizar.
             const placed: any = (layer as any).placedLayer
             const linkedIndex = placed?.id ? guidToIndex.get(placed.id) : undefined
+            // Ajusta posX/posY/width/height pelo padding do bake. Effects como
+            // dropShadow/outerGlow expandem a área visível além do bbox PSD.
+            // Sem o ajuste, a shadow seria CORTADA pelo bbox original ou o
+            // conteúdo apareceria deslocado.
             assets.push({
               label: name, type: "IMAGE",
               imageIndex,
               linkedIndex,           // index no linkedBlobs (se for smart object)
-              posX: left, posY: top, width, height, zIndex,
+              posX: left - bakePad, posY: top - bakePad,
+              width: width + bakePad * 2, height: height + bakePad * 2,
+              zIndex,
               mask: assetMask,
               hidden: layer.hidden === true ? true : undefined,
               locked: (layer as any).transparencyProtected === true ? true : undefined,
               opacity: psdOpacity,
               blendMode: psdBlend,
-              effects: psdEffects,
+              effects: effectsForLayer,
               groupPath: groupPath.length > 0 ? groupPath : undefined,
             })
           } catch (e) {
