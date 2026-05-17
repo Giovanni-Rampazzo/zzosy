@@ -780,11 +780,20 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             if (Number.isFinite(avg) && avg > 0) textScale = avg
           }
           const scaledDefFontSize = defFontSize * textScale
-          // Leading em PONTOS já escalado. autoLeading=true (Adobe Auto) → derivar
-          // do fontSize com fator 1.2 (Adobe default). Caso contrário usa o valor.
+          // Leading em PONTOS já escalado. HEURÍSTICA PHOTOSHOP:
+          // autoLeading=true (explicit) → usa o fator do paragraphStyle (1.2 default)
+          // leading === fontSize (PSD freq. stora isso quando "Auto" tá marcado mas
+          //   a UI mostra valor explicito) → também trata como Auto
+          // caso contrário usa o valor literal.
+          // Sem essa heuristica, textos com leading=fontSize renderizam com
+          // lineHeight=1.0 (linhas baselines grudadas) e ficam sobrepostos.
           const defLeadingRaw = typeof defStyle.leading === "number" ? defStyle.leading : undefined
-          const defAutoLeading = defStyle.autoLeading === true || defLeadingRaw === undefined
-          const defLeadingPt = defAutoLeading ? Math.round(scaledDefFontSize * 1.2) : Math.round((defLeadingRaw ?? scaledDefFontSize) * textScale)
+          const paraAutoFactor = typeof td.paragraphStyle?.autoLeading === "number" ? td.paragraphStyle.autoLeading : 1.2
+          const leadingEqualsFont = defLeadingRaw !== undefined && Math.abs(defLeadingRaw - defFontSize) < 0.5
+          const isLeadingAuto = defStyle.autoLeading === true || defLeadingRaw === undefined || leadingEqualsFont
+          const defLeadingPt = isLeadingAuto
+            ? Math.round(scaledDefFontSize * paraAutoFactor)
+            : Math.round(defLeadingRaw! * textScale)
 
           let spans: any[] = []
           const runs = td.styleRuns ?? []
