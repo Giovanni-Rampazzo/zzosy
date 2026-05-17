@@ -600,10 +600,15 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           display: "flex", alignItems: "center", justifyContent: "center",
           padding: "20% 14% 14% 14%",
         }}>
+          {/* Peça NUNCA passa de 65% da altura nem 70% da largura do slide.
+              Garante respiro visual mesmo em peças muito verticais (Story,
+              Display) ou horizontais largas (banners). objectFit:contain no
+              <img> interno preserva proporção dentro desse box. */}
           <div
             {...pieceClickProps}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
+              maxWidth: "70%", maxHeight: "65%",
               ...(pieceClickProps.style ?? {}),
             }}
           >
