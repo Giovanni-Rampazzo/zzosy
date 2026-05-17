@@ -16,11 +16,16 @@ function colorToHex(color: any): string {
 }
 
 // Retorna folhas (layers nao-folder) com:
-//  - parentHidden: folder ancestral marcado hidden no PSD ⇒ SKIP no import (fix #2)
-//  - inheritedRawMask: se algum folder ancestral tem raster/vector mask, herda
-//    pros filhos pra o editor recortar igual ao PS (fix #3). Em folders aninhados
-//    com mask em ambos niveis, o mais interno prevalece (simplificacao MVP — caso
-//    raro; nao ocorre no PSD-piloto do Sicredi).
+//  - parentHidden: folder ancestral marcado hidden no PSD ⇒ SKIP no import
+//  - inheritedRawMask: mask de folder ancestral. ⚠️ DESABILITADO por default
+//    (INHERIT_FOLDER_MASK = false). Quando ativo, propagava a mask do folder
+//    pra TODOS os children — gerava bug visual em PSDs complexos onde o
+//    folder tinha mask de escudo/shape específico mas continha layers (ex:
+//    Background retangular) que não deveriam herdar essa mask. Resultado:
+//    layers cortados pra área errada (ex: retângulo enorme aparecia só dentro
+//    do escudo). Pra reabilitar (PSDs simples onde folder mask deve afetar
+//    children): mudar pra true.
+const INHERIT_FOLDER_MASK = false
 type RawMaskRef = { kind: "raster" | "vector"; data: any }
 function collectAllLayers(
   layers: any[],
@@ -34,10 +39,12 @@ function collectAllLayers(
 
     if (layer.children?.length) {
       let folderMask: RawMaskRef | null = inheritedRawMask
-      if (layer.mask?.canvas) {
-        folderMask = { kind: "raster", data: layer.mask }
-      } else if ((layer as any).vectorMask?.paths?.length) {
-        folderMask = { kind: "vector", data: (layer as any).vectorMask }
+      if (INHERIT_FOLDER_MASK) {
+        if (layer.mask?.canvas) {
+          folderMask = { kind: "raster", data: layer.mask }
+        } else if ((layer as any).vectorMask?.paths?.length) {
+          folderMask = { kind: "vector", data: (layer as any).vectorMask }
+        }
       }
       result.push(...collectAllLayers(layer.children, effectiveHidden, folderMask))
     } else {
