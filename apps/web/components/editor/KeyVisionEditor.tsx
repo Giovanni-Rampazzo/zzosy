@@ -1762,6 +1762,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (pdata?.version === 2 && Array.isArray(layersToLoad)) {
           // Renderiza cada layer da peca
           const sorted = [...layersToLoad].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+          // DIAGNÓSTICO peça
+          const matchedP = sorted.filter((l: any) => l.assetId && assetMap[l.assetId]).length
+          const embeddedP = sorted.filter((l: any) => l.__embedded).length
+          console.log("[LOAD-PIECE-DIAG] piece layers:", sorted.length, "assets na campanha:", c.assets.length, "matched:", matchedP, "embedded:", embeddedP, "unmatched:", sorted.length - matchedP - embeddedP)
           for (const layer of sorted) {
             // Layer LINKADO a um asset (peca gerada ou linkada do PSD)
             const asset = assetMap[layer.assetId] as Asset
@@ -1863,6 +1867,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const assetMap = Object.fromEntries(c.assets.map((a: Asset) => [a.id, a]))
           const sorted = [...savedLayers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
           let skippedCount = 0
+          // DIAGNÓSTICO: quantos layers no KV vs quantos assets na campanha vs match
+          const matched = sorted.filter((l: any) => l.assetId && assetMap[l.assetId]).length
+          console.log("[LOAD-MATRIX-DIAG] KV layers:", sorted.length, "assets na campanha:", c.assets.length, "matched:", matched, "unmatched:", sorted.length - matched)
           for (const layer of sorted) {
             const asset = assetMap[layer.assetId] as Asset
             if (!asset) {
