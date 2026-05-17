@@ -27,12 +27,16 @@ function colorToHex(color: any): string {
 //    children): mudar pra true.
 const INHERIT_FOLDER_MASK = false
 type RawMaskRef = { kind: "raster" | "vector"; data: any }
+// groupPath: array de nomes de folder ancestrais (raiz → pai direto). Preserva
+// a hierarquia de groups do Photoshop pro round-trip. Sem isso, ao re-exportar
+// o PSD designers perdem toda a organização de pastas.
 function collectAllLayers(
   layers: any[],
   parentHidden = false,
   inheritedRawMask: RawMaskRef | null = null,
-): Array<{ layer: any; inheritedRawMask: RawMaskRef | null }> {
-  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null }> = []
+  groupPath: string[] = [],
+): Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[] }> {
+  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[] }> = []
   for (const layer of layers) {
     const effectiveHidden = parentHidden || layer.hidden === true
     if (effectiveHidden) continue // SKIP filho de folder hidden
@@ -46,9 +50,11 @@ function collectAllLayers(
           folderMask = { kind: "vector", data: (layer as any).vectorMask }
         }
       }
-      result.push(...collectAllLayers(layer.children, effectiveHidden, folderMask))
+      const folderName = (layer.name ?? "").trim() || "Group"
+      const childPath = [...groupPath, folderName]
+      result.push(...collectAllLayers(layer.children, effectiveHidden, folderMask, childPath))
     } else {
-      result.push({ layer, inheritedRawMask })
+      result.push({ layer, inheritedRawMask, groupPath })
     }
   }
   return result
@@ -286,7 +292,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         guidToIndex.set(guid, idx)
       }
 
-      for (const { layer, inheritedRawMask } of allLayerEntries) {
+      for (const { layer, inheritedRawMask, groupPath } of allLayerEntries) {
         const name = (layer.name ?? "").trim()
         // Fix #6: filtra a "Background" auto-criada pelo PS (raster top-level
         // sem placedLayer), mas deixa passar Smart Objects intencionais que o
@@ -464,6 +470,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             opacity: psdOpacity,
             blendMode: psdBlend,
             effects: psdEffects,
+            groupPath: groupPath.length > 0 ? groupPath : undefined,
           })
         } else if (layer.canvas) {
           try {
@@ -485,6 +492,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               locked: (layer as any).transparencyProtected === true ? true : undefined,
               opacity: psdOpacity,
               blendMode: psdBlend,
+              effects: psdEffects,
+              groupPath: groupPath.length > 0 ? groupPath : undefined,
             })
           } catch (e) {
             console.warn("Falha ao extrair imagem do layer", name, e)

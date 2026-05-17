@@ -1102,6 +1102,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
         ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
         ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
+        // anotação temporária: removida antes do writePsd na fase de nesting.
+        __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
@@ -1173,6 +1175,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
             ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
             ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
+            __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
             placedLayer: {
               id: linked.guid,
               type: "raster",
@@ -1199,6 +1202,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
         ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
         ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
+        __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
       })
     }
   }
@@ -1259,10 +1263,42 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   tctx.fillRect(0, 0, thumbCanvas.width, thumbCanvas.height)
   tctx.drawImage(compositeCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height)
 
+  // Reconstrói a hierarquia de folders do Photoshop a partir do __groupPath
+  // anotado em cada psdLayer. Walking bottom→top (ordem do psdLayers), abre
+  // novos folders quando o path estende o atual, fecha quando diverge. Layers
+  // sem groupPath vão pra raiz. Folders ag-psd: { name, opened:true, children }.
+  // EDGE CASE: se layers de um mesmo grupo ficarem não-contíguos no z-stack
+  // (user moveu manualmente após import), o grupo é "re-aberto" — gera 2
+  // folders com mesmo nome no PSD. Aceitável (designer merge manual no PS).
+  function nestByGroupPath(flat: any[]): any[] {
+    const root: any = { children: [] }
+    let currentPath: string[] = []
+    const stack: any[] = [root]
+    for (const layer of flat) {
+      const lp: string[] = Array.isArray(layer.__groupPath) ? layer.__groupPath : []
+      let common = 0
+      while (common < currentPath.length && common < lp.length && currentPath[common] === lp[common]) common++
+      while (currentPath.length > common) {
+        stack.pop()
+        currentPath.pop()
+      }
+      while (currentPath.length < lp.length) {
+        const newGroup: any = { name: lp[currentPath.length], opened: true, children: [] }
+        stack[stack.length - 1].children.push(newGroup)
+        stack.push(newGroup)
+        currentPath.push(lp[currentPath.length])
+      }
+      const { __groupPath, ...clean } = layer
+      stack[stack.length - 1].children.push(clean)
+    }
+    return root.children
+  }
+  const nestedChildren = nestByGroupPath(psdLayers)
+
   const psd: any = {
     width: W, height: H,
     canvas: compositeCanvas,
-    children: psdLayers,
+    children: nestedChildren,
     imageResources: {
       thumbnail: thumbCanvas,
       // resolutionInfo grava o DPI no PSD. Photoshop le isso ao abrir o arquivo

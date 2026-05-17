@@ -58,6 +58,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       opacity?: number
       blendMode?: string
       effects?: any
+      groupPath?: string[]
     }>
 
     const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
@@ -214,6 +215,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       ...(assets[i].blendMode && assets[i].blendMode !== "source-over" ? { blendMode: assets[i].blendMode } : {}),
       // Layer effects (drop shadow, stroke, outer glow) extraídos do PSD.
       ...(assets[i].effects && Object.keys(assets[i].effects).length > 0 ? { effects: assets[i].effects } : {}),
+      // groupPath: array de nomes de folders ancestrais. Preserva hierarquia
+      // de groups do Photoshop pro round-trip ZZOSY → PSD. Vazio = layer raiz.
+      ...(assets[i].groupPath && assets[i].groupPath!.length > 0 ? { groupPath: assets[i].groupPath } : {}),
     }))
 
     // KeyVision (Matriz)

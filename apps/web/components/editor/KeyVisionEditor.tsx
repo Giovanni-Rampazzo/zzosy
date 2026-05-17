@@ -726,7 +726,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // undo stack. Sem isso, undo até o início "desfaz" também o brand
       // sync — que mudou outros textos sem o user ter feito.
       try {
-        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects"]))
+        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
         undoStack.current = [snap]
         redoStack.current = []
         setHistoryTick(t => t + 1)
@@ -1930,7 +1930,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects"]))
+        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -2030,7 +2030,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         console.warn("[pushHistory] skip — encontrei", orphans.length, "objetos orfaos. Estado nao foi adicionado ao undo stack.")
         return
       }
-      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects"]))
+      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -2114,6 +2114,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (typeof src.__fillBrandIdx === "number") obj.__fillBrandIdx = src.__fillBrandIdx
         // PSD layer effects (dropShadow/stroke/outerGlow) — round-trip
         if (src.__psdEffects && typeof src.__psdEffects === "object") obj.__psdEffects = src.__psdEffects
+        // groupPath: hierarquia de folders do PSD preservada
+        if (Array.isArray(src.__groupPath) && src.__groupPath.length > 0) obj.__groupPath = src.__groupPath
         // Restaurar styles per-char em textboxes
         if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
           obj.set("styles", src.styles)
@@ -2411,6 +2413,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       ;(tb as any).__embedded = true
       ;(tb as any).__assetLabel = "(embedded)"
+      if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) (tb as any).__groupPath = layer.groupPath
       fc.add(tb)
     } else if (layer.type === "IMAGE") {
       const dataUrl = layer.imageDataUrl
@@ -2433,6 +2436,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ;(fabImg as any).imageDataUrl = dataUrl
           ;(fabImg as any).__embedded = true
           ;(fabImg as any).__assetLabel = "(embedded)"
+          if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) (fabImg as any).__groupPath = layer.groupPath
           fc.add(fabImg)
           resolve()
         }
@@ -2500,6 +2504,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       psdExtraProps.globalCompositeOperation = layer.blendMode
     }
     const psdEffects = (layer?.effects && typeof layer.effects === "object") ? layer.effects : null
+    // groupPath: hierarquia de folders do PSD preservada no Fabric object pra
+    // re-exportar com a mesma estrutura de groups. Array de nomes raiz → pai.
+    const psdGroupPath = Array.isArray(layer?.groupPath) && layer.groupPath.length > 0 ? layer.groupPath as string[] : null
 
     if (asset.type === "IMAGE") {
       if (asset.imageUrl) {
@@ -2574,6 +2581,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ;(img as any).__assetId = asset.id
           ;(img as any).__assetLabel = asset.label
           if (psdEffects) (img as any).__psdEffects = psdEffects
+          if (psdGroupPath) (img as any).__groupPath = psdGroupPath
           applyFabricEffects(img, psdEffects, Shadow)
           fc.add(img)
           fc.requestRenderAll()
@@ -2588,6 +2596,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       ;(r as any).__assetId = asset.id
       ;(r as any).__assetLabel = asset.label
+      if (psdGroupPath) (r as any).__groupPath = psdGroupPath
       fc.add(r)
     } else {
       const spans = getSpans(asset)
@@ -2722,6 +2731,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(t as any).__assetLabel = asset.label
       if (typeof fillBrandIdx === "number") (t as any).__fillBrandIdx = fillBrandIdx
       if (psdEffects) (t as any).__psdEffects = psdEffects
+      if (psdGroupPath) (t as any).__groupPath = psdGroupPath
       applyFabricEffects(t, psdEffects, Shadow)
       fc.add(t)
     }
@@ -3348,6 +3358,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if ((o as any).__maskData) {
             layer.mask = (o as any).__maskData
           }
+          // Visibilidade/lock + props PSD (opacity/blendMode/effects/groupPath)
+          // preservados pra round-trip. Sem esses campos aqui, "Salvar e sair"
+          // destruia toda a config do PSD.
+          if (o.__hidden === true) layer.hidden = true
+          if (o.__locked === true) layer.locked = true
+          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
+          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
+            layer.blendMode = o.globalCompositeOperation
+          }
+          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
+            layer.effects = (o as any).__psdEffects
+          }
+          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
+            layer.groupPath = (o as any).__groupPath
+          }
           if (o.type === "textbox" || o.type === "i-text") {
             // PECA: caracteres (asset.content) continuam vindo do asset, MAS quebras de
             // linha (\n) e edicoes locais ficam em overrides.text per-instancia. Sem
@@ -3491,6 +3516,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // em __psdEffects pra round-trip ZZOSY ↔ PSD.
           if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
             layer.effects = (o as any).__psdEffects
+          }
+          // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
+          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
+            layer.groupPath = (o as any).__groupPath
           }
           // DEBUG: log do que tah indo pra matriz
           console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "__hidden:", o.__hidden, "__locked:", o.__locked, "-> hidden:", layer.hidden, "locked:", layer.locked)
@@ -4340,6 +4369,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
             layer.effects = (o as any).__psdEffects
           }
+          // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
+          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
+            layer.groupPath = (o as any).__groupPath
+          }
           // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
           if (o.type === "textbox" || o.type === "i-text") {
             // PECA: caracteres (asset.content) continuam vindo do asset, MAS
@@ -4496,6 +4529,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // em __psdEffects pra round-trip ZZOSY ↔ PSD.
           if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
             layer.effects = (o as any).__psdEffects
+          }
+          // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
+          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
+            layer.groupPath = (o as any).__groupPath
           }
           // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
           // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset

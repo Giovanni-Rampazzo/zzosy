@@ -75,11 +75,18 @@ function applyPsdHiddenLocked(layerData: any, psdLayer: any) {
   if (bm && bm !== "source-over") layerData.blendMode = bm
 }
 
-function collectAllLayers(layers: any[]): any[] {
-  const result: any[] = []
+// groupPath: array de nomes de folder ancestrais (raiz → pai direto). Preserva
+// hierarquia de groups do Photoshop pro round-trip ZZOSY → PSD.
+function collectAllLayers(layers: any[], groupPath: string[] = []): Array<{ layer: any; groupPath: string[] }> {
+  const result: Array<{ layer: any; groupPath: string[] }> = []
   for (const layer of layers) {
-    if (layer.children?.length) result.push(...collectAllLayers(layer.children))
-    else result.push(layer)
+    if (layer.children?.length) {
+      const folderName = (layer.name ?? "").trim() || "Group"
+      const childPath = [...groupPath, folderName]
+      result.push(...collectAllLayers(layer.children, childPath))
+    } else {
+      result.push({ layer, groupPath })
+    }
   }
   return result
 }
@@ -122,7 +129,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
     let newAssetCreated = 0
     let zIndex = 0
 
-    for (const layer of allLayers) {
+    for (const { layer, groupPath } of allLayers) {
       const layerName = (layer.name ?? "").trim()
       if (!layerName || layerName === "Background") { zIndex++; continue }
 
@@ -204,6 +211,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
         const layerData: any = {
           posX: left, posY: top, width, height, zIndex,
           overrides,
+          ...(groupPath.length > 0 ? { groupPath } : {}),
         }
 
         if (matchedAsset && matchedAsset.type === "TEXT") {
@@ -246,6 +254,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
           const layerData: any = {
             type: "IMAGE",
             posX: left, posY: top, width, height, zIndex,
+            ...(groupPath.length > 0 ? { groupPath } : {}),
           }
 
           if (matchedAsset && matchedAsset.type === "IMAGE") {
@@ -273,6 +282,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
           type: "IMAGE",
           posX: left, posY: top, width, height, zIndex,
           assetId: matchedAsset.id,
+          ...(groupPath.length > 0 ? { groupPath } : {}),
         }
         applyPsdHiddenLocked(layerData, layer); dataLayers.push(layerData)
         linked++
