@@ -16,7 +16,10 @@ export interface FontFamily {
 
 // Lista expandida — fallback. Variantes inferidas a partir das mais comuns no macOS/Win.
 // Cada item: { family, variants: { label -> fontFamily real } }
-const FALLBACK_FONT_FAMILIES: FontFamily[] = [
+// Cast pra FontFamily[] necessário porque cada literal tem combinações diferentes
+// de keys (Bold, Light, Black, Wide, etc) — TS infere union de tipos, mas o
+// runtime so usa Record<string, string>.
+const FALLBACK_FONT_FAMILIES = ([
   // Sans-serif
   { family: "Arial", variants: { "Regular": "Arial", "Bold": "Arial Bold", "Italic": "Arial Italic", "Bold Italic": "Arial Bold Italic", "Black": "Arial Black", "Narrow": "Arial Narrow" } },
   { family: "Avenir", variants: { "Regular": "Avenir", "Light": "Avenir Light", "Book": "Avenir Book", "Medium": "Avenir Medium", "Heavy": "Avenir Heavy", "Black": "Avenir Black" } },
@@ -72,7 +75,7 @@ const FALLBACK_FONT_FAMILIES: FontFamily[] = [
   { family: "Papyrus", variants: { "Regular": "Papyrus" } },
   { family: "Snell Roundhand", variants: { "Regular": "Snell Roundhand", "Bold": "Snell Roundhand Bold", "Black": "Snell Roundhand Black" } },
   { family: "Zapfino", variants: { "Regular": "Zapfino" } },
-].sort((a, b) => a.family.localeCompare(b.family))
+] as Array<{ family: string; variants: Record<string, string> }>).sort((a, b) => a.family.localeCompare(b.family))
 
 /** Lista achatada (ainda exportada pra back-compat). */
 export const FALLBACK_FONTS: string[] = FALLBACK_FONT_FAMILIES.map(f => f.family)

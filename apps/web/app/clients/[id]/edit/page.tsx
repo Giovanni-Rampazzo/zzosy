@@ -107,6 +107,7 @@ interface Client {
   logoUrl: string | null
   brandFont: string | null
   brandColors: BrandColor[] | null
+  brandTypography: any | null
   customFontFiles: CustomFontFile[] | null
 }
 
