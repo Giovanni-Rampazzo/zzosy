@@ -1964,9 +1964,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 await applyMaskToFabricObject({ Image: FabImage, Path }, created, (layer as any).mask)
                 ;(created as any).dirty = true
                 fc.requestRenderAll?.()
+                srvLog("load-MATRIX-mask-applied", { type: (layer as any).mask?.type, label: (created as any)?.__assetLabel, maskDataPresent: !!(created as any).__maskData })
               } catch (e) {
                 srvLog("mask-APPLY-FAIL-MATRIX", { type: (layer as any).mask?.type, label: (created as any)?.__assetLabel, err: String((e as any)?.message ?? e) })
               }
+            } else if (created && (layer as any).mask === undefined) {
+              // Sem nada a fazer — asset legitimamente sem mask.
             }
             if (created) applyHiddenLockedToObject(created, layer)
           }
@@ -3735,6 +3738,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // sem mask. Espelha o save da peca (linha ~2476).
           if ((o as any).__maskData) {
             layer.mask = (o as any).__maskData
+          } else {
+            // Diagnostico: layer sem __maskData. Pode ser legitimo (asset sem mask
+            // no PSD) OU bug (mask foi perdida no load). srvLog ajuda a distinguir.
+            srvLog("save-MATRIX-no-mask", {
+              assetLabel: (o as any).__assetLabel ?? "?",
+              type: o.type,
+              hasClipPath: !!o.clipPath,
+            })
           }
           // Opacity (0..1) e blendMode (canvas globalCompositeOperation) por
           // layer (round-trip PSD). Defaults omitidos pra não inflar JSON.
