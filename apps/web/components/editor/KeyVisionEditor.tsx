@@ -2374,9 +2374,46 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (src.__maskData) {
           obj.__maskData = src.__maskData
           const { Image: FabImage, Path } = await import("fabric")
-          // Limpa clipPath antigo que possa ter sido restaurado parcialmente
           obj.clipPath = null
-          await applyMaskToFabricObject({ Image: FabImage, Path }, obj, src.__maskData)
+          // PARA IMAGES COM RASTER MASK: re-baka a mask no bitmap. Fabric v7
+          // nao tem alpha-mask via clipPath (Image clipPath vira silhueta
+          // solida). No load inicial fazemos via composeRasterMaskIntoImage;
+          // no undo o snap serializou src=URL original (sem bake), entao
+          // o bake se perde. Aqui re-bakamos pra restaurar o visual identico.
+          if (obj.type === "image" && src.__maskData.type === "raster" && src.__maskData.raster?.dataUrl) {
+            try {
+              // Pega o element atual (imagem ja carregada pelo loadFromJSON)
+              const el = (obj as any)._element ?? (obj as any).getElement?.()
+              if (el) {
+                const naturalW = (el as any).naturalWidth || (el as any).width || 1
+                const naturalH = (el as any).naturalHeight || (el as any).height || 1
+                const posX = obj.left ?? 0
+                const posY = obj.top ?? 0
+                const composed = await composeRasterMaskIntoImage(
+                  el, src.__maskData.raster, posX, posY, naturalW, naturalH,
+                  !!src.__maskData.inverted,
+                )
+                if (composed) {
+                  // Substitui o element do FabricImage pelo canvas baked.
+                  // setElement reconfigura sem perder filters/etc.
+                  if (typeof (obj as any).setElement === "function") {
+                    ;(obj as any).setElement(composed)
+                  } else {
+                    ;(obj as any)._element = composed
+                    ;(obj as any)._originalElement = composed
+                  }
+                  ;(obj as any).dirty = true
+                  srvLog("undo-MASK-REBAKE-OK", { label: (obj as any).__assetLabel, w: composed.width, h: composed.height })
+                }
+              }
+            } catch (e) {
+              srvLog("undo-MASK-REBAKE-FAIL", { label: (obj as any).__assetLabel, err: String((e as any)?.message ?? e) })
+            }
+          } else {
+            // Vector ou clipping mask: usa o caminho clipPath padrao (alpha
+            // nao eh necessario, Fabric clipPath funciona bem com paths).
+            await applyMaskToFabricObject({ Image: FabImage, Path }, obj, src.__maskData)
+          }
         }
       }
 
