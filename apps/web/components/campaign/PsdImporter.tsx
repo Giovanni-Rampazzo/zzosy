@@ -1393,6 +1393,16 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           if (firstRunFont) fontsRequired.add(firstRunFont)
           const defFontSize = defStyle.fontSize ?? 48
           const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
+          // Tracking: PSD armazena em 1/1000 de em (mesma unidade que Fabric
+          // charSpacing). Mapeamento DIRETO sem conversao. Antes setavamos
+          // hardcoded 0, perdendo o letterspacing apertado/largo do PSD —
+          // textos com tracking negativo (-65 no titulo do Fungetur) saiam
+          // ~6.5% mais largos que deveriam, vazando da bbox.
+          // Tracking pode estar no default ou per-run; usamos default e
+          // permitimos override per-run nos spans.
+          const defTracking = typeof defStyle.tracking === "number"
+            ? defStyle.tracking
+            : (typeof td.styleRuns?.[0]?.style?.tracking === "number" ? td.styleRuns[0].style.tracking : 0)
           const isItalicByName = /italic|oblique|kursiv|cursiv/i.test(defFontName)
           // Extrai peso NUMERICO especifico do nome PostScript. PSDs frequentemente
           // usam Light(300), Medium(500), SemiBold(600), Black(900) — antes
@@ -1515,7 +1525,9 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             fontWeight: defWeight,
             fontStyle: defStyleItalic,
             fill: defColor,
-            charSpacing: 0,
+            // PSD tracking → Fabric charSpacing (mesma unidade 1/1000 em).
+            // Aplica letterspacing direto pra metricas baterem com o PSD.
+            charSpacing: defTracking,
             // lineHeight derivado de leadingPt/fontSize (Fabric usa multiplier).
             lineHeight: scaledDefFontSize > 0 ? defLeadingPt / scaledDefFontSize : 1.0,
             leadingPt: defLeadingPt,
