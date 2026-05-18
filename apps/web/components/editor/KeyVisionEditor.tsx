@@ -2804,6 +2804,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
       }
       if ((t as any).initDimensions) (t as any).initDimensions()
+      // Anti-overwrap: PSD mede o text box com sub-pixel precision do Photoshop.
+      // Browsers/Fabric usam font metrics que podem variar em centesimos de
+      // pixel, fazendo um texto que cabia em N linhas no PSD quebrar pra N+1 no
+      // canvas. Detectamos pelo numero de "\n" explicitos vs textLines reais
+      // do Textbox apos initDimensions, e expandimos o width incrementalmente
+      // ate que o wrap volte a respeitar o layout original (max 3 tentativas
+      // pra evitar loop em casos patologicos).
+      try {
+        const expectedLines = (initialText.match(/\n/g)?.length ?? 0) + 1
+        let attempts = 0
+        // _textLines eh propriedade interna do Fabric Textbox pos initDimensions.
+        while (((t as any)._textLines?.length ?? 0) > expectedLines && attempts < 3) {
+          const currentWidth = (t as any).width ?? Math.max(effWidth, 200)
+          ;(t as any).set("width", Math.ceil(currentWidth * 1.05))
+          if ((t as any).initDimensions) (t as any).initDimensions()
+          attempts++
+        }
+        if (attempts > 0) {
+          editorLog("[autofit-text]", asset.label, `expanded ${attempts}x to fit ${expectedLines} explicit lines`)
+        }
+      } catch (e) { editorLog("[autofit-text] erro:", e) }
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
       if (typeof fillBrandIdx === "number") (t as any).__fillBrandIdx = fillBrandIdx
