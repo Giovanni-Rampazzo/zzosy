@@ -68,24 +68,35 @@ export function Button({ variant = "secondary", size = "md", loading, className,
   }
   const cls = clsx(base, variants[variant], sizes[size], (disabled || loading) && "opacity-50 cursor-not-allowed", className)
 
-  // Modo file input: renderiza <button> que dispara input.click() via ref.
-  // Antes era <label> envolvendo <input> (ativacao implicita HTML). Mas em
-  // Next.js 16 + Turbopack + React 19 esse padrao quebrou: o LABEL recebe o
-  // click event mas o browser nao dispara click() no input filho — file picker
-  // nunca abre. Diagnostico confirmado via log: Button-FILE-LABEL-CLICK aparece
-  // varias vezes, INPUT-CHANGE nunca. Solucao: trigger explicito via ref.
+  // Modo file input: usa OVERLAY pattern.
+  // Tentamos antes:
+  //  1) <label> envolvendo <input>: nao disparava picker (Next.js 16+React 19).
+  //  2) <button> com fileInputRef.current.click(): logs confirmam que .click()
+  //     foi chamado mas Chrome silenciosamente bloqueava (user activation budget
+  //     consumido / input "muito escondido" / requisitos cada vez mais rigidos).
+  // Padrao OVERLAY: renderiza <button> visualmente, sobreposto por <input type=
+  // file> invisivel (opacity 0) ocupando exatamente a mesma area (position
+  // absolute inset 0). O click do user atinge o INPUT diretamente — gesto nativo,
+  // sem .click() programatico, sem JS gymnastics. Browser sempre abre o picker.
   if (onFileSelect) {
+    const overlayDisabled = disabled || loading
     return (
-      <>
+      <span style={{ position: "relative", display: "inline-block" }}>
         <button
           type="button"
           className={cls}
-          disabled={disabled || loading}
+          disabled={overlayDisabled}
           title={(props.title as string) || undefined}
           style={props.style}
-          onClick={() => {
-            if (disabled || loading) return
-            fileInputRef.current?.click()
+          // Sem onClick — o input invisivel por cima captura o click. Botao
+          // serve so como "fachada visual" + acessibilidade (Tab focus, Enter).
+          // Se foco vier por teclado e Enter for pressionado, fallback dispara
+          // o input via ref (caminho keyboard nao consegue tunelar pro overlay).
+          onKeyDown={e => {
+            if ((e.key === "Enter" || e.key === " ") && !overlayDisabled) {
+              e.preventDefault()
+              fileInputRef.current?.click()
+            }
           }}
         >
           {loading ? <span className="animate-spin">⟳</span> : children}
@@ -94,8 +105,17 @@ export function Button({ variant = "secondary", size = "md", loading, className,
           ref={fileInputRef}
           type="file"
           accept={accept}
-          disabled={disabled || loading}
-          style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
+          disabled={overlayDisabled}
+          // Ocupa a area inteira do button irmao, transparente. user clica "no
+          // botao" mas tecnicamente clica neste input — gesto nativo do browser.
+          style={{
+            position: "absolute",
+            inset: 0,
+            opacity: 0,
+            cursor: overlayDisabled ? "not-allowed" : "pointer",
+            // Aceita click events normais; nao queremos disabled-via-CSS porque
+            // o atributo HTML disabled ja cobre.
+          }}
           tabIndex={-1}
           onChange={e => {
             const f = e.target.files?.[0]
@@ -103,7 +123,7 @@ export function Button({ variant = "secondary", size = "md", loading, className,
             e.target.value = ""
           }}
         />
-      </>
+      </span>
     )
   }
 
