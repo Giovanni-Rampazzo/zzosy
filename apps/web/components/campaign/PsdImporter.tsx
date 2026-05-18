@@ -1,5 +1,6 @@
 "use client"
-import { useState } from "react"
+import { useState, useRef } from "react"
+import { detectFontMetadata, normalizePsdFontToGoogle, loadCustomFontFamily, type CustomFontFile } from "@/lib/google-fonts"
 import { Button } from "@/components/ui/Button"
 
 interface Props {
@@ -1138,10 +1139,14 @@ export function PsdImporter({ campaignId, onImported }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [progress, setProgress] = useState("")
-  // Estado pro modal de fontes faltando — apos import, listamos as fontes
-  // do PSD que NAO estao no browser e oferecemos: (a) ir pra pagina do cliente
-  // pra upload, (b) pular e continuar com fallback (Arial), (c) ignorar.
-  const [missingFontsModal, setMissingFontsModal] = useState<{ fonts: string[]; clientId: string | null } | null>(null)
+  // Estado pro modal de fontes faltando. Cada fonte tem status (pending/
+  // uploading/done) pra UI mostrar progresso de upload inline.
+  type FontUpload = { name: string; status: "pending" | "uploading" | "done" | "error"; errorMsg?: string }
+  const [missingFontsModal, setMissingFontsModal] = useState<{ fonts: FontUpload[]; clientId: string | null } | null>(null)
+  // Ref pro file input + ref do nome da fonte sendo uploaded (input eh um
+  // so, reusado pra cada fonte; clicamos via .click() apos setar o pendingFontName)
+  const fontUploadInputRef = useRef<HTMLInputElement>(null)
+  const pendingFontName = useRef<string | null>(null)
 
   async function handleFile(file: File) {
     if (loading) return // guard de re-entrada
@@ -1821,9 +1826,12 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           }
         }
         if (missing.length > 0) {
-          // Modal de upload em vez de alert() bruto: usuario pode escolher
-          // ir pra pagina do cliente fazer upload, ou pular.
-          setMissingFontsModal({ fonts: missing, clientId: data?.clientId ?? null })
+          // Modal de upload em vez de alert() bruto: usuario pode subir o
+          // arquivo .ttf/.otf inline pra cada fonte faltando, sem sair da pagina.
+          setMissingFontsModal({
+            fonts: missing.map(name => ({ name, status: "pending" as const })),
+            clientId: data?.clientId ?? null,
+          })
         }
       } catch (fontWarnErr) { console.warn("[font-check] falhou:", fontWarnErr) }
 
@@ -1864,7 +1872,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             style={{
               background: "#1e1e1e", color: "#fff",
               padding: 24, borderRadius: 12,
-              maxWidth: 520, width: "90%",
+              maxWidth: 560, width: "90%",
               border: "1px solid #333",
               boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
             }}
@@ -1872,61 +1880,120 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
               Fontes do PSD não instaladas
             </div>
-            <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.5, marginBottom: 12 }}>
-              O PSD usa {missingFontsModal.fonts.length === 1 ? "esta fonte" : "estas fontes"} que não estão
-              disponíveis. Sem o arquivo exato (.ttf/.otf), o editor tenta carregar via Google Fonts
-              — fica visualmente parecido mas as <strong>métricas (largura, kerning, line-height)
-              divergem</strong> do PSD original, o que pode causar texto vazando da bbox ou
-              quebrando em pontos diferentes. Pra fidelidade Photoshop, faça upload dos
-              arquivos exatos no painel de Fontes da Marca do cliente.
+            <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.5, marginBottom: 16 }}>
+              Para fidelidade Photoshop, suba o arquivo exato (.ttf/.otf) de cada fonte.
+              Sem isso, o editor usa Google Fonts como aproximação — métricas (largura,
+              kerning) podem divergir.
             </div>
-            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 12 }}>
-              Após o upload, <strong>recarregue esta página</strong> pra o editor usar a fonte nova.
-            </div>
-            <ul style={{ background: "#0f0f0f", borderRadius: 8, padding: "10px 14px 10px 28px", margin: "0 0 16px", fontSize: 13, listStyle: "disc", maxHeight: 200, overflow: "auto" }}>
-              {missingFontsModal.fonts.map((f) => (
-                <li key={f} style={{ padding: "2px 0", fontFamily: "monospace" }}>{f}</li>
+            <div style={{ background: "#0f0f0f", borderRadius: 8, padding: 12, marginBottom: 16, maxHeight: 320, overflow: "auto" }}>
+              {missingFontsModal.fonts.map((f, idx) => (
+                <div key={f.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 4px", borderTop: idx > 0 ? "1px solid #222" : "none" }}>
+                  <code style={{ flex: 1, fontFamily: "monospace", fontSize: 13, color: "#ddd", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.name}
+                  </code>
+                  {f.status === "done" ? (
+                    <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>✓ Carregada</span>
+                  ) : f.status === "uploading" ? (
+                    <span style={{ fontSize: 12, color: "#facc15" }}>Subindo...</span>
+                  ) : f.status === "error" ? (
+                    <span style={{ fontSize: 11, color: "#f87171" }} title={f.errorMsg}>Erro</span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        if (!missingFontsModal.clientId) return
+                        pendingFontName.current = f.name
+                        fontUploadInputRef.current?.click()
+                      }}
+                      disabled={!missingFontsModal.clientId}
+                      style={{
+                        padding: "5px 10px", borderRadius: 4,
+                        background: missingFontsModal.clientId ? "#facc15" : "#333",
+                        color: missingFontsModal.clientId ? "#000" : "#666",
+                        border: "none", cursor: missingFontsModal.clientId ? "pointer" : "not-allowed",
+                        fontSize: 12, fontWeight: 600,
+                      }}
+                    >
+                      Subir .ttf/.otf
+                    </button>
+                  )}
+                </div>
               ))}
-            </ul>
+            </div>
+            <input
+              ref={fontUploadInputRef}
+              type="file"
+              accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf"
+              style={{ display: "none" }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                e.target.value = "" // reseta pra permitir mesmo arquivo de novo
+                const fontName = pendingFontName.current
+                pendingFontName.current = null
+                if (!file || !fontName || !missingFontsModal.clientId) return
+                // Marca uploading
+                setMissingFontsModal(m => m && {
+                  ...m,
+                  fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "uploading" as const } : f)
+                })
+                try {
+                  // Le arquivo como dataUrl base64
+                  const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const r = new FileReader()
+                    r.onload = () => resolve(r.result as string)
+                    r.onerror = () => reject(new Error("read fail"))
+                    r.readAsDataURL(file)
+                  })
+                  const meta = detectFontMetadata(file.name)
+                  // Familia derivada do NOME DO PSD (fontName) que esta faltando,
+                  // nao do filename — assim o brandFont bate exatamente com o
+                  // fontFamily salvo em styles[].fontFamily pelos textos.
+                  const family = normalizePsdFontToGoogle(fontName) ?? fontName
+                  // GET client atual
+                  const cid = missingFontsModal.clientId
+                  const cRes = await fetch(`/api/clients/${cid}`)
+                  const cData = await cRes.json()
+                  const existingFiles: CustomFontFile[] = Array.isArray(cData.customFontFiles) ? cData.customFontFiles : []
+                  const newFile: CustomFontFile = { url: dataUrl, weight: meta.weight, style: meta.style, fileName: file.name }
+                  const updatedFiles = [...existingFiles, newFile]
+                  // PATCH client. Se brandFont nao setado, seta com a familia atual.
+                  const patchBody: any = { customFontFiles: updatedFiles }
+                  if (!cData.brandFont || cData.brandFont.trim() === "") patchBody.brandFont = family
+                  await fetch(`/api/clients/${cid}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(patchBody),
+                  })
+                  // Carrega imediatamente no tab atual (multi-alias registra
+                  // sob family + PostScript + display name)
+                  loadCustomFontFamily(family, updatedFiles)
+                  // Marca como done
+                  setMissingFontsModal(m => m && {
+                    ...m,
+                    fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "done" as const } : f)
+                  })
+                } catch (err: any) {
+                  console.warn("[font-upload] falhou:", err)
+                  setMissingFontsModal(m => m && {
+                    ...m,
+                    fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "error" as const, errorMsg: String(err?.message ?? err) } : f)
+                  })
+                }
+              }}
+            />
+            <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 12 }}>
+              Fontes ficam salvas no cliente — não precisa subir de novo em campanhas futuras.
+            </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
                 onClick={() => setMissingFontsModal(null)}
                 style={{
                   padding: "8px 14px", borderRadius: 6,
-                  background: "transparent", color: "#aaa",
-                  border: "1px solid #444", cursor: "pointer", fontSize: 13,
+                  background: "#facc15", color: "#000",
+                  border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
                 }}
               >
-                Pular (usar fallback)
+                Concluir
               </button>
-              {missingFontsModal.clientId ? (
-                <button
-                  onClick={() => {
-                    const cid = missingFontsModal.clientId
-                    setMissingFontsModal(null)
-                    // Abre em nova aba pra nao perder o estado da campanha
-                    window.open(`/clients/${cid}/edit`, "_blank")
-                  }}
-                  style={{
-                    padding: "8px 14px", borderRadius: 6,
-                    background: "#facc15", color: "#000",
-                    border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
-                  }}
-                >
-                  Fazer upload das fontes
-                </button>
-              ) : (
-                <button
-                  onClick={() => setMissingFontsModal(null)}
-                  style={{
-                    padding: "8px 14px", borderRadius: 6,
-                    background: "#facc15", color: "#000",
-                    border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
-                  }}
-                >
-                  OK
-                </button>
-              )}
             </div>
           </div>
         </div>
