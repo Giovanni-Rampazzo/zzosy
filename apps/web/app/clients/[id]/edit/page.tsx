@@ -25,15 +25,65 @@ import { GOOGLE_FONTS, loadGoogleFont, loadCustomFontFamily, detectFontMetadata,
 interface BrandColor {
   hex: string
   name?: string
-  role: "primary" | "secondary"
+  /** Categoria da cor no sistema de marca. Aceita valores legados em ingles. */
+  role: "principal" | "secundaria" | "apoio" | "neutra" | "primary" | "secondary"
 }
 
-const DEFAULT_BRAND_COLORS: BrandColor[] = [
-  { hex: "#000000", role: "primary" },
-  { hex: "#FFFFFF", role: "primary" },
-  { hex: "#888888", role: "secondary" },
-  { hex: "#CCCCCC", role: "secondary" },
+/** Migra valores legados (primary/secondary) pros nomes novos. */
+function normalizeRole(r: any): "principal" | "secundaria" | "apoio" | "neutra" {
+  if (r === "primary") return "principal"
+  if (r === "secondary") return "secundaria"
+  if (r === "principal" || r === "secundaria" || r === "apoio" || r === "neutra") return r
+  return "principal"
+}
+
+const ROLE_OPTIONS: Array<{ value: "principal" | "secundaria" | "apoio" | "neutra"; label: string }> = [
+  { value: "principal", label: "Principal" },
+  { value: "secundaria", label: "Secundária" },
+  { value: "apoio", label: "Apoio" },
+  { value: "neutra", label: "Neutra" },
 ]
+
+/** 4 presets tipograficos. Cada um define peso + tamanho da fonte da marca. */
+type BrandPresetKey = "titulo" | "subtitulo" | "body" | "legenda"
+interface BrandPreset { fontWeight: number; fontSize: number }
+type BrandTypography = Record<BrandPresetKey, BrandPreset>
+
+const PRESET_LABELS: Record<BrandPresetKey, string> = {
+  titulo: "Título",
+  subtitulo: "Subtítulo",
+  body: "Corpo de texto",
+  legenda: "Legenda",
+}
+
+const PRESET_DESCRIPTIONS: Record<BrandPresetKey, string> = {
+  titulo: "Manchete, headline principal",
+  subtitulo: "Apoio do título, destaques",
+  body: "Texto corrido, paragrafos",
+  legenda: "Crédito, observação, rodapé",
+}
+
+const PRESET_ORDER: BrandPresetKey[] = ["titulo", "subtitulo", "body", "legenda"]
+
+const DEFAULT_TYPOGRAPHY: BrandTypography = {
+  titulo:    { fontWeight: 700, fontSize: 80 },
+  subtitulo: { fontWeight: 600, fontSize: 48 },
+  body:      { fontWeight: 400, fontSize: 24 },
+  legenda:   { fontWeight: 400, fontSize: 16 },
+}
+
+/** Normaliza dado vindo do banco (pode ter chaves faltando, valores invalidos). */
+function normalizeTypography(raw: any): BrandTypography {
+  const out: any = {}
+  for (const k of PRESET_ORDER) {
+    const r = raw?.[k]
+    out[k] = {
+      fontWeight: Number.isFinite(r?.fontWeight) ? r.fontWeight : DEFAULT_TYPOGRAPHY[k].fontWeight,
+      fontSize:   Number.isFinite(r?.fontSize)   ? r.fontSize   : DEFAULT_TYPOGRAPHY[k].fontSize,
+    }
+  }
+  return out
+}
 
 const WEIGHT_OPTIONS = [
   { value: 100, label: "100 Thin" },
@@ -104,7 +154,8 @@ export default function EditClientPage() {
   const [address, setAddress] = useState("")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [brandFont, setBrandFont] = useState<string>("")
-  const [brandColors, setBrandColors] = useState<BrandColor[]>(DEFAULT_BRAND_COLORS)
+  const [brandColors, setBrandColors] = useState<BrandColor[]>([])
+  const [brandTypography, setBrandTypography] = useState<BrandTypography>(DEFAULT_TYPOGRAPHY)
   const [customFontFiles, setCustomFontFiles] = useState<CustomFontFile[]>([])
   const [fontMode, setFontMode] = useState<"google" | "custom">("google")
   const [uploadingFont, setUploadingFont] = useState(false)
@@ -137,11 +188,15 @@ export default function EditClientPage() {
         setAddress(c.address ?? "")
         setLogoUrl(c.logoUrl ?? null)
         setBrandFont(c.brandFont ?? "")
-        // brandColors do banco pode vir null (cliente antigo) ou com array
-        // de tamanho diferente. Normaliza pra 4 items garantidos.
-        const incoming = Array.isArray(c.brandColors) ? c.brandColors : []
-        const merged = DEFAULT_BRAND_COLORS.map((def, i) => incoming[i] ?? def)
-        setBrandColors(merged)
+        // brandColors do banco: array dinamico (sem tamanho fixo). Migra
+        // valores legados (primary/secondary → principal/secundaria).
+        const incoming: BrandColor[] = (Array.isArray(c.brandColors) ? c.brandColors : []).map((x: any) => ({
+          hex: x?.hex ?? "#000000",
+          name: x?.name,
+          role: normalizeRole(x?.role),
+        }))
+        setBrandColors(incoming)
+        setBrandTypography(normalizeTypography((c as any).brandTypography))
         const files: CustomFontFile[] = Array.isArray(c.customFontFiles) ? c.customFontFiles : []
         setCustomFontFiles(files)
         if (files.length > 0) {
@@ -176,6 +231,7 @@ export default function EditClientPage() {
       const ok = await patchClient({
         brandFont: brandFont || null,
         brandColors: brandColors as any,
+        brandTypography: brandTypography as any,
         customFontFiles: customFontFiles.length > 0 ? customFontFiles as any : null,
       })
       setSavingBrand(false)
@@ -207,10 +263,37 @@ export default function EditClientPage() {
       }
     }, 600)
     return () => clearTimeout(handle)
-  }, [brandFont, brandColors, customFontFiles, loading])
+  }, [brandFont, brandColors, brandTypography, customFontFiles, loading])
+
+  function updatePreset(key: BrandPresetKey, patch: Partial<BrandPreset>) {
+    setBrandTypography(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+  }
 
   function updateColor(index: number, patch: Partial<BrandColor>) {
     setBrandColors(prev => prev.map((c, i) => i === index ? { ...c, ...patch } : c))
+  }
+
+  function addColor() {
+    setBrandColors(prev => [...prev, { hex: "#000000", role: "principal" }])
+  }
+
+  function removeColor(index: number) {
+    setBrandColors(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // Drag-and-drop para reordenar cores
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  function handleColorDragStart(index: number) { setDragIndex(index) }
+  function handleColorDragOver(e: React.DragEvent) { e.preventDefault() }
+  function handleColorDrop(targetIndex: number) {
+    if (dragIndex === null || dragIndex === targetIndex) { setDragIndex(null); return }
+    setBrandColors(prev => {
+      const copy = [...prev]
+      const [moved] = copy.splice(dragIndex, 1)
+      copy.splice(targetIndex, 0, moved)
+      return copy
+    })
+    setDragIndex(null)
   }
 
   function srvLog(tag: string, data: any) {
@@ -823,10 +906,161 @@ export default function EditClientPage() {
             )}
           </div>
 
-          {/* Cores */}
-          <div style={{display:"flex",flexDirection:"column",gap:18}}>
-            <ColorGroup label="Cores principais" colors={brandColors} startIndex={0} updateColor={updateColor} />
-            <ColorGroup label="Cores secundárias" colors={brandColors} startIndex={2} updateColor={updateColor} />
+          {/* Cores — lista dinamica com drag, categoria editavel, swatch grande */}
+          <div>
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Cores da marca</div>
+              <div style={{fontSize:11,color:"#AAA"}}>Arraste pra reordenar</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+              {brandColors.length === 0 ? (
+                <div style={{fontSize:12,color:"#999",fontStyle:"italic",padding:"10px 0"}}>Nenhuma cor cadastrada. Adicione abaixo.</div>
+              ) : brandColors.map((c, i) => {
+                const role = normalizeRole(c.role)
+                const placeholderByRole: Record<string,string> = {
+                  principal: "Ex: Verde principal",
+                  secundaria: "Ex: Amarelo secundário",
+                  apoio: "Ex: Laranja apoio",
+                  neutra: "Ex: Cinza claro",
+                }
+                const isDragging = dragIndex === i
+                return (
+                  <div
+                    key={i}
+                    draggable
+                    onDragStart={() => handleColorDragStart(i)}
+                    onDragOver={handleColorDragOver}
+                    onDrop={() => handleColorDrop(i)}
+                    style={{
+                      display:"flex",gap:10,alignItems:"center",
+                      padding:8,
+                      background:"#FAFAFA",
+                      border:"1px solid #E8E8E8",
+                      borderRadius:8,
+                      opacity: isDragging ? 0.4 : 1,
+                      cursor: isDragging ? "grabbing" : "default",
+                    }}
+                  >
+                    {/* Handle de drag — grip vertical */}
+                    <div
+                      style={{cursor:"grab",color:"#BBB",fontSize:14,padding:"0 2px",userSelect:"none",lineHeight:1}}
+                      title="Arraste pra reordenar"
+                    >⋮⋮</div>
+                    {/* Swatch grande clicavel */}
+                    <label style={{position:"relative",display:"inline-block",cursor:"pointer",flexShrink:0}}>
+                      <div style={{
+                        width:40,height:40,borderRadius:8,
+                        background:c.hex,
+                        border:"2px solid white",
+                        boxShadow:"0 0 0 1px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)",
+                      }} />
+                      <input
+                        type="color"
+                        value={c.hex}
+                        onChange={e => updateColor(i, { hex: e.target.value.toUpperCase() })}
+                        style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer"}}
+                      />
+                    </label>
+                    {/* Hex */}
+                    <input
+                      type="text"
+                      value={c.hex}
+                      onChange={e => updateColor(i, { hex: e.target.value })}
+                      placeholder="#000000"
+                      maxLength={7}
+                      style={{padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"monospace",width:88,textTransform:"uppercase",background:"white"}}
+                    />
+                    {/* Nome */}
+                    <input
+                      type="text"
+                      value={c.name ?? ""}
+                      onChange={e => updateColor(i, { name: e.target.value || undefined })}
+                      placeholder={placeholderByRole[role]}
+                      style={{padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"inherit",flex:1,minWidth:0,background:"white"}}
+                    />
+                    {/* Categoria */}
+                    <select
+                      value={role}
+                      onChange={e => updateColor(i, { role: e.target.value as any })}
+                      style={{padding:"7px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:11,cursor:"pointer",background:"white",fontFamily:"inherit"}}
+                    >
+                      {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    {/* Remover */}
+                    <button
+                      type="button"
+                      onClick={() => removeColor(i)}
+                      title="Remover cor"
+                      style={{background:"transparent",border:"none",cursor:"pointer",color:"#999",fontSize:18,padding:"0 8px",lineHeight:1,flexShrink:0}}
+                    >×</button>
+                  </div>
+                )
+              })}
+            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={addColor}>+ Adicionar cor</Button>
+          </div>
+        </div>
+
+        {/* Card de presets tipograficos — 4 niveis: Titulo / Subtitulo / Corpo / Legenda.
+            Cada um define peso e tamanho aplicado quando o usuario cria um texto desse tipo no editor. */}
+        <div style={{maxWidth:640,background:"white",borderRadius:10,border:"1px solid #E5E5E5",padding:24}}>
+          <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>Tipografia da marca</div>
+          <p style={{fontSize:12,color:"#666",margin:"0 0 18px",lineHeight:1.5}}>
+            Defina o peso e tamanho de cada nível. Quando criar um texto no editor, ele já vem com esses padrões aplicados.
+          </p>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {PRESET_ORDER.map(key => {
+              const preset = brandTypography[key]
+              // Preview tem tamanho relativo (fontSize/2.5px max 32) pra todos caberem na mesma linha
+              const previewPx = Math.max(12, Math.min(32, preset.fontSize / 2.5))
+              return (
+                <div key={key} style={{
+                  display:"grid",gridTemplateColumns:"1fr 170px 110px",gap:12,alignItems:"center",
+                  padding:"12px 14px",
+                  background:"#FAFAFA",
+                  border:"1px solid #E8E8E8",
+                  borderRadius:8,
+                }}>
+                  {/* Esquerda: label + descricao + preview da fonte aplicada */}
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",color:"#666",marginBottom:2}}>{PRESET_LABELS[key]}</div>
+                    <div style={{fontSize:10,color:"#999",marginBottom:6}}>{PRESET_DESCRIPTIONS[key]}</div>
+                    <div style={{
+                      fontFamily: brandFont ? `'${brandFont}', sans-serif` : "inherit",
+                      fontWeight: preset.fontWeight,
+                      fontSize: previewPx,
+                      color:"#111",
+                      lineHeight:1.1,
+                      overflow:"hidden",
+                      textOverflow:"ellipsis",
+                      whiteSpace:"nowrap",
+                    }}>The quick brown fox</div>
+                  </div>
+                  {/* Peso */}
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <label style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Peso</label>
+                    <select
+                      value={preset.fontWeight}
+                      onChange={e => updatePreset(key, { fontWeight: Number(e.target.value) })}
+                      style={{padding:"6px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",cursor:"pointer",background:"white",fontFamily:"inherit"}}
+                    >
+                      {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                    </select>
+                  </div>
+                  {/* Tamanho */}
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <label style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Tamanho (pt)</label>
+                    <input
+                      type="number"
+                      min={6} max={500}
+                      value={preset.fontSize}
+                      onChange={e => updatePreset(key, { fontSize: Math.max(6, Math.min(500, Number(e.target.value) || 0)) })}
+                      style={{padding:"6px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"inherit",background:"white",width:"100%"}}
+                    />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 
@@ -860,53 +1094,3 @@ export default function EditClientPage() {
   )
 }
 
-/**
- * Renderiza 2 slots de cor (par primary ou secondary).
- * `startIndex` define qual par do array brandColors[] mostrar (0 ou 2).
- */
-function ColorGroup({
-  label, colors, startIndex, updateColor,
-}: {
-  label: string
-  colors: BrandColor[]
-  startIndex: number
-  updateColor: (index: number, patch: Partial<BrandColor>) => void
-}) {
-  return (
-    <div>
-      <div style={{...{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"},marginBottom:8}}>{label}</div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {[0,1].map(offset => {
-          const i = startIndex + offset
-          const c = colors[i]
-          if (!c) return null
-          return (
-            <div key={i} style={{display:"flex",gap:10,alignItems:"center"}}>
-              <input
-                type="color"
-                value={c.hex}
-                onChange={e => updateColor(i, { hex: e.target.value.toUpperCase() })}
-                style={{width:44,height:36,border:"1px solid #E0E0E0",borderRadius:6,padding:2,cursor:"pointer",background:"white"}}
-              />
-              <input
-                type="text"
-                value={c.hex}
-                onChange={e => updateColor(i, { hex: e.target.value })}
-                placeholder="#000000"
-                maxLength={7}
-                style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"monospace",width:100,textTransform:"uppercase"}}
-              />
-              <input
-                type="text"
-                value={c.name ?? ""}
-                onChange={e => updateColor(i, { name: e.target.value || undefined })}
-                placeholder="Nome (opcional, ex: Verde Sicredi)"
-                style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit",flex:1}}
-              />
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}

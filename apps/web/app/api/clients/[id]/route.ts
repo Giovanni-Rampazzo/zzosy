@@ -35,7 +35,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 })
   const body = await req.json()
   const data: any = {}
-  for (const k of ["name", "contact", "email", "phone", "address", "logoUrl", "brandFont", "brandColors", "customFontFiles"]) {
+  for (const k of ["name", "contact", "email", "phone", "address", "logoUrl", "brandFont", "brandColors", "brandTypography", "customFontFiles"]) {
     if (k in body) data[k] = body[k]
   }
   const updated = await prisma.client.update({ where: { id }, data })

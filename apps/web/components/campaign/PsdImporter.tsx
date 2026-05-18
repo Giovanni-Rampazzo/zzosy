@@ -601,8 +601,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
     try {
       const agPsd = await import("ag-psd")
       const { readPsd } = agPsd
-      if (agPsd.initializeCanvas) {
-        agPsd.initializeCanvas(
+      if ((agPsd as any).initializeCanvas) {
+        ;(agPsd as any).initializeCanvas(
           (w: number, h: number) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c },
           (c: any) => (c as HTMLCanvasElement).getContext("2d")
         )

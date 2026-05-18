@@ -9,6 +9,7 @@ import { ExportAssetButtons } from "./ExportAssetButtons"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
+import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
 // poluem o console sem valor pro user final. Em dev, sao essenciais pra diagnostico.
@@ -33,8 +34,20 @@ interface Layer {
   scaleX: number; scaleY: number; rotation: number; zIndex: number; width: number; height?: number
   overrides?: any
 }
+interface BrandColor {
+  hex: string
+  name?: string | null
+  role?: "principal" | "secundaria" | "apoio" | "neutra" | "primary" | "secondary"
+}
+interface CustomFontFile { url: string; weight: number; style: "normal" | "italic"; fileName: string }
 interface Campaign {
-  id: string; name: string; client: { id: string; name: string }
+  id: string; name: string
+  client: {
+    id: string; name: string
+    brandFont?: string | null
+    brandColors?: BrandColor[] | null
+    customFontFiles?: CustomFontFile[] | null
+  }
   assets: Asset[]
   keyVision: { bgColor: string; layers: Layer[] | null; width?: number; height?: number } | null
 }
@@ -206,8 +219,6 @@ const DEFAULT_W = 1920, DEFAULT_H = 1080
 const LW = 220, PW = 260, TH = 48, BH = 44
 const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
-
-interface BrandColor { hex: string; name?: string | null; role?: "primary" | "secondary" }
 
 function parseContent(raw: any): TextSpan[] {
   if (!raw) return []
@@ -827,6 +838,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const campRes = await fetch(`/api/campaigns/${campaignId}`)
       const camp: Campaign = await campRes.json()
       campaignRef.current = camp
+      // Carrega fonte da marca pra Fabric renderizar com ela
+      try {
+        const bf = camp.client?.brandFont
+        const files = camp.client?.customFontFiles
+        if (bf) {
+          if (Array.isArray(files) && files.length > 0) loadCustomFontFamily(bf, files)
+          else loadGoogleFont(bf)
+        }
+      } catch {}
       if (camp.assets?.length) { assetIdRef.current = camp.assets[0].id }
 
       // MODO PEÇA: carrega peça PRIMEIRO, atualiza refs, depois disso seta campaign (que dispara init)
@@ -6354,7 +6374,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               />
               <span style={{ width: 36, textAlign: "right", color: "#bbb", fontFamily: "monospace" }}>{Math.round(bgOpacity * 100)}%</span>
             </div>
-            {/* BlendMode + Mask (BG-5) */}
+            {/* Cores da marca (se cliente tiver) — aparecem antes dos defaults.
+                Usa o state local `brandColors` que ja sincroniza com client.brandColors. */}
+            {brandColors.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Cores da marca</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {brandColors.map((c, idx) => (
+                    <div key={idx} onClick={() => changeBg(c.hex)}
+                      title={c.name ? `${c.name} (${c.hex})` : c.hex}
+                      style={{ width: 26, height: 26, borderRadius: 5, background: c.hex, cursor: "pointer", border: bgColor.toLowerCase() === c.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Padrão</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+              {SWATCHES.map(c => (
+                <div key={c} onClick={() => changeBg(c)}
+                  style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgColor.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+              ))}
+            </div>
+            {/* BlendMode + Mask (BG-5) — controles avancados de PSD pro layer de BG */}
             {(() => {
               const layer = bgLayersRef.current[currentBgIdx()]
               if (!layer) return null
@@ -6551,6 +6592,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               <FontPicker
                 value={mixedFontFamily ? "" : effectiveFontFamily}
                 onChange={(f) => applyStyle("fontFamily", f)}
+                brandFont={campaignRef.current?.client?.brandFont ?? null}
               />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -6717,10 +6759,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
                 />
               </div>
-              {/* Library de cores do cliente — no topo, antes da paleta padrão */}
+              {/* Library de cores do cliente — no topo, antes da paleta padrão. Usa
+                  __fillBrandIdx pra rastrear quando o fill vincula a uma cor da marca
+                  (assim updates de brand color refletem nos layers automaticamente). */}
               {brandColors.length > 0 && (
                 <>
-                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
+                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Cores da marca</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                     {brandColors.map((bc, i) => {
                       const activeByRef = (selected as any).__fillBrandIdx === i

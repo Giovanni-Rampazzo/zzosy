@@ -138,7 +138,6 @@ export default function ClientPage() {
                           width:24,height:24,borderRadius:6,
                           background:c.hex,
                           border:"1px solid rgba(0,0,0,0.08)",
-                          boxShadow: c.role === "primary" ? "0 0 0 2px rgba(0,0,0,0.04)" : "none",
                         }}
                       />
                     ))}

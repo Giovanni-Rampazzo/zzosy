@@ -84,7 +84,10 @@ model Client {
   address     String?
   logoUrl         String?    @db.LongText
   brandFont       String?
-  brandColors     Json?
+  brandColors      Json?
+  /// 4 presets tipograficos: { titulo, subtitulo, body, legenda }
+  /// Cada um: { fontWeight: 100-900, fontSize: number em pt }
+  brandTypography  Json?
   /// @deprecated substituido por customFontFiles (familia completa). Mantido
   /// no schema pra refletir colunas legadas que possam existir no banco.
   customFontUrl   String?    @db.LongText
