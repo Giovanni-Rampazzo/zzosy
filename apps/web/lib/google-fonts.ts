@@ -31,6 +31,22 @@ export const GOOGLE_FONTS: FontOption[] = [
   { name: "Mulish", category: "sans" },
   { name: "Public Sans", category: "sans" },
   { name: "Source Sans 3", category: "sans" },
+  { name: "Exo 2", category: "sans" },
+  { name: "Exo", category: "sans" },
+  { name: "Barlow", category: "sans" },
+  { name: "Rubik", category: "sans" },
+  { name: "Quicksand", category: "sans" },
+  { name: "Titillium Web", category: "sans" },
+  { name: "Ubuntu", category: "sans" },
+  { name: "PT Sans", category: "sans" },
+  { name: "Noto Sans", category: "sans" },
+  { name: "IBM Plex Sans", category: "sans" },
+  { name: "Heebo", category: "sans" },
+  { name: "Cabin", category: "sans" },
+  { name: "Oxygen", category: "sans" },
+  { name: "Catamaran", category: "sans" },
+  { name: "Hind", category: "sans" },
+  { name: "Asap", category: "sans" },
 
   // Serif (mais formais, editoriais)
   { name: "Playfair Display", category: "serif" },
@@ -83,23 +99,31 @@ export function loadGoogleFont(fontName: string): void {
 }
 
 // Normaliza nome PSD/PostScript pra Google Font family. PSD entrega nomes tipo
-// "Helvetica-Bold", "OpenSans-Italic" ou "Montserrat-SemiBold" — Google Fonts
-// quer "Helvetica", "Open Sans", "Montserrat". Tira sufixos de peso/estilo e
-// converte camelCase pra "Camel Case" quando bate com family conhecida.
+// "Helvetica-Bold", "OpenSans-Italic", "Montserrat-SemiBold", "Exo2Roman-Bold".
+// Google Fonts quer "Helvetica", "Open Sans", "Montserrat", "Exo 2". Estrategia:
+//   1. Strip sufixos de peso/estilo (-Bold, -Italic, etc) E "Roman" (variante)
+//   2. Strip sufixo numeral aderido a nome (typo PSD raro)
+//   3. Insere espaco em camelCase: "OpenSans" → "Open Sans"
+//   4. Insere espaco entre letra e digito: "Exo2" → "Exo 2"
+//   5. Match case-insensitive na lista de Google Fonts curada
+//   6. Se nao bater, retorna o normalizado direto (Google pode ter mas nao
+//      esta na nossa lista — loadGoogleFont silenciosamente 404 se invalido)
 export function normalizePsdFontToGoogle(psdName: string): string | null {
   if (!psdName) return null
-  // Remove sufixos comuns de peso/estilo (PostScript convention -Weight, -Style)
+  // Strip pesos/estilos. "Roman" eh variante PostScript que indica regular —
+  // remove tambem (ex: "Exo2Roman-Bold" → "Exo2" depois de strip -Bold + Roman)
   let base = psdName.replace(/-(Thin|ExtraLight|UltraLight|Light|Regular|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy)(Italic|Oblique)?$/i, "")
                     .replace(/-(Italic|Oblique)$/i, "")
+                    .replace(/Roman$/i, "")
+                    .replace(/MT$/, "") // "ArialMT" → "Arial" (PostScript Adobe convention)
                     .trim()
-  // Insere espaco em camelCase: "OpenSans" → "Open Sans", "DMSans" → "DM Sans"
-  const spaced = base.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-  // Procura match case-insensitive na lista de Google Fonts conhecidas
+  // CamelCase → "Camel Case": "OpenSans" → "Open Sans"
+  let spaced = base.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+  // Letra + digito: "Exo2" → "Exo 2", "Source Sans3" → "Source Sans 3"
+  spaced = spaced.replace(/([A-Za-z])(\d)/g, "$1 $2")
+  // Match na lista de Google Fonts conhecidas (case-insensitive)
   const match = GOOGLE_FONTS.find(f => f.name.toLowerCase() === spaced.toLowerCase())
   if (match) return match.name
-  // Fallback: retorna o nome normalizado mesmo sem match (Google pode ter,
-  // so nao esta na nossa lista curada). loadGoogleFont retornara 404 silencioso
-  // se nao existir — sem efeito colateral.
   return spaced
 }
 

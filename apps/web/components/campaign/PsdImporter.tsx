@@ -1422,16 +1422,20 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             : Math.round(defLeadingRaw! * textScale)
 
           // Normalizador inline: PSD PostScript name → Google Font family.
-          // "OpenSans-BoldItalic" → "Open Sans" (weight/style ja vem nos campos
-          // proprios fontWeight/fontStyle pra Fabric resolver via @font-face).
-          // Sem isso, Fabric pede ao browser "OpenSans-BoldItalic" e browser
-          // nao acha (Google Fonts carrega como "Open Sans") → fallback Arial.
+          // Mesma logica que normalizePsdFontToGoogle em lib/google-fonts.ts.
+          // Replicada inline pra evitar import dinamico em loop quente.
+          //   "OpenSans-BoldItalic" → "Open Sans"
+          //   "Exo2Roman-Bold"      → "Exo 2"   (Roman = variante PostScript)
+          //   "ArialMT"             → "Arial"   (MT suffix Adobe)
           const normalizeFamily = (psdName: string): string => {
             if (!psdName) return psdName
             let base = psdName.replace(/-(Thin|ExtraLight|UltraLight|Light|Regular|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy)(Italic|Oblique)?$/i, "")
                               .replace(/-(Italic|Oblique)$/i, "")
+                              .replace(/Roman$/i, "")
+                              .replace(/MT$/, "")
                               .trim()
-            return base.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+            let spaced = base.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+            return spaced.replace(/([A-Za-z])(\d)/g, "$1 $2")
           }
           const defFamilyNorm = normalizeFamily(defFontName)
 
