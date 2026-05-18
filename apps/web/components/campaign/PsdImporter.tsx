@@ -1417,6 +1417,20 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             ? Math.round(scaledDefFontSize * paraAutoFactor)
             : Math.round(defLeadingRaw! * textScale)
 
+          // Normalizador inline: PSD PostScript name → Google Font family.
+          // "OpenSans-BoldItalic" → "Open Sans" (weight/style ja vem nos campos
+          // proprios fontWeight/fontStyle pra Fabric resolver via @font-face).
+          // Sem isso, Fabric pede ao browser "OpenSans-BoldItalic" e browser
+          // nao acha (Google Fonts carrega como "Open Sans") → fallback Arial.
+          const normalizeFamily = (psdName: string): string => {
+            if (!psdName) return psdName
+            let base = psdName.replace(/-(Thin|ExtraLight|UltraLight|Light|Regular|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy)(Italic|Oblique)?$/i, "")
+                              .replace(/-(Italic|Oblique)$/i, "")
+                              .trim()
+            return base.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+          }
+          const defFamilyNorm = normalizeFamily(defFontName)
+
           let spans: any[] = []
           const runs = td.styleRuns ?? []
           if (runs.length > 0) {
@@ -1434,14 +1448,15 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               const isItalicRs = /italic|oblique|kursiv|cursiv/i.test(fontName)
               const fontWeight = (rs.fauxBold || isBoldRs) ? "bold" : defWeight
               const fontStyle = (rs.fauxItalic || isItalicRs) ? "italic" : defStyleItalic
-              spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontStyle, fontFamily: fontName } })
+              const fontFamilyNorm = normalizeFamily(fontName)
+              spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontStyle, fontFamily: fontFamilyNorm } })
               cursor += len
             }
             if (cursor < rawText.length) {
-              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFontName } })
+              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFamilyNorm } })
             }
           } else {
-            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFontName } }]
+            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFamilyNorm } }]
           }
 
           // Fix #1 (cont): td.boundingBox vem em PONTOS no espaco PRE-transform —
@@ -1456,7 +1471,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           const lastOverride: any = {
             width: textWidth,
             height: textHeight,
-            fontFamily: defFontName,
+            fontFamily: defFamilyNorm,
             fontSize: Math.round(scaledDefFontSize),
             fontWeight: defWeight,
             fontStyle: defStyleItalic,
