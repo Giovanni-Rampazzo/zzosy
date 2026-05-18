@@ -1,5 +1,4 @@
 "use client"
-/* eslint-disable react-hooks/rules-of-hooks */
 /**
  * Button component — sistema padronizado ZZOSY.
  *
@@ -42,6 +41,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function Button({ variant = "secondary", size = "md", loading, className, children, disabled, onFileSelect, accept, ...props }: ButtonProps) {
+  // Ref pro file input. Declarado SEMPRE no top-level (Rules of Hooks — React
+  // nao permite hooks dentro de condicionais). So usado quando onFileSelect
+  // existe; nos outros casos fica idle.
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
   const base = "inline-flex items-center justify-center font-semibold rounded-md transition-all cursor-pointer font-['DM_Sans',sans-serif] whitespace-nowrap"
 
   // Outline style por padrao — todos com fundo branco precisam de stroke visivel.
@@ -71,7 +75,6 @@ export function Button({ variant = "secondary", size = "md", loading, className,
   // nunca abre. Diagnostico confirmado via log: Button-FILE-LABEL-CLICK aparece
   // varias vezes, INPUT-CHANGE nunca. Solucao: trigger explicito via ref.
   if (onFileSelect) {
-    const inputRef = useRef<HTMLInputElement | null>(null)
     return (
       <>
         <button
@@ -82,13 +85,13 @@ export function Button({ variant = "secondary", size = "md", loading, className,
           style={props.style}
           onClick={() => {
             if (disabled || loading) return
-            inputRef.current?.click()
+            fileInputRef.current?.click()
           }}
         >
           {loading ? <span className="animate-spin">⟳</span> : children}
         </button>
         <input
-          ref={inputRef}
+          ref={fileInputRef}
           type="file"
           accept={accept}
           disabled={disabled || loading}
