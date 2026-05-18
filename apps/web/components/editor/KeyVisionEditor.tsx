@@ -1626,10 +1626,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       fc.on("object:added", () => { if (alive) refreshLayers(fc) })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
-      // Captura mudancas para historico de undo/redo
-      fc.on("object:modified", () => pushHistory())
-      fc.on("object:added", () => { if (!isApplyingHistory.current) pushHistory() })
-      fc.on("object:removed", () => { if (!isApplyingHistory.current) pushHistory() })
+      // Captura mudancas para historico de undo/redo.
+      // IGNORA bleed overlays e BG: sao objetos internos da UI (cobrem area
+      // fora da peca / pintam o fundo), nao representam acoes do usuario que
+      // deveriam ir pro undo stack. applyZoom remove e re-cria overlays a
+      // cada zoom — antes do filtro, isso poluía o stack com snapshots
+      // duplicados e tambem rodava o orphan-detect com lixo transitorio.
+      const isInternalOverlay = (target: any) => target?.__isBleedOverlay || target?.__isBg
+      fc.on("object:modified", (e: any) => { if (!isInternalOverlay(e?.target)) pushHistory() })
+      fc.on("object:added", (e: any) => {
+        if (isApplyingHistory.current) return
+        if (isInternalOverlay(e?.target)) return
+        pushHistory()
+      })
+      fc.on("object:removed", (e: any) => {
+        if (isApplyingHistory.current) return
+        if (isInternalOverlay(e?.target)) return
+        pushHistory()
+      })
       // text:changed nao chama pushHistory - text:editing:exited cobre o flush final
 
       // Re-eleva os overlays do bleed ao topo do z-stack sempre que objetos
