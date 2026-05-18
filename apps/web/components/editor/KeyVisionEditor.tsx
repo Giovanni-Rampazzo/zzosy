@@ -1199,6 +1199,69 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           addClippingMaskToSelected()
         }
       }
+
+      // Cmd/Ctrl+J — Duplicate layer (Photoshop style).
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+        if (!active || (active as any).__isBg || (active as any).__isBleedOverlay) return
+        e.preventDefault()
+        ;(async () => {
+          try {
+            const cloned = await new Promise<any>((resolve) => {
+              active.clone((c: any) => resolve(c), [
+                "__assetId", "__assetLabel", "__isImage", "__maskData",
+                "__embedded", "imageDataUrl", "__hidden", "__locked",
+                "__fillBrandIdx", "__psdEffects", "__groupPath", "leadingPt",
+              ])
+            })
+            if (!cloned || !fc) return
+            cloned.set({ left: (active.left ?? 0) + 30, top: (active.top ?? 0) + 30 })
+            // Novo __assetId pra nao conflitar com o original no save
+            ;(cloned as any).__assetId = (active.__assetId ? active.__assetId + "_copy" : undefined)
+            fc.add(cloned)
+            fc.setActiveObject(cloned)
+            fc.renderAll()
+            pushHistory()
+            refreshLayers(fc)
+          } catch (err) { console.warn("[duplicate] falhou:", err) }
+        })()
+        return
+      }
+
+      // Cmd/Ctrl+] — Bring forward (1 step). Cmd+Shift+] — Bring to front.
+      if ((e.metaKey || e.ctrlKey) && e.key === "]") {
+        if (!active || !fc) return
+        e.preventDefault()
+        try {
+          if (e.shiftKey) (fc as any).bringObjectToFront ? (fc as any).bringObjectToFront(active) : (fc as any).bringToFront(active)
+          else (fc as any).bringObjectForward ? (fc as any).bringObjectForward(active) : (fc as any).bringForward(active)
+          // Re-eleva bleed overlays
+          const overlays = (fc as any).__bleedOverlays as any[] | undefined
+          if (overlays) for (const o of overlays) { try { (fc as any).bringObjectToFront ? (fc as any).bringObjectToFront(o) : (fc as any).bringToFront(o) } catch {} }
+          fc.renderAll()
+          pushHistory()
+          refreshLayers(fc)
+        } catch {}
+        return
+      }
+
+      // Cmd/Ctrl+[ — Send backward (1 step). Cmd+Shift+[ — Send to back.
+      if ((e.metaKey || e.ctrlKey) && e.key === "[") {
+        if (!active || !fc) return
+        e.preventDefault()
+        try {
+          if (e.shiftKey) (fc as any).sendObjectToBack ? (fc as any).sendObjectToBack(active) : (fc as any).sendToBack(active)
+          else (fc as any).sendObjectBackwards ? (fc as any).sendObjectBackwards(active) : (fc as any).sendBackwards(active)
+          // BG fica no fundo absoluto sempre
+          const bgRects = bgRectsRef.current
+          for (let i = bgRects.length - 1; i >= 0; i--) {
+            try { (fc as any).sendObjectToBack ? (fc as any).sendObjectToBack(bgRects[i]) : (fc as any).sendToBack(bgRects[i]) } catch {}
+          }
+          fc.renderAll()
+          pushHistory()
+          refreshLayers(fc)
+        } catch {}
+        return
+      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -1468,6 +1531,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // BLEED MASK dinamico: 4 overlays cobrindo tudo fora da peca dentro
       // do canvas. Tamanho deles depende do zoom e do espaco disponivel.
       createBleedOverlays(fc, Rect, cw, ch, fullW, fullH, z)
+
+      // CRITICO: clipa o render do canvas inteiro a area da peca (0,0)-(cw,ch).
+      // Sem isso, layers PSD que extrapolam a peca (ex: Pá at x=205-3016 com
+      // peca cw=2160) vazam pro bleed mesmo com os overlays. Os overlays usam
+      // z-order pra mascarar, mas alguns paths (object:added pos-render, etc)
+      // podem deixar conteudo passar por baixo. clipPath nivel-canvas garante
+      // que pixels fora da bbox da peca NAO renderizem, periodo.
+      // absolutePositioned: true = coords em mundo, nao em viewport (preserva
+      // o clip durante pan/zoom).
+      ;(fc as any).clipPath = new Rect({
+        left: 0, top: 0, width: cw, height: ch,
+        absolutePositioned: true,
+      })
 
       fc.on("selection:created", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
       fc.on("selection:updated", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
@@ -2343,6 +2419,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const fullW = (fabricRef as any).__canvasFullW ?? fc2.getWidth()
       const fullH = (fabricRef as any).__canvasFullH ?? fc2.getHeight()
       createBleedOverlays(fc, Rect, canvasWRef.current, canvasHRef.current, fullW, fullH, zoomRef.current || 1)
+      // Reaplica clipPath ao canvas (loadFromJSON pode ter resetado).
+      ;(fc as any).clipPath = new Rect({
+        left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
+        absolutePositioned: true,
+      })
       fc.renderAll()
       refreshLayers(fc)
     } catch (e) { console.warn("applySnapshot fail:", e) }

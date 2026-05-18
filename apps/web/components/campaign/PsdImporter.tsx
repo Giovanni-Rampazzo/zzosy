@@ -225,6 +225,38 @@ function buildRasterMaskCanvas(m: any, layerLeft: number = 0, layerTop: number =
     if (subEndY < conv.height) cctx.fillRect(0, subEndY, conv.width, conv.height - subEndY)
     if (drawX > 0) cctx.fillRect(0, drawY, drawX, h)
     if (subEndX < conv.width) cctx.fillRect(subEndX, drawY, conv.width - subEndX, h)
+    // PSD layer mask propriedades adicionais (ag-psd expõe):
+    //  - feather: blur em px aplicado a borda da mask
+    //  - density: 0-1 multiplier no alpha (0.5 = mask 50% mais fraco)
+    // Sem aplicar, masks com feather (suavização) ou density (parcial) saem
+    // hardcoded em vez de suaves no editor.
+    const feather = typeof (m as any).feather === "number" ? (m as any).feather : 0
+    const density = typeof (m as any).density === "number" ? (m as any).density : 1
+    if (feather > 0) {
+      // CSS filter blur aplicado ao output do canvas
+      try {
+        const blurred = document.createElement("canvas")
+        blurred.width = conv.width; blurred.height = conv.height
+        const bctx = blurred.getContext("2d")
+        if (bctx) {
+          bctx.filter = `blur(${Math.min(feather, 50)}px)`
+          bctx.drawImage(conv, 0, 0)
+          bctx.filter = "none"
+          cctx.clearRect(0, 0, conv.width, conv.height)
+          cctx.drawImage(blurred, 0, 0)
+        }
+      } catch {}
+    }
+    if (density < 1) {
+      // Multiplica alpha por density (mask "fica mais transparente").
+      // Usa source-atop com fill semi-transparente — equivalente a alpha mult.
+      try {
+        const id = cctx.getImageData(0, 0, conv.width, conv.height)
+        const dd = id.data
+        for (let i = 3; i < dd.length; i += 4) dd[i] = Math.round(dd[i] * density)
+        cctx.putImageData(id, 0, 0)
+      } catch {}
+    }
     return { canvas: conv, posX: finalLeft, posY: finalTop, width: finalW, height: finalH, disabled: !!m.disabled }
   } catch (e) {
     console.warn("[psd-mask] falha convertendo grayscale→alpha:", e)
