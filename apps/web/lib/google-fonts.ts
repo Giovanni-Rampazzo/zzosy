@@ -94,7 +94,12 @@ export function loadGoogleFont(fontName: string): void {
   const link = document.createElement("link")
   link.id = id
   link.rel = "stylesheet"
-  link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, "+")}:wght@400;700&display=swap`
+  // Carrega TODOS os pesos (100-900) + italic. PSDs frequentemente usam Light(300)
+  // ou Black(900) que nao estao em 400/700. Antes carregavamos so 400;700 e o
+  // browser caia em fallback pros outros pesos — texto Light virava Regular,
+  // Bold virava Regular se a fonte nao tinha 700 mas tinha 800. Pedir ital,wght
+  // com axis explicito cobre regular + italic em todos os pesos.
+  link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, "+")}:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap`
   document.head.appendChild(link)
 }
 

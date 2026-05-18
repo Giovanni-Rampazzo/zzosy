@@ -1138,6 +1138,10 @@ export function PsdImporter({ campaignId, onImported }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [progress, setProgress] = useState("")
+  // Estado pro modal de fontes faltando — apos import, listamos as fontes
+  // do PSD que NAO estao no browser e oferecemos: (a) ir pra pagina do cliente
+  // pra upload, (b) pular e continuar com fallback (Arial), (c) ignorar.
+  const [missingFontsModal, setMissingFontsModal] = useState<{ fonts: string[]; clientId: string | null } | null>(null)
 
   async function handleFile(file: File) {
     if (loading) return // guard de re-entrada
@@ -1382,8 +1386,25 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           const defFontSize = defStyle.fontSize ?? 48
           const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
           const isItalicByName = /italic|oblique|kursiv|cursiv/i.test(defFontName)
-          const isBoldByName = /bold|black|heavy|extrabold/i.test(defFontName) || /-(bd|b|black)$/i.test(defFontName)
-          const defWeight = (defStyle.fauxBold || isBoldByName) ? "bold" : "normal"
+          // Extrai peso NUMERICO especifico do nome PostScript. PSDs frequentemente
+          // usam Light(300), Medium(500), SemiBold(600), Black(900) — antes
+          // mapeavamos tudo pra "normal"/"bold" e o browser caia em fallback,
+          // perdendo a hierarquia visual (titulo Light com peso 400 ficava igual
+          // ao corpo Regular). Agora detecta o sufixo exato e retorna o weight
+          // ISO (100-900) que o Google Fonts (com axis wght@*) resolve direto.
+          const extractWeight = (psdName: string, fauxBold: boolean): number => {
+            if (fauxBold) return 700
+            if (/(^|-)Thin/i.test(psdName)) return 100
+            if (/(^|-)(ExtraLight|UltraLight)/i.test(psdName)) return 200
+            if (/(^|-)Light/i.test(psdName)) return 300
+            if (/(^|-)(Medium|Md)/i.test(psdName)) return 500
+            if (/(^|-)(SemiBold|DemiBold|SemiBd|DemiBd)/i.test(psdName)) return 600
+            if (/(^|-)(ExtraBold|UltraBold)/i.test(psdName)) return 800
+            if (/(^|-)(Black|Heavy)/i.test(psdName)) return 900
+            if (/(^|-)Bold/i.test(psdName) || /-(bd|b)$/i.test(psdName)) return 700
+            return 400 // Regular/Roman default
+          }
+          const defWeight = extractWeight(defFontName, !!defStyle.fauxBold)
           const defStyleItalic = (defStyle.fauxItalic || isItalicByName) ? "italic" : "normal"
           // Alinhamento real do paragraphStyle (era hardcoded "left" — texto
           // PSD centralizado virava esquerdo, bug visivel no painel verde Sicredi).
@@ -1452,9 +1473,11 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               if (rs.font?.name) fontsRequired.add(rs.font.name)
               const fontSize = (rs.fontSize ?? defFontSize) * textScale
               const color = rs.fillColor ? colorToHex(rs.fillColor) : defColor
-              const isBoldRs = /bold|black|heavy|extrabold/i.test(fontName) || /-(bd|b|black)$/i.test(fontName)
               const isItalicRs = /italic|oblique|kursiv|cursiv/i.test(fontName)
-              const fontWeight = (rs.fauxBold || isBoldRs) ? "bold" : defWeight
+              // Peso numerico (100-900) extraido do nome PostScript — Google
+              // Fonts axis wght resolve com precisao. Sem rs.font?.name usa
+              // o defWeight como fallback (mesmo peso da camada padrao).
+              const fontWeight = rs.font?.name ? extractWeight(fontName, !!rs.fauxBold) : defWeight
               const fontStyle = (rs.fauxItalic || isItalicRs) ? "italic" : defStyleItalic
               const fontFamilyNorm = normalizeFamily(fontName)
               spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontStyle, fontFamily: fontFamilyNorm } })
@@ -1763,15 +1786,9 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           }
         }
         if (missing.length > 0) {
-          const cid = data?.clientId
-          const link = cid ? `/clients/${cid}/edit` : null
-          const msg =
-            `PSD usa fonte(s) não instalada(s):\n• ${missing.join("\n• ")}\n\n` +
-            `Sem essas fontes o editor renderiza com fallback (métricas diferentes do PSD).\n\n` +
-            (link
-              ? `Faça upload dos arquivos .ttf/.otf em:\n${window.location.origin}${link}\n(Aba 'Fontes da marca')`
-              : `Faça upload na página de edição do cliente, aba 'Fontes da marca'.`)
-          window.alert(msg)
+          // Modal de upload em vez de alert() bruto: usuario pode escolher
+          // ir pra pagina do cliente fazer upload, ou pular.
+          setMissingFontsModal({ fonts: missing, clientId: data?.clientId ?? null })
         }
       } catch (fontWarnErr) { console.warn("[font-check] falhou:", fontWarnErr) }
 
@@ -1798,6 +1815,81 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         {loading ? (progress || "Processando...") : "Importar PSD"}
       </Button>
       {error && <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>{error}</div>}
+      {missingFontsModal && (
+        <div
+          onClick={() => setMissingFontsModal(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.65)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#1e1e1e", color: "#fff",
+              padding: 24, borderRadius: 12,
+              maxWidth: 520, width: "90%",
+              border: "1px solid #333",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
+              Fontes do PSD não instaladas
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.5, marginBottom: 12 }}>
+              O PSD usa {missingFontsModal.fonts.length === 1 ? "esta fonte" : "estas fontes"} que não estão
+              disponíveis no navegador. Sem upload, o editor vai usar Arial como fallback
+              e as métricas (altura, quebra de linha) podem destoar do design original.
+            </div>
+            <ul style={{ background: "#0f0f0f", borderRadius: 8, padding: "10px 14px 10px 28px", margin: "0 0 16px", fontSize: 13, listStyle: "disc", maxHeight: 200, overflow: "auto" }}>
+              {missingFontsModal.fonts.map((f) => (
+                <li key={f} style={{ padding: "2px 0", fontFamily: "monospace" }}>{f}</li>
+              ))}
+            </ul>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setMissingFontsModal(null)}
+                style={{
+                  padding: "8px 14px", borderRadius: 6,
+                  background: "transparent", color: "#aaa",
+                  border: "1px solid #444", cursor: "pointer", fontSize: 13,
+                }}
+              >
+                Pular (usar fallback)
+              </button>
+              {missingFontsModal.clientId ? (
+                <button
+                  onClick={() => {
+                    const cid = missingFontsModal.clientId
+                    setMissingFontsModal(null)
+                    // Abre em nova aba pra nao perder o estado da campanha
+                    window.open(`/clients/${cid}/edit`, "_blank")
+                  }}
+                  style={{
+                    padding: "8px 14px", borderRadius: 6,
+                    background: "#facc15", color: "#000",
+                    border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  }}
+                >
+                  Fazer upload das fontes
+                </button>
+              ) : (
+                <button
+                  onClick={() => setMissingFontsModal(null)}
+                  style={{
+                    padding: "8px 14px", borderRadius: 6,
+                    background: "#facc15", color: "#000",
+                    border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  }}
+                >
+                  OK
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
