@@ -5619,16 +5619,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           } catch (e) { /* nao critico */ }
           // Pequeno delay pra o text:editing:exited handler rodar e setar dirty.
           await new Promise(r => setTimeout(r, 50))
-          // Se tem mudancas, salva ANTES de navegar (sem dialog).
           srvLog("Voltar-CLICKED", { isDirty: isDirtyRef.current, dest, savingInFlight: savingInFlightRef.current })
-          if (isDirtyRef.current) {
-            try { await saveNow() } catch (e) { console.warn("[Voltar] save falhou:", e) }
+          const navigate = () => {
+            srvLog("Voltar-NAVIGATING", { dest })
+            // HARD navigation: window.location forca full reload, ignora cache
+            // do App Router. Garante que a pagina destino re-monta com dados
+            // frescos do servidor.
+            if (typeof window !== "undefined") window.location.href = dest
           }
-          srvLog("Voltar-NAVIGATING", { dest })
-          // HARD navigation: window.location forca full reload, ignora cache
-          // do App Router. Garante que a pagina destino re-monta com dados
-          // frescos do servidor.
-          if (typeof window !== "undefined") window.location.href = dest
+          // Se ha mudancas nao salvas, mostra dialog de confirmacao (Cancelar /
+          // Descartar / Salvar e sair). Sem isso, o usuario pode perder edicoes
+          // por engano se o auto-save ainda nao tiver disparado.
+          if (isDirtyRef.current) {
+            setConfirmExit(() => navigate)
+            return
+          }
+          navigate()
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
           title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
           {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
@@ -5637,11 +5643,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         {/* Atalho direto pra apresentacao da campanha */}
         {campaignId && (
           <button
-            onClick={async () => {
-              if (isDirtyRef.current) {
-                try { await saveNow() } catch (e) { console.warn("[Apresentacao] save falhou:", e) }
+            onClick={() => {
+              const navigate = () => {
+                if (typeof window !== "undefined") window.location.href = `/campaigns/${campaignId}/presentation`
               }
-              if (typeof window !== "undefined") window.location.href = `/campaigns/${campaignId}/presentation`
+              // Mesma logica do Voltar: pergunta antes se tem mudancas pendentes.
+              if (isDirtyRef.current) {
+                setConfirmExit(() => navigate)
+                return
+              }
+              navigate()
             }}
             title="Ir direto para a apresentacao desta campanha"
             style={{ background: "transparent", border: "1px solid #444", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", color: "#aaa", marginLeft: 4 }}
