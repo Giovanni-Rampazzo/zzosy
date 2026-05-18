@@ -2778,10 +2778,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               // (que respeitam geometric shape no Fabric).
               let sourceForFabric: HTMLImageElement | HTMLCanvasElement = el
               if (layer?.mask?.type === "raster" && layer.mask.enabled !== false && layer.mask.raster?.dataUrl) {
+                srvLog("mask-BAKE-START", { label: asset.label, posX, posY, naturalW, naturalH, maskPos: { x: layer.mask.raster.posX, y: layer.mask.raster.posY }, maskSize: { w: layer.mask.raster.width, h: layer.mask.raster.height } })
                 try {
                   const composed = await composeRasterMaskIntoImage(el, layer.mask.raster, posX, posY, naturalW, naturalH, !!layer.mask.inverted)
-                  if (composed) sourceForFabric = composed
-                } catch (e) { srvLog("mask-COMPOSE-FAIL", { err: String((e as any)?.message ?? e) }) }
+                  if (composed) {
+                    sourceForFabric = composed
+                    srvLog("mask-BAKE-OK", { label: asset.label, canvasW: composed.width, canvasH: composed.height })
+                  } else {
+                    srvLog("mask-BAKE-NULL", { label: asset.label, reason: "composeRasterMaskIntoImage returned null" })
+                  }
+                } catch (e) { srvLog("mask-BAKE-FAIL", { label: asset.label, err: String((e as any)?.message ?? e) }) }
               }
               resolve(new FabricImage(sourceForFabric, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle, ...psdExtraProps }))
             }
