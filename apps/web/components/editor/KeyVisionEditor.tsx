@@ -2508,15 +2508,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       obj.set("stroke", effects.stroke.color)
       obj.set("strokeWidth", effects.stroke.width ?? 1)
     }
-    // Color Overlay: substitui o fill por uma cor sólida. Só faz sentido pra
-    // texto/forma (não pra imagem — image fill é o próprio bitmap).
+    // Color Overlay: substitui o fill por uma cor sólida.
     if (effects.colorOverlay && effects.colorOverlay.color) {
       const isImg = obj.type === "image"
       if (!isImg) {
         obj.set("fill", effects.colorOverlay.color)
+      } else {
+        // Imagem: PSDs importados pelo flow novo já tem o overlay baked no
+        // bitmap (PsdImporter remove effects.colorOverlay nesse caso). Mas
+        // campanhas antigas (imports pré-bake) ainda carregam o JSON com
+        // colorOverlay E o PNG original — aplicamos BlendColor.tint em runtime
+        // pra renderizar visualmente. Lazy-import do filter pra nao bloquear
+        // o caminho de objetos sem effects.
+        ;(async () => {
+          try {
+            const fab: any = await import("fabric")
+            const BlendColor = fab.BlendColor
+            if (!BlendColor) return
+            const alpha = Math.max(0, Math.min(1, typeof effects.colorOverlay.opacity === "number" ? effects.colorOverlay.opacity : 1))
+            obj.filters = [new BlendColor({ color: effects.colorOverlay.color, mode: "tint", alpha })]
+            if (typeof obj.applyFilters === "function") obj.applyFilters()
+            ;(obj as any).dirty = true
+            obj.canvas?.requestRenderAll?.()
+          } catch (e) { editorLog("[colorOverlay runtime] falhou:", e) }
+        })()
       }
-      // Para imagem: rendering visual requer custom filter (TODO). Round-trip
-      // pro PSD preserva via __psdEffects.
     }
     // Gradient Overlay: aplica gradiente como fill. Mesma restrição (texto/forma).
     if (effects.gradientOverlay && Array.isArray(effects.gradientOverlay.stops) && effects.gradientOverlay.stops.length > 0) {
