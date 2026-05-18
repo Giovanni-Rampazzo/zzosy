@@ -4783,10 +4783,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ? { ...asset.lastOverride }
       : undefined
 
+    // Width default: limita a 40% do canvas pra IMAGE evitar overflow visual
+    // em peças pequenas (ex: Stories 1080x1920 com asset adicionado a width=400
+    // ainda renderiza dentro; mas em peças 600x600 width=400 ocupa 66% e a
+    // imagem natural pode ser scaled up). Tambem evita layers grudados na borda
+    // direita ao adicionar em sequencia.
+    const cw = canvasWRef.current
+    const defaultImgWidth = Math.min(400, Math.round(cw * 0.4))
     await addAssetToCanvas(fc, asset, {
       posX: 100,
       posY: 100,
-      width: asset.type === "TEXT" ? 800 : 400,
+      width: asset.type === "TEXT" ? 800 : defaultImgWidth,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
