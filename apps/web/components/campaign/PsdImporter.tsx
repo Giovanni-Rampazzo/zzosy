@@ -457,6 +457,122 @@ function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 
   return serializeMaskCanvas(w, !m.disabled)
 }
 
+// Rasteriza uma vectorMask num canvas. Necessario quando composta com outras
+// masks (raster/clipping) — Adobe rasteriza no nivel do display antes de
+// intersectar. Saida: canvas RGBA com alpha=255 dentro do path, alpha=0 fora.
+function rasterizeVectorMaskCanvas(
+  vectorMask: any,
+  layerLeft: number,
+  layerTop: number,
+  layerRight: number,
+  layerBottom: number,
+): { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean } | null {
+  try {
+    const { d: pathStr, bbox } = vectorMaskToSvgPath(vectorMask)
+    if (!pathStr || !bbox || !isFinite(bbox.minX)) return null
+    // Bounds finais: uniao do bbox do path com o layer (pra cobrir caso de
+    // defaultColor implícito do path em PS: vector mask sem invert = visivel
+    // dentro do path, transparente fora. Bbox de saida deve cobrir layer.)
+    const finalLeft = Math.min(bbox.minX, layerLeft)
+    const finalTop = Math.min(bbox.minY, layerTop)
+    const finalRight = Math.max(bbox.maxX, layerRight)
+    const finalBottom = Math.max(bbox.maxY, layerBottom)
+    const finalW = Math.max(1, Math.round(finalRight - finalLeft))
+    const finalH = Math.max(1, Math.round(finalBottom - finalTop))
+    const c = document.createElement("canvas")
+    c.width = finalW; c.height = finalH
+    const ctx = c.getContext("2d")
+    if (!ctx) return null
+    // Translate pra que o path desenhe nos coords corretos dentro do canvas.
+    ctx.translate(-finalLeft, -finalTop)
+    const p = new Path2D(pathStr)
+    ctx.fillStyle = "rgba(255,255,255,1)"
+    ctx.fill(p, (vectorMask.invert ? "evenodd" : "nonzero"))
+    // PS invert flag: troca visivel/escondido
+    if (vectorMask.invert) {
+      // Inverte: tudo dentro do canvas vira alpha=255, depois subtrai o path.
+      // Implementacao simples: re-pinta tudo branco e depois apaga path.
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, finalW, finalH)
+      ctx.fillStyle = "rgba(255,255,255,1)"
+      ctx.fillRect(0, 0, finalW, finalH)
+      ctx.translate(-finalLeft, -finalTop)
+      ctx.globalCompositeOperation = "destination-out"
+      ctx.fill(p)
+      ctx.globalCompositeOperation = "source-over"
+    }
+    return { canvas: c, posX: finalLeft, posY: finalTop, width: finalW, height: finalH, disabled: !!vectorMask.disabled }
+  } catch (e) {
+    console.warn("[psd-mask] rasterizeVectorMaskCanvas falhou:", e)
+    return null
+  }
+}
+
+// Constroi mask canvas do CLIPPING silhouette: usa o canal alpha do clipBase
+// como mascara. Em Adobe, clipping mask = base layer alpha. Esta funcao replica
+// isso pegando o canvas do clipBase, extraindo alpha em grayscale, e passando
+// pra buildRasterMaskCanvas como se fosse um raster mask normal.
+function buildClippingMaskCanvas(
+  clipBase: any,
+  layerLeft: number,
+  layerTop: number,
+  layerRight: number,
+  layerBottom: number,
+): { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean } | null {
+  if (!clipBase) return null
+  // Caso 1: clipBase eh folder com mask. Adobe usa o composite do folder como
+  // base — aproximamos pela folder mask (silhueta do grupo).
+  if (clipBase.children?.length && clipBase.mask?.canvas) {
+    const m = clipBase.mask
+    if (m.positionRelativeToLayer === true) {
+      const union = computeLeafUnionBbox(clipBase)
+      if (union) {
+        const adjusted = { ...m,
+          left: (m.left ?? 0) + union.minX,
+          top: (m.top ?? 0) + union.minY,
+          right: (m.right ?? 0) + union.minX,
+          bottom: (m.bottom ?? 0) + union.minY,
+          positionRelativeToLayer: false,
+        }
+        return buildRasterMaskCanvas(adjusted, layerLeft, layerTop, layerRight, layerBottom)
+      }
+      return null
+    }
+    return buildRasterMaskCanvas(m, layerLeft, layerTop, layerRight, layerBottom)
+  }
+  // Caso 2: clipBase eh layer com canvas. Adobe usa o ALPHA do canvas direto.
+  if (clipBase.canvas) {
+    const baseL = clipBase.left ?? 0
+    const baseT = clipBase.top ?? 0
+    const baseR = clipBase.right ?? baseL
+    const baseB = clipBase.bottom ?? baseT
+    // Converte alpha do canvas em grayscale (R=G=B=alpha, A=255) pra que
+    // buildRasterMaskCanvas processe via sua rotina gray→alpha padrao.
+    const c = clipBase.canvas as HTMLCanvasElement
+    const tmp = document.createElement("canvas")
+    tmp.width = c.width; tmp.height = c.height
+    const tctx = tmp.getContext("2d")
+    if (!tctx) return null
+    tctx.drawImage(c, 0, 0)
+    const id = tctx.getImageData(0, 0, c.width, c.height)
+    const dd = id.data
+    for (let i = 0; i < dd.length; i += 4) {
+      dd[i] = dd[i + 1] = dd[i + 2] = dd[i + 3]
+      dd[i + 3] = 255
+    }
+    tctx.putImageData(id, 0, 0)
+    // defaultColor=0: fora do bbox do clipBase = transparente. Adobe clipping
+    // so revela onde o base tem pixels — fora do bbox eh transparente por def.
+    const fakeMask = {
+      canvas: tmp,
+      left: baseL, top: baseT, right: baseR, bottom: baseB,
+      defaultColor: 0, disabled: false, positionRelativeToLayer: false,
+    }
+    return buildRasterMaskCanvas(fakeMask, layerLeft, layerTop, layerRight, layerBottom)
+  }
+  return null
+}
+
 function serializeMaskCanvas(
   w: { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean },
   enabled: boolean,
@@ -1158,129 +1274,88 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         //  - expandir a mask ate cobrir todo o layer (defaultColor implicito
         //    fora do bbox da mask). Sem isso, mask cobre so o bbox armazenado
         //    e o resto do layer fica clipado fora (invisivel).
-        // Estrategia 2026-05-18: layer pode ter ATE 2 masks aplicadas (PS):
-        //   - mask propria raster (layer.mask)
-        //   - mask de folder ancestral (inheritedRawMask, herdada)
-        // Quando AMBAS existem, PS aplica INTERSECCAO (visivel onde ambas
-        // sao visiveis). Antes priorizavamos a propria; agora compomos.
-        // Vector e clipping continuam tendo prioridade exclusiva (caso raro
-        // de coexistir com folder mask, e a logica de interseccao raster-vector
-        // exige rasterizar o vector — fica pra depois se aparecer).
-        let ownCanvas: any = null
-        let inheritedCanvas: any = null
+        // ========================================================================
+        // ADOBE MASK COMPOSITION
+        // Em PS, um layer pode ter SIMULTANEAMENTE ate 4 mascaras:
+        //   1. layer.mask (raster mask propria)
+        //   2. layer.vectorMask (vector path mask propria)
+        //   3. inheritedRawMask (folder mask herdada do grupo pai)
+        //   4. clipping silhouette (alpha do clipBase quando layer.clipping=true)
+        // Adobe aplica TODAS por INTERSECCAO (visivel onde TODAS sao visiveis).
+        // Sem prioridade, sem "uma vence outra". Implementacao:
+        //   a) Constroi canvas pra cada silhueta presente
+        //   b) Compoe via destination-in chain
+        //   c) Output unico raster mask (perde info de vector quando composto)
+        // Otimizacao: se SO uma silhueta vector existe (sem outras), preserva
+        // formato vector pra resolucao no editor.
+        type MaskCanvas = { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean }
+        const silhouettes: Array<MaskCanvas> = []
+        // 1. Own raster mask
         if (layer.mask?.canvas) {
           try {
-            ownCanvas = buildRasterMaskCanvas(layer.mask, left, top, left + width, top + height)
-          } catch (e) { console.warn("[psd-mask] falha lendo raster mask de", name, e) }
+            const w = buildRasterMaskCanvas(layer.mask, left, top, left + width, top + height)
+            if (w) silhouettes.push(w)
+          } catch (e) { console.warn("[psd-mask] own raster falhou:", name, e) }
         }
+        // 2. Own vector mask (rasterizado se for compor com outras; vetor se solo)
+        const hasVector = !!(layer as any).vectorMask?.paths?.length
+        // 3. Inherited folder mask
         if (inheritedRawMask?.kind === "raster" && inheritedRawMask.data?.canvas) {
           try {
-            inheritedCanvas = buildRasterMaskCanvas(inheritedRawMask.data, left, top, left + width, top + height)
-          } catch (e) { console.warn("[psd-mask] falha lendo inherited raster mask de", name, e) }
+            const w = buildRasterMaskCanvas(inheritedRawMask.data, left, top, left + width, top + height)
+            if (w) silhouettes.push(w)
+          } catch (e) { console.warn("[psd-mask] inherited raster falhou:", name, e) }
         }
-        if (ownCanvas && inheritedCanvas) {
-          // AMBOS: interseccao via destination-in. Resultado: visivel apenas
-          // onde a own mask E a folder mask sao visiveis.
-          const composed = composeMasksIntersection(ownCanvas, inheritedCanvas)
-          const ownEnabled = !layer.mask.disabled
-          const inhEnabled = !inheritedRawMask?.data?.disabled
-          assetMask = serializeMaskCanvas(composed, ownEnabled && inhEnabled)
-        } else if (ownCanvas) {
-          assetMask = serializeMaskCanvas(ownCanvas, !layer.mask.disabled)
-        } else if (inheritedCanvas && inheritedRawMask) {
-          assetMask = serializeMaskCanvas(inheritedCanvas, !inheritedRawMask.data.disabled)
-        }
-        // Vector mask: layer.vectorMask tem paths bezier completos. Convertemos
-        // pra SVG path real (curvas, polígonos, formas arbitrárias). Antes
-        // extraíamos só bounding box retangular — mask saía como retângulo
-        // mesmo se o path real era um círculo ou shape custom.
-        if (!assetMask && (layer as any).vectorMask?.paths?.length) {
+        // 4. Clipping silhouette (alpha do clipBase)
+        const hasClipping = (layer as any).clipping === true && !!clipBase
+        if (hasClipping) {
           try {
-            const vm = (layer as any).vectorMask
-            const { d: pathStr, bbox } = vectorMaskToSvgPath(vm)
-            if (pathStr && bbox && isFinite(bbox.minX)) {
-              const minX = bbox.minX, minY = bbox.minY
-              const vWidth = Math.max(bbox.maxX - minX, 1)
-              const vHeight = Math.max(bbox.maxY - minY, 1)
-              assetMask = {
-                type: "vector" as const,
-                enabled: !vm.disabled,
-                vector: { path: pathStr, posX: minX, posY: minY, width: vWidth, height: vHeight },
-              }
-            }
-          } catch (e) { console.warn("[psd-mask] falha lendo vector mask de", name, e) }
+            const w = buildClippingMaskCanvas(clipBase, left, top, left + width, top + height)
+            if (w) silhouettes.push(w)
+          } catch (e) { console.warn("[psd-mask] clipping silhouette falhou:", name, e) }
         }
-        // Clipping mask REAL: layer.clipping === true clipa pela layer/folder
-        // de base no mesmo grupo (collectAllLayers ja resolveu o clipBase).
-        // Estrategia:
-        //  - clipBase eh folder com raster mask: usa essa mask como silhueta
-        //  - clipBase eh layer com canvas: usa o alpha do canvas como mask
-        // Sem clipBase resolvido, cai pro fallback antigo (placeholder).
-        if (!assetMask && (layer as any).clipping === true) {
-          let clipCanvas: any = null
-          if (clipBase) {
+        // Decisao de output:
+        // - Vector solo (sem raster/inherited/clipping): preserva como vector
+        // - Vector + outros: rasteriza vector e intersecta
+        // - Sem vector, mas com outros: intersecta as silhuetas raster
+        // - Nenhum mask: assetMask = null
+        if (hasVector) {
+          const vm = (layer as any).vectorMask
+          if (silhouettes.length === 0) {
+            // Vector solo: mantem formato vetorial
             try {
-              if (clipBase.children?.length && clipBase.mask?.canvas) {
-                // Folder com mask: usa a folder mask (resolvendo posRel se preciso)
-                const m = clipBase.mask
-                if (m.positionRelativeToLayer === true) {
-                  const union = computeLeafUnionBbox(clipBase)
-                  if (union) {
-                    const adjusted = { ...m,
-                      left: (m.left ?? 0) + union.minX,
-                      top: (m.top ?? 0) + union.minY,
-                      right: (m.right ?? 0) + union.minX,
-                      bottom: (m.bottom ?? 0) + union.minY,
-                      positionRelativeToLayer: false,
-                    }
-                    clipCanvas = buildRasterMaskCanvas(adjusted, left, top, left + width, top + height)
-                  }
-                } else {
-                  clipCanvas = buildRasterMaskCanvas(m, left, top, left + width, top + height)
+              const { d: pathStr, bbox } = vectorMaskToSvgPath(vm)
+              if (pathStr && bbox && isFinite(bbox.minX)) {
+                const minX = bbox.minX, minY = bbox.minY
+                const vWidth = Math.max(bbox.maxX - minX, 1)
+                const vHeight = Math.max(bbox.maxY - minY, 1)
+                assetMask = {
+                  type: "vector" as const,
+                  enabled: !vm.disabled,
+                  vector: { path: pathStr, posX: minX, posY: minY, width: vWidth, height: vHeight },
                 }
-              } else if (clipBase.canvas) {
-                // Layer regular: usa o alpha do canvas como silhueta.
-                // Constroi um fake mask raster com o canvas + bbox da base.
-                const baseW = (clipBase.right ?? 0) - (clipBase.left ?? 0)
-                const baseH = (clipBase.bottom ?? 0) - (clipBase.top ?? 0)
-                const fakeMask = {
-                  canvas: clipBase.canvas,
-                  left: clipBase.left ?? 0,
-                  top: clipBase.top ?? 0,
-                  right: (clipBase.left ?? 0) + baseW,
-                  bottom: (clipBase.top ?? 0) + baseH,
-                  defaultColor: 0, // fora do canvas da base = transparente
-                  disabled: false,
-                  positionRelativeToLayer: false,
-                }
-                // Pre-converte alpha do canvas em grayscale (pra que buildRaster
-                // converta gray→alpha corretamente). Como ja eh alpha, copiamos
-                // alpha → R/G/B/A.
-                try {
-                  const c = clipBase.canvas as HTMLCanvasElement
-                  const tmp = document.createElement("canvas")
-                  tmp.width = c.width; tmp.height = c.height
-                  const tctx = tmp.getContext("2d")!
-                  tctx.drawImage(c, 0, 0)
-                  const id = tctx.getImageData(0, 0, c.width, c.height)
-                  const dd = id.data
-                  for (let i = 0; i < dd.length; i += 4) {
-                    dd[i] = dd[i + 1] = dd[i + 2] = dd[i + 3] // RGB = alpha
-                    dd[i + 3] = 255
-                  }
-                  tctx.putImageData(id, 0, 0)
-                  fakeMask.canvas = tmp
-                } catch {}
-                clipCanvas = buildRasterMaskCanvas(fakeMask, left, top, left + width, top + height)
               }
-            } catch (e) { console.warn("[psd-mask] falha construindo clipping mask de", name, e) }
-          }
-          if (clipCanvas) {
-            assetMask = serializeMaskCanvas(clipCanvas, true)
+            } catch (e) { console.warn("[psd-mask] vector solo falhou:", name, e) }
           } else {
-            // Fallback: marca como clipping sem dados (placeholder)
-            assetMask = { type: "clipping" as const, enabled: true, clipping: true }
+            // Vector composto com outros: rasteriza e adiciona pra intersectar
+            const rastered = rasterizeVectorMaskCanvas(vm, left, top, left + width, top + height)
+            if (rastered) silhouettes.push(rastered)
           }
+        }
+        // Se temos silhuetas raster pra compor (e nao foi caso vector-solo)
+        if (!assetMask && silhouettes.length > 0) {
+          let composed = silhouettes[0]
+          let anyDisabled = composed.disabled
+          for (let i = 1; i < silhouettes.length; i++) {
+            composed = composeMasksIntersection(composed, silhouettes[i])
+            anyDisabled = anyDisabled || silhouettes[i].disabled
+          }
+          assetMask = serializeMaskCanvas(composed, !anyDisabled)
+        }
+        // Fallback: clipping=true mas sem clipBase resolvido — placeholder type
+        // pra preservar round-trip pro PSD save.
+        if (!assetMask && (layer as any).clipping === true) {
+          assetMask = { type: "clipping" as const, enabled: true, clipping: true }
         }
 
         // Opacity (0-255 no PSD → 0-1 pro canvas) e blendMode (string PSD → canvas op).
