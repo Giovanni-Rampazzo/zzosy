@@ -1959,10 +1959,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const sourceH = pdata?.sourceHeight ?? canvasHRef.current
           const targetW = canvasWRef.current
           const targetH = canvasHRef.current
-          await new Promise<void>((resolve) => {
-            const r = fc.loadFromJSON(pdata.canvasData, () => { resolve() })
-            if (r && typeof r.then === "function") r.then(() => resolve())
-          })
+          // Fabric v6 quirk: 2o arg eh REVIVER (per-obj), nao completion cb.
+          // Aguarda apenas a Promise pra garantir todos os objetos carregados.
+          await fc.loadFromJSON(pdata.canvasData)
           await new Promise(r => setTimeout(r, 250))
           const scale = Math.min(targetW / sourceW, targetH / sourceH)
           const offsetX = (targetW - sourceW * scale) / 2
@@ -2201,10 +2200,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       delete snapData.backgroundImage
       delete snapData.overlayImage
 
-      await new Promise<void>((resolve) => {
-        const r = fc.loadFromJSON(snapData, () => resolve())
-        if (r && typeof r.then === "function") r.then(() => resolve())
-      })
+      // Fabric v6: 2o arg de loadFromJSON eh REVIVER (callback per-objeto), nao
+      // callback de conclusao. Passar `() => resolve()` ali resolvia a Promise
+      // no PRIMEIRO objeto desserializado, fazendo o resto do applySnapshot
+      // rodar com `fc.getObjects()` ainda vazio (ou parcial). Resultado no log:
+      // `[undo-RESTORE-COUNTS] restored:0, snap:4` — snapshot OK, canvas vazio.
+      // Solucao: aguardar a Promise retornada (Fabric v6 sempre retorna Promise).
+      await fc.loadFromJSON(snapData)
 
       // backgroundColor TRANSPARENT pra que a area de bleed (extra ao redor
       // da peca, pra handles ficarem clicaveis) mostre o fundo escuro do

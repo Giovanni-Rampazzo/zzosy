@@ -52,10 +52,11 @@ async function renderPieceThumb(
     // o array de props extras — soh toObject(props) repassa pra _toObjectMethod.
     // Sem isso, __assetId/__assetLabel se perdiam na clonagem matriz->peca.
     const json = (matrixCanvas as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage"])
-    await new Promise<void>((resolve) => {
-      const r = fc.loadFromJSON(json, () => resolve())
-      if (r && typeof r.then === "function") r.then(() => resolve())
-    })
+    // Fabric v6 quirk: 2o arg de loadFromJSON eh REVIVER per-objeto, nao
+    // callback de conclusao — passar `() => resolve()` ali resolvia a Promise
+    // no PRIMEIRO objeto desserializado, e o codigo prosseguia com canvas vazio.
+    // Aguarda apenas a Promise retornada pelo Fabric v6.
+    await fc.loadFromJSON(json)
     await new Promise(r => setTimeout(r, 200))
 
     // CRITICO: setar backgroundColor DEPOIS do loadFromJSON (ele sobrescreve com o do JSON
