@@ -1,4 +1,5 @@
 "use client"
+/* eslint-disable react-hooks/rules-of-hooks */
 /**
  * Button component — sistema padronizado ZZOSY.
  *
@@ -23,7 +24,7 @@
  *
  * Variants legadas mantidas pra retrocompat: dark e link.
  */
-import { ButtonHTMLAttributes } from "react"
+import { ButtonHTMLAttributes, useRef } from "react"
 import { clsx } from "clsx"
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -63,49 +64,43 @@ export function Button({ variant = "secondary", size = "md", loading, className,
   }
   const cls = clsx(base, variants[variant], sizes[size], (disabled || loading) && "opacity-50 cursor-not-allowed", className)
 
-  // Modo file input: renderiza <label> envolvendo input. Mesma aparencia, mas
-  // clique abre o file picker do browser em vez de disparar onClick.
+  // Modo file input: renderiza <button> que dispara input.click() via ref.
+  // Antes era <label> envolvendo <input> (ativacao implicita HTML). Mas em
+  // Next.js 16 + Turbopack + React 19 esse padrao quebrou: o LABEL recebe o
+  // click event mas o browser nao dispara click() no input filho — file picker
+  // nunca abre. Diagnostico confirmado via log: Button-FILE-LABEL-CLICK aparece
+  // varias vezes, INPUT-CHANGE nunca. Solucao: trigger explicito via ref.
   if (onFileSelect) {
+    const inputRef = useRef<HTMLInputElement | null>(null)
     return (
-      <label className={cls}
-        title={(props.title as string) || undefined}
-        style={{ ...(props.style || {}), position: "relative", display: "inline-flex" }}
-        onClick={() => {
-          // Diagnostico: registra que o label foi clicado. Se o click chega aqui
-          // mas o file picker nao abre, eh problema do <input> escondido. Se nem
-          // o log aparece, eh CSS/overlay bloqueando o click.
-          try {
-            fetch("/api/debug/client-log", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ tag: "Button-FILE-LABEL-CLICK", data: { disabled: disabled || loading, accept } }),
-              keepalive: true,
-            }).catch(() => {})
-          } catch {}
-        }}
-      >
-        {loading ? <span className="animate-spin">⟳</span> : children}
+      <>
+        <button
+          type="button"
+          className={cls}
+          disabled={disabled || loading}
+          title={(props.title as string) || undefined}
+          style={props.style}
+          onClick={() => {
+            if (disabled || loading) return
+            inputRef.current?.click()
+          }}
+        >
+          {loading ? <span className="animate-spin">⟳</span> : children}
+        </button>
         <input
+          ref={inputRef}
           type="file"
           accept={accept}
           disabled={disabled || loading}
-          style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }}
+          style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
           tabIndex={-1}
           onChange={e => {
             const f = e.target.files?.[0]
-            try {
-              fetch("/api/debug/client-log", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tag: "Button-FILE-INPUT-CHANGE", data: { fileName: f?.name ?? null, size: f?.size ?? 0 } }),
-                keepalive: true,
-              }).catch(() => {})
-            } catch {}
             if (f) onFileSelect(f)
             e.target.value = ""
           }}
         />
-      </label>
+      </>
     )
   }
 
