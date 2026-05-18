@@ -805,7 +805,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // undo stack. Sem isso, undo até o início "desfaz" também o brand
       // sync — que mudou outros textos sem o user ter feito.
       try {
-        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
+        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
         undoStack.current = [snap]
         redoStack.current = []
         setHistoryTick(t => t + 1)
@@ -1709,14 +1709,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // cada zoom — antes do filtro, isso poluía o stack com snapshots
       // duplicados e tambem rodava o orphan-detect com lixo transitorio.
       const isInternalOverlay = (target: any) => target?.__isBleedOverlay || target?.__isBg
-      fc.on("object:modified", (e: any) => { if (!isInternalOverlay(e?.target)) pushHistory() })
+      // Guard adicional !isInitialized.current — sem isso, cada addAssetToCanvas
+      // durante o load inicial dispara object:added → pushHistory(), populando
+      // undoStack com 20+ snapshots intermediarios capturados ANTES das fontes
+      // terminarem de carregar e os textos reflowarem. Undo do user volta pra
+      // esses estados ruins (textos com layout pre-font-load, sem override
+      // visivel). Apos isInitialized=true, listeners voltam ao normal pra
+      // capturar acoes reais do user (modify, add, remove via drag-drop/paste).
+      fc.on("object:modified", (e: any) => {
+        if (!isInitialized.current) return
+        if (!isInternalOverlay(e?.target)) pushHistory()
+      })
       fc.on("object:added", (e: any) => {
         if (isApplyingHistory.current) return
+        if (!isInitialized.current) return
         if (isInternalOverlay(e?.target)) return
         pushHistory()
       })
       fc.on("object:removed", (e: any) => {
         if (isApplyingHistory.current) return
+        if (!isInitialized.current) return
         if (isInternalOverlay(e?.target)) return
         pushHistory()
       })
@@ -2138,7 +2150,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
+        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -2240,7 +2252,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (orphans.length > 0) {
         console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
-      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
+      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
