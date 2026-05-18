@@ -164,6 +164,22 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }
     }
 
+    // Desambigua labels de assets que colidem entre folders diferentes do PSD.
+    // Ex: PSD com "Header/Logo" e "Footer/Logo" — ambos vinham com label="Logo"
+    // e colidiam (assetMap[label] sobrescrevia). Agora layers com label
+    // duplicado ganham sufixo " (Folder/Subfolder)" pra preservar a identidade
+    // visual no painel de assets e permitir match correto no re-import de pecas.
+    const labelOccurrences = new Map<string, number>()
+    for (const a of assets) {
+      labelOccurrences.set(a.label, (labelOccurrences.get(a.label) ?? 0) + 1)
+    }
+    for (const a of assets) {
+      const count = labelOccurrences.get(a.label) ?? 0
+      if (count > 1 && a.groupPath && a.groupPath.length > 0) {
+        a.label = `${a.label} (${a.groupPath.join("/")})`
+      }
+    }
+
     // Criar assets
     const created = []
     for (let i = 0; i < assets.length; i++) {

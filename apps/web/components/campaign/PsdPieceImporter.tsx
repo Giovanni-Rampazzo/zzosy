@@ -140,9 +140,18 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
       const width = Math.max((layer.right ?? left + 200) - left, 10)
       const height = Math.max((layer.bottom ?? top + 50) - top, 10)
 
-      // Match normalizado contra os assets da campanha
+      // Match normalizado contra os assets da campanha. Tentamos 2 caminhos:
+      // 1) label puro (caso comum, ex: "Logo" -> asset "Logo")
+      // 2) label com sufixo de folder (ex: "Logo" no folder Header -> asset
+      //    "Logo (Header)") — necessario quando o import original da matriz
+      //    desambiguou labels colidentes prefixando o folder.
       const matchKey = normalizeName(layerName)
-      const matchedAsset = matchKey ? assetIndex.get(matchKey) : null
+      let matchedAsset: Asset | null = matchKey ? (assetIndex.get(matchKey) ?? null) : null
+      if (!matchedAsset && groupPath && groupPath.length > 0) {
+        const folderSuffix = ` (${groupPath.join("/")})`
+        const altKey = normalizeName(layerName + folderSuffix)
+        matchedAsset = altKey ? (assetIndex.get(altKey) ?? null) : null
+      }
 
       if (layer.text) {
         // === TEXT LAYER ===
