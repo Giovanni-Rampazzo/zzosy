@@ -753,19 +753,11 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           continue
         }
 
-        // ag-psd ZERO marca alguns adjustments como adjustment — mostra como
-        // smart-object (placedLayer) sem canvas raster proprio (ex: PSD do
-        // Seguro Viagem traz "Equilíbrio de Cores 1" assim). Esse layer
-        // tinha bbox enorme (-1036,-62)-(2375,2213) e renderizava como
-        // imagem-fantasma cobrindo metade do canvas, gerando faixas escuras
-        // por cima da foto. Fallback: detecta pelo NOME (PT-BR + EN, casos
-        // comuns que designers brasileiros usam).
-        const adjustmentNamePattern = /^(níveis|niveis|levels|curvas|curves|equilíbrio de cores|equilibrio de cores|color balance|matiz\/saturação|matiz\/saturacao|hue\/saturation|vibração|vibracao|vibrance|preto e branco|black\s*&\s*white|mapeamento de gradiente|gradient map|inverter|invert|posterizar|posterize|limite|threshold|filtro de foto|photo filter|mistura de canais|channel mixer|pesquisa de cores|color lookup|brilho\/contraste|brightness\/contrast|exposição|exposicao|exposure|cores seletivas|selective color)\b/i
-        if (adjustmentNamePattern.test(name)) {
-          console.log("[psd-import] skip adjustment by name:", name)
-          zIndex++
-          continue
-        }
+        // REMOVIDO 2026-05-18: name-pattern adjustment skip era falso-positivo.
+        // Designers as vezes nomeiam smart objects raster com nome de ajuste
+        // (no PSD Seguro Viagem "Equilíbrio de Cores 1" é a propria FOTO 5221x2932,
+        // nao um Color Balance real). Skip pelo nome estava removendo a foto.
+        // Confiamos apenas na flag layer.adjustment do ag-psd.
 
         // Diag pra debugar layers nao-importados em PSDs complexos.
         // Loga cada layer + flags antes de tentar processar — quando o user
