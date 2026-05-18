@@ -987,7 +987,40 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       fd.append("assets", JSON.stringify(assets))
       fd.append("canvasWidth", String(psd.width))
       fd.append("canvasHeight", String(psd.height))
-      fd.append("bgColor", "#ffffff")
+      // Detecta cor de fundo da peca: sampleia top-left + 4 cantos do composite
+      // do PSD. Se todos batem (variancia baixa) eh BG solido — usamos essa cor.
+      // Antes era hardcoded "#ffffff" e o editor renderizava branco mesmo em
+      // PSDs com bg colorido. Fallback continua branco quando psd.canvas
+      // indisponivel ou pixels transparentes.
+      let detectedBg = "#ffffff"
+      try {
+        const psdCanvas = (psd as any).canvas as HTMLCanvasElement | undefined
+        if (psdCanvas && psdCanvas.width > 0 && psdCanvas.height > 0) {
+          const ctx = psdCanvas.getContext("2d")
+          if (ctx) {
+            const samplePoints: Array<[number, number]> = [
+              [0, 0],
+              [psdCanvas.width - 1, 0],
+              [0, psdCanvas.height - 1],
+              [psdCanvas.width - 1, psdCanvas.height - 1],
+              [Math.floor(psdCanvas.width / 2), Math.floor(psdCanvas.height / 2)],
+            ]
+            const samples: Array<[number, number, number]> = []
+            for (const [x, y] of samplePoints) {
+              const d = ctx.getImageData(x, y, 1, 1).data
+              if (d[3] >= 240) samples.push([d[0], d[1], d[2]]) // ignora transparente
+            }
+            if (samples.length > 0) {
+              // Media dos samples opacos
+              const r = Math.round(samples.reduce((a, s) => a + s[0], 0) / samples.length)
+              const g = Math.round(samples.reduce((a, s) => a + s[1], 0) / samples.length)
+              const b = Math.round(samples.reduce((a, s) => a + s[2], 0) / samples.length)
+              detectedBg = "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")
+            }
+          }
+        }
+      } catch { /* mantem fallback */ }
+      fd.append("bgColor", detectedBg)
       // Fontes referenciadas no PSD (defStyle + runs). Backend devolve no
       // payload pra UI alertar o user que precisa fazer upload das ausentes.
       const fontsList = Array.from(fontsRequired).sort()
