@@ -5893,22 +5893,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             >+ Adicionar ao canvas</button>
           )
         })()}
-        {/* Atalho: cria asset TEXT novo + auto-adiciona ao canvas. UX: o
-            user nao precisa ir ate /campaigns/[id]/assets pra adicionar
-            mais um texto na peca/matriz. */}
-        <button onClick={createTextAssetAndAdd}
-          title="Cria um asset de texto novo nesta campanha e ja adiciona ao canvas"
-          style={{
-            background: "#2a2a1a",
-            color: "#F5C400",
-            border: "1px solid #444",
-            padding: "5px 14px",
-            borderRadius: 4,
-            fontSize: 12,
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >+ Texto novo</button>
+        {/* Botão "+ Texto novo" removido (UX request 2026-05-17): assets de
+            texto agora sao criados exclusivamente via /campaigns/[id]/assets
+            pra centralizar a criação e evitar texts órfãos no canvas. A função
+            createTextAssetAndAdd permanece definida pra back-compat caso algum
+            caminho ainda chame, mas nao tem mais UI. */}
         <div style={{ flex: 1 }} />
         <button onClick={() => changeZoom(-0.1)} style={bS}>−</button>
         <span style={{ fontSize: 11, color: "#555", minWidth: 40, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
