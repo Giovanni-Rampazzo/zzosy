@@ -61,8 +61,13 @@ function collectAllLayers(
   parentHidden = false,
   inheritedRawMask: RawMaskRef | null = null,
   groupPath: string[] = [],
-): Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[] }> {
-  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[] }> = []
+): Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any }> {
+  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any }> = []
+  // PS clipping chain: layer com clipping=true clipa pela primeira layer
+  // NAO-clipping IMEDIATAMENTE ABAIXO no painel = no mesmo grupo. "Abaixo no
+  // painel" = INDICE ANTERIOR no array de children (PSD armazena bottom→top).
+  // Multiplas clipping consecutivas clipam pela MESMA base.
+  let clipBaseInThisFolder: any = null
   for (const layer of layers) {
     const effectiveHidden = parentHidden || layer.hidden === true
     if (effectiveHidden) continue // SKIP filho de folder hidden
@@ -104,8 +109,24 @@ function collectAllLayers(
       const folderName = (layer.name ?? "").trim() || "Group"
       const childPath = [...groupPath, folderName]
       result.push(...collectAllLayers(layer.children, effectiveHidden, folderMask, childPath))
-    } else {
-      result.push({ layer, inheritedRawMask, groupPath })
+      // Folder serve como base de clipping se a proxima sibling for clipping=true.
+      // Em PS, clipping pode usar folder abaixo — usamos o folder.mask como
+      // silhueta aproximada (folder composite real seria mais fiel mas custoso).
+      clipBaseInThisFolder = layer
+      continue
+    }
+    // Layer-folha: detecta clipping (precisa referenciar a base pra recortar)
+    const isClipping = layer.clipping === true
+    const isAdjustment = !!layer.adjustment
+    const entry: any = { layer, inheritedRawMask, groupPath, clipBase: null }
+    if (isClipping && clipBaseInThisFolder) {
+      entry.clipBase = clipBaseInThisFolder
+    }
+    result.push(entry)
+    // Layers adjustment NAO servem como base (sem conteudo visivel). Clipping
+    // tambem nao reseta a base (chain semantics: varias clippings → mesma base).
+    if (!isClipping && !isAdjustment) {
+      clipBaseInThisFolder = layer
     }
   }
   return result
@@ -515,13 +536,18 @@ function bakeImageEffects(src: HTMLCanvasElement, effects: any): { canvas: HTMLC
   const go = effects.gradientOverlay
   const ds = effects.dropShadow
   const isOG = effects.outerGlow
-  if (!co && !go && !ds && !isOG) return { canvas: src, pad: 0 } // sem effects bake-able
+  const iS = effects.innerShadow
+  const iG = effects.innerGlow
+  const strokeFx = effects.stroke
+  if (!co && !go && !ds && !isOG && !iS && !iG && !strokeFx) return { canvas: src, pad: 0 }
 
   const w = src.width, h = src.height
   // Padding pra acomodar shadow/glow externos. Calcula max blur+offset.
   const dsPad = ds ? Math.ceil(Math.max(Math.abs(ds.offsetX ?? 0), Math.abs(ds.offsetY ?? 0)) + (ds.blur ?? 0) * 2) : 0
   const ogPad = isOG ? Math.ceil((isOG.blur ?? 0) * 2 + (isOG.choke ?? 0)) : 0
-  const pad = Math.max(dsPad, ogPad, 0)
+  // Stroke "outside" expande visualmente (width/2 pra cada lado)
+  const strokePad = (strokeFx && strokeFx.position === "outside") ? Math.ceil(strokeFx.width ?? 1) : 0
+  const pad = Math.max(dsPad, ogPad, strokePad, 0)
   const outW = w + pad * 2
   const outH = h + pad * 2
 
@@ -579,6 +605,130 @@ function bakeImageEffects(src: HTMLCanvasElement, effects: any): { canvas: HTMLC
     ctx.globalAlpha = co.opacity ?? 1
     ctx.fillRect(0, 0, outW, outH)
     ctx.globalAlpha = 1
+  }
+
+  // 4.5 INNER SHADOW: sombra DENTRO da silhueta. Estrategia:
+  // 1) inverte alpha da base (areas vazias→opaque, opaque→vazias)
+  // 2) desenha essa "neg" deslocada+blur, clip à silhueta original via source-in
+  if (iS) {
+    try {
+      const sc = document.createElement("canvas")
+      sc.width = outW; sc.height = outH
+      const sctx = sc.getContext("2d")
+      if (sctx) {
+        // Negativo do alpha original (com offset)
+        sctx.drawImage(src, pad + (iS.offsetX ?? 0), pad + (iS.offsetY ?? 0))
+        sctx.globalCompositeOperation = "source-out"
+        sctx.drawImage(src, pad, pad)
+        sctx.globalCompositeOperation = "source-over"
+        // Tint pra cor da inner shadow
+        const tnt = document.createElement("canvas")
+        tnt.width = outW; tnt.height = outH
+        const tctx = tnt.getContext("2d")
+        if (tctx) {
+          tctx.fillStyle = iS.color ?? "rgba(0,0,0,0.5)"
+          tctx.fillRect(0, 0, outW, outH)
+          tctx.globalCompositeOperation = "destination-in"
+          tctx.drawImage(sc, 0, 0)
+          // Aplica blur + clip à silhueta original
+          ctx.save()
+          ctx.globalAlpha = iS.opacity ?? 0.75
+          ctx.filter = `blur(${(iS.blur ?? 5) / 2}px)`
+          ctx.drawImage(tnt, 0, 0)
+          ctx.filter = "none"
+          ctx.restore()
+          // Re-clip pra silhueta original (source-atop nao funciona pos-blur, usa
+          // destination-in na base)
+          ctx.globalCompositeOperation = "destination-in"
+          ctx.drawImage(src, pad, pad)
+          ctx.globalCompositeOperation = "source-over"
+          // Re-desenha base por baixo (inner shadow agora ta sobreposta com alpha)
+          const baseRedraw = document.createElement("canvas")
+          baseRedraw.width = outW; baseRedraw.height = outH
+          const brctx = baseRedraw.getContext("2d")
+          if (brctx) {
+            brctx.drawImage(src, pad, pad)
+            brctx.globalCompositeOperation = "source-atop"
+            brctx.drawImage(out, 0, 0)
+            ctx.clearRect(0, 0, outW, outH)
+            ctx.drawImage(baseRedraw, 0, 0)
+          }
+        }
+      }
+    } catch (e) { console.warn("[bakeImageEffects] innerShadow falhou:", e) }
+  }
+
+  // 4.6 INNER GLOW: brilho DENTRO da silhueta. Mesma logica do inner shadow
+  // mas sem offset (sempre na borda interna).
+  if (iG) {
+    try {
+      const sc = document.createElement("canvas")
+      sc.width = outW; sc.height = outH
+      const sctx = sc.getContext("2d")
+      if (sctx) {
+        // Borda interna: silhueta original menos a silhueta "contraida"
+        sctx.drawImage(src, pad, pad)
+        // Cor do glow + alpha por blur
+        const tnt = document.createElement("canvas")
+        tnt.width = outW; tnt.height = outH
+        const tctx = tnt.getContext("2d")
+        if (tctx) {
+          tctx.fillStyle = iG.color ?? "rgba(255,255,255,0.5)"
+          tctx.fillRect(0, 0, outW, outH)
+          tctx.globalCompositeOperation = "destination-in"
+          tctx.drawImage(src, pad, pad)
+          ctx.save()
+          ctx.globalAlpha = iG.opacity ?? 0.5
+          ctx.filter = `blur(${(iG.blur ?? 5) / 2}px)`
+          ctx.globalCompositeOperation = "destination-out" // remove borda
+          ctx.drawImage(tnt, 0, 0)
+          ctx.filter = "none"
+          ctx.globalCompositeOperation = "source-atop"
+          ctx.drawImage(tnt, 0, 0)
+          ctx.restore()
+        }
+      }
+    } catch (e) { console.warn("[bakeImageEffects] innerGlow falhou:", e) }
+  }
+
+  // 4.7 STROKE EFFECT: contorno na silhueta.
+  // position: "outside" | "inside" | "center". Simplificacao: tudo como "outside"
+  // — borda da silhueta, expandida pra fora pelo width.
+  if (strokeFx && strokeFx.color) {
+    try {
+      const sw = strokeFx.width ?? 1
+      // Expansao da silhueta: usa dilation aproximado via multi-drawImage offset
+      const sc = document.createElement("canvas")
+      sc.width = outW; sc.height = outH
+      const sctx = sc.getContext("2d")
+      if (sctx) {
+        // Dilation: desenha o src varias vezes com pequenos offsets em volta
+        for (let dx = -sw; dx <= sw; dx++) {
+          for (let dy = -sw; dy <= sw; dy++) {
+            if (dx * dx + dy * dy <= sw * sw) {
+              sctx.drawImage(src, pad + dx, pad + dy)
+            }
+          }
+        }
+        // Pinta o "dilated" com a cor do stroke
+        sctx.globalCompositeOperation = "source-in"
+        sctx.fillStyle = strokeFx.color
+        sctx.globalAlpha = strokeFx.opacity ?? 1
+        sctx.fillRect(0, 0, outW, outH)
+        sctx.globalAlpha = 1
+        sctx.globalCompositeOperation = "source-over"
+        // Compose: stroke ATRAS do bitmap base (assume position=outside default)
+        const composed = document.createElement("canvas")
+        composed.width = outW; composed.height = outH
+        const cctx2 = composed.getContext("2d")
+        if (cctx2) {
+          cctx2.drawImage(sc, 0, 0)        // stroke primeiro
+          cctx2.drawImage(out, 0, 0)        // depois tudo que ja foi composto
+          ctx.clearRect(0, 0, outW, outH)
+          ctx.drawImage(composed, 0, 0)
+        }
+      }
+    } catch (e) { console.warn("[bakeImageEffects] stroke falhou:", e) }
   }
 
   // 5. GRADIENT OVERLAY
@@ -815,7 +965,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         guidToIndex.set(guid, idx)
       }
 
-      for (const { layer, inheritedRawMask, groupPath } of allLayerEntries) {
+      for (const { layer, inheritedRawMask, groupPath, clipBase } of allLayerEntries) {
         const name = (layer.name ?? "").trim()
         // Fix #6: filtra a "Background" auto-criada pelo PS (raster top-level
         // sem placedLayer), mas deixa passar Smart Objects intencionais que o
@@ -925,13 +1075,76 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             }
           } catch (e) { console.warn("[psd-mask] falha lendo vector mask de", name, e) }
         }
-        // Clipping mask: layer.clipping === true significa "este layer recorta
-        // o layer abaixo". Nao tem dados proprios, so a flag.
+        // Clipping mask REAL: layer.clipping === true clipa pela layer/folder
+        // de base no mesmo grupo (collectAllLayers ja resolveu o clipBase).
+        // Estrategia:
+        //  - clipBase eh folder com raster mask: usa essa mask como silhueta
+        //  - clipBase eh layer com canvas: usa o alpha do canvas como mask
+        // Sem clipBase resolvido, cai pro fallback antigo (placeholder).
         if (!assetMask && (layer as any).clipping === true) {
-          assetMask = {
-            type: "clipping" as const,
-            enabled: true,
-            clipping: true,
+          let clipCanvas: any = null
+          if (clipBase) {
+            try {
+              if (clipBase.children?.length && clipBase.mask?.canvas) {
+                // Folder com mask: usa a folder mask (resolvendo posRel se preciso)
+                const m = clipBase.mask
+                if (m.positionRelativeToLayer === true) {
+                  const union = computeLeafUnionBbox(clipBase)
+                  if (union) {
+                    const adjusted = { ...m,
+                      left: (m.left ?? 0) + union.minX,
+                      top: (m.top ?? 0) + union.minY,
+                      right: (m.right ?? 0) + union.minX,
+                      bottom: (m.bottom ?? 0) + union.minY,
+                      positionRelativeToLayer: false,
+                    }
+                    clipCanvas = buildRasterMaskCanvas(adjusted, left, top, left + width, top + height)
+                  }
+                } else {
+                  clipCanvas = buildRasterMaskCanvas(m, left, top, left + width, top + height)
+                }
+              } else if (clipBase.canvas) {
+                // Layer regular: usa o alpha do canvas como silhueta.
+                // Constroi um fake mask raster com o canvas + bbox da base.
+                const baseW = (clipBase.right ?? 0) - (clipBase.left ?? 0)
+                const baseH = (clipBase.bottom ?? 0) - (clipBase.top ?? 0)
+                const fakeMask = {
+                  canvas: clipBase.canvas,
+                  left: clipBase.left ?? 0,
+                  top: clipBase.top ?? 0,
+                  right: (clipBase.left ?? 0) + baseW,
+                  bottom: (clipBase.top ?? 0) + baseH,
+                  defaultColor: 0, // fora do canvas da base = transparente
+                  disabled: false,
+                  positionRelativeToLayer: false,
+                }
+                // Pre-converte alpha do canvas em grayscale (pra que buildRaster
+                // converta gray→alpha corretamente). Como ja eh alpha, copiamos
+                // alpha → R/G/B/A.
+                try {
+                  const c = clipBase.canvas as HTMLCanvasElement
+                  const tmp = document.createElement("canvas")
+                  tmp.width = c.width; tmp.height = c.height
+                  const tctx = tmp.getContext("2d")!
+                  tctx.drawImage(c, 0, 0)
+                  const id = tctx.getImageData(0, 0, c.width, c.height)
+                  const dd = id.data
+                  for (let i = 0; i < dd.length; i += 4) {
+                    dd[i] = dd[i + 1] = dd[i + 2] = dd[i + 3] // RGB = alpha
+                    dd[i + 3] = 255
+                  }
+                  tctx.putImageData(id, 0, 0)
+                  fakeMask.canvas = tmp
+                } catch {}
+                clipCanvas = buildRasterMaskCanvas(fakeMask, left, top, left + width, top + height)
+              }
+            } catch (e) { console.warn("[psd-mask] falha construindo clipping mask de", name, e) }
+          }
+          if (clipCanvas) {
+            assetMask = serializeMaskCanvas(clipCanvas, true)
+          } else {
+            // Fallback: marca como clipping sem dados (placeholder)
+            assetMask = { type: "clipping" as const, enabled: true, clipping: true }
           }
         }
 
@@ -1070,12 +1283,9 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             posX: left, posY: top, width: textWidth, height: textHeight, zIndex,
             lastOverride,
             mask: assetMask,
-            // Clipping layers entram OCULTAS: sem implementar o compositing
-            // correto (PS clipa pela layer-de-baixo no mesmo grupo), elas
-            // renderizam cruas sobre a foto e poluem o visual (ex: "Camada 2"
-            // do PSD Seguro Viagem = 2 blobs escuros). Mantemos no DB pro
-            // round-trip; user pode mostrar manualmente via toggle do olho.
-            hidden: (layer.hidden === true || (layer as any).clipping === true) ? true : undefined,
+            // Clipping mask agora resolvida via clipBase + folder mask como
+            // silhueta; layer entra visivel normalmente.
+            hidden: layer.hidden === true ? true : undefined,
             locked: (layer as any).transparencyProtected === true ? true : undefined,
             opacity: psdOpacity,
             blendMode: psdBlend,
@@ -1098,17 +1308,20 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             const finalCanvas = baked.canvas
             const bakePad = baked.pad
             // Effects que foram embutidas no bitmap: REMOVE do JSON pra evitar
-            // dupla aplicação (Fabric shadow + bitmap shadow, color overlay já
-            // tintado + tint novamente). Mantém innerShadow/innerGlow/bevel/
-            // satin/stroke pra render/round-trip (não bakeamos esses).
+            // dupla aplicação. Agora bakeamos TAMBEM innerShadow, innerGlow,
+            // stroke (alem de colorOverlay/gradientOverlay/dropShadow/outerGlow).
+            // Mantém bevel/satin pra round-trip (sao mais complexos e raros).
             let effectsForLayer = psdEffects
-            if (bakePad > 0 || (psdEffects && (psdEffects.colorOverlay || psdEffects.gradientOverlay))) {
+            if (bakePad > 0 || (psdEffects && (psdEffects.colorOverlay || psdEffects.gradientOverlay || psdEffects.innerShadow || psdEffects.innerGlow || psdEffects.stroke))) {
               if (psdEffects) {
                 effectsForLayer = { ...psdEffects }
                 delete effectsForLayer.colorOverlay
                 delete effectsForLayer.gradientOverlay
                 delete effectsForLayer.dropShadow
                 delete effectsForLayer.outerGlow
+                delete effectsForLayer.innerShadow
+                delete effectsForLayer.innerGlow
+                delete effectsForLayer.stroke
                 if (Object.keys(effectsForLayer).length === 0) effectsForLayer = undefined
               }
             }
@@ -1132,8 +1345,9 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               width: width + bakePad * 2, height: height + bakePad * 2,
               zIndex,
               mask: assetMask,
-              // Ver TEXT branch acima: clipping layers ocultas por default.
-              hidden: (layer.hidden === true || (layer as any).clipping === true) ? true : undefined,
+              // Clipping mask agora resolvida via clipBase + folder mask como
+              // silhueta; layer entra visivel normalmente.
+              hidden: layer.hidden === true ? true : undefined,
               locked: (layer as any).transparencyProtected === true ? true : undefined,
               opacity: psdOpacity,
               blendMode: psdBlend,
