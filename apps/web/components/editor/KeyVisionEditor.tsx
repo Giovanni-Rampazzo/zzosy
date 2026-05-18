@@ -805,7 +805,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // undo stack. Sem isso, undo até o início "desfaz" também o brand
       // sync — que mudou outros textos sem o user ter feito.
       try {
-        const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
+        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
         undoStack.current = [snap]
         redoStack.current = []
         setHistoryTick(t => t + 1)
@@ -2063,7 +2063,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
+        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -2165,7 +2165,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (orphans.length > 0) {
         console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
-      const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
+      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -2237,16 +2237,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // pode diferir do snap), mapeia src por POSITION+TYPE pra parear com o
       // objeto restaurado mais provavel. Falhas (sem match) caem pro index
       // positional como fallback.
+      // Match case-insensitive: Fabric serializa type como "Image"/"Textbox"
+      // (PascalCase da classe), mas instancias depois de loadFromJSON expoem
+      // o.type como "image"/"textbox" (lowercase). Sem normalizar, o pareamento
+      // por chave falhava sempre e caia no fallback positional — que e fragil.
       const srcByKey = new Map<string, any>()
       for (const s of snapObjectsNoBg) {
         if (!s) continue
-        const key = `${s.type}@${Math.round(s.left ?? 0)},${Math.round(s.top ?? 0)}`
+        const tnorm = String(s.type ?? "").toLowerCase()
+        const key = `${tnorm}@${Math.round(s.left ?? 0)},${Math.round(s.top ?? 0)}`
         srcByKey.set(key, s)
       }
       for (let i = 0; i < restored.length; i++) {
         const obj: any = restored[i]
         // Tenta match por type+position primeiro. Fallback pra index.
-        const posKey = `${obj.type}@${Math.round(obj.left ?? 0)},${Math.round(obj.top ?? 0)}`
+        const tnorm = String(obj.type ?? "").toLowerCase()
+        const posKey = `${tnorm}@${Math.round(obj.left ?? 0)},${Math.round(obj.top ?? 0)}`
         const src = srcByKey.get(posKey) ?? snapObjectsNoBg[i]
         if (!src) continue
         // CRITICO: Fabric loadFromJSON pode NÃO restaurar props customizadas

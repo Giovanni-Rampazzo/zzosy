@@ -47,8 +47,11 @@ async function renderPieceThumb(
     const offsetX = (pieceW - matrixW * scale) / 2
     const offsetY = (pieceH - matrixH * scale) / 2
 
-    // Serializa matriz e carrega no canvas da peca
-    const json = matrixCanvas.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage"])
+    // Serializa matriz e carrega no canvas da peca.
+    // Usa toObject (nao toJSON): em Fabric v6 Canvas.toJSON() ignora silenciosamente
+    // o array de props extras — soh toObject(props) repassa pra _toObjectMethod.
+    // Sem isso, __assetId/__assetLabel se perdiam na clonagem matriz->peca.
+    const json = (matrixCanvas as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage"])
     await new Promise<void>((resolve) => {
       const r = fc.loadFromJSON(json, () => resolve())
       if (r && typeof r.then === "function") r.then(() => resolve())
