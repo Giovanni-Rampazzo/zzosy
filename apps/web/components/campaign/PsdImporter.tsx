@@ -1145,6 +1145,13 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       // payload pra UI alertar o user que precisa fazer upload das ausentes.
       const fontsList = Array.from(fontsRequired).sort()
       fd.append("fontsRequired", JSON.stringify(fontsList))
+      // Auto-carrega fontes do PSD via Google Fonts (best-effort) ANTES de
+      // gerar peças. Sem isso, ao abrir o editor a fonte cai em fallback
+      // (Arial) ate o usuario fazer upload manual da brand font.
+      try {
+        const { ensurePsdFontsReady } = await import("@/lib/google-fonts")
+        ensurePsdFontsReady(fontsList)
+      } catch (e) { console.warn("[psd] ensurePsdFontsReady falhou:", e) }
       imageBlobs.forEach((b, i) => fd.append("images", b, `layer-${i}.png`))
       // Smart objects: bytes + metadados (mesmo index na lista do backend)
       fd.append("linkedMeta", JSON.stringify(linkedMeta))

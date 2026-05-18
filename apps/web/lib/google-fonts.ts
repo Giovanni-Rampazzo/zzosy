@@ -82,6 +82,49 @@ export function loadGoogleFont(fontName: string): void {
   document.head.appendChild(link)
 }
 
+// Normaliza nome PSD/PostScript pra Google Font family. PSD entrega nomes tipo
+// "Helvetica-Bold", "OpenSans-Italic" ou "Montserrat-SemiBold" — Google Fonts
+// quer "Helvetica", "Open Sans", "Montserrat". Tira sufixos de peso/estilo e
+// converte camelCase pra "Camel Case" quando bate com family conhecida.
+export function normalizePsdFontToGoogle(psdName: string): string | null {
+  if (!psdName) return null
+  // Remove sufixos comuns de peso/estilo (PostScript convention -Weight, -Style)
+  let base = psdName.replace(/-(Thin|ExtraLight|UltraLight|Light|Regular|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy)(Italic|Oblique)?$/i, "")
+                    .replace(/-(Italic|Oblique)$/i, "")
+                    .trim()
+  // Insere espaco em camelCase: "OpenSans" → "Open Sans", "DMSans" → "DM Sans"
+  const spaced = base.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+  // Procura match case-insensitive na lista de Google Fonts conhecidas
+  const match = GOOGLE_FONTS.find(f => f.name.toLowerCase() === spaced.toLowerCase())
+  if (match) return match.name
+  // Fallback: retorna o nome normalizado mesmo sem match (Google pode ter,
+  // so nao esta na nossa lista curada). loadGoogleFont retornara 404 silencioso
+  // se nao existir — sem efeito colateral.
+  return spaced
+}
+
+// Lista de fontes do sistema que NAO precisam ir pro Google (estao no SO).
+const SYSTEM_FONTS = new Set([
+  "Arial", "Helvetica", "Times New Roman", "Times", "Courier New", "Courier",
+  "Verdana", "Georgia", "Tahoma", "Trebuchet MS", "Impact", "Comic Sans MS",
+  "Lucida Sans", "Lucida Console", "Palatino", "Garamond", "Bookman",
+  "Avenir", "Avenir Next", "Futura", "Optima", "Geneva", "Monaco",
+  "Menlo", "Consolas", "Cambria", "Calibri", "Segoe UI",
+])
+
+// Auto-carrega fontes do PSD via Google Fonts (best-effort). Pula system fonts
+// (Arial/Helvetica/etc) que ja estao no browser. Para fontes nao-Google nem
+// system, deixa o alerta de "missing fonts" do PsdImporter fazer o seu papel.
+export function ensurePsdFontsReady(fontNames: string[]): void {
+  if (typeof document === "undefined") return
+  for (const fn of fontNames) {
+    const family = normalizePsdFontToGoogle(fn)
+    if (!family) continue
+    if (SYSTEM_FONTS.has(family)) continue
+    loadGoogleFont(family)
+  }
+}
+
 /**
  * Arquivo de fonte custom dentro da familia.
  * weight 100-900, style normal/italic, dataUrl base64 (TTF/OTF/WOFF).
