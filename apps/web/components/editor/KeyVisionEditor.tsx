@@ -538,6 +538,63 @@ function spansToTextboxData(spans: TextSpan[]) {
 }
 
 /**
+ * Pre-compoe uma raster mask DENTRO de uma imagem fonte. Fabric v6 renderiza
+ * Image clipPath como silhueta solida (fill=black) — ignora alpha do PNG da
+ * mask. A unica forma de obter alpha-mask real eh aplicar a mascara no
+ * BITMAP antes de criar a FabricImage.
+ *
+ * @param sourceImg HTMLImageElement com a imagem do asset (ja carregada)
+ * @param maskRaster { dataUrl, posX, posY, width, height } — em canvas coords
+ * @param assetPosX/Y posicao do asset no canvas (pra calcular offset relativo)
+ * @param assetW/H dimensoes naturais do asset
+ * @param inverted se true, inverte o alpha (mascara mostra o oposto)
+ * @returns HTMLCanvasElement com o asset mascarado, ou null em caso de erro
+ */
+async function composeRasterMaskIntoImage(
+  sourceImg: HTMLImageElement,
+  maskRaster: { dataUrl: string; posX: number; posY: number; width: number; height: number },
+  assetPosX: number,
+  assetPosY: number,
+  assetW: number,
+  assetH: number,
+  inverted: boolean,
+): Promise<HTMLCanvasElement | null> {
+  if (typeof document === "undefined") return null
+  // Carrega a imagem da mask
+  const maskImg = await new Promise<HTMLImageElement | null>((resolve) => {
+    const im = new Image()
+    im.crossOrigin = "anonymous"
+    im.onload = () => resolve(im)
+    im.onerror = () => resolve(null)
+    im.src = maskRaster.dataUrl
+  })
+  if (!maskImg) return null
+
+  // Cria canvas do tamanho da imagem do asset.
+  const canvas = document.createElement("canvas")
+  canvas.width = assetW
+  canvas.height = assetH
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return null
+
+  // Etapa 1: desenha a imagem do asset normal.
+  ctx.drawImage(sourceImg, 0, 0, assetW, assetH)
+
+  // Etapa 2: aplica a mascara usando globalCompositeOperation.
+  // 'destination-in': keeps destination (asset) where mask is opaque, removes where mask is transparent.
+  // 'destination-out' (inverted): removes destination where mask is opaque.
+  ctx.globalCompositeOperation = inverted ? "destination-out" : "destination-in"
+  // Posicao da mask relativa ao asset:
+  const maskOffsetX = maskRaster.posX - assetPosX
+  const maskOffsetY = maskRaster.posY - assetPosY
+  // Mask pode ter dimensoes diferentes da fonte; drawImage com escala mantem fidelidade.
+  ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskRaster.width, maskRaster.height)
+  // Reset pra default (canvas pode ser reutilizado, mas geralmente nao — defensivo).
+  ctx.globalCompositeOperation = "source-over"
+  return canvas
+}
+
+/**
  * Cria 4 retangulos overlay que mascaram TUDO fora da peca dentro do
  * canvas visivel. A peca (cw x ch) renderiza centralizada no canvas;
  * os overlays cobrem a area cinza/escura ao redor.
@@ -2696,7 +2753,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const img = await new Promise<any>((resolve, reject) => {
             const el = new window.Image()
             el.crossOrigin = "anonymous"
-            el.onload = () => {
+            el.onload = async () => {
               const naturalW = el.naturalWidth || el.width || 1
               const naturalH = el.naturalHeight || el.height || 1
               let sx: number, sy: number
@@ -2713,7 +2770,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 const ratio = width / naturalW
                 sx = ratio; sy = ratio
               }
-              resolve(new FabricImage(el, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle, ...psdExtraProps }))
+              // Bake raster mask no bitmap. Fabric v6 renderiza Image clipPath
+              // como silhueta solida (ignora alpha do PNG da mask) — o jeito
+              // de obter alpha-mask real eh pre-compor a mascara DENTRO do
+              // bitmap antes de criar a FabricImage. So aplicamos pra mask
+              // type=raster; vector/clipping continuam usando clipPath
+              // (que respeitam geometric shape no Fabric).
+              let sourceForFabric: HTMLImageElement | HTMLCanvasElement = el
+              if (layer?.mask?.type === "raster" && layer.mask.enabled !== false && layer.mask.raster?.dataUrl) {
+                try {
+                  const composed = await composeRasterMaskIntoImage(el, layer.mask.raster, posX, posY, naturalW, naturalH, !!layer.mask.inverted)
+                  if (composed) sourceForFabric = composed
+                } catch (e) { srvLog("mask-COMPOSE-FAIL", { err: String((e as any)?.message ?? e) }) }
+              }
+              resolve(new FabricImage(sourceForFabric, { left: posX, top: posY, scaleX: sx, scaleY: sy, angle, ...psdExtraProps }))
             }
             el.onerror = reject
             el.src = imgSrc
