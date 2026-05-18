@@ -61,14 +61,31 @@ function collectAllLayers(
   parentHidden = false,
   inheritedRawMask: RawMaskRef | null = null,
   groupPath: string[] = [],
-): Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any }> {
-  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any }> = []
+): Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any; adjustments: any[] }> {
+  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any; adjustments: any[] }> = []
   // PS clipping chain: layer com clipping=true clipa pela primeira layer
   // NAO-clipping IMEDIATAMENTE ABAIXO no painel = no mesmo grupo. "Abaixo no
   // painel" = INDICE ANTERIOR no array de children (PSD armazena bottom→top).
   // Multiplas clipping consecutivas clipam pela MESMA base.
   let clipBaseInThisFolder: any = null
-  for (const layer of layers) {
+  // Pre-scan: pra cada index, lista de adjustments que afetam esse layer.
+  // PS: adjustment afeta TUDO abaixo dele no mesmo grupo. ag-psd entrega
+  // children[0]=baixo, children[N-1]=topo, entao adjustments em indices >
+  // current affect current.
+  function adjustmentsForIndex(i: number): any[] {
+    const adjs: any[] = []
+    for (let j = i + 1; j < layers.length; j++) {
+      const sib = layers[j]
+      if (!sib?.adjustment) continue
+      // Adjustment com clipping=true so afeta a layer diretamente abaixo dela.
+      // Se nao for nosso caso (i+1 != j), pula. Se for, aceita.
+      if (sib.clipping && j !== i + 1) continue
+      adjs.push(sib.adjustment)
+    }
+    return adjs
+  }
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]
     const effectiveHidden = parentHidden || layer.hidden === true
     if (effectiveHidden) continue // SKIP filho de folder hidden
 
@@ -118,9 +135,13 @@ function collectAllLayers(
     // Layer-folha: detecta clipping (precisa referenciar a base pra recortar)
     const isClipping = layer.clipping === true
     const isAdjustment = !!layer.adjustment
-    const entry: any = { layer, inheritedRawMask, groupPath, clipBase: null }
+    const entry: any = { layer, inheritedRawMask, groupPath, clipBase: null, adjustments: [] }
     if (isClipping && clipBaseInThisFolder) {
       entry.clipBase = clipBaseInThisFolder
+    }
+    if (!isAdjustment) {
+      // Coleta adjustments do mesmo grupo que afetam esta layer
+      entry.adjustments = adjustmentsForIndex(i)
     }
     result.push(entry)
     // Layers adjustment NAO servem como base (sem conteudo visivel). Clipping
@@ -130,6 +151,120 @@ function collectAllLayers(
     }
   }
   return result
+}
+
+// Aplica uma lista de adjustment layers ao canvas IN-PLACE.
+// Suporta os tipos mais comuns: levels, brightness/contrast, hue/saturation.
+// Os outros sao logados como skip pra preservar comportamento atual.
+function applyAdjustmentsToCanvas(canvas: HTMLCanvasElement, adjustments: any[]): void {
+  if (!adjustments || adjustments.length === 0) return
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return
+  const id = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const d = id.data
+  for (const adj of adjustments) {
+    if (!adj || !adj.type) continue
+    if (adj.type === "levels") applyLevels(d, adj)
+    else if (adj.type === "brightness/contrast" || adj.type === "brightnessContrast") applyBrightnessContrast(d, adj)
+    else if (adj.type === "hue/saturation" || adj.type === "hueSaturation") applyHueSaturation(d, adj)
+    // outros: invert, posterize, threshold, curves, color balance — skip por enquanto
+  }
+  ctx.putImageData(id, 0, 0)
+}
+
+// Levels: shadowInput, highlightInput, midtoneInput(gamma), shadowOutput, highlightOutput
+// Aplica RGB composite primeiro, depois canais individuais.
+function applyLevels(data: Uint8ClampedArray, adj: any): void {
+  const apply = (val: number, ch: any) => {
+    if (!ch) return val
+    const sI = ch.shadowInput ?? 0
+    const hI = ch.highlightInput ?? 255
+    const sO = ch.shadowOutput ?? 0
+    const hO = ch.highlightOutput ?? 255
+    const gamma = ch.midtoneInput ?? 1
+    const range = Math.max(1, hI - sI)
+    let norm = (val - sI) / range
+    if (norm < 0) norm = 0; else if (norm > 1) norm = 1
+    if (gamma !== 1 && gamma > 0) norm = Math.pow(norm, 1 / gamma)
+    return sO + norm * (hO - sO)
+  }
+  for (let i = 0; i < data.length; i += 4) {
+    // RGB composite primeiro (aplicado a cada canal)
+    data[i] = apply(data[i], adj.rgb)
+    data[i + 1] = apply(data[i + 1], adj.rgb)
+    data[i + 2] = apply(data[i + 2], adj.rgb)
+    // Canais individuais depois
+    data[i] = apply(data[i], adj.red)
+    data[i + 1] = apply(data[i + 1], adj.green)
+    data[i + 2] = apply(data[i + 2], adj.blue)
+  }
+}
+
+// Brightness/Contrast: brightness/contrast valores tipicos -150 a 150 em PSD.
+function applyBrightnessContrast(data: Uint8ClampedArray, adj: any): void {
+  const b = (adj.brightness ?? 0) // -150 a 150
+  const c = (adj.contrast ?? 0)   // -150 a 150
+  // Contrast: scale pivoted em 128. Brightness: shift linear.
+  const cFactor = (c >= 0) ? 1 + c / 100 : 1 + c / 200
+  for (let i = 0; i < data.length; i += 4) {
+    for (let ch = 0; ch < 3; ch++) {
+      let v = data[i + ch] + b
+      v = (v - 128) * cFactor + 128
+      data[i + ch] = v < 0 ? 0 : v > 255 ? 255 : v
+    }
+  }
+}
+
+// Hue/Saturation: master ou per-color shifts. Implementacao basica do master:
+// hue (-180 a 180), saturation (-100 a 100), lightness (-100 a 100).
+function applyHueSaturation(data: Uint8ClampedArray, adj: any): void {
+  const master = adj.master ?? adj
+  const hueShift = (master.hue ?? 0) / 360
+  const satShift = (master.saturation ?? 0) / 100
+  const lightShift = (master.lightness ?? 0) / 100
+  if (hueShift === 0 && satShift === 0 && lightShift === 0) return
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255
+    // RGB → HSL
+    const max = Math.max(r, g, b), min = Math.min(r, g, b)
+    let h = 0, s = 0
+    const l = (max + min) / 2
+    if (max !== min) {
+      const d = max - min
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0)
+      else if (max === g) h = (b - r) / d + 2
+      else h = (r - g) / d + 4
+      h /= 6
+    }
+    // Aplica shifts
+    h = (h + hueShift) % 1
+    if (h < 0) h += 1
+    let sNew = s + satShift * (satShift > 0 ? (1 - s) : s)
+    if (sNew < 0) sNew = 0; else if (sNew > 1) sNew = 1
+    let lNew = l + lightShift * (lightShift > 0 ? (1 - l) : l)
+    if (lNew < 0) lNew = 0; else if (lNew > 1) lNew = 1
+    // HSL → RGB
+    let r2 = lNew, g2 = lNew, b2 = lNew
+    if (sNew !== 0) {
+      const hueToRgb = (p: number, q: number, t: number) => {
+        if (t < 0) t += 1
+        if (t > 1) t -= 1
+        if (t < 1 / 6) return p + (q - p) * 6 * t
+        if (t < 1 / 2) return q
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+        return p
+      }
+      const q = lNew < 0.5 ? lNew * (1 + sNew) : lNew + sNew - lNew * sNew
+      const p = 2 * lNew - q
+      r2 = hueToRgb(p, q, h + 1 / 3)
+      g2 = hueToRgb(p, q, h)
+      b2 = hueToRgb(p, q, h - 1 / 3)
+    }
+    data[i] = Math.round(r2 * 255)
+    data[i + 1] = Math.round(g2 * 255)
+    data[i + 2] = Math.round(b2 * 255)
+  }
 }
 
 // Converte um BezierPath do ag-psd em SVG path "d=" attribute.
@@ -965,7 +1100,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         guidToIndex.set(guid, idx)
       }
 
-      for (const { layer, inheritedRawMask, groupPath, clipBase } of allLayerEntries) {
+      for (const { layer, inheritedRawMask, groupPath, clipBase, adjustments } of allLayerEntries) {
         const name = (layer.name ?? "").trim()
         // Fix #6: filtra a "Background" auto-criada pelo PS (raster top-level
         // sem placedLayer), mas deixa passar Smart Objects intencionais que o
@@ -1299,7 +1434,25 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             // Re-renderizamos vector UNDER + ag-psd canvas POR CIMA pra garantir
             // o visual completo (escudo verde do piloto Sicredi caía nesse caso).
             const renderedShape = renderShapeLayerCanvas(layer, width, height, left, top)
-            const preBake: HTMLCanvasElement = renderedShape ?? (layer.canvas as HTMLCanvasElement)
+            const preBakeOriginal: HTMLCanvasElement = renderedShape ?? (layer.canvas as HTMLCanvasElement)
+            // ADJUSTMENT LAYERS: aplica Levels/Brightness/Hue+Sat antes do bake.
+            // Em PS, adjustments no mesmo grupo (acima desta layer) modificam
+            // os pixels DESTA layer. Clona o canvas pra nao mutar o original.
+            let preBake = preBakeOriginal
+            if (adjustments && adjustments.length > 0) {
+              try {
+                const cloned = document.createElement("canvas")
+                cloned.width = preBakeOriginal.width
+                cloned.height = preBakeOriginal.height
+                const cctx = cloned.getContext("2d")
+                if (cctx) {
+                  cctx.drawImage(preBakeOriginal, 0, 0)
+                  applyAdjustmentsToCanvas(cloned, adjustments)
+                  preBake = cloned
+                  console.log("[psd-adjust] aplicado", adjustments.length, "adjustment(s) em", name, "→", adjustments.map(a => a.type).join(","))
+                }
+              } catch (e) { console.warn("[psd-adjust] falha em", name, e) }
+            }
             // Bake colorOverlay/gradientOverlay/dropShadow/outerGlow no bitmap.
             // Fabric não tem source-atop tint pra image fill — só fazendo bake
             // o logo Sicredi (outline raster + colorOverlay verde) aparece com
