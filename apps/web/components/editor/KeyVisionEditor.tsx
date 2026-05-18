@@ -2209,15 +2209,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Solucao: filtra BG dos snapObjects tambem antes de iterar.
       const restored = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
       const snapObjectsNoBg = snapObjects.filter((s: any) => !s?.__isBg && !s?.__isBleedOverlay)
-      // Sanidade: se a contagem de objetos restaurados não bate com o que tem
-      // no snap, há mismatch que vai bagunçar o iterate-by-index abaixo. Loga
-      // pra detectar bugs futuros do loadFromJSON.
+      // Sanidade: log detalhado pra debugar undo perdendo layers.
+      srvLog("undo-RESTORE-COUNTS", {
+        restored: restored.length,
+        snap: snapObjectsNoBg.length,
+        restoredTypes: restored.map((o: any) => `${o.type}:${o.__assetId ?? "noId"}`),
+        snapTypes: snapObjectsNoBg.map((s: any) => `${s.type}:${s.__assetId ?? "noId"}`),
+      })
       if (restored.length !== snapObjectsNoBg.length) {
         console.warn("[applySnapshot] mismatch: restored=", restored.length, "vs snap=", snapObjectsNoBg.length)
       }
+      // ESTRATEGIA NOVA: em vez de iterar por INDEX (fragil — ordem do loadFromJSON
+      // pode diferir do snap), mapeia src por POSITION+TYPE pra parear com o
+      // objeto restaurado mais provavel. Falhas (sem match) caem pro index
+      // positional como fallback.
+      const srcByKey = new Map<string, any>()
+      for (const s of snapObjectsNoBg) {
+        if (!s) continue
+        const key = `${s.type}@${Math.round(s.left ?? 0)},${Math.round(s.top ?? 0)}`
+        srcByKey.set(key, s)
+      }
       for (let i = 0; i < restored.length; i++) {
         const obj: any = restored[i]
-        const src = snapObjectsNoBg[i]
+        // Tenta match por type+position primeiro. Fallback pra index.
+        const posKey = `${obj.type}@${Math.round(obj.left ?? 0)},${Math.round(obj.top ?? 0)}`
+        const src = srcByKey.get(posKey) ?? snapObjectsNoBg[i]
         if (!src) continue
         // CRITICO: Fabric loadFromJSON pode NÃO restaurar props customizadas
         // mesmo passando-as no toJSON. Restaurar EXPLICITAMENTE preservando
