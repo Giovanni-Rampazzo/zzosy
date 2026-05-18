@@ -174,12 +174,7 @@ function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 
     conv.height = Math.max(1, Math.round(finalH))
     const cctx = conv.getContext("2d")
     if (!cctx) throw new Error("no 2d ctx")
-    // Preenche TODO o canvas com a defaultColor convertida pra alpha:
-    // defaultColor=255 (branco no PSD) -> alpha=255 (opaco/visivel).
-    // defaultColor=0 (preto) -> alpha=0 (transparente/escondido).
-    cctx.fillStyle = `rgba(255,255,255,${defaultColor / 255})`
-    cctx.fillRect(0, 0, conv.width, conv.height)
-    // Agora carrega o bbox real da mascara em cima, convertendo grayscale->alpha.
+    // Cria sub-canvas com grayscale convertido em alpha (white RGB, alpha=gray*srcA).
     const srcCtx = src.getContext("2d")
     if (!srcCtx) throw new Error("no src ctx")
     const srcData = srcCtx.getImageData(0, 0, w, h)
@@ -196,9 +191,18 @@ function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 
       od[i + 3] = Math.round((gray * srcA) / 255)
     }
     subCtx.putImageData(subData, 0, 0)
-    // Desenha o sub-bbox no canvas final usando 'source-over' (cobre o
-    // defaultColor onde a mascara tem dados reais).
+    // ORDEM CRITICA: 1. drawImage do sub-canvas (preserva alpha 0 do hole).
+    // 2. Preenche 4 strips AO REDOR do bbox com defaultColor — NUNCA fillRect
+    // global antes, porque source-over default nao apaga pixels (transparentes
+    // do hole nao subscreveriam a fill, resultando em mascara 100% opaca).
     cctx.drawImage(subCanvas, drawX, drawY)
+    cctx.fillStyle = `rgba(255,255,255,${defaultColor / 255})`
+    const subEndX = drawX + w
+    const subEndY = drawY + h
+    if (drawY > 0) cctx.fillRect(0, 0, conv.width, drawY)                                     // top strip
+    if (subEndY < conv.height) cctx.fillRect(0, subEndY, conv.width, conv.height - subEndY)   // bottom strip
+    if (drawX > 0) cctx.fillRect(0, drawY, drawX, h)                                          // left strip
+    if (subEndX < conv.width) cctx.fillRect(subEndX, drawY, conv.width - subEndX, h)          // right strip
     outDataUrl = conv.toDataURL("image/png")
   } catch (e) {
     console.warn("[psd-mask] falha convertendo grayscale→alpha, fallback raw:", e)
