@@ -989,7 +989,12 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             posX: left, posY: top, width: textWidth, height: textHeight, zIndex,
             lastOverride,
             mask: assetMask,
-            hidden: layer.hidden === true ? true : undefined,
+            // Clipping layers entram OCULTAS: sem implementar o compositing
+            // correto (PS clipa pela layer-de-baixo no mesmo grupo), elas
+            // renderizam cruas sobre a foto e poluem o visual (ex: "Camada 2"
+            // do PSD Seguro Viagem = 2 blobs escuros). Mantemos no DB pro
+            // round-trip; user pode mostrar manualmente via toggle do olho.
+            hidden: (layer.hidden === true || (layer as any).clipping === true) ? true : undefined,
             locked: (layer as any).transparencyProtected === true ? true : undefined,
             opacity: psdOpacity,
             blendMode: psdBlend,
@@ -1046,7 +1051,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               width: width + bakePad * 2, height: height + bakePad * 2,
               zIndex,
               mask: assetMask,
-              hidden: layer.hidden === true ? true : undefined,
+              // Ver TEXT branch acima: clipping layers ocultas por default.
+              hidden: (layer.hidden === true || (layer as any).clipping === true) ? true : undefined,
               locked: (layer as any).transparencyProtected === true ? true : undefined,
               opacity: psdOpacity,
               blendMode: psdBlend,
