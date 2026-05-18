@@ -67,7 +67,23 @@ export function Button({ variant = "secondary", size = "md", loading, className,
   // clique abre o file picker do browser em vez de disparar onClick.
   if (onFileSelect) {
     return (
-      <label className={cls} title={(props.title as string) || undefined} style={{ ...(props.style || {}) }}>
+      <label className={cls}
+        title={(props.title as string) || undefined}
+        style={{ ...(props.style || {}), position: "relative", display: "inline-flex" }}
+        onClick={() => {
+          // Diagnostico: registra que o label foi clicado. Se o click chega aqui
+          // mas o file picker nao abre, eh problema do <input> escondido. Se nem
+          // o log aparece, eh CSS/overlay bloqueando o click.
+          try {
+            fetch("/api/debug/client-log", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tag: "Button-FILE-LABEL-CLICK", data: { disabled: disabled || loading, accept } }),
+              keepalive: true,
+            }).catch(() => {})
+          } catch {}
+        }}
+      >
         {loading ? <span className="animate-spin">⟳</span> : children}
         <input
           type="file"
@@ -77,6 +93,14 @@ export function Button({ variant = "secondary", size = "md", loading, className,
           tabIndex={-1}
           onChange={e => {
             const f = e.target.files?.[0]
+            try {
+              fetch("/api/debug/client-log", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tag: "Button-FILE-INPUT-CHANGE", data: { fileName: f?.name ?? null, size: f?.size ?? 0 } }),
+                keepalive: true,
+              }).catch(() => {})
+            } catch {}
             if (f) onFileSelect(f)
             e.target.value = ""
           }}

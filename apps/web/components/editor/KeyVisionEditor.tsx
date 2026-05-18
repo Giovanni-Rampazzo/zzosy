@@ -6418,27 +6418,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               />
               <span style={{ width: 36, textAlign: "right", color: "#bbb", fontFamily: "monospace" }}>{Math.round(bgOpacity * 100)}%</span>
             </div>
-            {/* Cores da marca (se cliente tiver) — aparecem antes dos defaults.
-                Usa o state local `brandColors` que ja sincroniza com client.brandColors. */}
-            {brandColors.length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Cores da marca</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {brandColors.map((c, idx) => (
-                    <div key={idx} onClick={() => changeBg(c.hex)}
-                      title={c.name ? `${c.name} (${c.hex})` : c.hex}
-                      style={{ width: 26, height: 26, borderRadius: 5, background: c.hex, cursor: "pointer", border: bgColor.toLowerCase() === c.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                  ))}
-                </div>
-              </div>
-            )}
-            <div style={{ fontSize: 10, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Padrão</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-              {SWATCHES.map(c => (
-                <div key={c} onClick={() => changeBg(c)}
-                  style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgColor.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-              ))}
-            </div>
+            {/* As secoes "Marca" + "Padrão" ja sao renderizadas mais acima
+                (linha ~6270, dentro do bloco do hex input). Tinha duplicacao
+                aqui vinda de merge de 2026-05-17 — removida. */}
             {/* BlendMode + Mask (BG-5) — controles avancados de PSD pro layer de BG */}
             {(() => {
               const layer = bgLayersRef.current[currentBgIdx()]
