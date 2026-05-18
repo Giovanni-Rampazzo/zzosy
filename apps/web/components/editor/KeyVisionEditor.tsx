@@ -2927,10 +2927,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Reordena layer absolutamente: pega o objeto e coloca em targetVisualIndex
   // (indice visual no painel, contando de cima pra baixo). Topo da lista = topo
   // do canvas (mais a frente). targetVisualIndex 0 = mais a frente.
-  function reorderLayer(obj: any, targetVisualIndex: number) {
+  function reorderLayer(obj: any, targetVisualIndex: number, targetGroupPath?: string[]) {
     const fc = fabricRef.current
     if (!fc || !obj) return
     if ((obj as any).__isBg) return // BG nao se move (igual Photoshop)
+    // Se um path explicito foi passado, atualiza groupPath do objeto. Permite
+    // entrar/sair de folders ao arrastar (Photoshop-style). Quando undefined,
+    // preserva o groupPath atual (apenas reordering z-stack).
+    if (targetGroupPath !== undefined) {
+      if (targetGroupPath.length === 0) delete (obj as any).__groupPath
+      else (obj as any).__groupPath = targetGroupPath
+    }
     // Painel mostra os objetos invertidos (topo painel = topo canvas), entao o
     // indice "real" na lista de objects (de tras pra frente) eh: (total-1) - visualIdx
     const objects = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
@@ -2965,6 +2972,63 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // Save sem debounce: acao deliberada do user, nao pode ser perdida se ele
     // sair da pagina logo apos clicar (cleanup do useEffect cancelaria o timer).
     doSaveNow()
+  }
+
+  /**
+   * Aplica visibilidade/lock em TODOS os layers cujo __groupPath comeca com
+   * folderPath (i.e. o layer esta dentro daquela pasta ou sub-pasta).
+   * Operacao em massa Photoshop-style: olho/cadeado no folder afeta filhos.
+   * value=true significa hidden/locked; false significa visible/unlocked.
+   */
+  function setGroupAttribute(folderPath: string[], attr: "__hidden" | "__locked", value: boolean) {
+    const fc = fabricRef.current
+    if (!fc) return
+    const allObjs = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+    let changed = 0
+    for (const o of allObjs) {
+      const op: string[] = Array.isArray((o as any).__groupPath) ? (o as any).__groupPath : []
+      if (op.length < folderPath.length) continue
+      let inside = true
+      for (let i = 0; i < folderPath.length; i++) {
+        if (op[i] !== folderPath[i]) { inside = false; break }
+      }
+      if (!inside) continue
+      ;(o as any)[attr] = value
+      if (attr === "__hidden") (o as any).set("visible", !value)
+      changed++
+    }
+    if (changed > 0) {
+      fc.renderAll()
+      refreshLayers(fc)
+      doSaveNow()
+    }
+  }
+  function isGroupHidden(folderPath: string[]): boolean {
+    // Folder eh considerado "hidden" se TODOS os filhos diretos+indiretos estao hidden.
+    const fc = fabricRef.current
+    if (!fc) return false
+    const children = fc.getObjects().filter((o: any) => {
+      if (o.__isBg || o.__isBleedOverlay) return false
+      const op: string[] = Array.isArray(o.__groupPath) ? o.__groupPath : []
+      if (op.length < folderPath.length) return false
+      for (let i = 0; i < folderPath.length; i++) if (op[i] !== folderPath[i]) return false
+      return true
+    })
+    if (children.length === 0) return false
+    return children.every((o: any) => o.__hidden === true)
+  }
+  function isGroupLocked(folderPath: string[]): boolean {
+    const fc = fabricRef.current
+    if (!fc) return false
+    const children = fc.getObjects().filter((o: any) => {
+      if (o.__isBg || o.__isBleedOverlay) return false
+      const op: string[] = Array.isArray(o.__groupPath) ? o.__groupPath : []
+      if (op.length < folderPath.length) return false
+      for (let i = 0; i < folderPath.length; i++) if (op[i] !== folderPath[i]) return false
+      return true
+    })
+    if (children.length === 0) return false
+    return children.every((o: any) => o.__locked === true)
   }
 
   function toggleLayerLock(obj: any) {
@@ -6045,11 +6109,36 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             return (
               <React.Fragment key={`row-${i}`}>
                 {/* Folder headers novos pra esta linha (entradas em pastas) */}
-                {headers.map((h: { key: string; name: string; depth: number; collapsed: boolean }) => (
+                {headers.map((h: { key: string; name: string; depth: number; collapsed: boolean }) => {
+                  // Path completo deste folder pra calculo de visibility/lock em massa
+                  // + drop target. Reconstroi do path do layer corrente.
+                  const path: string[] = (Array.isArray(layer.groupPath) ? layer.groupPath : []).slice(0, h.depth + 1)
+                  const folderHidden = isGroupHidden(path)
+                  const folderLocked = isGroupLocked(path)
+                  return (
                   <div key={`folder-${h.key}-${i}`}
                     onClick={() => toggleFolder(h.key)}
+                    onDragOver={e => {
+                      // Folder header eh drop target: arrastar um layer pra cima
+                      // dele = mover pra DENTRO desta pasta (Photoshop-style).
+                      if (dragLayerIdx === null) return
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = "move"
+                    }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      const src = dragLayerIdx
+                      setDragLayerIdx(null); setDragOverIdx(null)
+                      if (src === null) return
+                      const srcLayer = layers[src]
+                      if (!srcLayer) return
+                      // Move o layer pra dentro desta pasta. Posicao visual = i
+                      // (logo apos o folder header, como se fosse o primeiro item
+                      // do folder pelo z-stack atual).
+                      reorderLayer(srcLayer.obj, i, path)
+                    }}
                     style={{
-                      display: "flex", alignItems: "center", gap: 6,
+                      display: "flex", alignItems: "center", gap: 4,
                       padding: `6px 8px 6px ${12 + h.depth * 12}px`,
                       cursor: "pointer",
                       fontSize: 10, fontWeight: 700,
@@ -6058,12 +6147,47 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       background: "rgba(255,255,255,0.02)",
                       borderTop: "1px solid #222",
                     }}
-                    title={`${h.collapsed ? "Expandir" : "Recolher"} folder do PSD`}>
+                    title={`${h.collapsed ? "Expandir" : "Recolher"} folder do PSD · arraste layer pra adicionar a esta pasta`}>
                     <span style={{ width: 10, display: "inline-block" }}>{h.collapsed ? "▶" : "▼"}</span>
+                    {/* Olho do folder — toggle em massa pros filhos */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setGroupAttribute(path, "__hidden", !folderHidden) }}
+                      title={folderHidden ? "Mostrar todos os layers da pasta" : "Esconder todos os layers da pasta"}
+                      style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", display: "flex", alignItems: "center", color: folderHidden ? "#444" : "#bbb" }}>
+                      {folderHidden ? (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                          <line x1="1" y1="1" x2="23" y2="23"/>
+                        </svg>
+                      ) : (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                          <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                      )}
+                    </button>
+                    {/* Cadeado do folder — toggle em massa pros filhos */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setGroupAttribute(path, "__locked", !folderLocked) }}
+                      title={folderLocked ? "Destravar pasta" : "Travar pasta"}
+                      style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", display: "flex", alignItems: "center", color: folderLocked ? "#F5C400" : "#444" }}>
+                      {folderLocked ? (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                      ) : (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                          <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                        </svg>
+                      )}
+                    </button>
                     <span style={{ fontSize: 10 }}>📁</span>
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</span>
                   </div>
-                ))}
+                  )
+                })}
                 {/* Layer row (escondido se algum ancestral estiver collapsed) */}
                 {!hiddenByCollapse && (
               <div
@@ -6090,8 +6214,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   if (src === null || src === i) return
                   // src e i sao indices VISUAIS (topo painel = topo canvas).
                   // Move o objeto que estava em layers[src] pra posicao visual i.
+                  // groupPath: assume o group do layer alvo (Photoshop: arrastar
+                  // pra dentro de outro layer dentro de uma pasta = entra naquela
+                  // pasta). Se o alvo nao esta em pasta, sai da pasta.
                   const srcLayer = layers[src]
-                  if (srcLayer) reorderLayer(srcLayer.obj, i)
+                  const targetPath: string[] = Array.isArray(layer.groupPath) ? layer.groupPath : []
+                  if (srcLayer) reorderLayer(srcLayer.obj, i, targetPath)
                 }}
                 onClick={() => { if (isEditingThis) return; fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
                 style={{
