@@ -1840,7 +1840,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               // corretos. Async porque mascara raster precisa carregar Image.
               if (created && layer.mask) {
                 const { Image: FabImage, Path } = await import("fabric")
-                await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+                try {
+                  await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+                  ;(created as any).dirty = true
+                  // Forca renderAll APOS mascara aplicada. Sem isso, clipPath
+                  // pode ficar 'mudo' ate proxima interacao (Fabric cache de
+                  // render do objeto nao invalida automaticamente quando se
+                  // seta clipPath programaticamente).
+                  fc.requestRenderAll?.()
+                } catch (e) {
+                  srvLog("mask-APPLY-FAIL", { type: layer.mask?.type, label: (created as any)?.__assetLabel, err: String((e as any)?.message ?? e) })
+                }
               }
               if (created) applyHiddenLockedToObject(created, layer)
               continue
@@ -1853,7 +1863,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const created = objs[objs.length - 1] as any
               if (created && layer.mask) {
                 const { Image: FabImage, Path } = await import("fabric")
-                await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+                try {
+                  await applyMaskToFabricObject({ Image: FabImage, Path }, created, layer.mask)
+                  ;(created as any).dirty = true
+                  // Forca renderAll APOS mascara aplicada. Sem isso, clipPath
+                  // pode ficar 'mudo' ate proxima interacao (Fabric cache de
+                  // render do objeto nao invalida automaticamente quando se
+                  // seta clipPath programaticamente).
+                  fc.requestRenderAll?.()
+                } catch (e) {
+                  srvLog("mask-APPLY-FAIL", { type: layer.mask?.type, label: (created as any)?.__assetLabel, err: String((e as any)?.message ?? e) })
+                }
               }
               if (created) applyHiddenLockedToObject(created, layer)
               continue
@@ -1940,7 +1960,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // Aplica mascara em layer da matriz tambem (estava so na peca antes).
             if (created && (layer as any).mask) {
               const { Image: FabImage, Path } = await import("fabric")
-              await applyMaskToFabricObject({ Image: FabImage, Path }, created, (layer as any).mask)
+              try {
+                await applyMaskToFabricObject({ Image: FabImage, Path }, created, (layer as any).mask)
+                ;(created as any).dirty = true
+                fc.requestRenderAll?.()
+              } catch (e) {
+                srvLog("mask-APPLY-FAIL-MATRIX", { type: (layer as any).mask?.type, label: (created as any)?.__assetLabel, err: String((e as any)?.message ?? e) })
+              }
             }
             if (created) applyHiddenLockedToObject(created, layer)
           }
