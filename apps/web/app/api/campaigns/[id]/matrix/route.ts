@@ -1,29 +1,11 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
-export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-  console.log("GET matrix - session:", session?.user?.email, "id:", id);
-  const matrix = await prisma.matrix.findUnique({ where: { campaignId: id } });
-  return NextResponse.json({ data: matrix?.data ?? null });
+// Modelo `matrix` foi substituido por KeyVision no schema atual. Endpoint
+// mantido como stub pra responder 410 Gone caso algum cliente legado ainda
+// chame (em vez de 500). Nada no codebase atual aponta pra ele.
+export async function GET() {
+  return NextResponse.json({ error: "Endpoint deprecado — use /api/campaigns/[id]/key-vision" }, { status: 410 });
 }
-
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-  console.log("POST matrix - session:", session?.user?.email, "id:", id);
-  const { data } = await req.json();
-  await prisma.matrix.upsert({
-    where: { campaignId: id },
-    update: { data },
-    create: { campaignId: id, data },
-  });
-  return NextResponse.json({ ok: true });
+export async function POST() {
+  return NextResponse.json({ error: "Endpoint deprecado — use /api/campaigns/[id]/key-vision" }, { status: 410 });
 }
