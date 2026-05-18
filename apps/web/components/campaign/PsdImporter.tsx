@@ -122,12 +122,21 @@ function vectorMaskToSvgPath(vm: any): { d: string; bbox: { minX: number; minY: 
   return { d: parts.join(" "), bbox: { minX, minY, maxX, maxY } }
 }
 
-function buildRasterAssetMask(m: any) {
-  const mLeft = m.left ?? 0
-  const mTop = m.top ?? 0
+function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 0) {
+  // PSD raster mask data: 'left'/'top'/'right'/'bottom' podem ser:
+  //  - Absolute canvas coords (positionRelativeToLayer = false, default)
+  //  - Relative to layer top-left (positionRelativeToLayer = true)
+  // O ag-psd expoe a flag mas o codigo antigo tratava tudo como absolute,
+  // deslocando masks com flag=true (apareciam fora do lugar → blobs sem
+  // mask ou mask invadindo regiao errada visualmente). Aplicamos offset do
+  // layer sempre que a flag esta ativa.
+  const offX = m.positionRelativeToLayer ? layerLeft : 0
+  const offY = m.positionRelativeToLayer ? layerTop : 0
   const src = m.canvas as HTMLCanvasElement
-  const mRight = m.right ?? (mLeft + src.width)
-  const mBottom = m.bottom ?? (mTop + src.height)
+  const mLeft = (m.left ?? 0) + offX
+  const mTop = (m.top ?? 0) + offY
+  const mRight = (m.right ?? ((m.left ?? 0) + src.width)) + offX
+  const mBottom = (m.bottom ?? ((m.top ?? 0) + src.height)) + offY
   // PSD raster mask: grayscale onde branco=opaco, preto=transparente. Fabric
   // clipPath usa o CANAL ALPHA (não grayscale RGB) pra blending parcial. Sem
   // converter, masks com feather/blur do PS chegavam BINARIAS (borda dura) no
@@ -691,9 +700,11 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // Salvamos no formato LayerMask pra reproduzir no editor e re-exportar.
         let assetMask: any = null
         // Raster mask: layer.mask.canvas tem o grayscale (preto = transparente).
+        // Passa layer.left/top pra converter coords relativas quando o flag
+        // positionRelativeToLayer do PSD estiver ativo.
         if (layer.mask?.canvas) {
           try {
-            assetMask = buildRasterAssetMask(layer.mask)
+            assetMask = buildRasterAssetMask(layer.mask, left, top)
           } catch (e) { console.warn("[psd-mask] falha lendo raster mask de", name, e) }
         }
         // Vector mask: layer.vectorMask tem paths bezier completos. Convertemos

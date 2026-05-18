@@ -2077,17 +2077,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const fc = fabricRef.current
     if (!fc) return
     try {
-      // SAUDE: detecta objetos orfaos (sem __assetId nem __embedded) no canvas.
-      // Esses sao "fantasmas" — podem aparecer brevemente apos applySnapshot
-      // se loadFromJSON nao restaurou __assetId direito. NAO REMOVER aqui:
-      // se o user esta editando logo apos undo, o texto pode estar
-      // momentaneamente "orfao" pra Fabric mas o user ve no canvas.
-      // Em vez disso, SKIP o push (nao corrompe stack). O save em si tambem
-      // filtra orphans depois — vai re-detectar la se ainda for problema.
+      // ORPHAN HANDLING: antes este pushHistory pulava completamente se detectava
+      // orfaos (objetos sem __assetId/__embedded). Resultado: edicoes do usuario
+      // logo apos um undo ficavam ORA fora do stack, ORA dentro — undo seguinte
+      // pulava estados intermediarios e o usuario sentia "perdeu a cor".
+      // Estrategia nova: ainda detecta orfaos, mas em vez de pular o push,
+      // continua salvando. O snapshot pode incluir orfaos visualmente, mas:
+      //  1. saveNow filtra orfaos antes de gravar no banco (existing logica).
+      //  2. Undo→applySnapshot tem health-cleanup de orphans-pos-restore.
+      // Assim o undo stack mantem continuidade temporal — cada acao do user
+      // entra na pilha mesmo que o canvas tenha um orfao transitorio.
       const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
       if (orphans.length > 0) {
-        console.warn("[pushHistory] skip — encontrei", orphans.length, "objetos orfaos. Estado nao foi adicionado ao undo stack.")
-        return
+        console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
       const snap = JSON.stringify(fc.toJSON(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath"]))
       // Evita push duplicado quando snap eh igual ao topo
