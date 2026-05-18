@@ -29,6 +29,30 @@ function colorToHex(color: any): string {
 //    cobre a maioria dos casos sem regressao visivel).
 const INHERIT_FOLDER_MASK = true
 type RawMaskRef = { kind: "raster" | "vector"; data: any }
+
+// Computa bbox-uniao das layer-folhas (nao-folder, nao-hidden) de um subtree.
+// Usado pra resolver folder masks com positionRelativeToLayer=true: o PS usa
+// a uniao dos filhos como origem da mask quando a flag esta ativa.
+function computeLeafUnionBbox(layer: any): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  function walk(l: any, parentHidden = false) {
+    if (parentHidden || l.hidden === true) return
+    if (l.children?.length) {
+      for (const c of l.children) walk(c, false)
+      return
+    }
+    const l_ = l.left ?? 0, t_ = l.top ?? 0
+    const r_ = l.right ?? l_, b_ = l.bottom ?? t_
+    if (r_ > l_ && b_ > t_) {
+      minX = Math.min(minX, l_); minY = Math.min(minY, t_)
+      maxX = Math.max(maxX, r_); maxY = Math.max(maxY, b_)
+    }
+  }
+  if (Array.isArray(layer.children)) for (const c of layer.children) walk(c, false)
+  if (minX === Infinity) return null
+  return { minX, minY, maxX, maxY }
+}
+
 // groupPath: array de nomes de folder ancestrais (raiz → pai direto). Preserva
 // a hierarquia de groups do Photoshop pro round-trip. Sem isso, ao re-exportar
 // o PSD designers perdem toda a organização de pastas.
@@ -46,18 +70,33 @@ function collectAllLayers(
     if (layer.children?.length) {
       let folderMask: RawMaskRef | null = inheritedRawMask
       if (INHERIT_FOLDER_MASK) {
-        // CRITICO: positionRelativeToLayer=true em folder masks usa origem
-        // complexa (bbox da uniao dos filhos), nao a do canvas. Sem implementar
-        // essa logica corretamente, a mask aparece deslocada/cortando area
-        // errada (testado com PSD Seguro Viagem: folder "Design System Alta
-        // renda copy 2" posRel=true acaba escondendo o painel verde inteiro).
-        // Heuristica pragmatica: SO herda mask de folder em coords absolutas.
-        // Folders posRel=true ficam sem propagar — children renderizam soltos.
         const m = layer.mask
-        const isAbsolutePosRaster = m?.canvas && m.positionRelativeToLayer !== true
         const vm = (layer as any).vectorMask
-        if (isAbsolutePosRaster) {
-          folderMask = { kind: "raster", data: m }
+        if (m?.canvas) {
+          if (m.positionRelativeToLayer !== true) {
+            // Caso simples: coords absolutas
+            folderMask = { kind: "raster", data: m }
+          } else {
+            // Caso posRel=true: coords sao relativas ao bbox-uniao dos filhos.
+            // PS calcula a uniao das layer-folhas visiveis do folder e usa
+            // como origem. Sem essa adaptacao, mask aparece com offset errado
+            // (testado: folder "Design System Alta renda copy 2" do PSD
+            // Seguro Viagem tinha mask posRel=true que sem fix vazava pro
+            // topo do canvas em vez de cobrir o painel inferior).
+            const union = computeLeafUnionBbox(layer)
+            if (union) {
+              const adjustedMask = {
+                ...m,
+                left: (m.left ?? 0) + union.minX,
+                top: (m.top ?? 0) + union.minY,
+                right: (m.right ?? 0) + union.minX,
+                bottom: (m.bottom ?? 0) + union.minY,
+                positionRelativeToLayer: false, // pos-conversao: agora absolutas
+              }
+              folderMask = { kind: "raster", data: adjustedMask }
+            }
+            // Se nao conseguiu computar union, deixa sem mask (fallback seguro)
+          }
         } else if (vm?.paths?.length) {
           folderMask = { kind: "vector", data: vm }
         }
@@ -134,14 +173,10 @@ function vectorMaskToSvgPath(vm: any): { d: string; bbox: { minX: number; minY: 
   return { d: parts.join(" "), bbox: { minX, minY, maxX, maxY } }
 }
 
-function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 0, layerRight?: number, layerBottom?: number) {
-  // PSD raster mask data: 'left'/'top'/'right'/'bottom' podem ser:
-  //  - Absolute canvas coords (positionRelativeToLayer = false, default)
-  //  - Relative to layer top-left (positionRelativeToLayer = true)
-  // O ag-psd expoe a flag mas o codigo antigo tratava tudo como absolute,
-  // deslocando masks com flag=true (apareciam fora do lugar → blobs sem
-  // mask ou mask invadindo regiao errada visualmente). Aplicamos offset do
-  // layer sempre que a flag esta ativa.
+// Constroi APENAS o canvas + bounds da mask, sem serializar pra dataUrl.
+// Permite composicao (interseccao) entre multiplas masks no mesmo workspace.
+function buildRasterMaskCanvas(m: any, layerLeft: number = 0, layerTop: number = 0, layerRight?: number, layerBottom?: number)
+  : { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean } | null {
   const offX = m.positionRelativeToLayer ? layerLeft : 0
   const offY = m.positionRelativeToLayer ? layerTop : 0
   const src = m.canvas as HTMLCanvasElement
@@ -149,51 +184,30 @@ function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 
   const mTop = (m.top ?? 0) + offY
   const mRight = (m.right ?? ((m.left ?? 0) + src.width)) + offX
   const mBottom = (m.bottom ?? ((m.top ?? 0) + src.height)) + offY
-
-  // CRITICO 2026-05-18: PSD raster masks tem "DEFAULT COLOR" implicito (geralmente
-  // 255=branco=opaco) para pixels FORA do bounding box armazenado. Antes
-  // tratavamos o bbox como a mascara inteira, fazendo o resto do layer ficar
-  // INVISIVEL no Fabric (clipPath cobre apenas o bbox). Sintoma: retangulo
-  // grande com mask raster de hole pequeno → so o hole aparecia (inverso!).
-  //
-  // Fix: re-renderiza a mascara num canvas que cobre TODO o layer (ou o bbox
-  // estendido pra incluir mask + layer), preenchendo a area "fora do bbox" com
-  // o defaultColor do PSD. O canvas final pode ser maior que o original mas
-  // representa fielmente o que o Photoshop renderiza.
   const defaultColor = typeof m.defaultColor === "number" ? m.defaultColor : 255
   const expandToBounds = layerRight != null && layerBottom != null
   const finalLeft = expandToBounds ? Math.min(mLeft, layerLeft) : mLeft
   const finalTop = expandToBounds ? Math.min(mTop, layerTop) : mTop
   const finalRight = expandToBounds ? Math.max(mRight, layerRight!) : mRight
   const finalBottom = expandToBounds ? Math.max(mBottom, layerBottom!) : mBottom
-  // PSD raster mask: grayscale onde branco=opaco, preto=transparente. Fabric
-  // clipPath usa o CANAL ALPHA (não grayscale RGB) pra blending parcial. Sem
-  // converter, masks com feather/blur do PS chegavam BINARIAS (borda dura) no
-  // editor. Conversão: rgb(g,g,g) → rgba(255,255,255, g). Branco com alpha
-  // encoded da grayscale original preserva os tons intermediários do feather.
   const w = src.width, h = src.height
-  // Bounds finais do canvas de saida — pode ser maior que o src se precisarmos
-  // de defaultColor padding pra cobrir todo o layer.
   const finalW = finalRight - finalLeft
   const finalH = finalBottom - finalTop
-  // Offset do bbox original DENTRO do canvas final.
   const drawX = mLeft - finalLeft
   const drawY = mTop - finalTop
-  let outDataUrl: string
   try {
     const conv = document.createElement("canvas")
     conv.width = Math.max(1, Math.round(finalW))
     conv.height = Math.max(1, Math.round(finalH))
     const cctx = conv.getContext("2d")
-    if (!cctx) throw new Error("no 2d ctx")
-    // Cria sub-canvas com grayscale convertido em alpha (white RGB, alpha=gray*srcA).
+    if (!cctx) return null
     const srcCtx = src.getContext("2d")
-    if (!srcCtx) throw new Error("no src ctx")
+    if (!srcCtx) return null
     const srcData = srcCtx.getImageData(0, 0, w, h)
     const subCanvas = document.createElement("canvas")
     subCanvas.width = w; subCanvas.height = h
     const subCtx = subCanvas.getContext("2d")
-    if (!subCtx) throw new Error("no sub ctx")
+    if (!subCtx) return null
     const subData = subCtx.createImageData(w, h)
     const sd = srcData.data, od = subData.data
     for (let i = 0; i < sd.length; i += 4) {
@@ -203,27 +217,66 @@ function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 
       od[i + 3] = Math.round((gray * srcA) / 255)
     }
     subCtx.putImageData(subData, 0, 0)
-    // ORDEM CRITICA: 1. drawImage do sub-canvas (preserva alpha 0 do hole).
-    // 2. Preenche 4 strips AO REDOR do bbox com defaultColor — NUNCA fillRect
-    // global antes, porque source-over default nao apaga pixels (transparentes
-    // do hole nao subscreveriam a fill, resultando em mascara 100% opaca).
     cctx.drawImage(subCanvas, drawX, drawY)
     cctx.fillStyle = `rgba(255,255,255,${defaultColor / 255})`
     const subEndX = drawX + w
     const subEndY = drawY + h
-    if (drawY > 0) cctx.fillRect(0, 0, conv.width, drawY)                                     // top strip
-    if (subEndY < conv.height) cctx.fillRect(0, subEndY, conv.width, conv.height - subEndY)   // bottom strip
-    if (drawX > 0) cctx.fillRect(0, drawY, drawX, h)                                          // left strip
-    if (subEndX < conv.width) cctx.fillRect(subEndX, drawY, conv.width - subEndX, h)          // right strip
-    outDataUrl = conv.toDataURL("image/png")
+    if (drawY > 0) cctx.fillRect(0, 0, conv.width, drawY)
+    if (subEndY < conv.height) cctx.fillRect(0, subEndY, conv.width, conv.height - subEndY)
+    if (drawX > 0) cctx.fillRect(0, drawY, drawX, h)
+    if (subEndX < conv.width) cctx.fillRect(subEndX, drawY, conv.width - subEndX, h)
+    return { canvas: conv, posX: finalLeft, posY: finalTop, width: finalW, height: finalH, disabled: !!m.disabled }
   } catch (e) {
-    console.warn("[psd-mask] falha convertendo grayscale→alpha, fallback raw:", e)
-    outDataUrl = src.toDataURL("image/png")
+    console.warn("[psd-mask] falha convertendo grayscale→alpha:", e)
+    return null
   }
+}
+
+// Compõe duas masks raster numa só via INTERSECCAO (destination-in). Resultado:
+// pixel visivel apenas onde AMBAS as masks tem alpha > 0. Bounds = uniao dos
+// dois para preservar info; areas onde uma das masks nao cobre = transparentes
+// (porque destination-in zera quem nao tem cobertura).
+function composeMasksIntersection(
+  m1: { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean },
+  m2: { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean },
+): { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean } {
+  const minX = Math.min(m1.posX, m2.posX)
+  const minY = Math.min(m1.posY, m2.posY)
+  const maxX = Math.max(m1.posX + m1.width, m2.posX + m2.width)
+  const maxY = Math.max(m1.posY + m1.height, m2.posY + m2.height)
+  const w = Math.max(1, Math.round(maxX - minX))
+  const h = Math.max(1, Math.round(maxY - minY))
+  const out = document.createElement("canvas")
+  out.width = w; out.height = h
+  const ctx = out.getContext("2d")!
+  // m1 -> out (source-over)
+  ctx.drawImage(m1.canvas, Math.round(m1.posX - minX), Math.round(m1.posY - minY))
+  // m2 intersected with m1 (destination-in: keeps only pixels of m1 covered by m2)
+  ctx.globalCompositeOperation = "destination-in"
+  ctx.drawImage(m2.canvas, Math.round(m2.posX - minX), Math.round(m2.posY - minY))
+  ctx.globalCompositeOperation = "source-over"
+  return { canvas: out, posX: minX, posY: minY, width: w, height: h, disabled: m1.disabled || m2.disabled }
+}
+
+function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 0, layerRight?: number, layerBottom?: number) {
+  // Wrapper que constroi o canvas e serializa pra dataUrl no formato LayerMask.
+  // Pra composicao com mask herdada de folder, ver composeMasksIntersection +
+  // serializeMaskCanvas.
+  const w = buildRasterMaskCanvas(m, layerLeft, layerTop, layerRight, layerBottom)
+  if (!w) {
+    return { type: "raster" as const, enabled: !m.disabled, raster: { dataUrl: (m.canvas as HTMLCanvasElement).toDataURL("image/png"), posX: m.left ?? 0, posY: m.top ?? 0, width: (m.right ?? 0) - (m.left ?? 0), height: (m.bottom ?? 0) - (m.top ?? 0) } }
+  }
+  return serializeMaskCanvas(w, !m.disabled)
+}
+
+function serializeMaskCanvas(
+  w: { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean },
+  enabled: boolean,
+) {
   return {
     type: "raster" as const,
-    enabled: !m.disabled,
-    raster: { dataUrl: outDataUrl, posX: finalLeft, posY: finalTop, width: finalW, height: finalH },
+    enabled,
+    raster: { dataUrl: w.canvas.toDataURL("image/png"), posX: w.posX, posY: w.posY, width: w.width, height: w.height },
   }
 }
 
@@ -678,7 +731,6 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       const allLayerEntries = collectAllLayers(psd.children ?? [])
       const assets: any[] = []
       const imageBlobs: Blob[] = []
-      const folderMaskCache = new Map<any, any>() // raw mask obj → asset mask (deduplica entre filhos do mesmo folder)
       // Set de fontes únicas referenciadas por text layers (default style + runs).
       // Após o import, alerta o user pra fazer upload das que não estão instaladas
       // — sem isso o browser cai em fallback (Arial), métricas diferem do PSD e o
@@ -789,10 +841,37 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         //  - expandir a mask ate cobrir todo o layer (defaultColor implicito
         //    fora do bbox da mask). Sem isso, mask cobre so o bbox armazenado
         //    e o resto do layer fica clipado fora (invisivel).
+        // Estrategia 2026-05-18: layer pode ter ATE 2 masks aplicadas (PS):
+        //   - mask propria raster (layer.mask)
+        //   - mask de folder ancestral (inheritedRawMask, herdada)
+        // Quando AMBAS existem, PS aplica INTERSECCAO (visivel onde ambas
+        // sao visiveis). Antes priorizavamos a propria; agora compomos.
+        // Vector e clipping continuam tendo prioridade exclusiva (caso raro
+        // de coexistir com folder mask, e a logica de interseccao raster-vector
+        // exige rasterizar o vector — fica pra depois se aparecer).
+        let ownCanvas: any = null
+        let inheritedCanvas: any = null
         if (layer.mask?.canvas) {
           try {
-            assetMask = buildRasterAssetMask(layer.mask, left, top, left + width, top + height)
+            ownCanvas = buildRasterMaskCanvas(layer.mask, left, top, left + width, top + height)
           } catch (e) { console.warn("[psd-mask] falha lendo raster mask de", name, e) }
+        }
+        if (inheritedRawMask?.kind === "raster" && inheritedRawMask.data?.canvas) {
+          try {
+            inheritedCanvas = buildRasterMaskCanvas(inheritedRawMask.data, left, top, left + width, top + height)
+          } catch (e) { console.warn("[psd-mask] falha lendo inherited raster mask de", name, e) }
+        }
+        if (ownCanvas && inheritedCanvas) {
+          // AMBOS: interseccao via destination-in. Resultado: visivel apenas
+          // onde a own mask E a folder mask sao visiveis.
+          const composed = composeMasksIntersection(ownCanvas, inheritedCanvas)
+          const ownEnabled = !layer.mask.disabled
+          const inhEnabled = !inheritedRawMask?.data?.disabled
+          assetMask = serializeMaskCanvas(composed, ownEnabled && inhEnabled)
+        } else if (ownCanvas) {
+          assetMask = serializeMaskCanvas(ownCanvas, !layer.mask.disabled)
+        } else if (inheritedCanvas && inheritedRawMask) {
+          assetMask = serializeMaskCanvas(inheritedCanvas, !inheritedRawMask.data.disabled)
         }
         // Vector mask: layer.vectorMask tem paths bezier completos. Convertemos
         // pra SVG path real (curvas, polígonos, formas arbitrárias). Antes
@@ -822,36 +901,6 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             enabled: true,
             clipping: true,
           }
-        }
-        // Fix #3: se ainda nao tem mask propria, herda a do folder ancestral.
-        // Cacheia pra nao re-gerar dataUrl pra cada filho do mesmo folder.
-        if (!assetMask && inheritedRawMask) {
-          try {
-            let cached = folderMaskCache.get(inheritedRawMask.data)
-            if (!cached) {
-              if (inheritedRawMask.kind === "raster" && inheritedRawMask.data?.canvas) {
-                cached = buildRasterAssetMask(inheritedRawMask.data, left, top, left + width, top + height)
-                // Diag: loga URL do mask convertido. Abrir no DevTools (clica
-                // expandir o objeto, copia a string raster.dataUrl) e cola
-                // numa aba — se aparecer faixa horizontal preta, o problema
-                // ta no mask original; se mask aparecer limpo, problema esta
-                // na hora de aplicar.
-                if (cached) {
-                  console.log("[psd-mask] inherited folder mask for", name, {
-                    folderMaskBbox: `(${inheritedRawMask.data.left},${inheritedRawMask.data.top})-(${inheritedRawMask.data.right},${inheritedRawMask.data.bottom})`,
-                    layerBbox: `(${left},${top})-(${left + width},${top + height})`,
-                    defaultColor: inheritedRawMask.data.defaultColor,
-                    positionRelativeToLayer: inheritedRawMask.data.positionRelativeToLayer,
-                    rasterDataUrlSize: cached.raster?.dataUrl?.length,
-                  })
-                }
-              }
-              // Folders com vector mask sao raros e ainda nao aparecem no piloto.
-              // Quando precisar, reusar a logica do block acima.
-              if (cached) folderMaskCache.set(inheritedRawMask.data, cached)
-            }
-            if (cached) assetMask = cached
-          } catch (e) { console.warn("[psd-mask] falha aplicando inherited mask em", name, e) }
         }
 
         // Opacity (0-255 no PSD → 0-1 pro canvas) e blendMode (string PSD → canvas op).
