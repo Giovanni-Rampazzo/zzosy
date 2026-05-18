@@ -1290,23 +1290,27 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // formato vector pra resolucao no editor.
         type MaskCanvas = { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean }
         const silhouettes: Array<MaskCanvas> = []
-        // 1. Own raster mask
-        if (layer.mask?.canvas) {
+        // 1. Own raster mask — Adobe: se layer.mask.disabled=true, ignora ELA
+        // mas as outras mascaras continuam aplicando. NAO propaga disabled pra
+        // composicao inteira (esse era o bug: 1 mask disabled fazia todo o
+        // composite virar enabled=false e nenhuma mask renderizava).
+        if (layer.mask?.canvas && !layer.mask.disabled) {
           try {
             const w = buildRasterMaskCanvas(layer.mask, left, top, left + width, top + height)
             if (w) silhouettes.push(w)
           } catch (e) { console.warn("[psd-mask] own raster falhou:", name, e) }
         }
         // 2. Own vector mask (rasterizado se for compor com outras; vetor se solo)
-        const hasVector = !!(layer as any).vectorMask?.paths?.length
+        const hasVector = !!(layer as any).vectorMask?.paths?.length && !(layer as any).vectorMask?.disabled
         // 3. Inherited folder mask
-        if (inheritedRawMask?.kind === "raster" && inheritedRawMask.data?.canvas) {
+        if (inheritedRawMask?.kind === "raster" && inheritedRawMask.data?.canvas && !inheritedRawMask.data.disabled) {
           try {
             const w = buildRasterMaskCanvas(inheritedRawMask.data, left, top, left + width, top + height)
             if (w) silhouettes.push(w)
           } catch (e) { console.warn("[psd-mask] inherited raster falhou:", name, e) }
         }
-        // 4. Clipping silhouette (alpha do clipBase)
+        // 4. Clipping silhouette (alpha do clipBase). clipping NAO tem disabled
+        // — eh sempre ativo quando layer.clipping===true.
         const hasClipping = (layer as any).clipping === true && !!clipBase
         if (hasClipping) {
           try {
@@ -1331,7 +1335,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
                 const vHeight = Math.max(bbox.maxY - minY, 1)
                 assetMask = {
                   type: "vector" as const,
-                  enabled: !vm.disabled,
+                  enabled: true,
                   vector: { path: pathStr, posX: minX, posY: minY, width: vWidth, height: vHeight },
                 }
               }
@@ -1345,12 +1349,12 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // Se temos silhuetas raster pra compor (e nao foi caso vector-solo)
         if (!assetMask && silhouettes.length > 0) {
           let composed = silhouettes[0]
-          let anyDisabled = composed.disabled
           for (let i = 1; i < silhouettes.length; i++) {
             composed = composeMasksIntersection(composed, silhouettes[i])
-            anyDisabled = anyDisabled || silhouettes[i].disabled
           }
-          assetMask = serializeMaskCanvas(composed, !anyDisabled)
+          // enabled SEMPRE true aqui: silhuetas disabled ja foram filtradas na
+          // coleta. Se chegou ate aqui, tem pelo menos 1 silhueta ativa.
+          assetMask = serializeMaskCanvas(composed, true)
         }
         // Fallback: clipping=true mas sem clipBase resolvido — placeholder type
         // pra preservar round-trip pro PSD save.
