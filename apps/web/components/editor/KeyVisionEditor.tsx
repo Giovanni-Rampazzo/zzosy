@@ -2194,12 +2194,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
       }
 
-      // SAUDE pos-restore: qualquer objeto sem __assetId nem __embedded restaurado eh fantasma.
-      // Remove pra manter canvas saudavel — esses objetos nunca persistem mesmo.
+      // DESABILITADO 2026-05-18: orphan cleanup pos-restore removia layers
+      // validos depois do undo. Causa: indexacao por posicao entre
+      // fc.getObjects() e snapObjectsNoBg podia divergir (ex: ordem que
+      // loadFromJSON cria os objetos != ordem do snapshot), entao
+      // __assetId/__embedded eram atribuidos pro objeto ERRADO; objetos com
+      // __assetId virando "orfaos" pelo filtro, e a limpeza apagava-os do
+      // canvas. Sintoma reportado pelo user: 'Cmd+Z faz o layer sumir'.
+      // Mantemos o log de diagnostico mas NAO removemos. Objetos com problema
+      // de restauracao ficam no canvas; se realmente forem fantasma serao
+      // limpos no proximo save (ja tem filtro la). Continuidade do undo
+      // stack tem prioridade sobre limpeza imediata.
       const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
       if (orphansAfterRestore.length > 0) {
-        editorLog("[UNDO-CLEAN] applySnapshot: removendo", orphansAfterRestore.length, "objetos orfaos pos-restore")
-        for (const orphan of orphansAfterRestore) fc.remove(orphan)
+        srvLog("undo-RESTORE-ORPHANS", { count: orphansAfterRestore.length, types: orphansAfterRestore.map((o: any) => o.type) })
       }
 
       // CRITICO 3: BGs tem excludeFromExport=true, ficam fora do snapshot.
