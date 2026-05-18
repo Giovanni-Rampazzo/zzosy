@@ -17,15 +17,17 @@ function colorToHex(color: any): string {
 
 // Retorna folhas (layers nao-folder) com:
 //  - parentHidden: folder ancestral marcado hidden no PSD ⇒ SKIP no import
-//  - inheritedRawMask: mask de folder ancestral. ⚠️ DESABILITADO por default
-//    (INHERIT_FOLDER_MASK = false). Quando ativo, propagava a mask do folder
-//    pra TODOS os children — gerava bug visual em PSDs complexos onde o
-//    folder tinha mask de escudo/shape específico mas continha layers (ex:
-//    Background retangular) que não deveriam herdar essa mask. Resultado:
-//    layers cortados pra área errada (ex: retângulo enorme aparecia só dentro
-//    do escudo). Pra reabilitar (PSDs simples onde folder mask deve afetar
-//    children): mudar pra true.
-const INHERIT_FOLDER_MASK = false
+//  - inheritedRawMask: mask de folder ancestral. Em Photoshop, mask de folder
+//    SEMPRE clipa todos os children — e nosso editor precisa reproduzir isso.
+//    A heuristica anterior (INHERIT_FOLDER_MASK=false) achava que estava
+//    evitando um bug visual num caso especifico, mas na verdade quebrava
+//    todos os PSDs onde o designer usa folder mask como viewport (ex: foto
+//    dentro de shield, BG dentro de container retangular). Re-habilitado:
+//    a logica abaixo so herda quando o layer NAO tem mask propria (mantem
+//    a logica de "own mask wins" — Photoshop trata folder+layer mask como
+//    INTERSECTION, mas isso fica pra refinamento futuro; preferir a own
+//    cobre a maioria dos casos sem regressao visivel).
+const INHERIT_FOLDER_MASK = true
 type RawMaskRef = { kind: "raster" | "vector"; data: any }
 // groupPath: array de nomes de folder ancestrais (raiz → pai direto). Preserva
 // a hierarquia de groups do Photoshop pro round-trip. Sem isso, ao re-exportar
@@ -44,10 +46,20 @@ function collectAllLayers(
     if (layer.children?.length) {
       let folderMask: RawMaskRef | null = inheritedRawMask
       if (INHERIT_FOLDER_MASK) {
-        if (layer.mask?.canvas) {
-          folderMask = { kind: "raster", data: layer.mask }
-        } else if ((layer as any).vectorMask?.paths?.length) {
-          folderMask = { kind: "vector", data: (layer as any).vectorMask }
+        // CRITICO: positionRelativeToLayer=true em folder masks usa origem
+        // complexa (bbox da uniao dos filhos), nao a do canvas. Sem implementar
+        // essa logica corretamente, a mask aparece deslocada/cortando area
+        // errada (testado com PSD Seguro Viagem: folder "Design System Alta
+        // renda copy 2" posRel=true acaba escondendo o painel verde inteiro).
+        // Heuristica pragmatica: SO herda mask de folder em coords absolutas.
+        // Folders posRel=true ficam sem propagar — children renderizam soltos.
+        const m = layer.mask
+        const isAbsolutePosRaster = m?.canvas && m.positionRelativeToLayer !== true
+        const vm = (layer as any).vectorMask
+        if (isAbsolutePosRaster) {
+          folderMask = { kind: "raster", data: m }
+        } else if (vm?.paths?.length) {
+          folderMask = { kind: "vector", data: vm }
         }
       }
       const folderName = (layer.name ?? "").trim() || "Group"
@@ -728,6 +740,33 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         const isSmartObject = !!(layer as any).placedLayer
         if (!name || (name === "Background" && !isSmartObject)) { zIndex++; continue }
 
+        // Pula adjustment layers (Niveis/Levels, Equilibrio de Cores/Color Balance,
+        // Matiz/Hue, Curvas/Curves, etc). Em Photoshop esses layers modificam
+        // os pixels DOS LAYERS ABAIXO via blend; nao tem conteudo visual proprio.
+        // No editor sem essa logica de adjustment compositing, eles apareceriam
+        // como assets vazios no dropdown ("Niveis 1", "Equilibrio de Cores 1") e
+        // confundiriam o usuario. ag-psd expoe via layer.adjustment (objeto).
+        // Tambem pulamos layers SEM canvas E SEM placedLayer (raster vazio).
+        if ((layer as any).adjustment) {
+          console.log("[psd-import] skip adjustment layer:", name)
+          zIndex++
+          continue
+        }
+
+        // Diag pra debugar layers nao-importados em PSDs complexos.
+        // Loga cada layer + flags antes de tentar processar — quando o user
+        // reporta "tal foto sumiu", esse log mostra se a layer caiu no else
+        // do "if (layer.canvas || ...)" ou em outro caminho.
+        console.log("[psd-import] processing:", name, {
+          hasCanvas: !!layer.canvas,
+          isText: !!layer.text,
+          isSmartObj: isSmartObject,
+          hasVectorMask: !!(layer as any).vectorMask?.paths?.length,
+          hasVectorFill: !!(layer as any).vectorFill,
+          hasVectorStroke: !!(layer as any).vectorStroke,
+          bbox: `(${layer.left},${layer.top})-(${layer.right},${layer.bottom})`,
+        })
+
         const left = layer.left ?? 0
         const top = layer.top ?? 0
         const width = Math.max((layer.right ?? left + 200) - left, 10)
@@ -997,6 +1036,19 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           } catch (e) {
             console.warn("Falha ao extrair imagem do layer", name, e)
           }
+        } else {
+          // Caiu fora de todos os branches (text, image-com-canvas, vector-fill).
+          // Log explicito pra capturar PSDs onde smart objects ou shape layers
+          // chegam sem canvas decodificado nem vector data — comum em PSDs com
+          // generative fill, smart objects nao-rasterizados, ou camadas tipo
+          // "Preenchimento generativo" que ag-psd nao decodifica.
+          console.warn("[psd-import] LAYER NAO IMPORTADO:", name, {
+            hasCanvas: !!layer.canvas,
+            isText: !!layer.text,
+            isSmartObj: isSmartObject,
+            isAdjustment: !!(layer as any).adjustment,
+            placedLayerType: (layer as any).placedLayer?.type,
+          })
         }
         zIndex++
       }
