@@ -405,6 +405,10 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
     // Single step (peca normal/legada)
     return imageUrl ? (
       <img src={imageUrl} alt={name}
+        // dataset.zzosyPieceImg=true marca esta img como "a area clicavel real
+        // da peca". O wrapper externo escuta click por delegacao e so dispara
+        // onClick se o alvo for esta img (nao o espaco vazio em volta).
+        data-zzosy-piece-img="true"
         style={{
           maxWidth: "100%", maxHeight: "100%",
           objectFit: "contain",
@@ -412,6 +416,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           // (especialmente importante quando o BG da peca eh claro/branco).
           border: "1px solid rgba(0,0,0,0.15)",
           boxShadow: opts?.withShadow ? "0 2px 12px rgba(0,0,0,0.06)" : undefined,
+          cursor: clickable ? "pointer" : undefined,
         }} />
     ) : (
       <div style={{ color: TEXT_GRAY, fontSize: "1.4cqw" }}>(Imagem não disponível)</div>
@@ -437,14 +442,33 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
   }
 
   // Click handler aplicado SO na area da peca (nao no slide inteiro). Usuario
-  // pediu: clicar fora da peca (header amarelo, area de legenda) NAO abre o editor.
+  // pediu: clicar fora da peca (header amarelo, area de legenda, espaco vazio
+  // ao redor da imagem dentro do container) NAO abre o editor.
+  //
+  // Implementacao: delegacao no wrapper — escuta click mas so dispara onClick
+  // se o target.closest tiver [data-zzosy-piece-img], ou se for um step (que
+  // tem seu proprio handler). Sem essa filtragem, clicar no espaco vazio em
+  // volta da img (objectFit:contain deixa bordas vazias) tambem abriria o
+  // editor, contrariando a expectativa do usuario.
+  const pieceWrapperClick = (e: React.MouseEvent) => {
+    if (!clickable || !onClick) return
+    const target = e.target as HTMLElement | null
+    // Step grid: cada step ja tem seu proprio onClick (com stopPropagation).
+    // Se o evento chegou aqui, foi no espaco entre/fora dos steps — ignora.
+    if (hasMultiStep) return
+    // Single piece: so dispara se o click foi NA img (ou um filho dela).
+    if (target?.closest?.('[data-zzosy-piece-img="true"]')) {
+      onClick()
+    }
+    // Caso contrario (clicou no padding/espaco vazio do wrapper): ignora.
+  }
   const pieceClickProps = clickable ? {
-    onClick,
+    onClick: pieceWrapperClick,
     role: "button" as const,
     tabIndex: 0,
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.() } },
-    title: "Abrir no editor",
-    style: { cursor: "pointer" as const },
+    title: "Clique na peça para abrir no editor",
+    style: { cursor: "default" as const },
   } : {}
 
   return (
