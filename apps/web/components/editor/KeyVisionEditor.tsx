@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { FontPicker, WeightPicker } from "./FontPicker"
@@ -705,6 +705,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [exportPieces, setExportPieces] = useState<any[]>([])
   const [layers, setLayers] = useState<any[]>([])
   const [editingLayerAssetId, setEditingLayerAssetId] = useState<string | null>(null)
+  // Pastas do PSD recolhidas no painel de layers. Chave = path joined por "›"
+  // (ex: "Header" ou "Header›Buttons"). Quando incluido aqui, todos os layers
+  // dentro daquela pasta ficam escondidos no painel ate o user expandir.
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
+  function toggleFolder(key: string) {
+    setCollapsedFolders(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
   const [zoom, setZoom] = useState(0.5)
   const zoomRef = useRef(0.5)
   const [bgColor, setBgColor] = useState("#ffffff")
@@ -2864,6 +2875,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           hidden: o.__hidden === true,
           locked: o.__locked === true,
           isBg: o.__isBg === true,
+          // groupPath: array de folders ancestrais do PSD ("Header", "Header > Logo").
+          // Painel usa pra renderizar hierarquia indentada com headers de folder
+          // entre layers (igual Photoshop).
+          groupPath: Array.isArray(o.__groupPath) ? o.__groupPath : [],
         }))
         .reverse()
     )
@@ -5963,7 +5978,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <div style={{ padding: "10px 14px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Layers</div>
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
           {!layers.length && <div style={{ fontSize: 11, color: "#444", textAlign: "center", padding: "24px 12px" }}>Adicione assets ao canvas</div>}
+          {/* Pre-processa: pra cada layer, calcula quais folder headers devem
+              aparecer ANTES dele (entradas novas vs layer anterior) e se ele
+              esta dentro de pasta recolhida. Faz isso fora do map pra que o
+              JSX do layer fique limpo. */}
+          {(() => {
+            const meta: Array<{ headers: Array<{ key: string; name: string; depth: number; collapsed: boolean }>; indent: number; hidden: boolean }> = []
+            let prevPath: string[] = []
+            for (let i = 0; i < layers.length; i++) {
+              const path: string[] = Array.isArray(layers[i].groupPath) ? layers[i].groupPath : []
+              let commonDepth = 0
+              while (commonDepth < prevPath.length && commonDepth < path.length && prevPath[commonDepth] === path[commonDepth]) commonDepth++
+              const headers: Array<{ key: string; name: string; depth: number; collapsed: boolean }> = []
+              for (let d = commonDepth; d < path.length; d++) {
+                const key = path.slice(0, d + 1).join("›")
+                headers.push({ key, name: path[d], depth: d, collapsed: collapsedFolders.has(key) })
+              }
+              const hidden = path.some((_, idx) => collapsedFolders.has(path.slice(0, idx + 1).join("›")))
+              meta.push({ headers, indent: path.length * 12, hidden })
+              prevPath = path
+            }
+            ;(layers as any).__rowMeta = meta
+            return null
+          })()}
           {layers.map((layer, i) => {
+            const m = ((layers as any).__rowMeta ?? [])[i] ?? { headers: [], indent: 0, hidden: false }
+            const headers = m.headers
+            const indent = m.indent
+            const hiddenByCollapse = m.hidden
             const isSel = selected === layer.obj
             const layerAssetId = layer.obj?.__assetId
             const isEditingThis = editingLayerAssetId && layerAssetId === editingLayerAssetId
@@ -5975,8 +6017,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const dragLineTop = isDragOver && (dragLayerIdx ?? 0) > i
             const dragLineBottom = isDragOver && (dragLayerIdx ?? 0) < i
             return (
+              <React.Fragment key={`row-${i}`}>
+                {/* Folder headers novos pra esta linha (entradas em pastas) */}
+                {headers.map((h: { key: string; name: string; depth: number; collapsed: boolean }) => (
+                  <div key={`folder-${h.key}-${i}`}
+                    onClick={() => toggleFolder(h.key)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      padding: `6px 8px 6px ${12 + h.depth * 12}px`,
+                      cursor: "pointer",
+                      fontSize: 10, fontWeight: 700,
+                      textTransform: "uppercase", letterSpacing: "0.5px",
+                      color: "#888",
+                      background: "rgba(255,255,255,0.02)",
+                      borderTop: "1px solid #222",
+                    }}
+                    title={`${h.collapsed ? "Expandir" : "Recolher"} folder do PSD`}>
+                    <span style={{ width: 10, display: "inline-block" }}>{h.collapsed ? "▶" : "▼"}</span>
+                    <span style={{ fontSize: 10 }}>📁</span>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</span>
+                  </div>
+                ))}
+                {/* Layer row (escondido se algum ancestral estiver collapsed) */}
+                {!hiddenByCollapse && (
               <div
-                key={i}
                 draggable={!isEditingThis && !layer.isBg}
                 onDragStart={e => {
                   if (isEditingThis || layer.isBg) { e.preventDefault(); return }
@@ -6006,7 +6070,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 onClick={() => { if (isEditingThis) return; fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
                 style={{
                   display: "flex", alignItems: "center", gap: 4,
-                  padding: "8px 8px 8px 12px",
+                  padding: `8px 8px 8px ${12 + indent}px`,
                   cursor: isEditingThis ? "default" : "grab",
                   borderLeft: isSel ? "2px solid #F5C400" : "2px solid transparent",
                   background: isSel ? "rgba(245,196,0,0.08)" : "transparent",
@@ -6170,6 +6234,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
                 )}
               </div>
+            )}
+            </React.Fragment>
             )
           })}
         </div>
