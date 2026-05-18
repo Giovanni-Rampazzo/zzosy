@@ -1381,8 +1381,16 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           const td = layer.text
           const rawText = String(td.text ?? name).split("\r\n").join("\n").split("\r").join("\n")
           const defStyle = td.style ?? {}
-          const defFontName = defStyle.font?.name ?? "Arial"
+          // Fallback inteligente quando td.style.font eh undefined: usa a
+          // fonte do PRIMEIRO style run (em PSDs sem default explicito, o
+          // run inicial costuma carregar a fonte). Sem isso a Textbox cai
+          // em "Arial" como fontFamily base, fazendo chars que nao caem
+          // em styles[lineIdx][charIdx] (fora do range ou linhas sem entrada)
+          // renderizarem em Arial em vez da fonte real do PSD.
+          const firstRunFont = td.styleRuns?.[0]?.style?.font?.name
+          const defFontName = defStyle.font?.name ?? firstRunFont ?? "Arial"
           if (defStyle.font?.name) fontsRequired.add(defStyle.font.name)
+          if (firstRunFont) fontsRequired.add(firstRunFont)
           const defFontSize = defStyle.fontSize ?? 48
           const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
           const isItalicByName = /italic|oblique|kursiv|cursiv/i.test(defFontName)
@@ -1514,20 +1522,35 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             textAlign: defAlign,
           }
           if (spans.length > 1) {
-            const styles: any = { 0: {} }
-            let charIdx = 0
+            // BUG FIX (2026-05-18): Fabric Textbox.styles eh estruturado por
+            // LINHA: { lineIdx: { charIdxInLine: style } }. Antes empilhavamos
+            // tudo em styles[0] com charIdx global → entradas com charIdx maior
+            // que o tamanho da linha 0 eram IGNORADAS pelo Fabric. Resultado:
+            // chars de linha 1+ caiam no fontFamily default da Textbox (Arial
+            // quando td.style.font era undefined). Manifestava como "titulo
+            // com fonte errada apenas na segunda linha".
+            // Agora trackeio lineIdx e reseto charIdxInLine ao encontrar \n.
+            const styles: any = {}
+            let lineIdx = 0
+            let charInLine = 0
+            styles[lineIdx] = {}
             for (const span of spans) {
               const txt = span.text
               for (let i = 0; i < txt.length; i++) {
-                if (txt[i] === "\n") { charIdx++; continue }
-                styles[0][String(charIdx)] = {
+                if (txt[i] === "\n") {
+                  lineIdx++
+                  charInLine = 0
+                  styles[lineIdx] = {}
+                  continue
+                }
+                styles[lineIdx][String(charInLine)] = {
                   fill: span.style.color,
                   fontSize: span.style.fontSize,
                   fontFamily: span.style.fontFamily,
                   fontWeight: span.style.fontWeight,
                   fontStyle: span.style.fontStyle,
                 }
-                charIdx++
+                charInLine++
               }
             }
             lastOverride.styles = styles
