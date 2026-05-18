@@ -122,7 +122,7 @@ function vectorMaskToSvgPath(vm: any): { d: string; bbox: { minX: number; minY: 
   return { d: parts.join(" "), bbox: { minX, minY, maxX, maxY } }
 }
 
-function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 0) {
+function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 0, layerRight?: number, layerBottom?: number) {
   // PSD raster mask data: 'left'/'top'/'right'/'bottom' podem ser:
   //  - Absolute canvas coords (positionRelativeToLayer = false, default)
   //  - Relative to layer top-left (positionRelativeToLayer = true)
@@ -137,33 +137,68 @@ function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 
   const mTop = (m.top ?? 0) + offY
   const mRight = (m.right ?? ((m.left ?? 0) + src.width)) + offX
   const mBottom = (m.bottom ?? ((m.top ?? 0) + src.height)) + offY
+
+  // CRITICO 2026-05-18: PSD raster masks tem "DEFAULT COLOR" implicito (geralmente
+  // 255=branco=opaco) para pixels FORA do bounding box armazenado. Antes
+  // tratavamos o bbox como a mascara inteira, fazendo o resto do layer ficar
+  // INVISIVEL no Fabric (clipPath cobre apenas o bbox). Sintoma: retangulo
+  // grande com mask raster de hole pequeno → so o hole aparecia (inverso!).
+  //
+  // Fix: re-renderiza a mascara num canvas que cobre TODO o layer (ou o bbox
+  // estendido pra incluir mask + layer), preenchendo a area "fora do bbox" com
+  // o defaultColor do PSD. O canvas final pode ser maior que o original mas
+  // representa fielmente o que o Photoshop renderiza.
+  const defaultColor = typeof m.defaultColor === "number" ? m.defaultColor : 255
+  const expandToBounds = layerRight != null && layerBottom != null
+  const finalLeft = expandToBounds ? Math.min(mLeft, layerLeft) : mLeft
+  const finalTop = expandToBounds ? Math.min(mTop, layerTop) : mTop
+  const finalRight = expandToBounds ? Math.max(mRight, layerRight!) : mRight
+  const finalBottom = expandToBounds ? Math.max(mBottom, layerBottom!) : mBottom
   // PSD raster mask: grayscale onde branco=opaco, preto=transparente. Fabric
   // clipPath usa o CANAL ALPHA (não grayscale RGB) pra blending parcial. Sem
   // converter, masks com feather/blur do PS chegavam BINARIAS (borda dura) no
   // editor. Conversão: rgb(g,g,g) → rgba(255,255,255, g). Branco com alpha
   // encoded da grayscale original preserva os tons intermediários do feather.
   const w = src.width, h = src.height
+  // Bounds finais do canvas de saida — pode ser maior que o src se precisarmos
+  // de defaultColor padding pra cobrir todo o layer.
+  const finalW = finalRight - finalLeft
+  const finalH = finalBottom - finalTop
+  // Offset do bbox original DENTRO do canvas final.
+  const drawX = mLeft - finalLeft
+  const drawY = mTop - finalTop
   let outDataUrl: string
   try {
     const conv = document.createElement("canvas")
-    conv.width = w; conv.height = h
+    conv.width = Math.max(1, Math.round(finalW))
+    conv.height = Math.max(1, Math.round(finalH))
     const cctx = conv.getContext("2d")
     if (!cctx) throw new Error("no 2d ctx")
+    // Preenche TODO o canvas com a defaultColor convertida pra alpha:
+    // defaultColor=255 (branco no PSD) -> alpha=255 (opaco/visivel).
+    // defaultColor=0 (preto) -> alpha=0 (transparente/escondido).
+    cctx.fillStyle = `rgba(255,255,255,${defaultColor / 255})`
+    cctx.fillRect(0, 0, conv.width, conv.height)
+    // Agora carrega o bbox real da mascara em cima, convertendo grayscale->alpha.
     const srcCtx = src.getContext("2d")
     if (!srcCtx) throw new Error("no src ctx")
     const srcData = srcCtx.getImageData(0, 0, w, h)
-    const outData = cctx.createImageData(w, h)
-    const sd = srcData.data, od = outData.data
+    const subCanvas = document.createElement("canvas")
+    subCanvas.width = w; subCanvas.height = h
+    const subCtx = subCanvas.getContext("2d")
+    if (!subCtx) throw new Error("no sub ctx")
+    const subData = subCtx.createImageData(w, h)
+    const sd = srcData.data, od = subData.data
     for (let i = 0; i < sd.length; i += 4) {
-      // sd[i] = R (grayscale, R=G=B); usamos como alpha.
-      // Se a imagem ja tem alpha < 255 (mask com transparencia nativa),
-      // multiplicamos grayscale * alpha pra preservar ambas as info.
       const gray = sd[i]
       const srcA = sd[i + 3]
       od[i] = 255; od[i + 1] = 255; od[i + 2] = 255
       od[i + 3] = Math.round((gray * srcA) / 255)
     }
-    cctx.putImageData(outData, 0, 0)
+    subCtx.putImageData(subData, 0, 0)
+    // Desenha o sub-bbox no canvas final usando 'source-over' (cobre o
+    // defaultColor onde a mascara tem dados reais).
+    cctx.drawImage(subCanvas, drawX, drawY)
     outDataUrl = conv.toDataURL("image/png")
   } catch (e) {
     console.warn("[psd-mask] falha convertendo grayscale→alpha, fallback raw:", e)
@@ -172,7 +207,7 @@ function buildRasterAssetMask(m: any, layerLeft: number = 0, layerTop: number = 
   return {
     type: "raster" as const,
     enabled: !m.disabled,
-    raster: { dataUrl: outDataUrl, posX: mLeft, posY: mTop, width: mRight - mLeft, height: mBottom - mTop },
+    raster: { dataUrl: outDataUrl, posX: finalLeft, posY: finalTop, width: finalW, height: finalH },
   }
 }
 
@@ -700,11 +735,14 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // Salvamos no formato LayerMask pra reproduzir no editor e re-exportar.
         let assetMask: any = null
         // Raster mask: layer.mask.canvas tem o grayscale (preto = transparente).
-        // Passa layer.left/top pra converter coords relativas quando o flag
-        // positionRelativeToLayer do PSD estiver ativo.
+        // Passa layer.left/top/right/bottom pra:
+        //  - converter coords relativas quando positionRelativeToLayer=true
+        //  - expandir a mask ate cobrir todo o layer (defaultColor implicito
+        //    fora do bbox da mask). Sem isso, mask cobre so o bbox armazenado
+        //    e o resto do layer fica clipado fora (invisivel).
         if (layer.mask?.canvas) {
           try {
-            assetMask = buildRasterAssetMask(layer.mask, left, top)
+            assetMask = buildRasterAssetMask(layer.mask, left, top, left + width, top + height)
           } catch (e) { console.warn("[psd-mask] falha lendo raster mask de", name, e) }
         }
         // Vector mask: layer.vectorMask tem paths bezier completos. Convertemos
