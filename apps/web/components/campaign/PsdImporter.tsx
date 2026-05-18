@@ -824,7 +824,21 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             let cached = folderMaskCache.get(inheritedRawMask.data)
             if (!cached) {
               if (inheritedRawMask.kind === "raster" && inheritedRawMask.data?.canvas) {
-                cached = buildRasterAssetMask(inheritedRawMask.data)
+                cached = buildRasterAssetMask(inheritedRawMask.data, left, top, left + width, top + height)
+                // Diag: loga URL do mask convertido. Abrir no DevTools (clica
+                // expandir o objeto, copia a string raster.dataUrl) e cola
+                // numa aba — se aparecer faixa horizontal preta, o problema
+                // ta no mask original; se mask aparecer limpo, problema esta
+                // na hora de aplicar.
+                if (cached) {
+                  console.log("[psd-mask] inherited folder mask for", name, {
+                    folderMaskBbox: `(${inheritedRawMask.data.left},${inheritedRawMask.data.top})-(${inheritedRawMask.data.right},${inheritedRawMask.data.bottom})`,
+                    layerBbox: `(${left},${top})-(${left + width},${top + height})`,
+                    defaultColor: inheritedRawMask.data.defaultColor,
+                    positionRelativeToLayer: inheritedRawMask.data.positionRelativeToLayer,
+                    rasterDataUrlSize: cached.raster?.dataUrl?.length,
+                  })
+                }
               }
               // Folders com vector mask sao raros e ainda nao aparecem no piloto.
               // Quando precisar, reusar a logica do block acima.
