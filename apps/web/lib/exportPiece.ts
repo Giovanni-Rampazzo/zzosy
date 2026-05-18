@@ -25,12 +25,22 @@ function safeName(s: string) {
     .substring(0, 80)
 }
 
-function buildFileName(campaignName: string | undefined, piece: { name: string; width: number; height: number }) {
+function buildFileName(campaignName: string | undefined, piece: { name: string; width: number; height: number; __stepIndex?: number }) {
   const camp = campaignName ? safeName(campaignName) : ""
-  const midia = safeName(piece.name)
+  // Se a peca veio expandida de multi-step, tira o sufixo "_Step{N}" do name
+  // pra que o midia seja o nome original limpo. O step entra no final via
+  // __stepIndex (setado em expandSteps).
+  const cleanName = (piece as any).__stepIndex !== undefined
+    ? piece.name.replace(/_Step\d+$/i, "")
+    : piece.name
+  const midia = safeName(cleanName)
   const dims = `${Math.round(piece.width)}x${Math.round(piece.height)}`
-  // Formato: CAMPANHA_MIDIA_DIMENSOESxDIMENSOES (separador entre os 3 campos = '_')
-  return [camp, midia, dims].filter(Boolean).join("_")
+  const stepPart = (piece as any).__stepIndex !== undefined
+    ? `Step${((piece as any).__stepIndex as number) + 1}`
+    : ""
+  // Formato: CAMPANHA_MIDIA_DIMENSOES[_StepN] — step sempre por ultimo pra
+  // ordenacao alfabetica agrupar todos os steps de uma mesma peca juntos.
+  return [camp, midia, dims, stepPart].filter(Boolean).join("_")
 }
 
 // Inverso do psdBlendToCanvas do PsdImporter: canvas globalCompositeOperation
@@ -1473,7 +1483,11 @@ function expandSteps(
       out.push({
         id: p.id, // mesmo id pra renderToCanvas buscar assets do banco
         __virtualStepOriginalId: p.id, // marca como virtual
+        // Mantem o name com sufixo _Step{N} pra logs/progress visivel ao user,
+        // mas buildFileName usa __stepIndex pra posicionar Step{N} no FINAL
+        // do filename (e nao no meio).
         name: `${p.name}_Step${i + 1}`,
+        __stepIndex: i,
         width: p.width,
         height: p.height,
         data: {
