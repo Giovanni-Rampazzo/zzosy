@@ -209,6 +209,17 @@ function formatFromDataUrl(dataUrl: string): string {
  *
  * Idempotente: re-injeta o CSS no mesmo <style> tag se a familia ja
  * existe (ex: trocou um arquivo).
+ *
+ * ESTRATEGIA ADOBE-STYLE — registra cada arquivo com MULTIPLOS aliases pra
+ * cobrir todas as referencias que o PSD pode fazer:
+ *   - Family name normalizado (ex: "Exo 2")             ← usado por fontWeight numerico
+ *   - PostScript name do arquivo (ex: "Exo2Roman-Light") ← exato do PSD
+ *   - Display name composto (ex: "Exo 2 Light")          ← Adobe Fonts naming
+ *
+ * Resultado: qualquer fontFamily que o styles[].fontFamily contiver achara
+ * o arquivo certo. Sem alias multiplos, PSDs que referenciam pelo PostScript
+ * name (alguns workflows) cairiam em fallback Google Fonts (metricas
+ * diferentes do PSD original).
  */
 export function loadCustomFontFamily(fontName: string, files: CustomFontFile[]): void {
   if (typeof document === "undefined") return
@@ -217,11 +228,37 @@ export function loadCustomFontFamily(fontName: string, files: CustomFontFile[]):
   const id = `cfontfam-${fontName.replace(/\s+/g, "-")}`
   const existing = document.getElementById(id) as HTMLStyleElement | null
 
-  const escapedName = fontName.replace(/'/g, "\\'")
-  const css = files.map(f => {
+  const escapedFamily = fontName.replace(/'/g, "\\'")
+  // Deriva aliases adicionais por arquivo: PostScript name (do filename) e
+  // display name (family + weight name). Cada @font-face com font-family
+  // diferente, mesma src — browser resolve qualquer um.
+  const weightNames: Record<number, string> = {
+    100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular",
+    500: "Medium", 600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black",
+  }
+  const cssParts: string[] = []
+  for (const f of files) {
     const format = formatFromDataUrl(f.url)
-    return `@font-face { font-family: '${escapedName}'; src: url('${f.url}') format('${format}'); font-weight: ${f.weight}; font-style: ${f.style}; font-display: swap; }`
-  }).join("\n")
+    // 1) Family canonico (ex: "Exo 2")
+    cssParts.push(`@font-face { font-family: '${escapedFamily}'; src: url('${f.url}') format('${format}'); font-weight: ${f.weight}; font-style: ${f.style}; font-display: swap; }`)
+    // 2) PostScript name (do fileName, sem extensao). PSDs frequentemente
+    //    armazenam exatamente esse nome em styles[].fontFamily se nao
+    //    normalizado. Registra como alias do mesmo arquivo.
+    const psName = f.fileName.replace(/\.(ttf|otf|woff2?|).*$/i, "").trim()
+    if (psName && psName !== fontName) {
+      const escapedPS = psName.replace(/'/g, "\\'")
+      cssParts.push(`@font-face { font-family: '${escapedPS}'; src: url('${f.url}') format('${format}'); font-weight: 400; font-style: ${f.style}; font-display: swap; }`)
+    }
+    // 3) Display name = family + weight name (ex: "Exo 2 Light"). Adobe
+    //    Fonts e InDesign costumam usar essa forma.
+    const wName = weightNames[f.weight] ?? "Regular"
+    if (wName !== "Regular" || f.style === "italic") {
+      const displayName = `${fontName} ${wName}${f.style === "italic" ? " Italic" : ""}`
+      const escapedDisplay = displayName.replace(/'/g, "\\'")
+      cssParts.push(`@font-face { font-family: '${escapedDisplay}'; src: url('${f.url}') format('${format}'); font-weight: 400; font-style: normal; font-display: swap; }`)
+    }
+  }
+  const css = cssParts.join("\n")
 
   if (existing) {
     existing.textContent = css

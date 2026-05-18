@@ -1839,8 +1839,14 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             </div>
             <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.5, marginBottom: 12 }}>
               O PSD usa {missingFontsModal.fonts.length === 1 ? "esta fonte" : "estas fontes"} que não estão
-              disponíveis no navegador. Sem upload, o editor vai usar Arial como fallback
-              e as métricas (altura, quebra de linha) podem destoar do design original.
+              disponíveis. Sem o arquivo exato (.ttf/.otf), o editor tenta carregar via Google Fonts
+              — fica visualmente parecido mas as <strong>métricas (largura, kerning, line-height)
+              divergem</strong> do PSD original, o que pode causar texto vazando da bbox ou
+              quebrando em pontos diferentes. Pra fidelidade Photoshop, faça upload dos
+              arquivos exatos no painel de Fontes da Marca do cliente.
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 12 }}>
+              Após o upload, <strong>recarregue esta página</strong> pra o editor usar a fonte nova.
             </div>
             <ul style={{ background: "#0f0f0f", borderRadius: 8, padding: "10px 14px 10px 28px", margin: "0 0 16px", fontSize: 13, listStyle: "disc", maxHeight: 200, overflow: "auto" }}>
               {missingFontsModal.fonts.map((f) => (
