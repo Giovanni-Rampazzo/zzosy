@@ -3,7 +3,7 @@
  * Cria Tenant 'Default' + User SUPER_ADMIN apos migrate reset.
  *
  * Uso:
- *   cd ~/Desktop/BACKEND/zzysy/apps/web
+ *   cd ~/Desktop/BACKEND/zzosy/apps/web
  *   node scripts/seed-admin.js EMAIL SENHA "NOME"
  *
  * Exemplo:

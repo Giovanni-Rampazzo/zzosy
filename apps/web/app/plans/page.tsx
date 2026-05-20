@@ -11,7 +11,7 @@ export default function PlansPage() {
 
   const handleCTA = async (planId: string) => {
     if (planId === "enterprise") {
-      window.location.href = "mailto:contato@zzysy.com?subject=Enterprise";
+      window.location.href = "mailto:contato@zzosy.com?subject=Enterprise";
       return;
     }
     if (!session) {

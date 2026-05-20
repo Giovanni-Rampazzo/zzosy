@@ -61,7 +61,7 @@ zzosy/
 ## 4. Setup do zero (clone novo)
 
 ```
-git clone git@github.com:Giovanni-Rampazzo/zzysy.git
+git clone git@github.com:Giovanni-Rampazzo/zzosy.git
 cd zzosy
 npm install
 cp apps/web/.env.example apps/web/.env   # preenche valores reais (§10)
@@ -217,7 +217,7 @@ Lista completa: `find apps/web/app/api -name "route.ts" | sort`.
 | **GitHub** | Conta `Giovanni-Rampazzo`, repo `zzosy`. Manter ao menos: senha + 2FA (TOTP backup codes) + 1 SSH key registrada | Source of truth do código |
 | **SSH key local** | `~/.ssh/id_ed25519` + `~/.ssh/id_ed25519.pub` (criada nessa sessão, registrada no GitHub como "IMAC") | Push/pull via SSH sem digitar senha |
 | **PAT GitHub (opcional)** | Caso queira HTTPS auth — gerar em github.com/settings/tokens com scope `repo`. Salvar imediatamente (só aparece 1 vez) | Workflows que não usam SSH |
-| **Vercel** | Login (provavelmente via GitHub OAuth). Projeto `zzysy-web`. Env vars duplicadas lá. | Deploy do frontend |
+| **Vercel** | Login (provavelmente via GitHub OAuth). Projeto `zzosy-web`. Env vars duplicadas lá. | Deploy do frontend |
 | **Railway (ou DB host)** | Login + projeto que hospeda o MySQL. `DATABASE_URL` aparece lá. | Banco de dados em prod |
 | **Stripe** | Conta da empresa. Keys (test e live) + webhook signing secret. Pages: Developers → API keys + Webhooks | Cobranças de assinatura |
 | **Cloudflare** | Conta + bucket R2 `zzosy-assets` quando migrar uploads do local | Storage de mídia em prod |

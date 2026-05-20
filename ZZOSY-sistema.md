@@ -129,7 +129,7 @@ NEXTAUTH_URL="http://localhost:3000"
 
 ```bash
 # Entrar na pasta do projeto
-cd "/Users/democrart/Library/CloudStorage/GoogleDrive-zzocreativee@gmail.com/My Drive/ZZOSY/BACKEND/zzysy"
+cd "/Users/democrart/Library/CloudStorage/GoogleDrive-zzocreativee@gmail.com/My Drive/ZZOSY/BACKEND/zzosy"
 
 # Rodar em desenvolvimento
 npm run dev

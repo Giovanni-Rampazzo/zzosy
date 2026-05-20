@@ -10,11 +10,11 @@ Documento de referência: decisões, padrões e métodos do ZZOSY.
 
 **Stack:** Next.js 16 (Turbopack) + React 19 + Fabric.js v7.2 + ag-psd v30.1.1 + Prisma 5.22 + MySQL local + NextAuth + Stripe. macOS only. Código English, comunicação PT-BR.
 
-**Repo:** `Giovanni-Rampazzo/zzysy` · `main` · `~/Desktop/BACKEND/zzysy`.
+**Repo:** `Giovanni-Rampazzo/zzosy` · `main` · `~/Desktop/BACKEND/zzosy`.
 
 **Comando "Run":**
 ```bash
-cd ~/Desktop/BACKEND/zzysy && git fetch origin && git reset --hard origin/main && cd apps/web && rm -rf .next && npm run dev
+cd ~/Desktop/BACKEND/zzosy && git fetch origin && git reset --hard origin/main && cd apps/web && rm -rf .next && npm run dev
 ```
 Ctrl+C antes se servidor rodando. Depois `✓ Ready` → F12 → Empty Cache + Hard Reload.
 
@@ -149,7 +149,7 @@ Export PPTX: pptxgenjs 13.333×7.5" (16:9 widescreen), PNG 2400px.
 
 > Sou Giovanni Rampazzo, diretor de arte e SUPER_ADMIN da ZZOSY — SaaS multi-tenant de automação de layout de campanhas. Stack: Next.js 16 + React 19 + Fabric.js v7.2 + ag-psd + Prisma 5.22 + MySQL local. Mac only. Código English, comunicação PT-BR.
 >
-> Repositório: `Giovanni-Rampazzo/zzysy` · branch `main` · `~/Desktop/BACKEND/zzysy`.
+> Repositório: `Giovanni-Rampazzo/zzosy` · branch `main` · `~/Desktop/BACKEND/zzosy`.
 >
 > Princípios: pensar como Adobe/Apple, Photoshop como referência ESTRITA, investigar antes de chutar, sem workarounds, qualidade comercial. Eu aprovo planos, você executa.
 >
@@ -159,7 +159,7 @@ Export PPTX: pptxgenjs 13.333×7.5" (16:9 widescreen), PNG 2400px.
 >
 > Comando "Run":
 > ```
-> cd ~/Desktop/BACKEND/zzysy && git fetch origin && git reset --hard origin/main && cd apps/web && rm -rf .next && npm run dev
+> cd ~/Desktop/BACKEND/zzosy && git fetch origin && git reset --hard origin/main && cd apps/web && rm -rf .next && npm run dev
 > ```
 
 ---

@@ -31,7 +31,7 @@ Sistema de backup automático do MySQL local, integrado ao macOS via `launchd`.
 Execute estes comandos no terminal:
 
 ```bash
-cd ~/Desktop/BACKEND/zzysy/backup-system
+cd ~/Desktop/BACKEND/zzosy/backup-system
 
 # 1. Da permissão de execução ao script
 chmod +x backup.sh
@@ -40,7 +40,7 @@ chmod +x backup.sh
 PLIST_DEST="$HOME/Library/LaunchAgents/com.zzosy.backup.plist"
 mkdir -p "$HOME/Library/LaunchAgents"
 
-sed -e "s|BACKUP_SCRIPT_PATH|$HOME/Desktop/BACKEND/zzysy/backup-system/backup.sh|g" \
+sed -e "s|BACKUP_SCRIPT_PATH|$HOME/Desktop/BACKEND/zzosy/backup-system/backup.sh|g" \
     -e "s|BACKUP_DIR_PATH|$HOME/Desktop/zzosy-backups|g" \
     com.zzosy.backup.plist > "$PLIST_DEST"
 

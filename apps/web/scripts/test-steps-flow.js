@@ -8,7 +8,7 @@
  * 4. Lista path dos arquivos /public/uploads/step-thumbs/ pra ver se existem
  *
  * Uso:
- *   cd ~/Desktop/BACKEND/zzysy/apps/web && node scripts/test-steps-flow.js
+ *   cd ~/Desktop/BACKEND/zzosy/apps/web && node scripts/test-steps-flow.js
  */
 const { PrismaClient } = require("@prisma/client")
 const fs = require("fs")

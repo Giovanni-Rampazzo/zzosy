@@ -9,7 +9,7 @@
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push --accept-data-loss",
-    "db:seed": "curl -X POST https://zzysy-web.vercel.app/api/seed",
+    "db:seed": "curl -X POST https://zzosy-web.vercel.app/api/seed",
     "db:migrate": "prisma migrate deploy"
   },
   "dependencies": {
