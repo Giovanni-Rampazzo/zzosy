@@ -1,4 +1,4 @@
-# ZZYSY
+# ZZOSY
 
 Sistema de automação de layout para campanhas publicitárias.
 
@@ -12,7 +12,7 @@ Sistema de automação de layout para campanhas publicitárias.
 
 ## Estrutura
 ```
-zzysy/
+zzosy/
 ├── apps/
 │   └── web/              → App Next.js principal
 │       ├── app/          → Rotas e páginas
@@ -34,7 +34,7 @@ zzysy/
 1. Clone o repositório
 ```bash
 git clone https://github.com/seu-usuario/zzysy.git
-cd zzysy
+cd zzosy
 ```
 
 2. Instale as dependências

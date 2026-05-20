@@ -42,7 +42,7 @@ const theme = {
     lg:"0 8px 24px rgba(0,0,0,0.10)",
   },
   logo: {
-    text: "ZZYSY",
+    text: "ZZOSY",
     dots: ["#F5C400","#34A853","#4285F4"],
   },
 } as const;

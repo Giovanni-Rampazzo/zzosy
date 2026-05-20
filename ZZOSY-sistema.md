@@ -1,4 +1,4 @@
-# ZZYSY — Documentação do Sistema
+# ZZOSY — Documentação do Sistema
 
 ## Sobre
 Sistema SaaS de automação de layout para campanhas publicitárias.
@@ -25,7 +25,7 @@ Arquitetura multitenancy — cada agência tem seu próprio espaço isolado.
 ## Estrutura de Pastas
 
 ```
-zzysy/
+zzosy/
 ├── apps/
 │   └── web/                        # App Next.js principal
 │       ├── app/

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { appendFile } from "fs/promises"
 
-const DUMP_FILE = "/tmp/zzysy-client-log.txt"
+const DUMP_FILE = "/tmp/zzosy-client-log.txt"
 
 // Endpoint pra logs do client aparecerem no terminal do servidor E em arquivo.
 // Uso: fetch("/api/debug/client-log", { method: "POST", body: JSON.stringify({tag, data}) })

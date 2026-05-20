@@ -1,4 +1,4 @@
-// ─── ZZYSY THEME ─────────────────────────────────────────────────
+// ─── ZZOSY THEME ─────────────────────────────────────────────────
 // Edite este arquivo para alterar o visual de todo o sistema.
 
 const theme = {
@@ -82,7 +82,7 @@ const theme = {
 
   // ─── LOGO ───────────────────────────────────────────────────────
   logo: {
-    text: "ZZYSY",
+    text: "ZZOSY",
     dots: ["#F5C400", "#34A853", "#4285F4"], // amarelo, verde, azul
   },
 };

@@ -1,6 +1,6 @@
 # MANUAL ZZOSY
 
-Manual de operação do projeto **ZZOSY** (also written `zzysy`). Foco em: o que é, como roda, o que mexe onde, e **quais credenciais você precisa manter pra ter acesso total**.
+Manual de operação do projeto **ZZOSY** (also written `zzosy`). Foco em: o que é, como roda, o que mexe onde, e **quais credenciais você precisa manter pra ter acesso total**.
 
 ---
 
@@ -31,7 +31,7 @@ Plataforma para gerar peças visuais a partir de uma **Matriz** (key vision) edi
 ## 3. Estrutura do repo
 
 ```
-zzysy/
+zzosy/
 ├── apps/
 │   └── web/                 # App único Next.js
 │       ├── app/             # Rotas (App Router)
@@ -62,7 +62,7 @@ zzysy/
 
 ```
 git clone git@github.com:Giovanni-Rampazzo/zzysy.git
-cd zzysy
+cd zzosy
 npm install
 cp apps/web/.env.example apps/web/.env   # preenche valores reais (§10)
 cd apps/web
@@ -204,7 +204,7 @@ Lista completa: `find apps/web/app/api -name "route.ts" | sort`.
 | `STRIPE_WEBHOOK_SECRET` | Dashboard Stripe → Webhooks | `whsec_…` |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe → API keys | `pk_test_…` ou `pk_live_…` (público) |
 | `NEXT_PUBLIC_APP_URL` | URL pública | |
-| `NEXT_PUBLIC_APP_NAME` | "ZZYSY" | |
+| `NEXT_PUBLIC_APP_NAME` | "ZZOSY" | |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` / `R2_PUBLIC_URL` | Cloudflare R2 dashboard | **Hoje placeholder** — uploads ainda são locais |
 | `MIGRATE_SECRET` | Você define | Header `X-Migrate-Secret` em `/api/migrate` (default: `zzosy-migrate-2026`) |
 
@@ -214,13 +214,13 @@ Lista completa: `find apps/web/app/api -name "route.ts" | sort`.
 
 | Serviço | O que guardar | Pra que serve |
 |---|---|---|
-| **GitHub** | Conta `Giovanni-Rampazzo`, repo `zzysy`. Manter ao menos: senha + 2FA (TOTP backup codes) + 1 SSH key registrada | Source of truth do código |
+| **GitHub** | Conta `Giovanni-Rampazzo`, repo `zzosy`. Manter ao menos: senha + 2FA (TOTP backup codes) + 1 SSH key registrada | Source of truth do código |
 | **SSH key local** | `~/.ssh/id_ed25519` + `~/.ssh/id_ed25519.pub` (criada nessa sessão, registrada no GitHub como "IMAC") | Push/pull via SSH sem digitar senha |
 | **PAT GitHub (opcional)** | Caso queira HTTPS auth — gerar em github.com/settings/tokens com scope `repo`. Salvar imediatamente (só aparece 1 vez) | Workflows que não usam SSH |
 | **Vercel** | Login (provavelmente via GitHub OAuth). Projeto `zzysy-web`. Env vars duplicadas lá. | Deploy do frontend |
 | **Railway (ou DB host)** | Login + projeto que hospeda o MySQL. `DATABASE_URL` aparece lá. | Banco de dados em prod |
 | **Stripe** | Conta da empresa. Keys (test e live) + webhook signing secret. Pages: Developers → API keys + Webhooks | Cobranças de assinatura |
-| **Cloudflare** | Conta + bucket R2 `zzysy-assets` quando migrar uploads do local | Storage de mídia em prod |
+| **Cloudflare** | Conta + bucket R2 `zzosy-assets` quando migrar uploads do local | Storage de mídia em prod |
 | **Domínio** | Registrar onde o domínio está (registro.br / GoDaddy / Cloudflare). DNS aponta pra Vercel. | URL pública |
 | **Gmail (giovanni.rampazzo@gmail.com)** | Recuperação de quase todas as contas acima. **2FA + códigos de backup essenciais.** | Bloqueio aqui = perda em cascata |
 
@@ -232,7 +232,7 @@ Coloca num cofre (1Password vault dedicado):
 2. Lista de URLs + logins/senhas dos serviços da §10.2.
 3. **Backup codes de 2FA** de: Gmail, GitHub, Vercel, Stripe.
 4. Cópia da chave SSH privada `id_ed25519` (não é estritamente necessária — pode-se gerar nova e cadastrar — mas evita ir manualmente em cada serviço caso troque de máquina).
-5. Export do schema do banco: `mysqldump $DATABASE_URL > zzysy-schema-backup-YYYY-MM-DD.sql` (rotina recomendada: semanal).
+5. Export do schema do banco: `mysqldump $DATABASE_URL > zzosy-schema-backup-YYYY-MM-DD.sql` (rotina recomendada: semanal).
 
 ---
 
