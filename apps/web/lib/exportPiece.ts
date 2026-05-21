@@ -226,6 +226,88 @@ function parseShapeContent(raw: any): { path?: string; pathBbox?: any; fill?: an
   return parsed
 }
 
+/**
+ * Converte SVG path string "M ax ay C cp1x cp1y, cp2x cp2y, ax2 ay2 ... Z"
+ * em ag-psd knots[] (inverso do reader.ts:bezierPathToSvg).
+ *
+ * Aplica transformacao Fabric (left/top atual + scaleX/Y) sobre o pathBbox
+ * original — assim, mover/escalar a SHAPE no editor reflete no vector
+ * exportado pro PSD.
+ *
+ * Limitacao atual: nao suporta rotacao. Se obj.angle != 0, fallback rasteriza.
+ * Cobertura: M, L, C, Z (subset que reader produz pra shapes do PS).
+ */
+function svgPathToAgPsdKnots(
+  svg: string,
+  pathBboxLeft: number,
+  pathBboxTop: number,
+  worldLeft: number,
+  worldTop: number,
+  scaleX: number,
+  scaleY: number,
+): Array<{ points: number[] }> | null {
+  if (!svg) return null
+  // Transforma um ponto do path-space pro world-space (canvas final do PSD).
+  const tx = (x: number) => worldLeft + (x - pathBboxLeft) * scaleX
+  const ty = (y: number) => worldTop + (y - pathBboxTop) * scaleY
+  // Tokens: split por M/L/C/Z (preservando o operador).
+  const tokens = svg.replace(/Z\s*$/i, "").trim().split(/(?=[MLCZmlcz])/).map(s => s.trim()).filter(Boolean)
+  type Knot = { cpL: { x: number; y: number }; anchor: { x: number; y: number }; cpR: { x: number; y: number } }
+  const knots: Knot[] = []
+  for (const tok of tokens) {
+    const op = tok[0].toUpperCase()
+    const nums = (tok.slice(1).match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
+    if (op === "M") {
+      knots.push({
+        cpL: { x: tx(nums[0]), y: ty(nums[1]) },
+        anchor: { x: tx(nums[0]), y: ty(nums[1]) },
+        cpR: { x: tx(nums[0]), y: ty(nums[1]) },
+      })
+    } else if (op === "L") {
+      const x = tx(nums[0]), y = ty(nums[1])
+      if (knots.length > 0) {
+        knots[knots.length - 1].cpR = { x, y }
+      }
+      knots.push({ cpL: { x, y }, anchor: { x, y }, cpR: { x, y } })
+    } else if (op === "C") {
+      // C cp1x cp1y, cp2x cp2y, endx endy
+      const cp1x = tx(nums[0]), cp1y = ty(nums[1])
+      const cp2x = tx(nums[2]), cp2y = ty(nums[3])
+      const endx = tx(nums[4]), endy = ty(nums[5])
+      if (knots.length > 0) {
+        knots[knots.length - 1].cpR = { x: cp1x, y: cp1y }
+      }
+      knots.push({
+        cpL: { x: cp2x, y: cp2y },
+        anchor: { x: endx, y: endy },
+        cpR: { x: endx, y: endy }, // sera atualizado pelo proximo C
+      })
+    }
+  }
+  if (knots.length === 0) return null
+  // Path fechado: ultimo knot duplica o primeiro (M e ultimo C voltam pro start).
+  // Detecta e funde — transferindo cpL do ultimo pro primeiro.
+  if (knots.length >= 2) {
+    const first = knots[0]
+    const last = knots[knots.length - 1]
+    if (Math.abs(first.anchor.x - last.anchor.x) < 0.5 && Math.abs(first.anchor.y - last.anchor.y) < 0.5) {
+      first.cpL = last.cpL
+      knots.pop()
+    }
+  }
+  return knots.map(k => ({
+    points: [k.cpL.x, k.cpL.y, k.anchor.x, k.anchor.y, k.cpR.x, k.cpR.y],
+  }))
+}
+
+/** hex "#RRGGBB" → ag-psd { r, g, b } (0-255 each). */
+function hexToAgPsdRgb(hex: string): { r: number; g: number; b: number } {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex)
+  if (!m) return { r: 0, g: 0, b: 0 }
+  const n = parseInt(m[1], 16)
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+}
+
 // Constroi o canvas Fabric da peca a partir de layers + assets
 export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
   const fabric = await import("fabric")
@@ -1477,7 +1559,69 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           stack: (errText as any)?.stack,
         })
       }
-    } else {
+    } else if ((obj as any).__isShape === true || obj.type === "path" || obj.type === "Path") {
+      // === SHAPE: exporta como Shape Layer NATIVO do PS ===
+      // vectorMask + vectorFill + vectorStroke + SEM canvas raster. Resultado:
+      // PS abre como Shape Layer editavel (icone vector), user pode mudar
+      // fill/stroke direto no PS e preview atualiza ao vivo (Adobe renderiza
+      // do vector). Round-trip ZZOSY ↔ PS preservado.
+      //
+      // Fallback rasterizado: rotacao != 0 (transform 2D nao suportado pelo
+      // converter ainda), ou path nao parseavel.
+      try {
+        const assetIdSh = (obj as any).__assetId as string | undefined
+        const assetSh = assetIdSh ? assetById.get(assetIdSh) : undefined
+        const shape = parseShapeContent(assetSh?.content)
+        const pathSvg: string = shape?.path ?? ""
+        const pathBboxLeft = shape?.pathBbox?.left ?? left
+        const pathBboxTop = shape?.pathBbox?.top ?? top
+        const objAngle = obj.angle ?? 0
+        const objScaleX = obj.scaleX ?? 1
+        const objScaleY = obj.scaleY ?? 1
+        const knots = Math.abs(objAngle) < 0.01
+          ? svgPathToAgPsdKnots(pathSvg, pathBboxLeft, pathBboxTop, ox, oy, objScaleX, objScaleY)
+          : null
+        if (knots && knots.length > 0) {
+          // Estado VIVO do Fabric.Path (com edicoes do user via painel).
+          const fillStr: string = typeof obj.fill === "string" ? obj.fill : ""
+          const strokeStr: string = typeof obj.stroke === "string" ? obj.stroke : ""
+          const strokeW: number = obj.strokeWidth ?? 0
+          const psdLayer: any = {
+            name,
+            top, left, bottom, right,
+            ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
+            ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
+            ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
+            __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
+            vectorMask: {
+              paths: [{ operation: "subtract", knots, open: false }],
+            },
+          }
+          if (fillStr) {
+            psdLayer.vectorFill = { type: "color", color: hexToAgPsdRgb(fillStr) }
+          }
+          if (strokeStr && strokeW > 0) {
+            psdLayer.vectorStroke = {
+              strokeEnabled: true,
+              fillEnabled: true,
+              lineWidth: { value: strokeW, units: "Pixels" },
+              lineAlignment: "strokeStyleAlignOutside",
+              lineCapType: "strokeStyleButtCap",
+              lineJoinType: "strokeStyleMiterJoin",
+              content: { type: "color", color: hexToAgPsdRgb(strokeStr) },
+            }
+          }
+          psdLayers.push(psdLayer)
+          continue
+        }
+        // Fallback: rasteriza (rotacao ou path bichado).
+        console.warn("[shape-export] fallback raster (rotation/parse fail):", name)
+      } catch (e) {
+        console.warn("[shape-export] vector falhou, fallback raster:", name, e)
+      }
+      // Fall-through pro caminho de imagem rasterizada (else abaixo).
+    }
+    if (!(obj.type === "textbox" || obj.type === "i-text" || obj.type === "text")) {
       // === Imagem: detecta se eh Smart Object embeddavel ===
       // Eh SO se: (a) asset preserva smart object de import, OU (b) eh SVG via imageUrl.
       const assetId = (obj as any).__assetId as string | undefined
