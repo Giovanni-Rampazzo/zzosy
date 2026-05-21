@@ -442,7 +442,38 @@ function emitShapeLayer(l: PsdShapeLayer, parentPath: string[], ctx: BuildContex
     hidden: !l.visible || undefined,
     locked: l.locked || undefined,
   })
-  ctx.layers.push(layerFromLayer(tempId, l, ctx, parentPath))
+  // CRITICO: pra SHAPE, layer.posX/Y/width/height DEVE ser do pathBbox
+  // (path puro, sem padding de stroke), NAO do l.bbox (que ja inclui
+  // stroke). Caso contrario o Fabric.Path no editor seria criado com
+  // left=128 (com stroke) mas o path interno do Fabric tem bbox 902×902
+  // (sem stroke) → ficaria 11px deslocado a cada cycle save/load, e
+  // dimensoes drift. Usa pathBbox como fonte da verdade — eh o que a
+  // Path do Fabric realmente representa.
+  ctx.layers.push(layerFromShapePath(tempId, l, ctx, parentPath))
+}
+
+function layerFromShapePath(
+  assetTempId: string,
+  l: PsdShapeLayer,
+  ctx: BuildContext,
+  parentPath: string[],
+): BuiltLayer {
+  ctx.zIndex++
+  const pb = l.pathBbox
+  return {
+    assetId: assetTempId,
+    posX: pb.left,
+    posY: pb.top,
+    width: Math.max(1, pb.right - pb.left),
+    height: Math.max(1, pb.bottom - pb.top),
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    zIndex: ctx.zIndex,
+    opacity: l.opacity,
+    blendMode: blendModeToCss(l.blendMode),
+    groupPath: parentPath,
+  }
 }
 
 // ── SMART OBJECT ─────────────────────────────────────────────────────
