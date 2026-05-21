@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { normalizeName } from "@/lib/normalize"
 
+export const dynamic = "force-dynamic"
+
 /**
  * POST /api/pieces/import-psd
  *

@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 
+export const dynamic = "force-dynamic"
+
 /**
  * Upload de thumbnail de um STEP especifico da peca.
  *

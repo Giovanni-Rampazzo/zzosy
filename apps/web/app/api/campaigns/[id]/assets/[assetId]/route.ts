@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { migrateStyles } from "@/lib/migrateStyles"
 
+export const dynamic = "force-dynamic"
+
 type Ctx = { params: Promise<{ id: string; assetId: string }> }
 
 // Whitelist de fields aceitos em PATCH/PUT (audit P1.10).

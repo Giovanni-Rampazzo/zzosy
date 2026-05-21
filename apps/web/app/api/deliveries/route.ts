@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 
+export const dynamic = "force-dynamic"
+
 export const runtime = "nodejs"
 
 export async function GET(req: NextRequest) {
@@ -46,6 +48,36 @@ export async function POST(req: NextRequest) {
   try { pieceIds = JSON.parse(pieceIdsRaw) } catch {}
   let formats: string[] = []
   try { formats = JSON.parse(formatsRaw) } catch {}
+
+  // Validacao: campanha existe + pertence ao tenant do user. Sem isso,
+  // qualquer user de qualquer tenant podia criar delivery em campanha alheia.
+  const tenantId = (session.user as any)?.tenantId
+  const campaign = await prisma.campaign.findFirst({
+    where: { id: campaignId, client: tenantId ? { tenantId } : undefined },
+    select: { id: true },
+  })
+  if (!campaign) {
+    return NextResponse.json({ error: "Campaign not found or not accessible" }, { status: 404 })
+  }
+
+  // Validacao: pieceIds DEVEM pertencer a esta campanha. Sem essa checagem,
+  // o user podia entregar peca de outra campanha (cross-campaign delivery)
+  // — DeliveryPiece criava o vinculo, mas a peca "viaja" em entregas
+  // alheias quebrando ownership.
+  if (pieceIds.length > 0) {
+    const validPieces = await prisma.piece.findMany({
+      where: { id: { in: pieceIds }, campaignId },
+      select: { id: true },
+    })
+    const validSet = new Set(validPieces.map(p => p.id))
+    const invalid = pieceIds.filter(id => !validSet.has(id))
+    if (invalid.length > 0) {
+      return NextResponse.json({
+        error: "Some pieceIds dont belong to this campaign",
+        invalid,
+      }, { status: 400 })
+    }
+  }
 
   // Resolver user atual
   const user = (session.user as any)?.id ? { id: (session.user as any).id } :

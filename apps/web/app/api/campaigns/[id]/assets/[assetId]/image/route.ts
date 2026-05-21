@@ -8,6 +8,8 @@ import path from "path"
 import { randomUUID } from "crypto"
 import { maybeSanitizeImage } from "@/lib/svgSanitize"
 
+export const dynamic = "force-dynamic"
+
 type Ctx = { params: Promise<{ id: string; assetId: string }> }
 
 export const maxDuration = 30

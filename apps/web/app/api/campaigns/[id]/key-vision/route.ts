@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { NextRequest } from "next/server"
 
+export const dynamic = "force-dynamic"
+
 type Ctx = { params: Promise<{ id: string }> }
 
 function parseJson(val: any) {

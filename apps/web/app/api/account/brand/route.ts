@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
+export const dynamic = "force-dynamic"
+
 /**
  * White-label do tenant: nome, logos, cor primaria e footer text que
  * substituem os defaults (ZZOSY, SUNO/UNITED CREATORS, amarelo, "Classificacao

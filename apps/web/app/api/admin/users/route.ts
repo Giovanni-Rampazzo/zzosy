@@ -5,6 +5,8 @@ import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 
+export const dynamic = "force-dynamic"
+
 async function checkSuperAdmin(email: string) {
   const me = await prisma.user.findUnique({ where: { email } });
   return me?.role === "SUPER_ADMIN" ? me : null;

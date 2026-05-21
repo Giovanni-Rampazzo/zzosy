@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { toPx, Unit } from "@/lib/unitConversion"
 
+export const dynamic = "force-dynamic"
+
 // Whitelist: bloqueia tentativa de mexer em tenantId, isDefault, FKs via PUT.
 const MEDIA_PATCH_FIELDS = new Set([
   "name", "vehicle", "media", "format", "category", "segment",

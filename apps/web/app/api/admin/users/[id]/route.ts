@@ -3,6 +3,8 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { NextResponse } from "next/server"
 
+export const dynamic = "force-dynamic"
+
 type Ctx = { params: Promise<{ id: string }> }
 
 async function checkSuperAdmin(email: string) {

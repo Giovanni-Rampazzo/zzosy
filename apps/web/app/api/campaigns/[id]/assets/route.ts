@@ -8,6 +8,8 @@ import path from "path"
 import { randomUUID } from "crypto"
 import { maybeSanitizeImage } from "@/lib/svgSanitize"
 
+export const dynamic = "force-dynamic"
+
 type Params = { id: string }
 export const maxDuration = 30
 

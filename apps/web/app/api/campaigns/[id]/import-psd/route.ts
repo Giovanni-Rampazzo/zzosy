@@ -6,6 +6,9 @@ import { writeFile, mkdir } from "fs/promises"
 import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
+import { normalizeName } from "@/lib/normalize"
+
+export const dynamic = "force-dynamic"
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -262,20 +265,22 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     })
 
     // Remapear assetIds das peças existentes: old → new.
-    // Match primário por LABEL (case-insensitive, trim) — labels do PSD são
-    // estáveis entre re-imports. Tie-break por ORDER dentro do mesmo label
-    // (cobre PSDs com layers homônimos tipo "Layer 1"). Fallback final por
-    // ORDER posicional pra olds sem match de label.
+    // Match primário por LABEL via normalizeName (mesma logica do client em
+    // PsdImporter/PsdPieceImporter — remove acentos + espacos + case). Sem
+    // isso, label "Logo Fox" do banco nao batia com "LogoFox" do PSD client.
+    // Tie-break por ORDER dentro do mesmo label (cobre PSDs com layers
+    // homonimos tipo "Layer 1"). Fallback final por ORDER posicional pra olds
+    // sem match de label.
     const oldByLabel = new Map<string, Array<{ id: string; order: number }>>()
     for (const o of oldAssetsSnapshot) {
-      const k = (o.label ?? "").trim().toLowerCase()
+      const k = normalizeName(o.label ?? "")
       const arr = oldByLabel.get(k) ?? []
       arr.push({ id: o.id, order: o.order ?? 0 })
       oldByLabel.set(k, arr)
     }
     const newByLabel = new Map<string, Array<{ id: string; order: number }>>()
     for (const n of created) {
-      const k = (n.label ?? "").trim().toLowerCase()
+      const k = normalizeName(n.label ?? "")
       const arr = newByLabel.get(k) ?? []
       arr.push({ id: n.id, order: n.order ?? 0 })
       newByLabel.set(k, arr)

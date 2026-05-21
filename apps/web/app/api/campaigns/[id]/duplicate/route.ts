@@ -6,6 +6,8 @@ import { copyFile, mkdir, readdir, stat } from "fs/promises"
 import { existsSync } from "fs"
 import path from "path"
 
+export const dynamic = "force-dynamic"
+
 export const runtime = "nodejs"
 export const maxDuration = 60
 

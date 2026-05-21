@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma"
 import { normalizeTypography } from "@/lib/brandTypography"
 import { propagateBrandTypography } from "@/lib/brandTypographyPropagate"
 
+export const dynamic = "force-dynamic"
+
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function GET(req: Request, ctx: Ctx) {
