@@ -10,8 +10,8 @@ import { PIECE_STATUS_LIST, USER_SELECTABLE_STATUSES, statusMeta } from "@/lib/p
 import { FilterPill } from "@/components/ui/FilterPill"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
-import { PsdImporter } from "@/components/campaign/PsdImporter"
-import { PsdPieceImporter } from "@/components/campaign/PsdPieceImporter"
+import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
+import { PsdPieceImporter, type PsdPieceImporterHandle } from "@/components/campaign/PsdPieceImporter"
 import { Button } from "@/components/ui/Button"
 import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
@@ -75,6 +75,13 @@ export default function CampaignOverviewPage() {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
   const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
   const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
+  // Drag-and-drop de PSD direto no preview do KV (matriz) e na lista de peças.
+  // Refs nos importers expoem handlers que disparamos via dragEnd. Sem isso o
+  // user teria que clicar nos botoes Importar — drop-zone agiliza fluxo.
+  const psdMatrixImporterRef = useRef<PsdImporterHandle>(null)
+  const psdPieceImporterRef = useRef<PsdPieceImporterHandle>(null)
+  const [kvDragOver, setKvDragOver] = useState(false)
+  const [piecesDragOver, setPiecesDragOver] = useState(false)
 
   async function loadAll() {
     console.log("[LOAD-ALL] disparou em", new Date().toISOString().slice(11, 19), "id=", id)
@@ -323,12 +330,28 @@ export default function CampaignOverviewPage() {
           <div>
             <div
               onClick={() => router.push(`/editor?campaignId=${id}`)}
-              title="Abrir editor da matriz"
+              title="Abrir editor da matriz (ou arraste um .psd pra importar)"
+              onDragOver={e => { e.preventDefault(); if (!kvDragOver) setKvDragOver(true) }}
+              onDragLeave={e => {
+                // Evita flicker quando o cursor passa sobre filhos: so reseta
+                // se o ponteiro REALMENTE saiu do elemento (sem related target dentro).
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setKvDragOver(false)
+              }}
+              onDrop={async e => {
+                e.preventDefault()
+                setKvDragOver(false)
+                const file = Array.from(e.dataTransfer.files).find(f => /\.psd$/i.test(f.name))
+                if (!file) { alert("Arraste um arquivo .psd"); return }
+                await psdMatrixImporterRef.current?.importFile(file)
+              }}
               style={{
                 maxHeight: 220, display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#aaa", fontSize: 13,
                 cursor: "pointer",
-                transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                transition: "transform 0.15s ease, box-shadow 0.15s ease, outline 0.15s ease",
+                outline: kvDragOver ? "2px dashed #F09300" : "2px dashed transparent",
+                outlineOffset: 4,
+                borderRadius: 8,
               }}
               onMouseEnter={e => {
                 e.currentTarget.style.transform = "translateY(-1px)"
@@ -371,12 +394,14 @@ export default function CampaignOverviewPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2 }}>Matriz</div>
                 <PsdImporter
+                  ref={psdMatrixImporterRef}
                   campaignId={id}
                   onImported={loadAll}
                   size="lg"
                 />
                 {hasAssets && (
                   <PsdPieceImporter
+                    ref={psdPieceImporterRef}
                     campaignId={id}
                     campaignAssets={campaign.assets}
                     onImported={loadAll}
@@ -420,10 +445,39 @@ export default function CampaignOverviewPage() {
             else setSelected(s => Array.from(new Set([...s, ...visiblePieces.map(p => p.id)])))
           }
           return (
-        <div>
+        <div
+          onDragOver={e => {
+            // So aceita drop quando ha assets — sem assets nao da pra
+            // linkar layers do PSD (PsdPieceImporter exige campaignAssets).
+            const hasAssets = !!campaign.assets && campaign.assets.length > 0
+            if (!hasAssets) return
+            e.preventDefault()
+            if (!piecesDragOver) setPiecesDragOver(true)
+          }}
+          onDragLeave={e => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setPiecesDragOver(false)
+          }}
+          onDrop={async e => {
+            e.preventDefault()
+            setPiecesDragOver(false)
+            const hasAssets = !!campaign.assets && campaign.assets.length > 0
+            if (!hasAssets) { alert("Importe a matriz (PSD) primeiro — peças precisam de assets pra linkar"); return }
+            const files = Array.from(e.dataTransfer.files).filter(f => /\.psd$/i.test(f.name))
+            if (files.length === 0) { alert("Arraste 1 ou mais arquivos .psd"); return }
+            await psdPieceImporterRef.current?.importFiles(files)
+          }}
+          style={{
+            outline: piecesDragOver ? "2px dashed #F09300" : "2px dashed transparent",
+            outlineOffset: 4,
+            borderRadius: 8,
+            transition: "outline 0.15s ease",
+            padding: piecesDragOver ? 4 : 0,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
               Peças geradas ({visiblePieces.length})
+              {piecesDragOver && <span style={{ marginLeft: 12, color: "#F09300", fontSize: 11 }}>Solte os PSDs aqui</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {visiblePieces.length > 0 && (

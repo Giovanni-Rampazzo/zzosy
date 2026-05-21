@@ -16,9 +16,18 @@
  *
  * O editor sabe lidar com ambos os tipos (__assetId valido OU __embedded=true).
  */
-import { useState } from "react"
+import { useState, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/Button"
 import { normalizeName } from "@/lib/normalize"
+import { autoHidePhantomFolders } from "@/lib/psdLayerVisibility"
+
+/** Handle exposto via ref pra parent disparar import a partir de drag-drop
+ *  externo (ex: lista de peças na pagina da campanha). */
+export interface PsdPieceImporterHandle {
+  importFiles: (files: FileList | File[]) => Promise<void>
+  isLoading: () => boolean
+}
+import { normalizePsdFontToGoogle, extractFontWeight } from "@/lib/google-fonts"
 
 interface Asset {
   id: string
@@ -77,13 +86,21 @@ function applyPsdHiddenLocked(layerData: any, psdLayer: any) {
 
 // groupPath: array de nomes de folder ancestrais (raiz → pai direto). Preserva
 // hierarquia de groups do Photoshop pro round-trip ZZOSY → PSD.
-function collectAllLayers(layers: any[], groupPath: string[] = []): Array<{ layer: any; groupPath: string[] }> {
+//
+// `parentHidden` propaga visibilidade dos ancestrais. Sem isso, folders top-level
+// hidden (mesmo manualmente OU via autoHidePhantomFolders) eram ignorados e
+// todos os layers viravam visiveis na peca. Sintoma reportado: PSD multi-formato
+// (1 STORY + 2 STORIES + PROFILE no mesmo canvas) re-importado mostrava todos
+// os formatos sobrepostos.
+function collectAllLayers(layers: any[], groupPath: string[] = [], parentHidden = false): Array<{ layer: any; groupPath: string[] }> {
   const result: Array<{ layer: any; groupPath: string[] }> = []
   for (const layer of layers) {
+    const effectiveHidden = parentHidden || layer.hidden === true
+    if (effectiveHidden) continue
     if (layer.children?.length) {
       const folderName = (layer.name ?? "").trim() || "Group"
       const childPath = [...groupPath, folderName]
-      result.push(...collectAllLayers(layer.children, childPath))
+      result.push(...collectAllLayers(layer.children, childPath, effectiveHidden))
     } else {
       result.push({ layer, groupPath })
     }
@@ -91,12 +108,17 @@ function collectAllLayers(layers: any[], groupPath: string[] = []): Array<{ laye
   return result
 }
 
-export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Props) {
+export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(function PsdPieceImporter({ campaignId, campaignAssets, onImported }, ref) {
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState("")
   const [error, setError] = useState("")
   // Acumula fontes de TODOS os PSDs do batch — alert único no final.
   const fontsAccumulated = new Set<string>()
+
+  useImperativeHandle(ref, () => ({
+    importFiles: (files: FileList | File[]) => handleFiles(files),
+    isLoading: () => loading,
+  }), [loading])
 
   // Map normalizado pra match rapido: normalized(label) -> Asset
   const assetIndex = new Map<string, Asset>()
@@ -120,6 +142,12 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
 
     const pieceW = psd.width
     const pieceH = psd.height
+    // Detecta folders top-level fantasmas (presentes no PSD mas ausentes do
+    // composite raster) e marca como hidden ANTES do collect. Caso comum:
+    // PSD multi-formato (1 STORY + 2 STORIES + PROFILE) onde o composite que
+    // o Photoshop salvou tem so um deles visivel mas o flag `hidden` em
+    // folders individuais nao foi persistido corretamente.
+    autoHidePhantomFolders(psd)
     const allLayers = collectAllLayers(psd.children ?? [])
 
     setProgress(`(${index + 1}/${total}) Extraindo ${allLayers.length} layers…`)
@@ -135,10 +163,10 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
       const layerName = (layer.name ?? "").trim()
       if (!layerName || layerName === "Background") { zIndex++; continue }
 
-      const left = layer.left ?? 0
-      const top = layer.top ?? 0
-      const width = Math.max((layer.right ?? left + 200) - left, 10)
-      const height = Math.max((layer.bottom ?? top + 50) - top, 10)
+      let left = layer.left ?? 0
+      let top = layer.top ?? 0
+      let width = Math.max((layer.right ?? left + 200) - left, 10)
+      let height = Math.max((layer.bottom ?? top + 50) - top, 10)
 
       // Match normalizado contra os assets da campanha. Tentamos 2 caminhos:
       // 1) label puro (caso comum, ex: "Logo" -> asset "Logo")
@@ -158,11 +186,50 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
         const td = layer.text
         const rawText = String(td.text ?? layerName).split("\r\n").join("\n").split("\r").join("\n")
         const defStyle = td.style ?? {}
-        const defFontName = defStyle.font?.name ?? "Arial"
+        const defFontRaw = defStyle.font?.name ?? "Arial"
         if (defStyle.font?.name) fontsAccumulated.add(defStyle.font.name)
-        const defFontSize = defStyle.fontSize ?? 48
+        // Normaliza PostScript name pra Google Font family. Sem isso, asset
+        // ficava com fontFamily="Sicredi-Sans-Bold-Italic" (cru) — Fabric/browser
+        // nao acha esse @font-face, cai em fallback. Adobe-style: peso/estilo
+        // viram fontWeight/fontStyle separados, familia eh so o nome canonico.
+        const defFontName = normalizePsdFontToGoogle(defFontRaw) ?? defFontRaw
+        // fontSize cru do PSD esta em espaco PRE-transform. Calcula textScale
+        // do transform 6-elem pra ter fontSize visual real (mesma logica do
+        // PsdImporter principal — caso contrario "Seguro Viagem" sai com 788pt).
+        const tform: number[] | undefined = td.transform
+        let textScale = 1
+        if (tform && tform.length >= 4) {
+          const sx = Math.hypot(tform[0] ?? 1, tform[1] ?? 0)
+          const sy = Math.hypot(tform[2] ?? 0, tform[3] ?? 1)
+          const avg = (sx + sy) / 2
+          if (Number.isFinite(avg) && avg > 0) textScale = avg
+        }
+        const defFontSize = Math.round((defStyle.fontSize ?? 48) * textScale)
         const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
-        const defWeight = (defStyle.fauxBold || defFontName.toLowerCase().includes("bold")) ? "bold" : "normal"
+        // Peso CSS numerico (100..900) extraido do nome RAW. defStyle.fauxBold
+        // (Faux Bold no PS) forca 700 mesmo sem variante real. Sem isso, pesos
+        // intermediarios (Light/Medium/SemiBold) viravam Regular ou Bold.
+        const defWeight: number = defStyle.fauxBold ? 700 : extractFontWeight(defFontRaw)
+        // Leading em PONTOS — mesma regra do PsdImporter principal incluindo
+        // heuristica `leadingEqualsFont && autoLeading !== false` (PS persiste
+        // Auto como literal=fontSize sem flag).
+        const defLeadingRaw = typeof defStyle.leading === "number" ? defStyle.leading : undefined
+        const paraAutoFactor = typeof td.paragraphStyle?.autoLeading === "number" ? td.paragraphStyle.autoLeading : 1.2
+        const leadingEqualsFont = defLeadingRaw !== undefined && Math.abs(defLeadingRaw - (defStyle.fontSize ?? 48)) < 0.5
+        const isLeadingAuto = defStyle.autoLeading === true
+          || defLeadingRaw === undefined
+          || (leadingEqualsFont && defStyle.autoLeading !== false)
+        const defLeadingPt = isLeadingAuto
+          ? Math.round(defFontSize * paraAutoFactor)
+          : Math.round(defLeadingRaw! * textScale)
+        // Tracking PSD → charSpacing Fabric (mesma unidade 1/1000 em).
+        const defTracking = typeof defStyle.tracking === "number" ? defStyle.tracking : 0
+        // Italic detection: flag explicit OU sufixo italic no nome RAW (pre-normalize).
+        const defItalic = defStyle.fauxItalic === true || /italic|oblique/i.test(defFontRaw)
+        const defFontStyle: "normal" | "italic" = defItalic ? "italic" : "normal"
+        // textAlign do PSD: paragraphStyle.justification (left/center/right/justify).
+        const defAlignRaw = td.paragraphStyle?.justification ?? "left"
+        const defAlign = defAlignRaw === "center" || defAlignRaw === "right" || defAlignRaw === "justify" ? defAlignRaw : "left"
 
         let spans: any[] = []
         const runs = td.styleRuns ?? []
@@ -173,22 +240,30 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
             const segment = rawText.substring(cursor, cursor + len)
             if (!segment) { cursor += len; continue }
             const rs = run.style ?? {}
-            const fontName = rs.font?.name ?? defFontName
+            const runFontRaw = rs.font?.name ?? defFontRaw
             if (rs.font?.name) fontsAccumulated.add(rs.font.name)
-            const fontSize = rs.fontSize ?? defFontSize
+            // Weight numerico per-run. Quando o run nao tem fonte propria,
+            // herda do defWeight (default do bloco).
+            const fontWeight: number = rs.fauxBold ? 700
+              : (rs.font?.name ? extractFontWeight(runFontRaw) : defWeight)
+            const fontStyle = (rs.fauxItalic || /italic|oblique/i.test(runFontRaw)) ? "italic" : defFontStyle
+            // Normaliza a familia depois pra aplicar no Fabric/render.
+            const fontName = normalizePsdFontToGoogle(runFontRaw) ?? runFontRaw
+            // fontSize do RUN em espaco pre-transform — escala pelo textScale.
+            const fontSize = Math.round(((rs.fontSize ?? defStyle.fontSize ?? 48)) * textScale)
             const color = rs.fillColor ? colorToHex(rs.fillColor) : defColor
-            const fontWeight = (rs.fauxBold || fontName.toLowerCase().includes("bold")) ? "bold" : defWeight
-            spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontFamily: fontName } })
+            spans.push({ text: segment, style: { color, fontSize, fontWeight, fontStyle, fontFamily: fontName } })
             cursor += len
           }
           if (cursor < rawText.length) {
-            spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(defFontSize), fontWeight: defWeight, fontFamily: defFontName } })
+            spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: defFontSize, fontWeight: defWeight, fontStyle: defFontStyle, fontFamily: defFontName } })
           }
         } else {
-          spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(defFontSize), fontWeight: defWeight, fontFamily: defFontName } }]
+          spans = [{ text: rawText, style: { color: defColor, fontSize: defFontSize, fontWeight: defWeight, fontStyle: defFontStyle, fontFamily: defFontName } }]
         }
 
-        // Monta styles per-char pra preservar formatacao
+        // Monta styles per-char pra preservar formatacao (inclui fontStyle pra
+        // captar italic em runs especificos sem afetar o resto do texto).
         const styles: any = {}
         if (spans.length > 1) {
           styles[0] = {}
@@ -201,22 +276,29 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
                 fontSize: span.style.fontSize,
                 fontFamily: span.style.fontFamily,
                 fontWeight: span.style.fontWeight,
+                fontStyle: span.style.fontStyle,
               }
               charIdx++
             }
           }
         }
 
-        // Overrides extraidos do PSD (cor, fonte, tamanho, estilos per-char).
-        // Comuns aos 2 caminhos (linkado e novo asset): a peca importada SEMPRE
-        // preserva o look do PSD que o designer ajustou. Texto cru (caracteres)
-        // pode vir do asset (caminho A) ou ser usado pra criar asset (caminho B).
+        // Overrides extraidos do PSD (cor, fonte, tamanho, leading, tracking,
+        // alinhamento, estilos per-char). Paridade com PsdImporter principal —
+        // ANTES faltavam leadingPt + charSpacing + fontStyle + textAlign aqui,
+        // entao peca reimportada perdia entrelinhas/espacamento/italico do PSD.
         const overrides: any = {
           fill: defColor,
-          fontSize: Math.round(defFontSize),
+          fontSize: defFontSize,
           fontFamily: defFontName,
           fontWeight: defWeight,
-          textAlign: "left",
+          fontStyle: defFontStyle,
+          textAlign: defAlign,
+          charSpacing: defTracking,
+          leadingPt: defLeadingPt,
+          // lineHeight derivado pra compat com leitores legacy (Fabric usa
+          // multiplier; leadingPt eh a fonte da verdade no editor).
+          lineHeight: defFontSize > 0 ? defLeadingPt / defFontSize : 1.0,
         }
         if (Object.keys(styles).length > 0) overrides.styles = styles
 
@@ -254,7 +336,34 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
       } else if (layer.canvas) {
         // === IMAGE LAYER (raster com pixels) ===
         try {
-          const blob = await canvasToBlob(layer.canvas as HTMLCanvasElement, "image/png")
+          // CLIP ao tamanho do doc. Layers com bleed (bbox fora do canvas, ex:
+          // bg/grid -200→+200) sao recortados pra so manter o que esta DENTRO.
+          // Paridade com PsdImporter principal — mesma logica de clip de overflow.
+          let sourceCanvas: HTMLCanvasElement = layer.canvas as HTMLCanvasElement
+          {
+            const clipL = Math.max(0, -left)
+            const clipT = Math.max(0, -top)
+            const clipR = Math.min(sourceCanvas.width, pieceW - left)
+            const clipB = Math.min(sourceCanvas.height, pieceH - top)
+            const clipW = clipR - clipL
+            const clipH = clipB - clipT
+            const needsClip = clipL > 0 || clipT > 0 || clipR < sourceCanvas.width || clipB < sourceCanvas.height
+            if (needsClip && clipW > 0 && clipH > 0) {
+              const clipped = document.createElement("canvas")
+              clipped.width = clipW
+              clipped.height = clipH
+              const cx = clipped.getContext("2d")
+              if (cx) {
+                cx.drawImage(sourceCanvas, clipL, clipT, clipW, clipH, 0, 0, clipW, clipH)
+                sourceCanvas = clipped
+                left = left + clipL
+                top = top + clipT
+                width = clipW
+                height = clipH
+              }
+            }
+          }
+          const blob = await canvasToBlob(sourceCanvas, "image/png")
           // Converte blob pra dataUrl pra gravar inline no piece.data (layers embedded
           // nao tem asset associado entao precisam carregar o pixel info junto)
           const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -391,7 +500,7 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
         window.alert(
           `PSD(s) usa(m) fonte(s) não instalada(s):\n• ${missing.join("\n• ")}\n\n` +
           `Sem essas fontes o editor renderiza com fallback (métricas diferentes).\n` +
-          `Faça upload dos .ttf/.otf na página de edição do cliente, aba 'Fontes da marca'.`
+          `Faça upload dos .ttf/.otf na página de edição da empresa, aba 'Fontes da marca'.`
         )
       }
       fontsAccumulated.clear()
@@ -426,4 +535,4 @@ export function PsdPieceImporter({ campaignId, campaignAssets, onImported }: Pro
       {error && <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>{error}</div>}
     </>
   )
-}
+})

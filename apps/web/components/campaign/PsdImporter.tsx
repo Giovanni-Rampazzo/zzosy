@@ -1,5 +1,5 @@
 "use client"
-import { useState, useRef } from "react"
+import { useState, useRef, forwardRef, useImperativeHandle } from "react"
 import { detectFontMetadata, normalizePsdFontToGoogle, loadCustomFontFamily, extractFontWeight, type CustomFontFile } from "@/lib/google-fonts"
 import { Button } from "@/components/ui/Button"
 import { autoHidePhantomFolders } from "@/lib/psdLayerVisibility"
@@ -11,6 +11,13 @@ interface Props {
       colunas de CTA principal. Mantem a filosofia ZZOSY de uniformidade
       visual em cada contexto. */
   size?: "sm" | "md" | "lg"
+}
+
+/** Handle exposto via ref pra parent disparar import a partir de drag-drop
+ *  externo (ex: preview do KV na pagina da campanha). */
+export interface PsdImporterHandle {
+  importFile: (file: File) => Promise<void>
+  isLoading: () => boolean
 }
 
 function colorToHex(color: any): string {
@@ -1186,7 +1193,7 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
-export function PsdImporter({ campaignId, onImported, size = "md" }: Props) {
+export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImporter({ campaignId, onImported, size = "md" }, ref) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [progress, setProgress] = useState("")
@@ -1202,6 +1209,11 @@ export function PsdImporter({ campaignId, onImported, size = "md" }: Props) {
   // Sem isso o GET /api/clients/{id} de cada upload parte do mesmo base e o
   // segundo PATCH sobrescreve o primeiro (audit C5).
   const fontUploadLock = useRef<Promise<void>>(Promise.resolve())
+
+  useImperativeHandle(ref, () => ({
+    importFile: (file: File) => handleFile(file),
+    isLoading: () => loading,
+  }), [loading])
 
   async function handleFile(file: File) {
     if (loading) return // guard de re-entrada
@@ -2252,4 +2264,4 @@ export function PsdImporter({ campaignId, onImported, size = "md" }: Props) {
       )}
     </>
   )
-}
+})
