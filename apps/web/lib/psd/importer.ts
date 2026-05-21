@@ -10,6 +10,8 @@
 import { readPsdDocument, resolveClippingChains, type ReadWarning } from "./reader"
 import { buildCampaignFromPsd, type CampaignBuild, type BuildWarning } from "./toCampaign"
 import { detectWrapperSmartObjects } from "./postProcess"
+import { resolveAllClippingChains } from "./clipping"
+import { propagateFolderMasks } from "./folderMasks"
 
 export interface ImportResult {
   ok: boolean
@@ -94,6 +96,29 @@ export async function importPsdToCampaign(
   const wrapperResult = detectWrapperSmartObjects(document)
   if (wrapperResult.detected.length > 0) {
     console.log("[psd-new] Smart Object wrappers detectados:", wrapperResult.detected)
+  }
+
+  // Fase 3: clipping chains resolved no build time. Substitui mask.kind=
+  // "clipping" pela silhueta raster extraida do clipBase. Sem isso, editor
+  // caia em rect bbox fallback → foto recortada em quadrado em vez da
+  // shield curve. Agora cada layer com clipping tem mask.kind="raster" com
+  // a silhueta Adobe-fiel ja resolved.
+  options.onProgress?.("Resolvendo clipping chains…")
+  const clipStats = await resolveAllClippingChains(document)
+  if (clipStats.pending > 0) {
+    console.warn(`[psd-new] ${clipStats.pending} clipping chains nao resolvidas (base sem canvas?). Camadas afetadas vao renderizar SEM mask.`)
+  }
+  if (clipStats.resolved > 0) {
+    console.log(`[psd-new] ${clipStats.resolved} clipping chains resolvidas → raster masks`)
+  }
+
+  // Fase 3: propaga folder masks (mask de pasta intersectada com mask propria
+  // de cada child). Adobe: composite do folder eh APENAS onde folder.mask
+  // eh opaca, e cada child dentro vale a intersecao com sua mask propria.
+  options.onProgress?.("Propagando folder masks…")
+  const folderMaskStats = await propagateFolderMasks(document)
+  if (folderMaskStats.propagated > 0) {
+    console.log(`[psd-new] ${folderMaskStats.propagated} folder masks propagadas pros children`)
   }
 
   options.onProgress?.("Mapeando assets…")
