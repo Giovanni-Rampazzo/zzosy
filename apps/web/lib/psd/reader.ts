@@ -17,6 +17,7 @@
  * tiver bug ou limitação, é aqui que documentamos + decidimos workaround.
  */
 import { readPsd, type Psd, type Layer as AgPsdLayer } from "ag-psd"
+import { normalizePsdFontToGoogle, extractFontWeight } from "../google-fonts"
 import type {
   PsdDocument,
   PsdLayer,
@@ -106,6 +107,12 @@ export function readPsdDocument(
     skipThumbnail: true,
   })
 
+  // Index linkedFiles por id pra resolver Smart Objects embedded.
+  const linkedFilesById = new Map<string, any>()
+  for (const lf of (raw.linkedFiles ?? [])) {
+    if (lf?.id) linkedFilesById.set(lf.id, lf)
+  }
+
   const document: PsdDocument = {
     width: raw.width ?? 0,
     height: raw.height ?? 0,
@@ -113,7 +120,7 @@ export function readPsdDocument(
     bitDepth: (raw.bitsPerChannel as 8 | 16 | 32) ?? 8,
     colorMode: mapColorMode(raw.colorMode, warn),
     composite: includeComposite ? canvasToImageData(raw.canvas) : null,
-    layers: (raw.children ?? []).map((l, i) => readLayer(l, [], i, warn)),
+    layers: (raw.children ?? []).map((l, i) => readLayer(l, [], i, warn, linkedFilesById)),
     metadata: buildMetadata(raw),
   }
 
@@ -129,10 +136,11 @@ function readLayer(
   parentPath: string[],
   index: number,
   warn: (w: ReadWarning) => void,
+  linkedFiles: Map<string, any>,
 ): PsdLayer {
   // Folder: ag-psd entrega children[] no Layer
   if (Array.isArray(l.children) && l.children.length > 0) {
-    return readGroup(l, parentPath, warn)
+    return readGroup(l, parentPath, warn, linkedFiles)
   }
   // Adjustment Layer — fora de escopo, marca como warning + ignora visualmente
   if ((l as any).adjustment) {
@@ -142,7 +150,6 @@ function readLayer(
       message: `Adjustment Layer '${(l as any).adjustment?.type ?? "unknown"}' ignorado. Aplique manualmente antes de salvar o PSD.`,
       raw: (l as any).adjustment,
     })
-    // Devolve um "stub" adjustment que renderer pode pular
     return readAdjustment(l, parentPath)
   }
   // Text Layer
@@ -151,25 +158,24 @@ function readLayer(
   }
   // Smart Object Layer (placedLayer)
   if ((l as any).placedLayer) {
-    return readSmartObject(l, parentPath, warn)
+    return readSmartObject(l, parentPath, warn, linkedFiles)
   }
   // Shape Layer: tem vectorMask + vectorFill/vectorStroke
   if ((l as any).vectorMask?.paths?.length && ((l as any).vectorFill || (l as any).vectorStroke)) {
     return readShape(l, parentPath, warn)
   }
-  // Default: raster image
   return readImage(l, parentPath, warn)
 }
 
 // ── Group ────────────────────────────────────────────────────────────
 
-function readGroup(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) => void): PsdGroupLayer {
+function readGroup(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) => void, linkedFiles: Map<string, any>): PsdGroupLayer {
   const name = l.name ?? "<unnamed>"
   const childPath = [...parentPath, name]
   return {
     ...readCommon(l, parentPath),
     type: "group",
-    children: (l.children ?? []).map((c, i) => readLayer(c, childPath, i, warn)),
+    children: (l.children ?? []).map((c, i) => readLayer(c, childPath, i, warn, linkedFiles)),
     passThrough: l.blendMode === "pass through",
   }
 }
@@ -227,21 +233,96 @@ function readImage(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) =
 
 // ── Smart Object ─────────────────────────────────────────────────────
 
-function readSmartObject(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) => void): PsdSmartObjectLayer {
+function readSmartObject(
+  l: AgPsdLayer,
+  parentPath: string[],
+  warn: (w: ReadWarning) => void,
+  linkedFiles: Map<string, any>,
+): PsdSmartObjectLayer {
   const placed = (l as any).placedLayer
   const xfm = placed?.transform
   const transform: PsdTransform2D = Array.isArray(xfm) && xfm.length === 8
     ? { corners: xfm as PsdTransform2D["corners"] }
     : IDENTITY_TRANSFORM
 
+  // F12.9: resolve conteudo embedded via linkedFiles.id == placedLayer.id
+  const content = resolveSmartObjectContent(placed, linkedFiles, warn, l.name ?? "")
+
   return {
     ...readCommon(l, parentPath),
     type: "smartObject",
-    content: { kind: "unknown" }, // Fase 2: extrai embedded vs linked
+    content,
     transform,
     composite: canvasToImageData(l.canvas),
-    isWrapper: false, // calculado em fase de pos-processamento (Fase 2)
+    isWrapper: false, // postProcess.detectWrapperSmartObjects ajusta depois
   }
+}
+
+/**
+ * Extrai o conteudo embedded de um Smart Object via lookup no linkedFiles
+ * do PSD. PSDs profissionais quase sempre tem o asset embedded — apenas
+ * Linked Smart Objects (raros) referenciam arquivo externo via path.
+ */
+function resolveSmartObjectContent(
+  placed: any,
+  linkedFiles: Map<string, any>,
+  warn: (w: ReadWarning) => void,
+  layerName: string,
+): import("./types").PsdSmartObjectContent {
+  if (!placed?.id) return { kind: "unknown" }
+  const lf = linkedFiles.get(placed.id)
+  if (!lf) {
+    // PSD pode ter Smart Object referenciando linked externo (path no disco)
+    // que nao foi embedded. Fica como "linked" + filePath placeholder.
+    return { kind: "linked", filePath: placed.placed ?? "<unknown-link>" }
+  }
+  const bytes: Uint8Array | undefined = lf.data
+  if (!bytes || bytes.length === 0) {
+    warn({
+      kind: "decode-failed",
+      layerName,
+      message: `Smart Object linked file '${lf.name ?? "?"}' presente mas SEM bytes. ag-psd nao expoe data — ignorando conteudo.`,
+    })
+    return { kind: "linked", filePath: lf.name ?? "<no-data>" }
+  }
+  // Detecta formato pelo nome ou pelo magic-bytes
+  const format = detectSmartObjectFormat(lf.name ?? "", lf.type, bytes)
+  return { kind: "embedded", format, bytes }
+}
+
+type EmbeddedFormat = "psb" | "psd" | "png" | "jpg" | "ai" | "pdf" | "unknown"
+function detectSmartObjectFormat(
+  name: string,
+  type: string | undefined,
+  bytes: Uint8Array,
+): EmbeddedFormat {
+  // Magic bytes primeiro (mais confiavel)
+  if (bytes.length >= 4) {
+    // PSD/PSB: "8BPS" (0x38425053)
+    if (bytes[0] === 0x38 && bytes[1] === 0x42 && bytes[2] === 0x50 && bytes[3] === 0x53) {
+      // PSB tem version 2 no byte 4-5 (big-endian), PSD tem version 1
+      const version = (bytes[4] << 8) | bytes[5]
+      return version === 2 ? "psb" : "psd"
+    }
+    // PNG: 0x89504E47
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return "png"
+    // JPEG: FFD8FF
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return "jpg"
+    // PDF: "%PDF"
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "pdf"
+  }
+  // Fallback: extensao
+  const lower = name.toLowerCase()
+  if (lower.endsWith(".psb")) return "psb"
+  if (lower.endsWith(".psd")) return "psd"
+  if (lower.endsWith(".png")) return "png"
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "jpg"
+  if (lower.endsWith(".ai")) return "ai"
+  if (lower.endsWith(".pdf")) return "pdf"
+  // ag-psd `type` field se confiavel
+  if (type === "pdfFile") return "pdf"
+  if (type === "rasterImage") return "png" // chute conservador
+  return "unknown"
 }
 
 // ── Shape ────────────────────────────────────────────────────────────
@@ -534,12 +615,21 @@ function mapAlign(a: any): "left" | "center" | "right" | "justify" {
   return "left"
 }
 
-function mapCharStyle(s: any, warn: (w: ReadWarning) => void, layerName: string): PsdCharStyle {
-  const fontFamily = s.font?.name ?? "Arial"
+/**
+ * Mapeia ag-psd char style pro modelo ZZOSY. CRITICO: normaliza o nome
+ * PostScript pra family CSS limpo (sem sufixo de weight/italic/variable font).
+ *
+ * PSD entrega "Exo2Roman_444.000wght_0ital" — modelo armazena
+ * fontFamily="Exo 2" + fontWeight=400 + fontStyle="italic". UI/renderer
+ * leem o modelo limpo, nao precisam re-parsear.
+ */
+function mapCharStyle(s: any, _warn: (w: ReadWarning) => void, _layerName: string): PsdCharStyle {
+  const rawName = s.font?.name ?? "Arial"
+  const normalizedFamily = normalizePsdFontToGoogle(rawName) ?? rawName
   return {
-    fontFamily,
-    fontWeight: extractWeightFromPostScript(fontFamily, !!s.fauxBold),
-    fontStyle: detectItalic(fontFamily, !!s.fauxItalic) ? "italic" : "normal",
+    fontFamily: normalizedFamily,
+    fontWeight: extractFontWeight(rawName) || (s.fauxBold ? 700 : 400),
+    fontStyle: detectItalic(rawName, !!s.fauxItalic) ? "italic" : "normal",
     fontSize: typeof s.fontSize === "number" ? s.fontSize : 48,
     color: s.fillColor ? rgbToHex(s.fillColor) : "#000000",
     tracking: typeof s.tracking === "number" ? s.tracking : 0,
@@ -554,9 +644,10 @@ function mapCharStyle(s: any, warn: (w: ReadWarning) => void, layerName: string)
 function mapCharStylePartial(s: any): Partial<PsdCharStyle> {
   const out: Partial<PsdCharStyle> = {}
   if (s.font?.name) {
-    out.fontFamily = s.font.name
-    out.fontWeight = extractWeightFromPostScript(s.font.name, !!s.fauxBold)
-    out.fontStyle = detectItalic(s.font.name, !!s.fauxItalic) ? "italic" : "normal"
+    const rawName = s.font.name
+    out.fontFamily = normalizePsdFontToGoogle(rawName) ?? rawName
+    out.fontWeight = extractFontWeight(rawName) || (s.fauxBold ? 700 : 400)
+    out.fontStyle = detectItalic(rawName, !!s.fauxItalic) ? "italic" : "normal"
   }
   if (typeof s.fontSize === "number") out.fontSize = s.fontSize
   if (s.fillColor) out.color = rgbToHex(s.fillColor)
@@ -567,23 +658,6 @@ function mapCharStylePartial(s: any): Partial<PsdCharStyle> {
   if (s.fauxBold) out.fauxBold = true
   if (s.fauxItalic) out.fauxItalic = true
   return out
-}
-
-// Adobe convention: PostScript name "Family-Weight[Italic]".
-// Extrai peso CSS 100-900 — versao simplificada da regex em google-fonts.ts.
-function extractWeightFromPostScript(name: string, fauxBold: boolean): number {
-  if (fauxBold) return 700
-  const n = name.toLowerCase()
-  if (/\b(extra|ultra)\s*black\b/.test(n)) return 950
-  if (/\b(extra|ultra)\s*bold\b/.test(n)) return 800
-  if (/\b(extra|ultra)\s*light\b/.test(n)) return 200
-  if (/\b(semi|demi)\s*bold\b/.test(n)) return 600
-  if (/\b(black|heavy)\b/.test(n)) return 900
-  if (/\bthin\b/.test(n)) return 100
-  if (/\bmedium\b/.test(n)) return 500
-  if (/\blight\b/.test(n)) return 300
-  if (/\bbold\b/.test(n)) return 700
-  return 400
 }
 
 function detectItalic(name: string, faux: boolean): boolean {

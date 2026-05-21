@@ -9,6 +9,7 @@
  */
 import { readPsdDocument, resolveClippingChains, type ReadWarning } from "./reader"
 import { buildCampaignFromPsd, type CampaignBuild, type BuildWarning } from "./toCampaign"
+import { detectWrapperSmartObjects } from "./postProcess"
 
 export interface ImportResult {
   ok: boolean
@@ -86,6 +87,14 @@ export async function importPsdToCampaign(
   }
 
   resolveClippingChains(document)
+
+  // Fase 2: detecta Smart Objects "wrapper" (PA do Sicredi, mockups de
+  // designer, preview embedded com layers acima duplicando). Marca isWrapper
+  // em cada SO afetado. toCampaign omite ou avisa.
+  const wrapperResult = detectWrapperSmartObjects(document)
+  if (wrapperResult.detected.length > 0) {
+    console.log("[psd-new] Smart Object wrappers detectados:", wrapperResult.detected)
+  }
 
   options.onProgress?.("Mapeando assets…")
   let build: CampaignBuild

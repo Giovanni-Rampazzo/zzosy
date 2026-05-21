@@ -396,6 +396,17 @@ function emitImageLayer(l: PsdImageLayer, parentPath: string[], ctx: BuildContex
 // ── SMART OBJECT ─────────────────────────────────────────────────────
 
 function emitSmartObjectLayer(l: PsdSmartObjectLayer, parentPath: string[], ctx: BuildContext) {
+  // Fase 2: Smart Objects detectados como "wrapper" (PA do Sicredi etc) tem
+  // conteudo que duplica outras layers acima. Por padrao importamos como
+  // HIDDEN — user re-mostra manual se for o conteudo principal. Sem isso
+  // o canvas do SO desenha em cima das layers editaveis, criando duplicacao.
+  if (l.isWrapper) {
+    ctx.warnings.push({
+      kind: "fallback-applied",
+      layerName: l.name,
+      message: "Smart Object 'wrapper' (cobre canvas + layers acima duplicam) — importado como hidden. Re-mostrar manual no editor se for o conteudo principal.",
+    })
+  }
   if (!l.composite?.data) {
     ctx.warnings.push({
       kind: "empty-canvas",
@@ -428,7 +439,8 @@ function emitSmartObjectLayer(l: PsdSmartObjectLayer, parentPath: string[], ctx:
     // NAO deve adicionar Fabric.Shadow extra — evita doubling.
     pixelsIncludeEffects: true,
     mask: l.mask,
-    hidden: !l.visible || undefined,
+    // isWrapper → hidden default (user re-mostra se quiser).
+    hidden: l.isWrapper ? true : (!l.visible || undefined),
     locked: l.locked || undefined,
   })
   ctx.layers.push(layerFromLayer(tempId, l, ctx, parentPath))

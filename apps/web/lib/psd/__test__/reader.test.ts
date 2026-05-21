@@ -23,11 +23,26 @@ const bytes = fs.readFileSync(PSD_PATH)
 const sizeMB = (bytes.length / 1024 / 1024).toFixed(1)
 console.log(`Lendo PSD: ${PSD_PATH} (${sizeMB}MB)\n`)
 
+// Smart Object content extraction precisa de linkedFiles do PSD — esses
+// nao dependem de canvas, vem do binario. Mantemos includeImageData:false
+// pra inspecao rapida mas linkedFiles continuam sendo lidos.
 const { document, warnings } = readPsdDocument(bytes.buffer, {
-  includeImageData: false, // pula raster pra inspect rapido
+  includeImageData: false,
   includeComposite: false,
 })
 resolveClippingChains(document)
+
+// Fase 2: testa wrapper detection + smart object content
+import("../postProcess").then(m => {
+  const wrap = m.detectWrapperSmartObjects(document)
+  console.log("=== WRAPPER SMART OBJECTS DETECTADOS ===")
+  if (wrap.detected.length > 0) {
+    console.log(`  ${wrap.detected.length}: ${wrap.detected.join(", ")}`)
+  } else {
+    console.log("  (none)")
+  }
+  console.log()
+}).catch(e => console.error("postProcess import failed:", e))
 
 console.log("=== DOCUMENT ===")
 console.log(`  ${document.width}×${document.height} @ ${document.dpi}dpi, ${document.colorMode}/${document.bitDepth}-bit`)
@@ -104,3 +119,22 @@ for (const s of sosBaked) {
   const fxKeys = Object.keys(s.effects ?? {}).join(",") || "(none)"
   console.log(`  "${s.label}" — effects metadata=[${fxKeys}] (editor NAO adiciona shadow extra)`)
 }
+console.log()
+
+// Smart Object content extraction (Fase 2)
+console.log("=== SMART OBJECT CONTENT (Fase 2 — embedded extraction) ===")
+function dumpSO(layers: any[]) {
+  for (const l of layers) {
+    if (l.type === "smartObject") {
+      const c = l.content
+      const desc = c.kind === "embedded" ? `embedded ${c.format} (${(c.bytes?.length ?? 0)} bytes)`
+                 : c.kind === "linked"   ? `linked "${c.filePath}"`
+                 : "unknown"
+      const wrap = l.isWrapper ? " [WRAPPER]" : ""
+      console.log(`  "${l.name}" — ${desc}${wrap}`)
+    }
+    if (l.children) dumpSO(l.children)
+  }
+}
+dumpSO(document.layers)
+console.log(`  required fonts (${build.requiredFonts.length}):`, build.requiredFonts.join(", "))

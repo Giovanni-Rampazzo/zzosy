@@ -1279,7 +1279,37 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
         }
         setProgress(`OK — ${result.stats?.assets} assets em ${result.stats?.durationMs}ms`)
         console.log("[psd-new] stats:", result.stats, "warnings:", result.warnings.length, "fonts:", result.requiredFonts)
-        // TODO Fase 2: integrar missing-fonts modal usando result.requiredFonts
+
+        // F12.8: missing-fonts check (mesma logica do legacy linha 2073-2092)
+        // Fontes que o browser nao tem instaladas/carregadas → fallback Arial
+        // → metricas divergem do PSD → wrap/altura erradas. UI exibe modal
+        // pra user fazer upload inline do .ttf/.otf.
+        try {
+          const missing: string[] = []
+          if (typeof document !== "undefined" && (document as any).fonts?.check) {
+            for (const fname of result.requiredFonts) {
+              const probe = `12px "${fname.replace(/"/g, '\\"')}"`
+              try { if (!(document as any).fonts.check(probe)) missing.push(fname) }
+              catch { missing.push(fname) }
+            }
+          }
+          if (missing.length > 0) {
+            // Busca clientId pela campanha pra wire o upload de fonte.
+            let clientId: string | null = null
+            try {
+              const r = await fetch(`/api/campaigns/${campaignId}`)
+              if (r.ok) {
+                const c = await r.json()
+                clientId = c?.client?.id ?? c?.clientId ?? null
+              }
+            } catch {}
+            setMissingFontsModal({
+              fonts: missing.map(name => ({ name, status: "pending" as const })),
+              clientId,
+            })
+          }
+        } catch (e) { console.warn("[psd-new font-check] falhou:", e) }
+
         onImported()
         setLoading(false)
         return
