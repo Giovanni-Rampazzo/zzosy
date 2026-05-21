@@ -2,6 +2,7 @@
 import { useState } from "react"
 import { exportPieces, ExportFormat } from "@/lib/exportPiece"
 import { Button } from "@/components/ui/Button"
+import { useModalEscape } from "@/lib/useModalEscape"
 
 interface PieceLite {
   id: string
@@ -28,6 +29,7 @@ export function ExportDialog({ pieces, onClose, campaignName }: Props) {
   const [selectedFormats, setSelectedFormats] = useState<ExportFormat[]>(["PSD"])
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState("")
+  useModalEscape(!exporting, onClose)
 
   function toggleFormat(f: ExportFormat) {
     setSelectedFormats(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f])

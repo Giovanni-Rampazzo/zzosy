@@ -23,7 +23,7 @@ export default function ApprovalsPage() {
   const [updating, setUpdating] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch("/api/pieces").then(r=>r.json()).then(d=>{
+    fetch("/api/pieces", { cache: "no-store" }).then(r=>r.json()).then(d=>{
       setPieces(Array.isArray(d) ? d : [])
       setLoading(false)
     })

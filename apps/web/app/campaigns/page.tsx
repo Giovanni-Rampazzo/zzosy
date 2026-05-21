@@ -45,7 +45,7 @@ export default function CampaignsPage() {
   }
 
   useEffect(() => {
-    fetch("/api/campaigns").then(r => r.json()).then(d => {
+    fetch("/api/campaigns", { cache: "no-store" }).then(r => r.json()).then(d => {
       setCampaigns(Array.isArray(d) ? d : [])
       setLoading(false)
     })

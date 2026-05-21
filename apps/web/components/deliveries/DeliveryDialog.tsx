@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { buildDeliveryZip, type ExportFormat } from "@/lib/exportPiece"
 import { Button } from "@/components/ui/Button"
 import { FilterPill } from "@/components/ui/FilterPill"
+import { useModalEscape } from "@/lib/useModalEscape"
 
 interface PieceLite {
   id: string
@@ -41,6 +42,7 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [progress, setProgress] = useState("")
+  useModalEscape(!working, onClose)
 
   useEffect(() => {
     fetch(`/api/pieces?campaignId=${campaignId}`, { cache: "no-store" })

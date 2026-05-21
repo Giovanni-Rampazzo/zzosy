@@ -235,7 +235,7 @@ export default function DashboardClient({ user, campaigns: initialCampaigns, tot
 }) {
   const router = useRouter();
   const [campaigns, setCampaigns] = useState(initialCampaigns);
-  const refreshCampaigns = () => { fetch("/api/campaigns").then(r => r.json()).then(data => { if (Array.isArray(data)) setCampaigns(data); }); };
+  const refreshCampaigns = () => { fetch("/api/campaigns", { cache: "no-store" }).then(r => r.json()).then(data => { if (Array.isArray(data)) setCampaigns(data); }); };
   useEffect(() => {
     refreshCampaigns();
     window.addEventListener("focus", refreshCampaigns);

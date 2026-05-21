@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { Button } from "@/components/ui/Button"
+import { useModalEscape } from "@/lib/useModalEscape"
 
 interface Props {
   onClose: () => void
@@ -11,6 +12,7 @@ export function NewClientModal({ onClose, onCreated }: Props) {
   const [form, setForm] = useState({ name: "", contact: "", email: "", phone: "", address: "" })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  useModalEscape(!loading, onClose)
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })) }
 
@@ -42,7 +44,7 @@ export function NewClientModal({ onClose, onCreated }: Props) {
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"white",borderRadius:12,width:480,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
         <div style={{padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
-          <span style={{fontWeight:700,fontSize:16}}>Novo Cliente</span>
+          <span style={{fontWeight:700,fontSize:16}}>Nova Empresa</span>
         </div>
         <form onSubmit={handleSubmit} style={{padding:24,display:"flex",flexDirection:"column",gap:16}}>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -50,7 +52,7 @@ export function NewClientModal({ onClose, onCreated }: Props) {
             <input
               value={form.name}
               onChange={e => set("name", e.target.value)}
-              placeholder="Nome do cliente"
+              placeholder="Nome da empresa"
               required
               style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}
             />

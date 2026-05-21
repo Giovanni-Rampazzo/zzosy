@@ -3,6 +3,7 @@ import { useSession, signOut } from "next-auth/react"
 import { useEffect, useRef, useState } from "react"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
+import { plans } from "@/lib/plans-config"
 
 interface Brand {
   brandName?: string | null
@@ -13,6 +14,17 @@ interface Brand {
 }
 
 const DEFAULT_COLOR = "#F5C400"
+
+const CHECKER: React.CSSProperties = {
+  backgroundColor: "#FFFFFF",
+  backgroundImage:
+    "linear-gradient(45deg, #C8C8C8 25%, transparent 25%)," +
+    "linear-gradient(-45deg, #C8C8C8 25%, transparent 25%)," +
+    "linear-gradient(45deg, transparent 75%, #C8C8C8 75%)," +
+    "linear-gradient(-45deg, transparent 75%, #C8C8C8 75%)",
+  backgroundSize: "16px 16px",
+  backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
+}
 
 export default function AccountPage() {
   const { data: session } = useSession()
@@ -71,18 +83,25 @@ export default function AccountPage() {
   return (
     <PageShell>
       <div style={{padding:32,maxWidth:760}}>
-        <h1 style={{fontSize:22,fontWeight:700,marginBottom:32}}>Account</h1>
+        <h1 style={{fontSize:22,fontWeight:700,marginBottom:32}}>Conta</h1>
 
-        <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:16}}>
-          <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.8px",color:"#888",marginBottom:16}}>Minha Assinatura</div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div>
-              <div style={{fontSize:18,fontWeight:700}}>Plano Pro</div>
-              <div style={{fontSize:12,color:"#888",marginTop:4}}>R$ 299/mês</div>
+        {(() => {
+          // TODO: ler plano real do user/tenant; por ora hardcoded "pro".
+          // Source of truth para precos: lib/plans-config (era hardcoded R$ 299 aqui).
+          const currentPlan = plans.find(p => p.id === "pro") ?? plans[0]
+          return (
+            <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.8px",color:"#888",marginBottom:16}}>Minha Assinatura</div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontSize:18,fontWeight:700}}>Plano {currentPlan.name}</div>
+                  <div style={{fontSize:12,color:"#888",marginTop:4}}>{currentPlan.priceLabel}/mês</div>
+                </div>
+                <span style={{fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,background:"#dcfce7",color:"#16a34a"}}>Ativo</span>
+              </div>
             </div>
-            <span style={{fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,background:"#dcfce7",color:"#16a34a"}}>Ativo</span>
-          </div>
-        </div>
+          )
+        })()}
 
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.8px",color:"#888",marginBottom:16}}>Meus Dados</div>
@@ -145,7 +164,7 @@ export default function AccountPage() {
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:18}}>
             <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Logo principal</label>
             <div style={{display:"flex",gap:12,alignItems:"center"}}>
-              <div style={{width:120,height:60,background:"#F5F5F0",borderRadius:6,border:"1px solid #E0E0E0",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+              <div style={{width:120,height:60,...CHECKER,borderRadius:6,border:"1px solid #E0E0E0",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
                 {brand.brandLogoUrl ? (
                   <img src={brand.brandLogoUrl} alt="Logo principal" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
                 ) : (
@@ -166,14 +185,14 @@ export default function AccountPage() {
                 onChange={e => pickLogo("brandLogoUrl", e.target.files?.[0] ?? null)}
               />
             </div>
-            <span style={{fontSize:10,color:"#aaa"}}>PNG/SVG transparente fica melhor. Aparece no topo da navegação e nos slides da apresentação. Max 5MB.</span>
+            <span style={{fontSize:10,color:"#aaa"}}>PNG/SVG transparente fica melhor. Se o xadrez some atrás do logo, o arquivo tem fundo branco — exporta com transparência. Aparece no topo da navegação e nos slides da apresentação. Max 5MB.</span>
           </div>
 
           {/* Logo secundário grande */}
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:18}}>
             <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Logo grande (capa)</label>
             <div style={{display:"flex",gap:12,alignItems:"center"}}>
-              <div style={{width:240,height:50,background:"#F5F5F0",borderRadius:6,border:"1px solid #E0E0E0",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+              <div style={{width:240,height:50,...CHECKER,borderRadius:6,border:"1px solid #E0E0E0",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
                 {brand.brandSecondaryLogoUrl ? (
                   <img src={brand.brandSecondaryLogoUrl} alt="Logo grande" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
                 ) : (
@@ -194,7 +213,7 @@ export default function AccountPage() {
                 onChange={e => pickLogo("brandSecondaryLogoUrl", e.target.files?.[0] ?? null)}
               />
             </div>
-            <span style={{fontSize:10,color:"#aaa"}}>Logo horizontal grande, aparece na capa da apresentação (espaço largo). Max 5MB.</span>
+            <span style={{fontSize:10,color:"#aaa"}}>Logo horizontal grande, aparece na capa da apresentação. Mesma regra: se o xadrez some, fundo não está transparente. Max 5MB.</span>
           </div>
 
           {/* Footer text */}

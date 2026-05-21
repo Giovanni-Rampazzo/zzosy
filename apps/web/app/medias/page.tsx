@@ -46,7 +46,7 @@ export default function MediasPage() {
   const isEditing = editingId !== null
 
   useEffect(() => {
-    fetch("/api/medias").then(r => r.json()).then(d => { setFormats(Array.isArray(d)?d:[]); setLoading(false) })
+    fetch("/api/medias", { cache: "no-store" }).then(r => r.json()).then(d => { setFormats(Array.isArray(d)?d:[]); setLoading(false) })
     // Sugestoes de segmento: union dos segments ja usados em pecas + os ja
     // setados em outros MediaFormats. Datalist mostra ambos.
     fetch("/api/pieces/segments").then(r => r.json()).then(d => {

@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/Button"
+import { useModalEscape } from "@/lib/useModalEscape"
 
 interface MF { id: string; vehicle: string; media: string; format: string; width: number; height: number; category?: string }
 
@@ -23,9 +24,10 @@ export function DuplicateFormatDialog({ count, originalFormat, onCancel, onConfi
   const [formats, setFormats] = useState<MF[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  useModalEscape(true, onCancel)
 
   useEffect(() => {
-    fetch("/api/medias").then(r => r.json()).then(d => { setFormats(Array.isArray(d) ? d : []); setLoading(false) })
+    fetch("/api/medias", { cache: "no-store" }).then(r => r.json()).then(d => { setFormats(Array.isArray(d) ? d : []); setLoading(false) })
   }, [])
 
   const groups = formats.reduce<Record<string, MF[]>>((acc, f) => {

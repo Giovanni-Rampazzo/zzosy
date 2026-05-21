@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { appendToTaxonomy } from "@/lib/taxonomy"
 import { PIECE_STATUS_LIST } from "@/lib/pieceStatus"
+import { stampPiece } from "@/lib/stampPiece"
 
 export const dynamic = "force-dynamic"
 
@@ -31,7 +32,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params
   const piece = await findPieceForTenant(id, tenantId)
   if (!piece) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  return NextResponse.json(piece)
+  // Stampa imageUrl + steps com ?v=updatedAt — antes detalhe servia URL raw e
+  // browser cacheava thumb stale (audit F2.2). Lista (/api/pieces) ja fazia.
+  return NextResponse.json(stampPiece(piece))
 }
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {

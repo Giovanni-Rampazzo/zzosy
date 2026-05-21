@@ -3,13 +3,14 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { plans } from "@/lib/plans-config";
+import { Button } from "@/components/ui/Button";
 type BillingInfo = { plan: string; stripeCustomerId: string | null; stripeSubscriptionId: string | null; currentPeriodEnd?: string; cancelAtPeriodEnd?: boolean; };
 export default function BillingPage() {
   const router = useRouter();
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [canceling, setCanceling] = useState(false);
-  useEffect(() => { fetch("/api/billing").then(r => r.json()).then(data => { setBilling(data); setLoading(false); }); }, []);
+  useEffect(() => { fetch("/api/billing", { cache: "no-store" }).then(r => r.json()).then(data => { setBilling(data); setLoading(false); }); }, []);
   const currentPlan = plans.find(p => p.id === billing?.plan?.toLowerCase()) ?? plans[0];
   const isFree = !billing?.stripeSubscriptionId;
   const handleCancel = async () => {
@@ -23,7 +24,12 @@ export default function BillingPage() {
     <div style={{minHeight:"100vh",background:"#FAFAFA",fontFamily:"DM Sans,sans-serif",padding:"40px 24px"}}>
       <div style={{maxWidth:"680px",margin:"0 auto"}}>
         <div style={{marginBottom:"32px"}}>
-          <button onClick={() => router.push("/dashboard")} style={{background:"none",border:"none",cursor:"pointer",color:"#999",fontSize:"0.85rem",padding:0,marginBottom:"16px",fontFamily:"DM Sans,sans-serif"}}>← Voltar ao dashboard</button>
+          {/* Voltar com stroke amarelo — padrao ZZOSY (variant view) */}
+          <div style={{marginBottom:16}}>
+            <Button variant="view" size="md" onClick={() => router.push("/dashboard")}>
+              ← Dashboard
+            </Button>
+          </div>
           <h1 style={{fontSize:"1.8rem",fontWeight:800,color:"#111",margin:0,letterSpacing:"-0.03em"}}>Assinatura</h1>
           <p style={{color:"#888",marginTop:"6px",fontSize:"0.9rem"}}>Gerencie seu plano e pagamentos</p>
         </div>
