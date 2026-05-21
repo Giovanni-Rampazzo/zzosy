@@ -187,7 +187,10 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
         const rawText = String(td.text ?? layerName).split("\r\n").join("\n").split("\r").join("\n")
         const defStyle = td.style ?? {}
         const defFontRaw = defStyle.font?.name ?? "Arial"
-        if (defStyle.font?.name) fontsAccumulated.add(defStyle.font.name)
+        // Adiciona NORMALIZADO — sem sufixo de peso/italic/variable axis.
+        // Antes alertava "fonte faltando" pra "Exo 2Roman_444.000wght" mesmo
+        // tendo "Exo 2" disponivel.
+        if (defStyle.font?.name) fontsAccumulated.add(normalizePsdFontToGoogle(defStyle.font.name) ?? defStyle.font.name)
         // Normaliza PostScript name pra Google Font family. Sem isso, asset
         // ficava com fontFamily="Sicredi-Sans-Bold-Italic" (cru) — Fabric/browser
         // nao acha esse @font-face, cai em fallback. Adobe-style: peso/estilo
@@ -241,7 +244,7 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
             if (!segment) { cursor += len; continue }
             const rs = run.style ?? {}
             const runFontRaw = rs.font?.name ?? defFontRaw
-            if (rs.font?.name) fontsAccumulated.add(rs.font.name)
+            if (rs.font?.name) fontsAccumulated.add(normalizePsdFontToGoogle(rs.font.name) ?? rs.font.name)
             // Weight numerico per-run. Quando o run nao tem fonte propria,
             // herda do defWeight (default do bloco).
             const fontWeight: number = rs.fauxBold ? 700

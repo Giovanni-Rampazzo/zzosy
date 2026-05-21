@@ -88,16 +88,18 @@ function normalizeTypography(raw: any): BrandTypography {
   return out
 }
 
+// Duplicado de lib/brandTypography.WEIGHT_OPTIONS — manter sincronizado.
+// Sem numeros (100/200/...): user pediu so nomes (Light/Regular/Bold/etc).
 const WEIGHT_OPTIONS = [
-  { value: 100, label: "100 Thin" },
-  { value: 200, label: "200 ExtraLight" },
-  { value: 300, label: "300 Light" },
-  { value: 400, label: "400 Regular" },
-  { value: 500, label: "500 Medium" },
-  { value: 600, label: "600 SemiBold" },
-  { value: 700, label: "700 Bold" },
-  { value: 800, label: "800 ExtraBold" },
-  { value: 900, label: "900 Black" },
+  { value: 100, label: "Thin" },
+  { value: 200, label: "ExtraLight" },
+  { value: 300, label: "Light" },
+  { value: 400, label: "Regular" },
+  { value: 500, label: "Medium" },
+  { value: 600, label: "SemiBold" },
+  { value: 700, label: "Bold" },
+  { value: 800, label: "ExtraBold" },
+  { value: 900, label: "Black" },
 ]
 
 interface Client {

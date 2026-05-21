@@ -124,25 +124,32 @@ export function loadGoogleFont(fontName: string): boolean {
 export function normalizePsdFontToGoogle(psdName: string): string | null {
   if (!psdName) return null
   let base = psdName
-    // 1. Sufixo weight com italic opcional (com hifen opcional entre eles)
+    // 1. Variable Font suffix (Exo, Inter, Roboto Flex etc): "_444.000wght_0ital",
+    // "_wght_400.000", "_700wght_1ital" etc. Strip antes dos outros passos.
+    .replace(/_[\d.]+wght(_[\d.]+ital)?$/i, "")
+    .replace(/_[\d.]+ital(_[\d.]+wght)?$/i, "")
+    .replace(/_wght[_\d.]*$/i, "")
+    .replace(/_ital[_\d.]*$/i, "")
+    // 2. Sufixo weight com italic opcional (com hifen opcional entre eles)
     .replace(/-(Thin|ExtraLight|UltraLight|Light|Regular|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy)(-)?(Italic|Oblique)?$/i, "")
-    // 2. Italic puro
+    // 3. Italic puro
     .replace(/-(Italic|Oblique)$/i, "")
-    // 3. Variantes PostScript — exige boundary (separador) antes de Roman/MT.
-    // Sem isso "FoxRoman" ou "Roman" sozinho seria gulosamente recortado (H4).
-    .replace(/[\s\-_]Roman$/i, "")
+    // 4. "Roman" PostScript variant — geralmente apos separador OU apos digito
+    // (ex: "Exo 2Roman" → "Exo 2"). Antes (audit H4) so removia com separador
+    // explicito, mas variable fonts colam Roman ao numero do family weight.
+    .replace(/([\s\-_]|\d)Roman$/i, "$1")
     .replace(/[\s\-_]MT$/, "")
     .trim()
-  // 4. Hifens internos viram espacos (PostScript usa hifen como separador)
+  // 5. Hifens internos viram espacos (PostScript usa hifen como separador)
   let spaced = base.replace(/-/g, " ")
-  // 5. CamelCase → "Camel Case"
+  // 6. CamelCase → "Camel Case"
   spaced = spaced.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-  // 6. Letra + digito: "Exo2" → "Exo 2", "Source Sans3" → "Source Sans 3"
+  // 7. Letra + digito: "Exo2" → "Exo 2", "Source Sans3" → "Source Sans 3"
   spaced = spaced.replace(/([A-Za-z])(\d)/g, "$1 $2")
   // Limpa espacos multiplos / trim
   spaced = spaced.replace(/\s+/g, " ").trim()
   if (!spaced) return null
-  // 7. Match na lista curada
+  // 8. Match na lista curada
   const match = GOOGLE_FONTS.find(f => f.name.toLowerCase() === spaced.toLowerCase())
   if (match) return match.name
   return spaced

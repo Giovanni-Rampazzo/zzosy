@@ -1486,8 +1486,12 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
           // renderizarem em Arial em vez da fonte real do PSD.
           const firstRunFont = td.styleRuns?.[0]?.style?.font?.name
           const defFontName = defStyle.font?.name ?? firstRunFont ?? "Arial"
-          if (defStyle.font?.name) fontsRequired.add(defStyle.font.name)
-          if (firstRunFont) fontsRequired.add(firstRunFont)
+          // Adiciona a familia NORMALIZADA (sem sufixo de peso/italic/variable
+          // font axis). Antes o set recebia "Exo 2Roman_444.000wght_0ital" raw,
+          // que nunca matchava no document.fonts.check → alertava "fonte
+          // faltando" mesmo quando "Exo 2" estava disponivel.
+          if (defStyle.font?.name) fontsRequired.add(normalizePsdFontToGoogle(defStyle.font.name) ?? defStyle.font.name)
+          if (firstRunFont) fontsRequired.add(normalizePsdFontToGoogle(firstRunFont) ?? firstRunFont)
           const defFontSize = defStyle.fontSize ?? 48
           const defColor = defStyle.fillColor ? colorToHex(defStyle.fillColor) : "#000000"
           // Tracking: PSD armazena em 1/1000 de em (mesma unidade que Fabric
@@ -1572,7 +1576,7 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
               if (!segment) { cursor += len; continue }
               const rs = run.style ?? {}
               const fontName = rs.font?.name ?? defFontName
-              if (rs.font?.name) fontsRequired.add(rs.font.name)
+              if (rs.font?.name) fontsRequired.add(normalizePsdFontToGoogle(rs.font.name) ?? rs.font.name)
               const fontSize = (rs.fontSize ?? defFontSize) * textScale
               const color = rs.fillColor ? colorToHex(rs.fillColor) : defColor
               const isItalicRs = /italic|oblique|kursiv|cursiv/i.test(fontName)
