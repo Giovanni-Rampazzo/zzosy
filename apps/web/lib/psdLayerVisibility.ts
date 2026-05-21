@@ -10,6 +10,13 @@
  *
  * `autoHidePhantomFolders` amostra a regiao de cada folder no composite e
  * marca como hidden os que nao contribuem pixels visiveis.
+ *
+ * @deprecated (Fase 7) — `autoHideWrapperSmartObjects` foi substituido por
+ * `lib/psd/postProcess.detectWrapperSmartObjects`, que opera no modelo
+ * canonical PsdDocument em vez de mutar a estrutura crua do ag-psd. Mantido
+ * aqui apenas pra suportar o fallback legacy no PsdImporter.tsx (forcado via
+ * localStorage["zzosy:psdPipeline"]="legacy"). `autoHidePhantomFolders` ainda
+ * eh usada pelo pipeline novo via PsdImporter pre-build e nao esta deprecated.
  */
 
 // Bbox recursiva das layer-folhas (mesmo hidden) de um folder. Usada pra

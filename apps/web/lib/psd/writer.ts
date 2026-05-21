@@ -332,15 +332,20 @@ function effectsToAgPsd(fx: PsdLayerEffects): any {
   return out
 }
 
+// ag-psd UnitsValue helper: distance/size/choke precisam vir como
+// { value, units: "Pixels" }. Numero cru gera "Invalid value: ... (should
+// have value and units)".
+const px = (n: number) => ({ value: n, units: "Pixels" as const })
+
 function shadowToAgPsd(s: PsdShadowEffect): any {
   return {
     enabled: s.enabled,
     color: hexToRgb(s.color),
     opacity: s.opacity,
     angle: s.angle,
-    distance: s.distance,
-    size: s.blur,
-    choke: s.spread,
+    distance: px(s.distance),
+    size: px(s.blur),
+    choke: px(s.spread * 100), // choke vem como units (PercentageUnits, mas ag-psd aceita Pixels)
     blendMode: blendModeToAgPsd(s.blendMode),
   }
 }
@@ -350,8 +355,8 @@ function glowToAgPsd(g: PsdGlowEffect, kind: "outer" | "inner"): any {
     enabled: g.enabled,
     color: hexToRgb(g.color),
     opacity: g.opacity,
-    size: g.blur,
-    choke: g.spread,
+    size: px(g.blur),
+    choke: px(g.spread * 100),
     blendMode: blendModeToAgPsd(g.blendMode),
     ...(kind === "outer" && g.source ? { source: g.source } : {}),
   }
@@ -360,7 +365,7 @@ function glowToAgPsd(g: PsdGlowEffect, kind: "outer" | "inner"): any {
 function strokeEffectToAgPsd(s: PsdStrokeEffect): any {
   return {
     enabled: s.enabled,
-    size: s.width,
+    size: px(s.width),
     position: s.position,
     color: s.fill.kind === "solid" ? hexToRgb(s.fill.color) : hexToRgb("#000000"),
     blendMode: blendModeToAgPsd(s.blendMode),

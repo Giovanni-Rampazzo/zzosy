@@ -1259,13 +1259,13 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
     setError("")
     setProgress("Lendo PSD...")
 
-    // F12: pipeline novo (Adobe-fidelity). Ativa via URL ?useNewPsdPipeline=1
-    // ou localStorage["zzosy:newPsdPipeline"] = "1". Coexiste com legacy ate
-    // Fase 6 onde substituicao acontece. Sem flag = legacy continua rodando.
-    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null
-    const useNew = (params?.get("useNewPsdPipeline") === "1")
-      || (typeof localStorage !== "undefined" && localStorage.getItem("zzosy:newPsdPipeline") === "1")
-    if (useNew) {
+    // Fase 7: pipeline novo (Adobe-fidelity) eh agora o DEFAULT.
+    // Legacy mantido apenas como fallback automatico caso o novo crashe —
+    // garante zero regressao perceptivel ate dogfooding completo. Pra forcar
+    // legacy: localStorage["zzosy:psdPipeline"] = "legacy" (escape hatch).
+    const forceLegacy = typeof localStorage !== "undefined"
+      && localStorage.getItem("zzosy:psdPipeline") === "legacy"
+    if (!forceLegacy) {
       try {
         const { importPsdToCampaign } = await import("@/lib/psd/importer")
         const result = await importPsdToCampaign(file, campaignId, {
