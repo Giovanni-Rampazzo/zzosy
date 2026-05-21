@@ -3757,11 +3757,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           console.warn("[shape] asset sem path data:", asset.label)
           return
         }
-        const fillProp = parsedShape.fill?.kind === "solid"
+        // Overrides do layer (peca/matriz) tem PRIORIDADE sobre asset.content
+        // — espelha o padrao de TEXT (linha 3960): asset.content eh o "intent"
+        // do designer, overrides eh o que o user editou nessa instancia. Sem
+        // isso, fill/stroke/strokeWidth editados via painel viravam pra raw do
+        // PSD em todo reload do editor.
+        const layerOv = layer?.overrides ?? {}
+        const baseFill = parsedShape.fill?.kind === "solid"
           ? parsedShape.fill.color
           : "transparent"
-        const strokeProp = parsedShape.stroke?.color ?? undefined
-        const strokeWidth = parsedShape.stroke?.width ?? 0
+        const baseStroke = parsedShape.stroke?.color ?? undefined
+        const baseStrokeW = parsedShape.stroke?.width ?? 0
+        const fillProp = layerOv.fill !== undefined ? layerOv.fill : baseFill
+        const strokeProp = layerOv.stroke !== undefined ? layerOv.stroke : baseStroke
+        const strokeWidth = layerOv.strokeWidth !== undefined ? layerOv.strokeWidth : baseStrokeW
         const p = new Path(parsedShape.path, {
           left: parsedShape.pathBbox?.left ?? posX,
           top: parsedShape.pathBbox?.top ?? posY,
@@ -5221,6 +5230,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // DS link: persiste false explicito quando user customizou. True
             // eh default, omitido pra economizar JSON.
             if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
+          } else if (o.type === "path") {
+            // SHAPE override: fill/stroke/strokeWidth editados via painel.
+            // Sem isso, ao recarregar a peca/editor as edicoes voltavam pro
+            // asset.content original (PSD raw) — perdia tudo.
+            if (typeof o.fill === "string") layer.overrides.fill = o.fill
+            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
+            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
           }
           return layer
         })
@@ -5385,6 +5401,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               layer.overrides.styles = o.styles
             }
             if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
+          } else if (o.type === "path") {
+            // SHAPE override (matriz): fill/stroke/strokeWidth editados via painel.
+            if (typeof o.fill === "string") layer.overrides.fill = o.fill
+            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
+            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
           }
           return layer
         })
@@ -6297,6 +6318,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (o.styles && Object.keys(o.styles).length > 0) {
               layer.overrides.styles = o.styles
             }
+          } else if (o.type === "path") {
+            // SHAPE override (doSave peca): mesmo padrao do save matriz.
+            if (typeof o.fill === "string") layer.overrides.fill = o.fill
+            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
+            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
           }
           return layer
         })
@@ -6459,6 +6485,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (o.styles && Object.keys(o.styles).length > 0) {
               layer.overrides.styles = o.styles
             }
+          } else if (o.type === "path") {
+            // SHAPE override (doSave matriz): mesmo padrao dos outros sites.
+            if (typeof o.fill === "string") layer.overrides.fill = o.fill
+            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
+            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
           }
           return layer
         })
