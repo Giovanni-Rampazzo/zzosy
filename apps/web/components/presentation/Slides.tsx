@@ -25,14 +25,18 @@ export interface SlideBrand {
   footerText?: string    // substitui "Classificacao..."
 }
 
-// Helper: gera cor um pouco mais clara/saturada pra usar como YELLOW_LIGHT
-// (que era #F4B942, ligeiramente mais alaranjada que o YELLOW principal).
-// Aproximacao: aplica filter brightness CSS in-line ou usa a cor com alpha.
-// Simples: usa rgba(yellow, 0.92) sobre branco -> efeito visual proximo.
-function lightenColor(hex: string): string {
-  // Pega hex, retorna cor com alpha 0.9 (mistura com branco da cor de fundo).
-  // Funciona bem em qualquer cor primaria.
-  return hex
+// Helper: gera cor 10% mais clara — mesma logica do PPTX (lib/generatePresentation.ts
+// lightenHex) pra que preview HTML bata visualmente com o slide exportado.
+// Multiplica cada canal RGB por 1.10 e clampa em 255. Cor 100% saturada (ex:
+// #ff0000) fica igual porque ja esta no max; cores escuras clareiam mais.
+function lightenColor(hex: string, factor = 1.10): string {
+  const h = (hex ?? "").replace(/^#/, "")
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return hex
+  const n = parseInt(h, 16)
+  const r = Math.min(255, Math.round(((n >> 16) & 0xff) * factor))
+  const g = Math.min(255, Math.round(((n >> 8) & 0xff) * factor))
+  const b = Math.min(255, Math.round((n & 0xff) * factor))
+  return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")
 }
 
 function getFooterText(brand?: SlideBrand): string {
@@ -73,11 +77,15 @@ function Footer({ brand }: { brand?: SlideBrand }) {
   return <div style={footerStyle}>{getFooterText(brand)}</div>
 }
 
-/* ============== Slide 1 — Capa ============== */
+/* ============== Slide 1 — Capa ==============
+ * Layout: logo PRINCIPAL pequeno no canto superior direito + logo GRANDE
+ * horizontal embaixo (largura 90% do slide). Estilo original ZZOSY antes
+ * do redesenho centralizado. White-label substitui ambos via brand props.
+ */
 export function SlideCover({ brand }: { brand?: SlideBrand } = {}) {
   return (
     <div style={{ ...slideShellBase, background: BG_LIGHT, containerType: "inline-size" }}>
-      {/* Logo principal no topo direito */}
+      {/* Logo principal — topo direito */}
       <img
         src={getLogo(brand)}
         alt="Logo"
@@ -167,11 +175,12 @@ export function SlideCode({ campaignName, code, brand, campaignId, onCampaignCha
       <div style={{
         position: "absolute", left: "5%", right: "5%",
         bottom: "8%",
-        background: lightenColor(primary),
+        // F9: usa o MESMO amarelo do slide (sem lightenColor/brightness) pra
+        // manter consistencia visual do amarelo da marca em todas as superficies.
+        background: primary,
         border: "1px solid rgba(255,255,255,0.6)",
         borderRadius: RADIUS,
         padding: "3% 4%",
-        filter: "brightness(1.08)",
       }}>
         {editable ? (
           <input
@@ -235,13 +244,12 @@ export function SlideSegment({ segment, brand }: { segment?: string | null; bran
     <div style={{ ...slideShellBase, background: primary, containerType: "inline-size" }}>
       <div style={{
         position: "absolute", left: "5%", right: "5%", bottom: "8%",
-        background: lightenColor(primary), border: "1px solid rgba(255,255,255,0.6)",
+        background: primary, border: "1px solid rgba(255,255,255,0.6)",
         borderRadius: RADIUS, padding: "2.5% 4%",
-        filter: "brightness(1.08)",
       }}>
         <div style={{
           fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "3.2cqw", fontWeight: 700, fontStyle: "italic",
+          fontSize: "3.2cqw", fontWeight: 700,
           color: "#fff", letterSpacing: "-0.01em",
         }}>
           {segment && segment.trim() ? segment.toUpperCase() : "SEGMENTO DA CAMPANHA"}

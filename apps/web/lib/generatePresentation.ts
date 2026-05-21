@@ -510,7 +510,9 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
   const primary = normalizeHex(data.brand?.primaryColor, YELLOW)
   const palette: Palette = {
     primary,
-    primaryLight: lightenHex(primary, 1.10),
+    // F9: primaryLight nao eh mais usado nas boxes (paridade com HTML Slides.tsx).
+    // Mantido no tipo pra back-compat, mas vale o mesmo `primary` agora.
+    primaryLight: primary,
     footerText: (data.brand?.footerText?.trim()) || "Classificação da informação: Uso Interno",
     logoUri: await imgToDataUri(data.brand?.logoUrl?.trim() || "/presentation/suno.png"),
     secondaryLogoUri: await imgToDataUri(data.brand?.secondaryLogoUrl?.trim() || "/presentation/united-creators.png"),
