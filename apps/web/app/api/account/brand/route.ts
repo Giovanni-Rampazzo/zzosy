@@ -22,7 +22,7 @@ export async function GET() {
       brandName: true,
       brandLogoUrl: true,
       brandSecondaryLogoUrl: true,
-      brandPrimaryColor: true,
+      whiteLabelAccentColor: true,
       brandFooterText: true,
     },
   })
@@ -36,7 +36,7 @@ export async function PATCH(req: Request) {
   if (!tenantId) return NextResponse.json({ error: "No tenant" }, { status: 400 })
   const body = await req.json()
   const data: any = {}
-  for (const k of ["brandName", "brandLogoUrl", "brandSecondaryLogoUrl", "brandPrimaryColor", "brandFooterText"]) {
+  for (const k of ["brandName", "brandLogoUrl", "brandSecondaryLogoUrl", "whiteLabelAccentColor", "brandFooterText"]) {
     if (k in body) data[k] = body[k] === "" ? null : body[k]
   }
   const t = await prisma.tenant.update({
@@ -46,7 +46,7 @@ export async function PATCH(req: Request) {
       brandName: true,
       brandLogoUrl: true,
       brandSecondaryLogoUrl: true,
-      brandPrimaryColor: true,
+      whiteLabelAccentColor: true,
       brandFooterText: true,
     },
   })

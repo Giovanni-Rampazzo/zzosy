@@ -5,7 +5,7 @@ export interface Brand {
   brandName?: string | null
   brandLogoUrl?: string | null
   brandSecondaryLogoUrl?: string | null
-  brandPrimaryColor?: string | null
+  whiteLabelAccentColor?: string | null
   brandFooterText?: string | null
 }
 
@@ -47,7 +47,7 @@ export function useBrand() {
     loaded,
     raw,
     name: (raw.brandName?.trim() || BRAND_DEFAULTS.name),
-    primaryColor: (raw.brandPrimaryColor?.trim() || BRAND_DEFAULTS.primaryColor),
+    primaryColor: (raw.whiteLabelAccentColor?.trim() || BRAND_DEFAULTS.primaryColor),
     footerText: (raw.brandFooterText?.trim() || BRAND_DEFAULTS.footerText),
     logoUrl: (raw.brandLogoUrl?.trim() || BRAND_DEFAULTS.logoUrl),
     secondaryLogoUrl: (raw.brandSecondaryLogoUrl?.trim() || BRAND_DEFAULTS.secondaryLogoUrl),

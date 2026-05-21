@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       data: {
         campaignId,
         name,
-        status: "SENT",
+        status: "ENVIADA",
         zipUrl,
         zipSize: buf.byteLength,
         deliveredById: user?.id,

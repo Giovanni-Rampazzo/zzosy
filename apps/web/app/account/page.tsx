@@ -9,7 +9,7 @@ interface Brand {
   brandName?: string | null
   brandLogoUrl?: string | null
   brandSecondaryLogoUrl?: string | null
-  brandPrimaryColor?: string | null
+  whiteLabelAccentColor?: string | null
   brandFooterText?: string | null
 }
 
@@ -146,13 +146,13 @@ export default function AccountPage() {
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <input
                 type="color"
-                value={brand.brandPrimaryColor ?? DEFAULT_COLOR}
-                onChange={e => setBrand(b => ({...b, brandPrimaryColor: e.target.value}))}
+                value={brand.whiteLabelAccentColor ?? DEFAULT_COLOR}
+                onChange={e => setBrand(b => ({...b, whiteLabelAccentColor: e.target.value}))}
                 style={{width:44,height:36,padding:0,border:"1px solid #E0E0E0",borderRadius:6,cursor:"pointer",background:"none"}}
               />
               <input
-                value={brand.brandPrimaryColor ?? ""}
-                onChange={e => setBrand(b => ({...b, brandPrimaryColor: e.target.value}))}
+                value={brand.whiteLabelAccentColor ?? ""}
+                onChange={e => setBrand(b => ({...b, whiteLabelAccentColor: e.target.value}))}
                 placeholder={DEFAULT_COLOR}
                 style={{...inp,flex:1,fontFamily:"ui-monospace, monospace"}}
               />

@@ -67,7 +67,7 @@ export default function PresentationPage() {
   const brand = useBrand()
   // Subset do brand passado aos slides (campos opcionais com fallback nos defaults).
   const slideBrand = {
-    primaryColor: brand.raw.brandPrimaryColor ?? undefined,
+    primaryColor: brand.raw.whiteLabelAccentColor ?? undefined,
     logoUrl: brand.raw.brandLogoUrl ?? undefined,
     secondaryLogoUrl: brand.raw.brandSecondaryLogoUrl ?? undefined,
     footerText: brand.raw.brandFooterText ?? undefined,
