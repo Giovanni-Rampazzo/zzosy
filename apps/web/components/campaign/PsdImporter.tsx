@@ -2,7 +2,7 @@
 import { useState, useRef, forwardRef, useImperativeHandle } from "react"
 import { detectFontMetadata, normalizePsdFontToGoogle, loadCustomFontFamily, extractFontWeight, type CustomFontFile } from "@/lib/google-fonts"
 import { Button } from "@/components/ui/Button"
-import { autoHidePhantomFolders } from "@/lib/psdLayerVisibility"
+import { autoHidePhantomFolders, autoHideWrapperSmartObjects } from "@/lib/psdLayerVisibility"
 
 interface Props {
   campaignId: string
@@ -1280,6 +1280,10 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
       // Caso comum: PSD multi-formato (1 STORY + 2 STORIES + PROFILE + ...).
       // Sem isso, todos eram importados sobrepostos.
       autoHidePhantomFolders(psd)
+      // Detecta Smart Objects "wrapper" (PA, Mockup, Preview etc) que contem
+      // o design completo embedded e duplicam visualmente com layers acima.
+      // Auto-hide pra evitar duplicacao no canvas — user pode re-mostrar manual.
+      autoHideWrapperSmartObjects(psd)
       const allLayerEntries = collectAllLayers(psd.children ?? [])
       const assets: any[] = []
       const imageBlobs: Blob[] = []

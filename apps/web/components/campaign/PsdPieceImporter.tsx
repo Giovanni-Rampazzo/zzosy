@@ -19,7 +19,7 @@
 import { useState, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/Button"
 import { normalizeName } from "@/lib/normalize"
-import { autoHidePhantomFolders } from "@/lib/psdLayerVisibility"
+import { autoHidePhantomFolders, autoHideWrapperSmartObjects } from "@/lib/psdLayerVisibility"
 
 /** Handle exposto via ref pra parent disparar import a partir de drag-drop
  *  externo (ex: lista de peças na pagina da campanha). */
@@ -148,6 +148,7 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
     // o Photoshop salvou tem so um deles visivel mas o flag `hidden` em
     // folders individuais nao foi persistido corretamente.
     autoHidePhantomFolders(psd)
+    autoHideWrapperSmartObjects(psd)
     const allLayers = collectAllLayers(psd.children ?? [])
 
     setProgress(`(${index + 1}/${total}) Extraindo ${allLayers.length} layers…`)
