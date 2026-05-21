@@ -52,10 +52,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const assets = JSON.parse(assetsJson) as Array<{
       label: string
-      type: "TEXT" | "IMAGE"
+      type: "TEXT" | "IMAGE" | "SHAPE"
       content?: any
       imageIndex?: number
       linkedIndex?: number
+      shape?: any
       posX: number
       posY: number
       width: number
@@ -196,12 +197,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         ? smartObjectIds[asset.linkedIndex] ?? null
         : null
 
+      // F12 Fase 4: SHAPE assets guardam vector data (path + fill + stroke) no
+      // campo `content` como JSON. Editor reconstroi Fabric.Path a partir disso.
+      let contentToStore = asset.content
+      if (asset.type === "SHAPE" && asset.shape) {
+        contentToStore = asset.shape
+      }
+
       const record = await prisma.campaignAsset.create({
         data: {
           campaignId: id,
           label: asset.label,
           type: asset.type,
-          content: asset.content ? JSON.stringify(asset.content) : null,
+          content: contentToStore ? JSON.stringify(contentToStore) : null,
           imageUrl,
           smartObjectId,
           order: i,
@@ -212,8 +220,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           scaleX: 1,
           scaleY: 1,
           rotation: 0,
-          // BOX (width/height) + CHARACTER overrides extraidos do PSD.
-          // Permite que swap e re-add do asset preservem a config original do PSD.
           lastOverride: asset.lastOverride ?? null,
         }
       })

@@ -3678,7 +3678,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   async function addAssetToCanvas(fc: any, asset: Asset, layer: any) {
     const fabricMod = await import("fabric")
-    const { Rect, Textbox, FabricImage, Shadow } = fabricMod as any
+    const { Rect, Textbox, FabricImage, Shadow, Path } = fabricMod as any
     const posX = layer?.posX ?? 100
     const posY = layer?.posY ?? 100
     const width = layer?.width ?? 400
@@ -3705,6 +3705,43 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // re-exportar com a mesma estrutura de groups. Array de nomes raiz → pai.
     const psdGroupPath = Array.isArray(layer?.groupPath) && layer.groupPath.length > 0 ? layer.groupPath as string[] : null
 
+    // F12 Fase 4: SHAPE assets — vetor editavel via Fabric.Path. Content
+    // tem { path, pathBbox, fill, stroke, fillRule }. Editor renderiza SEM
+    // rasterizar, mantendo o path vivo + editavel.
+    if (asset.type === "SHAPE") {
+      try {
+        const shape = (asset as any).content ?? null
+        const parsedShape = typeof shape === "string" ? JSON.parse(shape) : shape
+        if (!parsedShape?.path) {
+          console.warn("[shape] asset sem path data:", asset.label)
+          return
+        }
+        const fillProp = parsedShape.fill?.kind === "solid"
+          ? parsedShape.fill.color
+          : "transparent"
+        const strokeProp = parsedShape.stroke?.color ?? undefined
+        const strokeWidth = parsedShape.stroke?.width ?? 0
+        const p = new Path(parsedShape.path, {
+          left: parsedShape.pathBbox?.left ?? posX,
+          top: parsedShape.pathBbox?.top ?? posY,
+          fill: fillProp,
+          stroke: strokeProp,
+          strokeWidth,
+          fillRule: parsedShape.fillRule ?? "nonzero",
+          ...psdExtraProps,
+        })
+        ;(p as any).__assetId = asset.id
+        ;(p as any).__assetLabel = asset.label
+        if (psdEffects) (p as any).__psdEffects = psdEffects
+        if (psdGroupPath) (p as any).__groupPath = psdGroupPath
+        applyFabricEffects(p, psdEffects, Shadow)
+        fc.add(p)
+        fc.requestRenderAll()
+        return
+      } catch (e) {
+        console.error("[shape] render falhou:", asset.label, e)
+      }
+    }
     if (asset.type === "IMAGE") {
       if (asset.imageUrl) {
         try {

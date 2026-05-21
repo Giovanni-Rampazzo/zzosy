@@ -21,6 +21,9 @@ import type {
   PsdImageLayer,
   PsdSmartObjectLayer,
   PsdGroupLayer,
+  PsdShapeLayer,
+  PsdFill,
+  PsdStroke,
   PsdLayerEffects,
   PsdMaskData,
   PsdImageData,
@@ -57,11 +60,13 @@ export interface BuiltAsset {
   /** Slot temp — back end gera o id real. */
   tempId: string
   label: string
-  type: "TEXT" | "IMAGE"
-  /** TEXT: array de spans. IMAGE: null. */
+  type: "TEXT" | "IMAGE" | "SHAPE"
+  /** TEXT: array de spans. SHAPE: path data. IMAGE: null. */
   content: TextSpan[] | null
-  /** IMAGE: index em imageBlobs. TEXT: undefined. */
+  /** IMAGE: index em imageBlobs. TEXT/SHAPE: undefined. */
   imageIndex?: number
+  /** SHAPE: dados vetoriais (path SVG + fill + stroke). */
+  shape?: BuiltShape
   /** Override compatibilidade com modelo atual do editor. */
   lastOverride?: Record<string, unknown>
   /**
@@ -101,6 +106,19 @@ export interface BuiltLayer {
   groupPath: string[]
   /** Effects overrides per-layer (raro — quase sempre vem do asset). */
   effectsOverride?: PsdLayerEffects
+}
+
+export interface BuiltShape {
+  /** SVG path d="..." em coords absolutas do canvas. */
+  path: string
+  /** Bbox do path (pra positioning no Fabric). */
+  pathBbox: PsdBBox
+  /** Fill (solid color por agora; gradient/pattern em Fase 5). null = no fill. */
+  fill: PsdFill | null
+  /** Stroke (width + color + cap + join). null = no stroke. */
+  stroke: PsdStroke | null
+  /** Even-odd vs non-zero pra polygons complexos. */
+  fillRule: "nonzero" | "evenodd"
 }
 
 export interface TextSpan {
@@ -199,12 +217,7 @@ function walkLayers(layers: PsdLayer[], parentPath: string[], ctx: BuildContext)
         break
       }
       case "shape": {
-        // Fase 4. Por ora cai como image se tiver composite, senao warning.
-        ctx.warnings.push({
-          kind: "out-of-scope",
-          layerName: l.name,
-          message: "Shape layers serao implementadas em Fase 4. Tratando como image fallback.",
-        })
+        emitShapeLayer(l, parentPath, ctx)
         break
       }
       case "adjustment": {
@@ -386,6 +399,41 @@ function emitImageLayer(l: PsdImageLayer, parentPath: string[], ctx: BuildContex
     imageIndex,
     effects: hasEffects(l.effects) ? l.effects : undefined,
     pixelsIncludeEffects: l.pixelsIncludeEffects,
+    mask: l.mask,
+    hidden: !l.visible || undefined,
+    locked: l.locked || undefined,
+  })
+  ctx.layers.push(layerFromLayer(tempId, l, ctx, parentPath))
+}
+
+// ── SHAPE (Fase 4) ───────────────────────────────────────────────────
+
+function emitShapeLayer(l: PsdShapeLayer, parentPath: string[], ctx: BuildContext) {
+  // Shape SEMPRE eh vetorial. Se nao tem path (sem vectorMask), nao tem
+  // como renderizar — skip com warning.
+  if (!l.path) {
+    ctx.warnings.push({
+      kind: "empty-canvas",
+      layerName: l.name,
+      message: "Shape layer sem path vetorial. Layer ignorado.",
+    })
+    return
+  }
+  const tempId = nextTempId(ctx)
+  ctx.assets.push({
+    tempId,
+    label: l.name,
+    type: "SHAPE",
+    content: null,
+    shape: {
+      path: l.path,
+      pathBbox: l.pathBbox,
+      fill: l.fill,
+      stroke: l.stroke,
+      fillRule: l.fillRule,
+    },
+    effects: hasEffects(l.effects) ? l.effects : undefined,
+    pixelsIncludeEffects: false, // shapes vetoriais: effects sempre live
     mask: l.mask,
     hidden: !l.visible || undefined,
     locked: l.locked || undefined,

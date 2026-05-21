@@ -327,21 +327,155 @@ function detectSmartObjectFormat(
 
 // ── Shape ────────────────────────────────────────────────────────────
 
-function readShape(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) => void): PsdShapeLayer {
-  // Fase 4: implementacao completa. Stub pra TS satisfeito.
-  warn({
-    kind: "out-of-scope",
-    layerName: l.name ?? "",
-    message: "Shape layers serao implementadas na Fase 4. Por ora, layer fica como raster fallback.",
-  })
+function readShape(l: AgPsdLayer, parentPath: string[], _warn: (w: ReadWarning) => void): PsdShapeLayer {
+  const vm = (l as any).vectorMask
+  const path = vm?.paths ? vectorMaskToBezierSvg(vm) : ""
+  const pathBbox = computePathBbox(vm) ?? readCommon(l, parentPath).bbox
+
+  // Vector fill: ag-psd expoe via layer.vectorFill { color | gradient | pattern }
+  const vf = (l as any).vectorFill
+  const fill = readVectorFill(vf)
+
+  // Vector stroke: width/color/style/cap/join + lineAlignment
+  const vs = (l as any).vectorStroke
+  const stroke = readVectorStroke(vs)
+
   return {
     ...readCommon(l, parentPath),
     type: "shape",
-    path: "",
-    pathBbox: readCommon(l, parentPath).bbox,
-    fill: null,
-    stroke: null,
-    fillRule: "nonzero",
+    path,
+    pathBbox,
+    fill,
+    stroke,
+    fillRule: vm?.evenOdd === true ? "evenodd" : "nonzero",
+  }
+}
+
+/**
+ * Converte vectorMask.paths em string SVG path d="..." com curvas Bezier
+ * cubicas reais. Cada knot tem 3 pontos:
+ *   - cpL (control point in, antes do anchor)
+ *   - anchor (ponto da curva)
+ *   - cpR (control point out, depois do anchor)
+ *
+ * Bezier cubic entre knot K(i) → K(i+1) usa K(i).cpR + K(i+1).cpL + K(i+1).anchor.
+ * Path fechado: ultima curva volta pro anchor[0] usando K(N).cpR + K(0).cpL.
+ */
+function vectorMaskToBezierSvg(vm: any): string {
+  if (!vm?.paths) return ""
+  const parts: string[] = []
+  for (const p of vm.paths) {
+    const d = bezierPathToSvg(p)
+    if (d) parts.push(d)
+  }
+  return parts.join(" ")
+}
+
+interface BezierPt { cpL: { x: number; y: number }; anchor: { x: number; y: number }; cpR: { x: number; y: number } }
+
+function bezierPathToSvg(path: any): string {
+  const knots = path?.knots
+  if (!Array.isArray(knots) || knots.length === 0) return ""
+  const pts: BezierPt[] = []
+  for (const k of knots) {
+    const p = k?.points
+    if (!Array.isArray(p) || p.length < 6) continue
+    pts.push({
+      cpL: { x: p[0], y: p[1] },
+      anchor: { x: p[2], y: p[3] },
+      cpR: { x: p[4], y: p[5] },
+    })
+  }
+  if (pts.length === 0) return ""
+  let d = `M ${pts[0].anchor.x.toFixed(2)} ${pts[0].anchor.y.toFixed(2)}`
+  for (let i = 1; i < pts.length; i++) {
+    const prev = pts[i - 1]
+    const cur = pts[i]
+    d += ` C ${prev.cpR.x.toFixed(2)} ${prev.cpR.y.toFixed(2)}, ${cur.cpL.x.toFixed(2)} ${cur.cpL.y.toFixed(2)}, ${cur.anchor.x.toFixed(2)} ${cur.anchor.y.toFixed(2)}`
+  }
+  if (!path.open) {
+    const last = pts[pts.length - 1]
+    const first = pts[0]
+    d += ` C ${last.cpR.x.toFixed(2)} ${last.cpR.y.toFixed(2)}, ${first.cpL.x.toFixed(2)} ${first.cpL.y.toFixed(2)}, ${first.anchor.x.toFixed(2)} ${first.anchor.y.toFixed(2)}`
+    d += " Z"
+  }
+  return d
+}
+
+function computePathBbox(vm: any): import("./types").PsdBBox | null {
+  if (!vm?.paths) return null
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of vm.paths) {
+    for (const k of (p.knots ?? [])) {
+      const pts = k?.points
+      if (Array.isArray(pts) && pts.length >= 4) {
+        const ax = pts[2], ay = pts[3]
+        if (ax < minX) minX = ax
+        if (ay < minY) minY = ay
+        if (ax > maxX) maxX = ax
+        if (ay > maxY) maxY = ay
+      }
+    }
+  }
+  if (!isFinite(minX)) return null
+  return { left: minX, top: minY, right: maxX, bottom: maxY }
+}
+
+function readVectorFill(vf: any): import("./types").PsdFill | null {
+  if (!vf) return null
+  // ag-psd expoe `{ type: "color" | "gradient" | "pattern", color?, gradient?, pattern? }`
+  if (vf.type === "color" && vf.color) {
+    return { kind: "solid", color: rgbToHex(vf.color) }
+  }
+  if (vf.type === "gradient" && vf.gradient) {
+    // Reusa parser de gradient (mesma estrutura)
+    const g = vf.gradient
+    const kindMap: Record<string, import("./types").PsdGradient["kind"]> = {
+      linear: "linear", radial: "radial", angle: "angle",
+      reflected: "reflected", diamond: "diamond",
+    }
+    const stops = Array.isArray(g.stops) ? g.stops.map((s: any) => ({
+      position: typeof s.location === "number" ? s.location : 0,
+      color: rgbToHex(s.color),
+      opacity: typeof s.opacity === "number" ? s.opacity : 1,
+    })) : []
+    return { kind: "gradient", gradient: { kind: kindMap[g.type] ?? "linear", stops } }
+  }
+  if (vf.type === "pattern") {
+    // Pattern requer canvas pra rasterizar — Fase 5. Por ora retorna null.
+    return null
+  }
+  // Fallback: solid black se layer reporta fill mas estrutura nao bate.
+  return { kind: "solid", color: "#000000" }
+}
+
+function readVectorStroke(vs: any): import("./types").PsdStroke | null {
+  if (!vs) return null
+  if (vs.strokeEnabled === false) return null
+  const width = typeof vs.lineWidth === "number" ? vs.lineWidth : 1
+  const color = vs.color ? rgbToHex(vs.color) : "#000000"
+  const positionMap: Record<string, "inside" | "center" | "outside"> = {
+    "strokeStyleAlignInside": "inside",
+    "strokeStyleAlignCenter": "center",
+    "strokeStyleAlignOutside": "outside",
+  }
+  const capMap: Record<string, "butt" | "round" | "square"> = {
+    "strokeStyleButtCap": "butt",
+    "strokeStyleRoundCap": "round",
+    "strokeStyleSquareCap": "square",
+  }
+  const joinMap: Record<string, "miter" | "round" | "bevel"> = {
+    "strokeStyleMiterJoin": "miter",
+    "strokeStyleRoundJoin": "round",
+    "strokeStyleBevelJoin": "bevel",
+  }
+  return {
+    width,
+    color,
+    position: positionMap[vs.lineAlignment] ?? "outside",
+    cap: capMap[vs.lineCapType] ?? "butt",
+    join: joinMap[vs.lineJoinType] ?? "miter",
+    dash: Array.isArray(vs.lineDashSet) ? vs.lineDashSet : undefined,
   }
 }
 
@@ -426,24 +560,11 @@ function readMask(l: AgPsdLayer): PsdMaskData | null {
 }
 
 /**
- * Concatena paths SVG do vectorMask num único atributo d="...". Espelha
- * exatamente o algoritmo do importer antigo (preserva compatibilidade
- * de rendering) — futuras melhorias (paths compostos, holes) vem na Fase 4.
+ * Concatena paths SVG do vectorMask num único atributo d="..." com curvas
+ * Bezier cubicas corretas (Fase 4). Wrapper que delega pro converter abaixo.
  */
 function vectorMaskToSvgPath(vm: any): string {
-  if (!vm?.paths) return ""
-  const parts: string[] = []
-  for (const p of vm.paths) {
-    if (!Array.isArray(p.knots)) continue
-    let first = true
-    for (const k of p.knots) {
-      const [x, y] = Array.isArray(k.anchor) ? k.anchor : [0, 0]
-      if (first) { parts.push(`M ${x} ${y}`); first = false }
-      else { parts.push(`L ${x} ${y}`) }
-    }
-    if (p.closed) parts.push("Z")
-  }
-  return parts.join(" ")
+  return vectorMaskToBezierSvg(vm)
 }
 
 // ────────────────────────────────────────────────────────────────────
