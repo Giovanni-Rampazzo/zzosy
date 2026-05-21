@@ -3771,9 +3771,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fillProp = layerOv.fill !== undefined ? layerOv.fill : baseFill
         const strokeProp = layerOv.stroke !== undefined ? layerOv.stroke : baseStroke
         const strokeWidth = layerOv.strokeWidth !== undefined ? layerOv.strokeWidth : baseStrokeW
+        // CRITICO: usa layer.posX/posY (posicao SALVA pelo user) com fallback
+        // pra pathBbox (posicao PSD original — primeira carga apos import).
+        // Antes era pathBbox PRIMEIRO → mover o SHAPE no editor e recarregar
+        // snapava de volta pras coords do PSD, "position nao salvava".
+        // Mesma logica pra scale/angle: layer.scaleX/Y/rotation tem prioridade.
         const p = new Path(parsedShape.path, {
-          left: parsedShape.pathBbox?.left ?? posX,
-          top: parsedShape.pathBbox?.top ?? posY,
+          left: posX,
+          top: posY,
+          scaleX: scaleX,
+          scaleY: scaleY,
+          angle: angle,
           fill: fillProp,
           stroke: strokeProp,
           strokeWidth,
