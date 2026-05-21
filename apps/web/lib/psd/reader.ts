@@ -815,15 +815,14 @@ function mapAlign(a: any): "left" | "center" | "right" | "justify" {
 function mapCharStyle(s: any, _warn: (w: ReadWarning) => void, _layerName: string, textScale: number = 1): PsdCharStyle {
   const rawName = s.font?.name ?? "Arial"
   const normalizedFamily = normalizePsdFontToGoogle(rawName) ?? rawName
-  // PS persiste "Auto leading" como literal = fontSize com flag autoLeading.
-  // Tambem ocorre PS persistir Auto sem o flag, mas com leading == fontSize.
-  // Detecta auto e converte pra undefined (deixa o consumer aplicar 1.2x default).
+  // Auto-leading: SO trata como auto se ag-psd marcou autoLeading=true
+  // OU se nao tem leading definido. NAO usar a heuristica "leading==fontSize"
+  // pra inferir auto — designs profissionais (caso Sicredi) tem leading tight
+  // explicito que coincide com fontSize, e essa heuristica os transformava em
+  // 1.2x default → titulo com gap entre linhas que nao existe no PSD.
   const rawSize = typeof s.fontSize === "number" ? s.fontSize : 48
   const rawLeading = typeof s.leading === "number" ? s.leading : undefined
-  const leadingEqualsFont = rawLeading !== undefined && Math.abs(rawLeading - rawSize) < 0.5
-  const isAutoLeading = s.autoLeading === true
-    || rawLeading === undefined
-    || (leadingEqualsFont && s.autoLeading !== false)
+  const isAutoLeading = s.autoLeading === true || rawLeading === undefined
   return {
     fontFamily: normalizedFamily,
     fontWeight: extractFontWeight(rawName) || (s.fauxBold ? 700 : 400),

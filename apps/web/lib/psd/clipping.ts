@@ -126,6 +126,10 @@ export async function resolveLayerClippingMask(
     disabled: false,
     invert: false,
   }
+  // Marca __fromClipping pra detectWrapperSmartObjects (e outros consumers)
+  // saberem que essa mask raster nasceu de clipping — clipping layers nunca
+  // sao wrappers, sao design intencional.
+  ;(newMask as any).__fromClipping = true
   layer.mask = newMask
   return true
 }

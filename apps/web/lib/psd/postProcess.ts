@@ -79,13 +79,26 @@ export function detectWrapperSmartObjects(doc: PsdDocument): { detected: string[
     const area = bboxArea(so.bbox)
     if (area < canvasArea * WRAPPER_COVERAGE_THRESHOLD) continue
 
-    // Filtro de formato: so PSB/PSD pode ser wrapper. PDF/AI/JPG/PNG sao
-    // sempre design elements (vector graphic ou photo), nunca composites.
+    // Filtro de formato: so PSB/PSD/JPG/PNG podem ser wrappers.
     if (so.content.kind === "embedded") {
       if (!WRAPPER_ELIGIBLE_FORMATS.has(so.content.format)) continue
     } else {
       // Linked/unknown: assume nao-wrapper pra ser seguro.
       continue
+    }
+
+    // EXCLUSAO CRITICA: layer com clipping (clipa o de baixo no PSD) NUNCA eh
+    // wrapper. ALY01784 do Sicredi era detectada como wrapper (JPG 28MB
+    // cobrindo 100% canvas) MAS o designer usa ela clipada por PA pra criar
+    // o efeito "foto dentro do shape verde". Esconder = quebrar o design.
+    // Clipping mask sempre eh intencional, nunca acidente de mockup.
+    if (so.clipping === true) continue
+    if (so.mask && so.mask.kind === "clipping") continue
+    if (so.mask && so.mask.kind === "raster") {
+      // Pode ja ter sido convertido por resolveAllClippingChains (clipping →
+      // raster com silhueta do base). Se foi, era originalmente clipping —
+      // nao tratar como wrapper.
+      if ((so.mask as any).__fromClipping) continue
     }
 
     // Conta layers ACIMA (idx > i na flat) com bbox CONTIDO no SO
