@@ -218,6 +218,20 @@ export async function importPsdToCampaign(
     }
   }
 
+  // Thumb preview da matriz pro card da campanha. Sem isso, depois do import
+  // o user volta na pagina da campanha e ve placeholder vazio ate abrir/salvar
+  // no editor (que gera o thumb via Fabric). Usamos o composite raster que ag-psd
+  // ja entregou — eh exatamente o que o Photoshop tinha salvo como preview.
+  // NOTA: no escopo desse modulo, `document` eh o PsdDocument local (linha 76).
+  // Checa o DOM via globalThis pra nao colidir.
+  if (typeof (globalThis as any).document !== "undefined" && document.composite?.data) {
+    try {
+      await uploadCompositeAsThumb(campaignId, document.composite)
+    } catch (e) {
+      console.warn("[psd-new] thumb upload falhou (nao fatal):", e)
+    }
+  }
+
   const durationMs = Math.round(performance.now() - t0)
   options.onProgress?.(`Import concluido em ${durationMs}ms`)
   return {
@@ -231,4 +245,49 @@ export async function importPsdToCampaign(
     warnings,
     requiredFonts: build.requiredFonts,
   }
+}
+
+/**
+ * Sobe o composite raster do PSD como thumb da matriz (Key Vision preview
+ * no card da campanha). Browser-only. Mesma logica do legacy
+ * PsdImporter:2150-2174, agora isolada num helper reusavel.
+ */
+async function uploadCompositeAsThumb(
+  campaignId: string,
+  composite: import("./types").PsdImageData,
+): Promise<void> {
+  const doc = (globalThis as any).document
+  if (!doc) return
+  // composite.data eh dataUrl. Decode em HTMLImageElement → canvas.
+  const img = await new Promise<HTMLImageElement | null>((resolve) => {
+    if (composite.format !== "dataUrl" || typeof composite.data !== "string") {
+      resolve(null); return
+    }
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = () => resolve(null)
+    el.src = composite.data as string
+  })
+  if (!img) return
+
+  // Redimensiona pra TARGET maior lado = 480 (mesma config do editor / legacy).
+  const TARGET = 480
+  const sw = img.naturalWidth || composite.width
+  const sh = img.naturalHeight || composite.height
+  if (!sw || !sh) return
+  const scale = Math.min(TARGET / sw, TARGET / sh, 1)
+  const tw = Math.max(1, Math.round(sw * scale))
+  const th = Math.max(1, Math.round(sh * scale))
+  const c = doc.createElement("canvas")
+  c.width = tw; c.height = th
+  const ctx = c.getContext("2d")
+  if (!ctx) return
+  // NAO pinta fundo branco — preserva alpha do composite (mesma decisao do legacy).
+  ctx.drawImage(img, 0, 0, tw, th)
+  const blob = await new Promise<Blob | null>((resolve) =>
+    c.toBlob((b: Blob | null) => resolve(b), "image/png"))
+  if (!blob) return
+  const fd = new FormData()
+  fd.append("thumbnail", blob, "kv-thumb.png")
+  await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
 }
