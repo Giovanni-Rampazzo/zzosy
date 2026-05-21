@@ -6,6 +6,7 @@ import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
+import { PageHeader } from "@/components/ui/PageHeader"
 
 interface Campaign {
   id: string
@@ -66,24 +67,25 @@ export default function CampaignsPage() {
   return (
     <PageShell>
       <div className="p-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">Campanhas <span className="text-[#888888] font-normal text-lg">({campaigns.length})</span></h1>
-            <p className="text-sm text-[#888888] mt-1">Gerencie suas campanhas em um só lugar</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder="Buscar campanha ou cliente..."
-              className="px-3 py-1.5 text-xs border border-[#E0E0E0] rounded-md w-64 outline-none focus:border-[#888]"
-            />
-            <div className="flex border border-[#E0E0E0] rounded-md overflow-hidden">
-              <button onClick={() => setView("grid")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "grid" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Grid</button>
-              <button onClick={() => setView("list")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "list" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Lista</button>
-            </div>
-          </div>
-        </div>
+        <PageHeader
+          title="Campanhas"
+          count={campaigns.length}
+          subtitle="Gerencie suas campanhas em um só lugar"
+          actions={
+            <>
+              <input
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Buscar campanha ou cliente..."
+                className="px-3 py-1.5 text-xs border border-[#E0E0E0] rounded-md w-64 outline-none focus:border-[#888]"
+              />
+              <div className="flex border border-[#E0E0E0] rounded-md overflow-hidden">
+                <button onClick={() => setView("grid")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "grid" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Grid</button>
+                <button onClick={() => setView("list")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "list" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Lista</button>
+              </div>
+            </>
+          }
+        />
 
         {/* Filtro por status */}
         <div className="flex flex-wrap gap-2 mb-5">

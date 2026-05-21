@@ -13,6 +13,7 @@ import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
+import { PageHeader } from "@/components/ui/PageHeader"
 
 interface Piece {
   id: string
@@ -211,25 +212,25 @@ function PiecesContent() {
             hasPieces={pieces.length > 0}
           />
         )}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">Peças <span className="text-[#888888] font-normal text-lg">({pieces.length})</span></h1>
-            <p className="text-sm text-[#888888] mt-1">Gerencie e exporte as peças geradas</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {selected.length > 0 && (
-              <>
-                <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
-                <Button variant="primary" size="sm" onClick={() => setExportOpen(true)}>Exportar ({selected.length})</Button>
-              </>
-            )}
-            <div className="flex gap-1.5">
-              <FilterPill active={view === "grid"} onClick={() => setView("grid")} size="sm">Grid</FilterPill>
-              <FilterPill active={view === "list"} onClick={() => setView("list")} size="sm">Lista</FilterPill>
-            </div>
-          </div>
-        </div>
-
+        <PageHeader
+          title="Peças"
+          count={pieces.length}
+          subtitle="Gerencie e exporte as peças geradas"
+          actions={
+            <>
+              {selected.length > 0 && (
+                <>
+                  <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
+                  <Button variant="primary" size="sm" onClick={() => setExportOpen(true)}>Exportar ({selected.length})</Button>
+                </>
+              )}
+              <div className="flex gap-1.5">
+                <FilterPill active={view === "grid"} onClick={() => setView("grid")} size="sm">Grid</FilterPill>
+                <FilterPill active={view === "list"} onClick={() => setView("list")} size="sm">Lista</FilterPill>
+              </div>
+            </>
+          }
+        />
         {/* Filtro por status */}
         <div className="flex flex-wrap gap-2 mb-3">
           <FilterPill

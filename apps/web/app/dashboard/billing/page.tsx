@@ -52,7 +52,18 @@ export default function BillingPage() {
           {billing?.currentPeriodEnd && <div style={{marginTop:"24px",paddingTop:"20px",borderTop:"1px solid rgba(255,255,255,0.1)",fontSize:"0.85rem",opacity:0.6}}>{billing.cancelAtPeriodEnd?`⚠️ Cancelamento agendado para ${new Date(billing.currentPeriodEnd).toLocaleDateString("pt-BR")}`:`Renova em ${new Date(billing.currentPeriodEnd).toLocaleDateString("pt-BR")}`}</div>}
         </div>
         <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginBottom:"32px"}}>
-          {isFree?<button onClick={()=>router.push("/plans")} style={{padding:"12px 24px",background:"#111",color:"#FFF",border:"none",borderRadius:"10px",fontSize:"0.88rem",fontWeight:700,cursor:"pointer",fontFamily:"DM Sans,sans-serif"}}>Fazer upgrade →</button>:<><button onClick={()=>router.push("/plans")} style={{padding:"12px 24px",background:"#111",color:"#FFF",border:"none",borderRadius:"10px",fontSize:"0.88rem",fontWeight:700,cursor:"pointer",fontFamily:"DM Sans,sans-serif"}}>Mudar plano</button>{!billing?.cancelAtPeriodEnd&&<button onClick={handleCancel} disabled={canceling} style={{padding:"12px 24px",background:"transparent",color:"#E53935",border:"1.5px solid #E53935",borderRadius:"10px",fontSize:"0.88rem",fontWeight:700,cursor:"pointer",fontFamily:"DM Sans,sans-serif",opacity:canceling?0.6:1}}>{canceling?"Cancelando...":"Cancelar assinatura"}</button>}</>}
+          {isFree ? (
+            <Button variant="dark" size="md" onClick={()=>router.push("/plans")}>Fazer upgrade →</Button>
+          ) : (
+            <>
+              <Button variant="dark" size="md" onClick={()=>router.push("/plans")}>Mudar plano</Button>
+              {!billing?.cancelAtPeriodEnd && (
+                <Button variant="danger" size="md" onClick={handleCancel} disabled={canceling}>
+                  {canceling ? "Cancelando..." : "Cancelar assinatura"}
+                </Button>
+              )}
+            </>
+          )}
         </div>
         <div style={{background:"#FFF",border:"1.5px solid #E5E5E5",borderRadius:"16px",padding:"24px"}}>
           <div style={{fontSize:"0.8rem",fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:"16px"}}>Incluído no seu plano</div>

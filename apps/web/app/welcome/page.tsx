@@ -1,6 +1,7 @@
 "use client";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
 
 function Logo() {
   return (
@@ -37,18 +38,17 @@ export default function WelcomePage() {
         </p>
 
         <div style={{ display:"flex",flexDirection:"column",gap:"12px",marginBottom:"32px" }}>
-          <button onClick={()=>router.push("/plans")} style={{ width:"100%",padding:"16px",background:"#111",color:"#FFF",border:"none",borderRadius:"12px",fontSize:"1rem",fontWeight:700,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",letterSpacing:"-0.01em" }}>
+          <Button variant="dark" size="lg" onClick={()=>router.push("/plans")} style={{ width:"100%" }}>
             Ver planos e preços →
-          </button>
-          <button onClick={()=>router.push("/dashboard")} style={{ width:"100%",padding:"16px",background:"transparent",color:"#888",border:"1.5px solid #E5E5E5",borderRadius:"12px",fontSize:"0.9rem",fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif" }}>
+          </Button>
+          <Button variant="secondary" size="lg" onClick={()=>router.push("/dashboard")} style={{ width:"100%" }}>
             Continuar com plano gratuito
-          </button>
+          </Button>
         </div>
 
         <div style={{ display:"flex",justifyContent:"center",gap:"32px",padding:"24px",background:"#F7F7F7",borderRadius:"12px" }}>
-          {[{ icon:"🎨", label:"Editor visual" },{ icon:"📐", label:"Múltiplos formatos" },{ icon:"⚡", label:"Exportação em escala" }].map(({icon,label})=>(
+          {["Editor visual","Múltiplos formatos","Exportação em escala"].map(label=>(
             <div key={label} style={{ textAlign:"center" }}>
-              <div style={{ fontSize:"1.5rem",marginBottom:"6px" }}>{icon}</div>
               <div style={{ fontSize:"0.78rem",fontWeight:600,color:"#666" }}>{label}</div>
             </div>
           ))}
