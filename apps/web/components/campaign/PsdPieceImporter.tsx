@@ -129,6 +129,33 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
 
   async function importOne(file: File, index: number, total: number) {
     setProgress(`(${index + 1}/${total}) Lendo ${file.name}…`)
+
+    // Fase 10: pipeline novo eh default. Legacy mantido como fallback automatico
+    // se o novo crashar — preserva os 542 linhas de parsing custom como rede de
+    // seguranca ate dogfooding completo. Forca legacy via:
+    //   localStorage["zzosy:psdPipeline"] = "legacy"
+    const forceLegacy = typeof localStorage !== "undefined"
+      && localStorage.getItem("zzosy:psdPipeline") === "legacy"
+    if (!forceLegacy) {
+      try {
+        const { importPsdAsPiece } = await import("@/lib/psd/pieceImporter")
+        const result = await importPsdAsPiece(file, campaignId, campaignAssets, {
+          onProgress: (m) => setProgress(`(${index + 1}/${total}) ${m}`),
+          onWarning: (w) => console.warn(`[piece-psd-new ${w.kind}]`, w.layerName, w.message),
+        })
+        if (!result.ok) {
+          throw new Error(result.error ?? "Erro pipeline novo")
+        }
+        console.log(`[piece-psd-new] ${file.name}:`, result.stats, "fonts:", result.requiredFonts)
+        for (const f of result.requiredFonts) fontsAccumulated.add(f)
+        return
+      } catch (e: any) {
+        console.warn("[piece-psd-new] falhou, caindo no legacy:", e?.message ?? e)
+        setProgress(`(${index + 1}/${total}) Pipeline novo falhou, retomando via legacy…`)
+        // Cai no codigo legacy abaixo
+      }
+    }
+
     const agPsd = await import("ag-psd")
     const { readPsd } = agPsd
     if ((agPsd as any).initializeCanvas) {
