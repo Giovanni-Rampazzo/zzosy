@@ -4090,7 +4090,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // ate que o wrap volte a respeitar o layout original (max 3 tentativas
       // pra evitar loop em casos patologicos).
       try {
-        const expectedLines = (initialText.match(/\n/g)?.length ?? 0) + 1
+        // expectedLines: prioridade 1 = altura do bbox PSD / leading (PSD ja
+        // sabe quantas linhas o designer quis). Prioridade 2 = \n explicitos
+        // + 1 (text sintetico do editor). Sem isso, textos PSD com wrap
+        // intencional (ex: "Incentivo para investimentos" em 3 linhas no
+        // box estreito) eram tratados como 1 linha e o autofit expandia o
+        // width pra "consertar", invadindo textos vizinhos.
+        const psdHeight = typeof ov?.height === "number" ? ov.height : null
+        const leadingForCalc = (typeof effLeadingPt === "number" && effLeadingPt > 0)
+          ? effLeadingPt
+          : (effFontSize > 0 ? effFontSize * 1.2 : 24)
+        const explicitLines = (initialText.match(/\n/g)?.length ?? 0) + 1
+        const psdLines = psdHeight ? Math.max(1, Math.round(psdHeight / leadingForCalc)) : 0
+        const expectedLines = Math.max(explicitLines, psdLines)
         let attempts = 0
         // _textLines eh propriedade interna do Fabric Textbox pos initDimensions.
         while (((t as any)._textLines?.length ?? 0) > expectedLines && attempts < 3) {
@@ -4100,7 +4112,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           attempts++
         }
         if (attempts > 0) {
-          editorLog("[autofit-text]", asset.label, `expanded ${attempts}x to fit ${expectedLines} explicit lines`)
+          editorLog("[autofit-text]", asset.label, `expanded ${attempts}x to fit ${expectedLines} lines (psd=${psdLines}, explicit=${explicitLines})`)
         }
       } catch (e) { editorLog("[autofit-text] erro:", e) }
       ;(t as any).__assetId = asset.id
