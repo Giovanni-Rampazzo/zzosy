@@ -3771,6 +3771,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fillProp = layerOv.fill !== undefined ? layerOv.fill : baseFill
         const strokeProp = layerOv.stroke !== undefined ? layerOv.stroke : baseStroke
         const strokeWidth = layerOv.strokeWidth !== undefined ? layerOv.strokeWidth : baseStrokeW
+        // DEBUG: trace de onde vem cada valor (overrides vs asset.content vs effects)
+        console.log("[LOAD-SHAPE]", asset.label, {
+          baseFill, baseStroke, baseStrokeW,
+          ovFill: layerOv.fill, ovStroke: layerOv.stroke, ovStrokeW: layerOv.strokeWidth,
+          finalFill: fillProp, finalStroke: strokeProp, finalStrokeW: strokeWidth,
+          assetEffects: (asset as any)?.effects, layerEffects: layer?.effects,
+        })
         // CRITICO: usa layer.posX/posY (posicao SALVA pelo user) com fallback
         // pra pathBbox (posicao PSD original — primeira carga apos import).
         // Antes era pathBbox PRIMEIRO → mover o SHAPE no editor e recarregar
@@ -5379,7 +5386,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             layer.groupPath = (o as any).__groupPath
           }
           // DEBUG: log do que tah indo pra matriz
-          console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "__hidden:", o.__hidden, "__locked:", o.__locked, "-> hidden:", layer.hidden, "locked:", layer.locked)
+          console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "label:", o.__assetLabel, "fill:", o.fill, "stroke:", o.stroke, "strokeWidth:", o.strokeWidth, "psdEffects:", o.__psdEffects, "__hidden:", o.__hidden, "__locked:", o.__locked)
           // Espelha a logica do modo PECA: salva overrides per-instancia (fill,
           // fontSize, styles per-char, leadingPt, etc) pra preservar formatacao
           // ao alternar entre KV/Assets/Campanha. Sem isso, recarregar o KV
