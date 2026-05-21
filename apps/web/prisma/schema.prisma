@@ -18,6 +18,11 @@ model Tenant {
   brandSecondaryLogoUrl  String?  @db.LongText
   brandPrimaryColor      String?  @db.VarChar(16)
   brandFooterText        String?
+  /// Taxonomia compartilhada: 3 listas globais ao tenant (segments, categories,
+  /// filters). Aplicaveis a TODA entidade do ZZOSY (clientes, campanhas, pecas,
+  /// midias). Auto-merge: valores criados em qualquer entidade sao appended
+  /// aqui sem duplicar.
+  taxonomy      Json?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   users         User[]
@@ -73,6 +78,12 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// TODO (audit F5.6): renomear `logoUrl` → `brandLogoUrl` pra alinhar com a
+// convencao do Tenant white-label (brandLogoUrl, brandSecondaryLogoUrl). Precisa
+// migration ALTER COLUMN + grep & replace em ~13 arquivos consumidores.
+//
+// TODO (audit F5.6): Tenant.brandPrimaryColor sobrecarrega "brand" — eh white-
+// label do SaaS, nao do Client. Renomear pra `whiteLabelAccentColor` clarifica.
 model Client {
   id          String     @id @default(cuid())
   tenantId    String
@@ -88,8 +99,8 @@ model Client {
   /// 4 presets tipograficos: { titulo, subtitulo, body, legenda }
   /// Cada um: { fontWeight: 100-900, fontSize: number em pt }
   brandTypography  Json?
-  /// @deprecated substituido por customFontFiles (familia completa). Mantido
-  /// no schema pra refletir colunas legadas que possam existir no banco.
+  /// @deprecated substituido por customFontFiles. Coluna mantida pra evitar
+  /// migration destrutiva — sem leitura/escrita ativa em codigo (audit F5.1).
   customFontUrl   String?    @db.LongText
   customFontFiles Json?
   createdAt   DateTime   @default(now())
@@ -189,13 +200,23 @@ model Piece {
   copy          String?        @db.LongText
   status        String         @default("STANDBY")
   data          String?        @db.LongText
+  /// Render exportavel (PNG/JPG da peca em resolucao max). Antes este campo
+  /// fazia dobro como imageUrl + thumbnail; agora `thumbnailUrl` carrega a
+  /// preview/lista e imageUrl fica reservado pro export final.
   imageUrl      String?        @db.LongText
+  /// Preview pequena (max 1920px maior lado) usada na lista, presentation e
+  /// PPTX. Separada de imageUrl pra evitar overload do mesmo campo. Vazia em
+  /// pieces antigas — populada no proximo save no editor.
+  thumbnailUrl  String?        @db.LongText
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   campaign      Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   deliveries    DeliveryPiece[]
 }
 
+// TODO (audit F5.7): Delivery.status em ingles ("PENDING"/"SENT") diverge da
+// convencao do Piece.status (PT: STANDBY/CRIACAO/...). Renomear precisa
+// migration que UPDATE rows existentes + tocar enums no codigo.
 model Delivery {
   id            String          @id @default(cuid())
   campaignId    String

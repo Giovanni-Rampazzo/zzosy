@@ -17,11 +17,14 @@ export function stampUrl(url: string | null | undefined, version: number | strin
  * Stampa imageUrl + steps.thumbnailUrl/imageUrl de uma peca pelo updatedAt.
  * Mutua o objeto retornado (preserva todos os outros fields).
  */
-export function stampPiece<T extends { updatedAt?: Date | string | null; imageUrl?: string | null; data?: any }>(
+export function stampPiece<T extends { updatedAt?: Date | string | null; imageUrl?: string | null; thumbnailUrl?: string | null; data?: any }>(
   piece: T
-): T & { imageUrl: string | null } {
+): T & { imageUrl: string | null; thumbnailUrl: string | null } {
   const v = piece.updatedAt instanceof Date ? piece.updatedAt.getTime() : new Date(piece.updatedAt ?? Date.now()).getTime()
   const imageUrl = stampUrl(piece.imageUrl ?? null, v)
+  // thumbnailUrl: campo novo (F5.1) — preview dedicada. Fallback no imageUrl
+  // pra pieces antigas onde a coluna ainda nao foi populada.
+  const thumbnailUrl = stampUrl(piece.thumbnailUrl ?? piece.imageUrl ?? null, v)
   let data = piece.data
   try {
     const d = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
@@ -34,5 +37,5 @@ export function stampPiece<T extends { updatedAt?: Date | string | null; imageUr
       data = typeof piece.data === "string" ? JSON.stringify({ ...d, steps: stampedSteps }) : { ...d, steps: stampedSteps }
     }
   } catch {}
-  return { ...piece, imageUrl, data }
+  return { ...piece, imageUrl, thumbnailUrl, data }
 }
