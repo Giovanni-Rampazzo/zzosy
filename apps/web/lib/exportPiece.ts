@@ -210,6 +210,22 @@ function parseContent(raw: any): any[] {
   return []
 }
 
+/**
+ * Parseia content de SHAPE asset (path + fill + stroke + fillRule). Aceita
+ * tanto string JSON (formato banco) quanto objeto direto (caches em memoria).
+ * Espelha a logica do KeyVisionEditor pra rendering consistente entre editor
+ * e export.
+ */
+function parseShapeContent(raw: any): { path?: string; pathBbox?: any; fill?: any; stroke?: any; fillRule?: any } | null {
+  if (!raw) return null
+  let parsed: any = raw
+  if (typeof raw === "string") {
+    try { parsed = JSON.parse(raw) } catch { return null }
+  }
+  if (typeof parsed !== "object") return null
+  return parsed
+}
+
 // Constroi o canvas Fabric da peca a partir de layers + assets
 export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
   const fabric = await import("fabric")
@@ -218,6 +234,7 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
   const FabricImage = (fabric as any).FabricImage ?? (fabric as any).Image
   const Rect = (fabric as any).Rect
   const Shadow = (fabric as any).Shadow
+  const Path = (fabric as any).Path
 
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
   const W = data?.width ?? piece.width ?? 1080
@@ -474,6 +491,45 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
           })
           fc.add(r)
         }
+      } else if (asset.type === "SHAPE") {
+        // F12 Fase 4 (export-side): SHAPE assets — Fabric.Path com fill/stroke
+        // vivos (sem rasterizar). Antes esse caminho NAO existia em
+        // buildPieceCanvas → SHAPE invisivel no canvas montado pro export →
+        // PSD/PNG/JPG saiam VAZIOS apos importar PSD com vetor.
+        try {
+          const shape = parseShapeContent(asset.content)
+          if (shape?.path) {
+            const overrides = layer.overrides ?? {}
+            // Editor pode sobrescrever fill/stroke/strokeWidth via painel —
+            // overrides ganham prioridade sobre o asset original.
+            const fillProp = overrides.fill !== undefined ? overrides.fill
+              : (shape.fill?.kind === "solid" ? shape.fill.color : "transparent")
+            const strokeProp = overrides.stroke !== undefined ? overrides.stroke
+              : (shape.stroke?.color ?? undefined)
+            const strokeW = overrides.strokeWidth !== undefined ? overrides.strokeWidth
+              : (shape.stroke?.width ?? 0)
+            const p = new Path(shape.path, {
+              left: shape.pathBbox?.left ?? layer.posX,
+              top: shape.pathBbox?.top ?? layer.posY,
+              fill: fillProp,
+              stroke: strokeProp,
+              strokeWidth: strokeW,
+              strokeUniform: true,
+              fillRule: shape.fillRule ?? "nonzero",
+              scaleX: layer.scaleX ?? 1,
+              scaleY: layer.scaleY ?? 1,
+              angle: layer.rotation ?? 0,
+              opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
+              globalCompositeOperation: layer.blendMode ?? "source-over",
+            })
+            ;(p as any).__assetId = asset.id
+            ;(p as any).__assetLabel = asset.label
+            if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
+              ;(p as any).__groupPath = layer.groupPath
+            }
+            fc.add(p)
+          }
+        } catch (e) { console.warn("[shape-export] falha:", asset.label, e) }
       }
     }
     fc.renderAll()
