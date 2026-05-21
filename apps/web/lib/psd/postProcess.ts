@@ -25,10 +25,15 @@ const WRAPPER_OVERLAP_THRESHOLD = 0.5   // outros layers com >= 50% bbox dentro
 const WRAPPER_OVERLAPPING_COUNT = 3      // pelo menos 3 layers acima sobrepondo (era 2)
 const WRAPPER_MIN_AREA = 100              // ignora layers minusculos no count
 
-// Formatos que PODEM ser wrapper. PDF/AI/JPG/PNG sao design elements unicos
-// (vetor isolado ou foto), nao composites — nunca contem o design todo.
-// PSB/PSD sao Photoshop nested files que tipicamente sim contem o design.
-const WRAPPER_ELIGIBLE_FORMATS = new Set(["psb", "psd"])
+// Formatos que PODEM ser wrapper.
+//   - PSB/PSD: Photoshop nested files — TIPICAMENTE contem o design todo.
+//   - JPG/PNG: foto/raster — pode duplicar um Background image (ex: ALY01784
+//              do Sicredi que repete a foto da mulher). Marcamos como
+//              wrapper APENAS se tem Background image de tamanho similar.
+//   - PDF/AI:  vetor isolado (icone, logo, formas) — NUNCA wrapper.
+const WRAPPER_ELIGIBLE_FORMATS = new Set(["psb", "psd", "jpg", "png"])
+const COMPOSITE_FORMATS = new Set(["psb", "psd"])
+const RASTER_FORMATS = new Set(["jpg", "png"])
 
 /**
  * Detecta Smart Objects "wrapper" — placedLayers grandes que contem o

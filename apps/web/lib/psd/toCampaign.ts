@@ -31,6 +31,7 @@ import type {
   PsdBlendMode,
 } from "./types"
 import { blendModeToCanvas } from "./blendModes"
+import type { LayerMask } from "@/lib/maskTypes"
 
 // ────────────────────────────────────────────────────────────────────
 // Output shapes (compativel com modelo do editor)
@@ -84,9 +85,10 @@ export interface BuiltAsset {
   pixelsIncludeEffects: boolean
   /**
    * Mask como dado (raster/vector/clipping). Editor cria fabric clipPath.
-   * null = sem mask.
+   * null = sem mask. Shape compativel com applyMaskToFabricObject — convertida
+   * de PsdMaskData (canonical, key=kind) pra LayerMask (legado, key=type).
    */
-  mask: PsdMaskData | null
+  mask: LayerMask | null
   /** Hidden flag preservado pra round-trip. Default visible. */
   hidden?: boolean
   /** Locked transparencyProtected do PS. */
@@ -268,7 +270,7 @@ function emitTextLayer(l: PsdTextLayer, parentPath: string[], ctx: BuildContext)
     lastOverride,
     effects: hasEffects(l.effects) ? l.effects : undefined,
     pixelsIncludeEffects: false, // text effects sempre live via Fabric
-    mask: l.mask,
+    mask: convertMask(l.mask),
     hidden: !l.visible || undefined,
     locked: l.locked || undefined,
   })
@@ -401,7 +403,7 @@ function emitImageLayer(l: PsdImageLayer, parentPath: string[], ctx: BuildContex
     imageIndex,
     effects: hasEffects(l.effects) ? l.effects : undefined,
     pixelsIncludeEffects: l.pixelsIncludeEffects,
-    mask: l.mask,
+    mask: convertMask(l.mask),
     hidden: !l.visible || undefined,
     locked: l.locked || undefined,
   })
@@ -436,7 +438,7 @@ function emitShapeLayer(l: PsdShapeLayer, parentPath: string[], ctx: BuildContex
     },
     effects: hasEffects(l.effects) ? l.effects : undefined,
     pixelsIncludeEffects: false, // shapes vetoriais: effects sempre live
-    mask: l.mask,
+    mask: convertMask(l.mask),
     hidden: !l.visible || undefined,
     locked: l.locked || undefined,
   })
@@ -488,7 +490,7 @@ function emitSmartObjectLayer(l: PsdSmartObjectLayer, parentPath: string[], ctx:
     // rasteriza o nested PSB ja com layer styles do SO + filtros). Editor
     // NAO deve adicionar Fabric.Shadow extra — evita doubling.
     pixelsIncludeEffects: true,
-    mask: l.mask,
+    mask: convertMask(l.mask),
     // isWrapper → hidden default (user re-mostra se quiser).
     hidden: l.isWrapper ? true : (!l.visible || undefined),
     locked: l.locked || undefined,
@@ -527,6 +529,59 @@ function layerFromLayer(
 
 function bboxWidth(b: PsdBBox): number { return Math.max(b.right - b.left, 1) }
 function bboxHeight(b: PsdBBox): number { return Math.max(b.bottom - b.top, 1) }
+
+/**
+ * Converte PsdMaskData (modelo canonical do reader) → LayerMask (shape que
+ * applyMaskToFabricObject consome). Sem essa conversao, o editor NAO aplica
+ * nenhuma mask importada via pipeline novo — chaves divergem (kind vs type,
+ * disabled vs enabled, sem wrapper vector/raster).
+ *
+ * Sintoma reportado pelo usuario: "veja as mascaras, nao estao lendo direito"
+ * — Rectangle 1-4 com vector mask vinham como rectangles cheios em vez do
+ * shape mascarado.
+ */
+function convertMask(m: PsdMaskData | null): LayerMask | null {
+  if (!m) return null
+  if (m.kind === "raster") {
+    if (m.imageData.format !== "dataUrl" || typeof m.imageData.data !== "string") {
+      return null // sem dataUrl o raster nao tem como ser fabric.Image clipPath
+    }
+    return {
+      type: "raster",
+      enabled: !m.disabled,
+      inverted: m.invert,
+      raster: {
+        dataUrl: m.imageData.data,
+        posX: m.bbox.left,
+        posY: m.bbox.top,
+        width: m.bbox.right - m.bbox.left,
+        height: m.bbox.bottom - m.bbox.top,
+      },
+    }
+  }
+  if (m.kind === "vector") {
+    return {
+      type: "vector",
+      enabled: !m.disabled,
+      inverted: m.invert,
+      vector: {
+        path: m.path,
+        posX: m.bbox.left,
+        posY: m.bbox.top,
+        width: m.bbox.right - m.bbox.left,
+        height: m.bbox.bottom - m.bbox.top,
+      },
+    }
+  }
+  if (m.kind === "clipping") {
+    return {
+      type: "clipping",
+      enabled: true,
+      clipping: true,
+    }
+  }
+  return null
+}
 
 function hasEffects(fx: PsdLayerEffects): boolean {
   return Object.keys(fx).length > 0

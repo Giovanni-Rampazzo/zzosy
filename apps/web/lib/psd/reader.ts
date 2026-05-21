@@ -185,11 +185,33 @@ function readGroup(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) =
 function readText(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) => void): PsdTextLayer {
   const td = l.text!
   const rawText = (td.text ?? "").split("\r\n").join("\n").split("\r").join("\n")
-  const defStyle: PsdCharStyle = mapCharStyle(td.style ?? {}, warn, l.name ?? "")
+
+  // Text transform (textScale do Free Transform). PSD guarda fontSize em
+  // espaco PRE-transform: ex. designer escreve fonte 100pt, escala o frame
+  // pra 18% via Free Transform → ag-psd entrega s.fontSize=100 mas o visual
+  // eh 18pt. Sem aplicar textScale aqui, os textos sairiam ENORMES no editor
+  // (caso "Seguro Viagem" relatado no PsdImporter legacy:206-211).
+  //
+  // td.transform eh matrix 6-num: [xx, xy, yx, yy, tx, ty]
+  //   sx = hypot(xx, xy) — escala horizontal
+  //   sy = hypot(yx, yy) — escala vertical
+  // Usamos a media geometrica pra fontSize/leading (sao scalars).
+  const tform: number[] | undefined = (td as any).transform
+  let textScale = 1
+  if (Array.isArray(tform) && tform.length >= 4) {
+    const sx = Math.hypot(tform[0] ?? 1, tform[1] ?? 0)
+    const sy = Math.hypot(tform[2] ?? 0, tform[3] ?? 1)
+    const avg = (sx + sy) / 2
+    if (Number.isFinite(avg) && avg > 0) textScale = avg
+  }
+
+  // mapCharStyle aplica textScale: fontSize × scale, leading × scale.
+  // Tracking eh independent (em 1/1000 em) — nao escala.
+  const defStyle: PsdCharStyle = mapCharStyle(td.style ?? {}, warn, l.name ?? "", textScale)
   const styleRuns: PsdTextStyleRun[] = (td.styleRuns ?? []).map((run: any) => ({
     start: 0, // calculado abaixo cumulativamente
     length: run.length ?? 0,
-    style: mapCharStylePartial(run.style ?? {}),
+    style: mapCharStylePartial(run.style ?? {}, textScale),
   }))
   // Preenche `start` cumulativo
   let cursor = 0
@@ -202,8 +224,8 @@ function readText(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) =>
     spaceAfter: td.paragraphStyle?.spaceAfter,
   }
 
-  // Text transform (textScale + skew). PSD entrega via td.transform (matrix 6-num)
-  // ou via xx,xy,yx,yy + tx,ty. Default = identity (sem warp).
+  // transform fica como identity no modelo canonical — fontSize/leading
+  // ja foram escalados acima. O transform raw nao eh mais necessario.
   const transform: PsdTransform2D = IDENTITY_TRANSFORM
 
   return {
@@ -790,17 +812,26 @@ function mapAlign(a: any): "left" | "center" | "right" | "justify" {
  * fontFamily="Exo 2" + fontWeight=400 + fontStyle="italic". UI/renderer
  * leem o modelo limpo, nao precisam re-parsear.
  */
-function mapCharStyle(s: any, _warn: (w: ReadWarning) => void, _layerName: string): PsdCharStyle {
+function mapCharStyle(s: any, _warn: (w: ReadWarning) => void, _layerName: string, textScale: number = 1): PsdCharStyle {
   const rawName = s.font?.name ?? "Arial"
   const normalizedFamily = normalizePsdFontToGoogle(rawName) ?? rawName
+  // PS persiste "Auto leading" como literal = fontSize com flag autoLeading.
+  // Tambem ocorre PS persistir Auto sem o flag, mas com leading == fontSize.
+  // Detecta auto e converte pra undefined (deixa o consumer aplicar 1.2x default).
+  const rawSize = typeof s.fontSize === "number" ? s.fontSize : 48
+  const rawLeading = typeof s.leading === "number" ? s.leading : undefined
+  const leadingEqualsFont = rawLeading !== undefined && Math.abs(rawLeading - rawSize) < 0.5
+  const isAutoLeading = s.autoLeading === true
+    || rawLeading === undefined
+    || (leadingEqualsFont && s.autoLeading !== false)
   return {
     fontFamily: normalizedFamily,
     fontWeight: extractFontWeight(rawName) || (s.fauxBold ? 700 : 400),
     fontStyle: detectItalic(rawName, !!s.fauxItalic) ? "italic" : "normal",
-    fontSize: typeof s.fontSize === "number" ? s.fontSize : 48,
+    fontSize: rawSize * textScale,
     color: s.fillColor ? rgbToHex(s.fillColor) : "#000000",
     tracking: typeof s.tracking === "number" ? s.tracking : 0,
-    leading: typeof s.leading === "number" ? s.leading : undefined,
+    leading: isAutoLeading ? undefined : (rawLeading! * textScale),
     underline: s.underline === true,
     strikethrough: s.strikethrough === true,
     fauxBold: s.fauxBold === true,
@@ -808,7 +839,7 @@ function mapCharStyle(s: any, _warn: (w: ReadWarning) => void, _layerName: strin
   }
 }
 
-function mapCharStylePartial(s: any): Partial<PsdCharStyle> {
+function mapCharStylePartial(s: any, textScale: number = 1): Partial<PsdCharStyle> {
   const out: Partial<PsdCharStyle> = {}
   if (s.font?.name) {
     const rawName = s.font.name
@@ -816,10 +847,11 @@ function mapCharStylePartial(s: any): Partial<PsdCharStyle> {
     out.fontWeight = extractFontWeight(rawName) || (s.fauxBold ? 700 : 400)
     out.fontStyle = detectItalic(rawName, !!s.fauxItalic) ? "italic" : "normal"
   }
-  if (typeof s.fontSize === "number") out.fontSize = s.fontSize
+  // Aplicar textScale em fontSize/leading do run (mesma logica que defaultStyle)
+  if (typeof s.fontSize === "number") out.fontSize = s.fontSize * textScale
   if (s.fillColor) out.color = rgbToHex(s.fillColor)
   if (typeof s.tracking === "number") out.tracking = s.tracking
-  if (typeof s.leading === "number") out.leading = s.leading
+  if (typeof s.leading === "number") out.leading = s.leading * textScale
   if (s.underline) out.underline = true
   if (s.strikethrough) out.strikethrough = true
   if (s.fauxBold) out.fauxBold = true
