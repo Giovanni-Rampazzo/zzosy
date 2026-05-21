@@ -13,10 +13,14 @@ model Tenant {
   slug          String        @unique
   // White-label: campos sobrescrevem branding default (ZZOSY/amarelo/SUNO logos)
   // em TopNav, apresentacao web e PPTX exportado. Null = usa defaults.
+  /// Campos `brand*` no Tenant sao do WHITE-LABEL do SaaS (substituem o
+  /// branding default ZZOSY na TopNav/apresentacao/PPTX). NAO confundir com
+  /// Client.brand* (que e a marca do cliente final). `whiteLabelAccentColor`
+  /// foi renomeado de `brandPrimaryColor` (audit F6.2) pra desambiguar.
   brandName              String?
   brandLogoUrl           String?  @db.LongText
   brandSecondaryLogoUrl  String?  @db.LongText
-  brandPrimaryColor      String?  @db.VarChar(16)
+  whiteLabelAccentColor  String?  @db.VarChar(16) @map("brandPrimaryColor")
   brandFooterText        String?
   /// Taxonomia compartilhada: 3 listas globais ao tenant (segments, categories,
   /// filters). Aplicaveis a TODA entidade do ZZOSY (clientes, campanhas, pecas,
@@ -78,12 +82,6 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// TODO (audit F5.6): renomear `logoUrl` → `brandLogoUrl` pra alinhar com a
-// convencao do Tenant white-label (brandLogoUrl, brandSecondaryLogoUrl). Precisa
-// migration ALTER COLUMN + grep & replace em ~13 arquivos consumidores.
-//
-// TODO (audit F5.6): Tenant.brandPrimaryColor sobrecarrega "brand" — eh white-
-// label do SaaS, nao do Client. Renomear pra `whiteLabelAccentColor` clarifica.
 model Client {
   id          String     @id @default(cuid())
   tenantId    String
@@ -93,7 +91,9 @@ model Client {
   email       String?
   phone       String?
   address     String?
-  logoUrl         String?    @db.LongText
+  /// Renomeado de `logoUrl` (F6.1) pra alinhar com Tenant.brandLogoUrl. Sem
+  /// migration de coluna — usa @map pra preservar o nome fisico no banco.
+  brandLogoUrl    String?    @db.LongText @map("logoUrl")
   brandFont       String?
   brandColors      Json?
   /// 4 presets tipograficos: { titulo, subtitulo, body, legenda }
@@ -214,14 +214,13 @@ model Piece {
   deliveries    DeliveryPiece[]
 }
 
-// TODO (audit F5.7): Delivery.status em ingles ("PENDING"/"SENT") diverge da
-// convencao do Piece.status (PT: STANDBY/CRIACAO/...). Renomear precisa
-// migration que UPDATE rows existentes + tocar enums no codigo.
 model Delivery {
   id            String          @id @default(cuid())
   campaignId    String
   name          String?
-  status        String          @default("PENDING")
+  /// Valores: PENDENTE (default na criacao), ENVIADA (apos POST entregar).
+  /// PT (F6.3) — alinha com Piece.status. Tinha PENDING/SENT antes da migration.
+  status        String          @default("PENDENTE")
   notes         String?         @db.Text
   zipUrl        String?         @db.Text
   zipSize       Int?

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic"
 // Whitelist de fields aceitos no POST. Antes era spread raw — qualquer field
 // passava (incluindo FK arbitraria, contadores, IDs internos). Audit P1.9.
 const CLIENT_CREATE_FIELDS = new Set([
-  "name", "contact", "email", "phone", "address", "logoUrl",
+  "name", "contact", "email", "phone", "address", "brandLogoUrl",
   "brandFont", "brandColors", "brandTypography", "customFontFiles",
 ])
 

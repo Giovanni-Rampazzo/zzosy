@@ -36,7 +36,7 @@ interface Campaign {
   client: {
     id: string
     name: string
-    logoUrl?: string | null
+    brandLogoUrl?: string | null
     brandFont?: string | null
     brandColors?: BrandColor[] | null
     brandTypography?: BrandTypography | null
@@ -353,7 +353,7 @@ export default function CampaignAssetsPage() {
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display:"flex", alignItems:"center", gap: 8 }}>
             <ClientLogoBadge
-              client={{ id: campaign.client.id, name: campaign.client.name, logoUrl: campaign.client.logoUrl }}
+              client={{ id: campaign.client.id, name: campaign.client.name, brandLogoUrl: campaign.client.brandLogoUrl }}
               size={24}
               radius={4}
             />

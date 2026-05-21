@@ -19,7 +19,9 @@
 import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
+import { ClientSettingsCard } from "@/components/clients/ClientSettingsCard"
 import { Button } from "@/components/ui/Button"
+import { CollapsibleCard } from "@/components/ui/CollapsibleCard"
 import { GOOGLE_FONTS, loadGoogleFont, loadCustomFontFamily, detectFontMetadata, CustomFontFile } from "@/lib/google-fonts"
 
 interface BrandColor {
@@ -104,7 +106,7 @@ interface Client {
   email: string | null
   phone: string | null
   address: string | null
-  logoUrl: string | null
+  brandLogoUrl: string | null
   brandFont: string | null
   brandColors: BrandColor[] | null
   brandTypography: any | null
@@ -147,6 +149,7 @@ export default function EditClientPage() {
   const [error, setError] = useState("")
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmText, setConfirmText] = useState("")
+  const [settingsStatus, setSettingsStatus] = useState<"idle" | "saving" | "saved">("idle")
 
   const [name, setName] = useState("")
   const [contact, setContact] = useState("")
@@ -187,7 +190,7 @@ export default function EditClientPage() {
         setEmail(c.email ?? "")
         setPhone(c.phone ?? "")
         setAddress(c.address ?? "")
-        setLogoUrl(c.logoUrl ?? null)
+        setLogoUrl(c.brandLogoUrl ?? null)
         setBrandFont(c.brandFont ?? "")
         // brandColors do banco: array dinamico (sem tamanho fixo). Migra
         // valores legados (primary/secondary → principal/secundaria).
@@ -245,13 +248,18 @@ export default function EditClientPage() {
         // Cascateia mudança em todas peças do cliente: atualiza piece.data
         // resolvendo brand refs + regenera thumbs. Roda em background sem
         // bloquear UI; usuário vê progresso via state cascadeProgress.
+        // forceRender=true: regenera thumbs mesmo quando cor nao mudou (caso
+        // tipico: user trocou brandFont — server propaga via propagateBrand-
+        // Typography, mas thumb-da-peca fica stale ate user abrir o editor.
+        // Sem forceRender, cascade pula re-render porque resolveBrandRefs nao
+        // detecta mudanca (refs sao so de cor).
         ;(async () => {
           try {
             const { cascadeBrandUpdate } = await import("@/lib/cascadeBrandUpdate")
             setCascadeProgress({ total: 0, done: 0 })
             const touched = await cascadeBrandUpdate(id, brandColors, (p) => {
               setCascadeProgress({ total: p.total, done: p.done })
-            })
+            }, true)
             setCascadeProgress({ total: 0, done: 0, touched: touched.length })
             setTimeout(() => setCascadeProgress(null), 4000)
           } catch (e) {
@@ -506,7 +514,7 @@ export default function EditClientPage() {
 
     // AUTO-SAVE: persiste o logo no banco imediatamente apos upload
     setSavingLogo(true)
-    const ok = await patchClient({ logoUrl: data.url })
+    const ok = await patchClient({ brandLogoUrl: data.url })
     setSavingLogo(false)
     if (ok) {
       setLogoSavedAt(Date.now())
@@ -519,7 +527,7 @@ export default function EditClientPage() {
   async function handleDeleteLogo() {
     setError("")
     setSavingLogo(true)
-    const ok = await patchClient({ logoUrl: null })
+    const ok = await patchClient({ brandLogoUrl: null })
     setSavingLogo(false)
     if (ok) {
       setLogoUrl(null)
@@ -624,16 +632,16 @@ export default function EditClientPage() {
         </div>
 
         <form onSubmit={handleSave} style={{maxWidth:640}}>
-          <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
-            {/* Header com titulo e botoes Salvar/Cancelar no topo */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <div style={{fontSize:14,fontWeight:700}}>Dados do cliente</div>
-              <div style={{display:"flex",gap:10}}>
-                <Button type="button" variant="secondary" size="md" onClick={() => router.push(`/clients/${id}`)}>Cancelar</Button>
-                <Button type="submit" variant="primary" size="md" loading={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
-              </div>
-            </div>
-
+          <CollapsibleCard
+            title="Dados do cliente"
+            style={{marginBottom:24}}
+            actions={
+              <>
+                <Button type="button" variant="secondary" size="sm" onClick={() => router.push(`/clients/${id}`)}>Cancelar</Button>
+                <Button type="submit" variant="primary" size="sm" loading={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
+              </>
+            }
+          >
             {/* Logo (auto-save) */}
             <div style={{marginBottom:20}}>
               <div style={{...labelStyle,display:"flex",alignItems:"center"}}>
@@ -647,7 +655,7 @@ export default function EditClientPage() {
                       width:120,height:120,
                       border:"1px solid #E0E0E0",
                       borderRadius:8,
-                      background:"#FAFAFA",
+                      background:"transparent",
                       display:"flex",alignItems:"center",justifyContent:"center",
                       overflow:"hidden",
                       padding:8,
@@ -711,11 +719,6 @@ export default function EditClientPage() {
                   style={{display:"none"}}
                 />
               </div>
-              {/* Aviso sobre tamanho e formato */}
-              <div style={{fontSize:11,color:"#888",marginTop:10,lineHeight:1.5,maxWidth:480}}>
-                <strong style={{color:"#111"}}>Prefira SVG</strong> — vetor, leve e nunca pixeliza.
-                Aceita PNG, JPG, SVG ou WEBP. Tamanho máximo <strong>5MB</strong> (quanto menor, mais rápido carrega).
-              </div>
             </div>
 
             {/* Campos texto */}
@@ -745,350 +748,80 @@ export default function EditClientPage() {
             </div>
 
             {error && <p style={{color:"#dc2626",fontSize:12,margin:"16px 0 0",lineHeight:1.5}}>{error}</p>}
-          </div>
+          </CollapsibleCard>
         </form>
 
-        {/* CARD: Identidade Visual (auto-save) */}
-        <div style={{maxWidth:640,background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-            <div style={{fontSize:14,fontWeight:700}}>Identidade visual</div>
-            {savingBrand ? <span style={{fontSize:10,color:"#888"}}>salvando…</span>
-              : cascadeProgress && cascadeProgress.total > 0 && cascadeProgress.done < cascadeProgress.total ?
-                  <span style={{fontSize:10,color:"#888"}}>atualizando peças… {cascadeProgress.done}/{cascadeProgress.total}</span>
-              : cascadeProgress && typeof cascadeProgress.touched === "number" ?
-                  <span style={{fontSize:10,color:"#15803d"}}>✓ {cascadeProgress.touched} peça{cascadeProgress.touched === 1 ? "" : "s"} atualizada{cascadeProgress.touched === 1 ? "" : "s"}</span>
-              : brandSavedAt ? <span style={{fontSize:10,color:"#15803d"}}>✓ salvo</span>
-              : null}
-          </div>
-          <p style={{fontSize:12,color:"#888",margin:"0 0 20px",lineHeight:1.4}}>
-            Fonte e cores da marca. Será usado como padrão ao criar textos e peças desse cliente.
-          </p>
+        {/* CARD: link pra Design System. Configs visuais (logo, cores, fontes,
+            tipografia) viraram pagina dedicada /clients/[id]/design-system. */}
+        <div style={{maxWidth:640,marginBottom:24}}>
+          <CollapsibleCard
+            title="Design System"
+            actions={
+              <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${id}/design-system`)}>
+                Abrir Design System →
+              </Button>
+            }
+          >
+            <p style={{fontSize:12,color:"#666",margin:0,lineHeight:1.5}}>
+              Logo, cores da marca, fontes e tipografia ficam em uma página dedicada.
+            </p>
+          </CollapsibleCard>
+        </div>
 
-          {/* Tipografia */}
-          <div style={{marginBottom:24}}>
-            <label style={labelStyle}>Tipografia</label>
+        {/* CARD: link pra Formatos de Midia. Vivem em pagina dedicada /medias
+            (catalogo global do tenant). Aqui no cliente, atalho pra abrir. */}
+        <div style={{maxWidth:640,marginBottom:24}}>
+          <CollapsibleCard
+            title="Formatos de mídia"
+            actions={
+              <Button variant="secondary" size="sm" onClick={() => router.push(`/medias`)}>
+                Abrir Formatos →
+              </Button>
+            }
+          >
+            <p style={{fontSize:12,color:"#666",margin:0,lineHeight:1.5}}>
+              Catálogo de formatos (dimensões, veículos, mídias) que as peças vão usar.
+              Compartilhado entre todas as campanhas do tenant.
+            </p>
+          </CollapsibleCard>
+        </div>
 
-            {/* Toggle Google Font / Fonte custom */}
-            <div style={{display:"flex",gap:0,marginTop:8,marginBottom:12,border:"1px solid #E0E0E0",borderRadius:6,overflow:"hidden",width:"fit-content"}}>
-              <button
-                type="button"
-                onClick={handleSwitchToGoogle}
-                style={{
-                  padding:"6px 14px",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-                  background: fontMode === "google" ? "#111" : "white",
-                  color: fontMode === "google" ? "white" : "#666",
-                  fontFamily:"inherit",
-                }}
-              >Google Font</button>
-              <button
-                type="button"
-                onClick={handleSwitchToCustom}
-                style={{
-                  padding:"6px 14px",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
-                  background: fontMode === "custom" ? "#111" : "white",
-                  color: fontMode === "custom" ? "white" : "#666",
-                  fontFamily:"inherit",
-                  borderLeft:"1px solid #E0E0E0",
-                }}
-              >Fonte custom (família)</button>
-            </div>
+        {/* SETTINGS GLOBAIS — listas controladas (segmentos, categorias, filtros)
+            do TENANT. Compartilhadas entre todas as empresas/campanhas/pecas. */}
+        <div style={{maxWidth:640,marginBottom:24}}>
+          <CollapsibleCard
+            title="Configurações"
+            status={settingsStatus === "saving" ? "salvando…" : settingsStatus === "saved" ? "salvo" : undefined}
+          >
+            <ClientSettingsCard onStatusChange={setSettingsStatus} />
+          </CollapsibleCard>
+        </div>
 
-            {fontMode === "google" ? (
-              <select
-                value={brandFont}
-                onChange={e => handleFontChange(e.target.value)}
-                style={{...inputStyle,minWidth:220,cursor:"pointer"}}
-              >
-                <option value="">— Sem fonte definida —</option>
-                <optgroup label="Sans-serif">
-                  {GOOGLE_FONTS.filter(f => f.category === "sans").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
-                </optgroup>
-                <optgroup label="Serif">
-                  {GOOGLE_FONTS.filter(f => f.category === "serif").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
-                </optgroup>
-                <optgroup label="Display">
-                  {GOOGLE_FONTS.filter(f => f.category === "display").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
-                </optgroup>
-                <optgroup label="Monospace">
-                  {GOOGLE_FONTS.filter(f => f.category === "mono").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
-                </optgroup>
-                <optgroup label="Handwriting">
-                  {GOOGLE_FONTS.filter(f => f.category === "handwriting").map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
-                </optgroup>
-              </select>
+        <div style={{maxWidth:640}}>
+          <CollapsibleCard title="Zona de perigo" variant="danger" defaultOpen={false}>
+            <p style={{fontSize:12,color:"#666",margin:"0 0 16px",lineHeight:1.5}}>
+              Apagar o cliente remove permanentemente todas as campanhas, peças e entregas associadas. Esta ação não pode ser desfeita.
+            </p>
+            {!confirmDelete ? (
+              <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>Apagar cliente</Button>
             ) : (
-              <div>
-                {/* Nome da familia */}
-                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14,maxWidth:360}}>
-                  <label style={{fontSize:10,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Nome da família</label>
-                  <input
-                    type="text"
-                    value={brandFont}
-                    onChange={e => handleCustomFontNameChange(e.target.value)}
-                    placeholder="Ex: Sicredi Sans"
-                    style={inputStyle}
-                  />
-                </div>
-
-                {/* Lista de arquivos da familia */}
-                {customFontFiles.length > 0 ? (
-                  <div style={{border:"1px solid #E0E0E0",borderRadius:8,overflow:"hidden",marginBottom:10}}>
-                    <div style={{display:"grid",gridTemplateColumns:"48px 1fr 160px 110px 36px",gap:0,background:"#FAFAFA",padding:"8px 12px",borderBottom:"1px solid #E0E0E0",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>
-                      <div>Aa</div>
-                      <div>Arquivo</div>
-                      <div>Peso</div>
-                      <div>Estilo</div>
-                      <div></div>
-                    </div>
-                    {customFontFiles.map((f, i) => (
-                      <div key={i} style={{display:"grid",gridTemplateColumns:"48px 1fr 160px 110px 36px",gap:0,padding:"8px 12px",borderTop: i === 0 ? "none" : "1px solid #F0F0F0",alignItems:"center"}}>
-                        <div style={{
-                          fontFamily: brandFont ? `'${brandFont}', sans-serif` : "inherit",
-                          fontWeight: f.weight,
-                          fontStyle: f.style,
-                          fontSize: 22,
-                          lineHeight: 1,
-                        }}>Aa</div>
-                        <div style={{fontSize:12,color:"#444",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}} title={f.fileName}>{f.fileName}</div>
-                        <select
-                          value={f.weight}
-                          onChange={e => updateFontFileMeta(i, { weight: Number(e.target.value) })}
-                          style={{...inputStyle,padding:"4px 8px",fontSize:11,cursor:"pointer"}}
-                        >
-                          {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-                        </select>
-                        <select
-                          value={f.style}
-                          onChange={e => updateFontFileMeta(i, { style: e.target.value as "normal" | "italic" })}
-                          style={{...inputStyle,padding:"4px 8px",fontSize:11,cursor:"pointer",marginLeft:6}}
-                        >
-                          <option value="normal">Normal</option>
-                          <option value="italic">Italic</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => removeFontFile(i)}
-                          title="Remover este arquivo"
-                          style={{background:"transparent",border:"none",cursor:"pointer",color:"#999",fontSize:18,padding:"0 8px",lineHeight:1}}
-                        >×</button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                {/* Input file NATIVO visivel — sem label/ref pra eliminar mediacao */}
-                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
-                  <input
-                    type="file"
-                    accept=".ttf,.otf,.woff,.woff2"
-                    multiple
-                    onChange={handleFontFileChange}
-                    disabled={uploadingFont || customFontFiles.length >= 50}
-                    style={{fontSize:12,fontFamily:"inherit"}}
-                  />
-                  {uploadingFont && <span style={{fontSize:11,color:"#888"}}>Enviando...</span>}
-                </div>
-
-                <div style={{fontSize:11,color:"#888",marginTop:10,lineHeight:1.5,maxWidth:520}}>
-                  Suba <strong>todos os pesos da família</strong> de uma vez (Regular, Bold, Light, Italic, etc). O peso e estilo são detectados pelo nome do arquivo — você pode ajustar nos dropdowns se errar. <strong>TTF, OTF, WOFF ou WOFF2</strong>, máximo 2MB cada.
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <label style={{fontSize:12,color:"#666"}}>
+                  Digite <strong>{client.name}</strong> pra confirmar:
+                </label>
+                <input
+                  value={confirmText}
+                  onChange={e=>setConfirmText(e.target.value)}
+                  style={{...inputStyle,maxWidth:320}}
+                  autoFocus
+                />
+                <div style={{display:"flex",gap:8}}>
+                  <Button variant="secondary" size="sm" onClick={() => { setConfirmDelete(false); setConfirmText(""); setError("") }}>Cancelar</Button>
+                  <Button variant="danger" size="sm" onClick={handleDelete} disabled={confirmText.trim() !== client.name}>Apagar definitivamente</Button>
                 </div>
               </div>
             )}
-
-            {brandFont && (fontMode === "google" || customFontFiles.length > 0) && (
-              <div style={{
-                marginTop:14,padding:"14px 16px",
-                background:"#FAFAFA",border:"1px solid #E0E0E0",borderRadius:8,
-                fontFamily:`'${brandFont}', sans-serif`,
-              }}>
-                <div style={{fontSize:22,fontWeight:700,lineHeight:1.2,marginBottom:4}}>The quick brown fox</div>
-                <div style={{fontSize:14,fontWeight:400,color:"#555"}}>Jumps over the lazy dog • 1234567890</div>
-              </div>
-            )}
-          </div>
-
-          {/* Cores — lista dinamica com drag, categoria editavel, swatch grande */}
-          <div>
-            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10}}>
-              <div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Cores da marca</div>
-              <div style={{fontSize:11,color:"#AAA"}}>Arraste pra reordenar</div>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-              {brandColors.length === 0 ? (
-                <div style={{fontSize:12,color:"#999",fontStyle:"italic",padding:"10px 0"}}>Nenhuma cor cadastrada. Adicione abaixo.</div>
-              ) : brandColors.map((c, i) => {
-                const role = normalizeRole(c.role)
-                const placeholderByRole: Record<string,string> = {
-                  principal: "Ex: Verde principal",
-                  secundaria: "Ex: Amarelo secundário",
-                  apoio: "Ex: Laranja apoio",
-                  neutra: "Ex: Cinza claro",
-                }
-                const isDragging = dragIndex === i
-                return (
-                  <div
-                    key={i}
-                    draggable
-                    onDragStart={() => handleColorDragStart(i)}
-                    onDragOver={handleColorDragOver}
-                    onDrop={() => handleColorDrop(i)}
-                    style={{
-                      display:"flex",gap:10,alignItems:"center",
-                      padding:8,
-                      background:"#FAFAFA",
-                      border:"1px solid #E8E8E8",
-                      borderRadius:8,
-                      opacity: isDragging ? 0.4 : 1,
-                      cursor: isDragging ? "grabbing" : "default",
-                    }}
-                  >
-                    {/* Handle de drag — grip vertical */}
-                    <div
-                      style={{cursor:"grab",color:"#BBB",fontSize:14,padding:"0 2px",userSelect:"none",lineHeight:1}}
-                      title="Arraste pra reordenar"
-                    >⋮⋮</div>
-                    {/* Swatch grande clicavel */}
-                    <label style={{position:"relative",display:"inline-block",cursor:"pointer",flexShrink:0}}>
-                      <div style={{
-                        width:40,height:40,borderRadius:8,
-                        background:c.hex,
-                        border:"2px solid white",
-                        boxShadow:"0 0 0 1px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)",
-                      }} />
-                      <input
-                        type="color"
-                        value={c.hex}
-                        onChange={e => updateColor(i, { hex: e.target.value.toUpperCase() })}
-                        style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer"}}
-                      />
-                    </label>
-                    {/* Hex */}
-                    <input
-                      type="text"
-                      value={c.hex}
-                      onChange={e => updateColor(i, { hex: e.target.value })}
-                      placeholder="#000000"
-                      maxLength={7}
-                      style={{padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"monospace",width:88,textTransform:"uppercase",background:"white"}}
-                    />
-                    {/* Nome */}
-                    <input
-                      type="text"
-                      value={c.name ?? ""}
-                      onChange={e => updateColor(i, { name: e.target.value || undefined })}
-                      placeholder={placeholderByRole[role]}
-                      style={{padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"inherit",flex:1,minWidth:0,background:"white"}}
-                    />
-                    {/* Categoria */}
-                    <select
-                      value={role}
-                      onChange={e => updateColor(i, { role: e.target.value as any })}
-                      style={{padding:"7px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:11,cursor:"pointer",background:"white",fontFamily:"inherit"}}
-                    >
-                      {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    {/* Remover */}
-                    <button
-                      type="button"
-                      onClick={() => removeColor(i)}
-                      title="Remover cor"
-                      style={{background:"transparent",border:"none",cursor:"pointer",color:"#999",fontSize:18,padding:"0 8px",lineHeight:1,flexShrink:0}}
-                    >×</button>
-                  </div>
-                )
-              })}
-            </div>
-            <Button type="button" variant="secondary" size="sm" onClick={addColor}>+ Adicionar cor</Button>
-          </div>
-        </div>
-
-        {/* Card de presets tipograficos — 4 niveis: Titulo / Subtitulo / Corpo / Legenda.
-            Cada um define peso e tamanho aplicado quando o usuario cria um texto desse tipo no editor. */}
-        <div style={{maxWidth:640,background:"white",borderRadius:10,border:"1px solid #E5E5E5",padding:24}}>
-          <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>Tipografia da marca</div>
-          <p style={{fontSize:12,color:"#666",margin:"0 0 18px",lineHeight:1.5}}>
-            Defina o peso e tamanho de cada nível. Quando criar um texto no editor, ele já vem com esses padrões aplicados.
-          </p>
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {PRESET_ORDER.map(key => {
-              const preset = brandTypography[key]
-              // Preview tem tamanho relativo (fontSize/2.5px max 32) pra todos caberem na mesma linha
-              const previewPx = Math.max(12, Math.min(32, preset.fontSize / 2.5))
-              return (
-                <div key={key} style={{
-                  display:"grid",gridTemplateColumns:"1fr 170px 110px",gap:12,alignItems:"center",
-                  padding:"12px 14px",
-                  background:"#FAFAFA",
-                  border:"1px solid #E8E8E8",
-                  borderRadius:8,
-                }}>
-                  {/* Esquerda: label + descricao + preview da fonte aplicada */}
-                  <div style={{minWidth:0}}>
-                    <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",color:"#666",marginBottom:2}}>{PRESET_LABELS[key]}</div>
-                    <div style={{fontSize:10,color:"#999",marginBottom:6}}>{PRESET_DESCRIPTIONS[key]}</div>
-                    <div style={{
-                      fontFamily: brandFont ? `'${brandFont}', sans-serif` : "inherit",
-                      fontWeight: preset.fontWeight,
-                      fontSize: previewPx,
-                      color:"#111",
-                      lineHeight:1.1,
-                      overflow:"hidden",
-                      textOverflow:"ellipsis",
-                      whiteSpace:"nowrap",
-                    }}>The quick brown fox</div>
-                  </div>
-                  {/* Peso */}
-                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                    <label style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Peso</label>
-                    <select
-                      value={preset.fontWeight}
-                      onChange={e => updatePreset(key, { fontWeight: Number(e.target.value) })}
-                      style={{padding:"6px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",cursor:"pointer",background:"white",fontFamily:"inherit"}}
-                    >
-                      {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-                    </select>
-                  </div>
-                  {/* Tamanho */}
-                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                    <label style={{fontSize:9,color:"#888",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px"}}>Tamanho (pt)</label>
-                    <input
-                      type="number"
-                      min={6} max={500}
-                      value={preset.fontSize}
-                      onChange={e => updatePreset(key, { fontSize: Math.max(6, Math.min(500, Number(e.target.value) || 0)) })}
-                      style={{padding:"6px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"inherit",background:"white",width:"100%"}}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <div style={{maxWidth:640,background:"white",borderRadius:10,border:"1px solid #FCA5A5",padding:24}}>
-          <div style={{fontSize:14,fontWeight:700,color:"#991B1B",marginBottom:8}}>Zona de perigo</div>
-          <p style={{fontSize:12,color:"#666",margin:"0 0 16px",lineHeight:1.5}}>
-            Apagar o cliente remove permanentemente todas as campanhas, peças e entregas associadas. Esta ação não pode ser desfeita.
-          </p>
-          {!confirmDelete ? (
-            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>Apagar cliente</Button>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <label style={{fontSize:12,color:"#666"}}>
-                Digite <strong>{client.name}</strong> pra confirmar:
-              </label>
-              <input
-                value={confirmText}
-                onChange={e=>setConfirmText(e.target.value)}
-                style={{...inputStyle,maxWidth:320}}
-                autoFocus
-              />
-              <div style={{display:"flex",gap:8}}>
-                <Button variant="secondary" size="sm" onClick={() => { setConfirmDelete(false); setConfirmText(""); setError("") }}>Cancelar</Button>
-                <Button variant="danger" size="sm" onClick={handleDelete} disabled={confirmText.trim() !== client.name}>Apagar definitivamente</Button>
-              </div>
-            </div>
-          )}
+          </CollapsibleCard>
         </div>
       </div>
     </div>

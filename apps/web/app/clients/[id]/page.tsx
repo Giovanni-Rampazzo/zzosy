@@ -6,6 +6,7 @@ import { NewCampaignModal } from "./NewCampaignModal"
 import { EditableText } from "@/components/EditableText"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
+import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 
@@ -19,8 +20,13 @@ interface BrandColor {
 interface CustomFontFile {
   url: string; weight: number; style: "normal" | "italic"; fileName: string
 }
+interface ClientSettings {
+  segments?: string[]
+  categories?: string[]
+  filters?: string[]
+}
 interface Client {
-  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; logoUrl: string | null; brandFont: string | null; brandColors: BrandColor[] | null; customFontFiles: CustomFontFile[] | null; campaigns: Campaign[]
+  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null; brandLogoUrl: string | null; brandFont: string | null; brandColors: BrandColor[] | null; customFontFiles: CustomFontFile[] | null; campaigns: Campaign[]; settings?: ClientSettings | null
 }
 
 export default function ClientPage() {
@@ -77,82 +83,65 @@ export default function ClientPage() {
     <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
       <TopNav />
       <div style={{flex:1,overflowY:"auto",padding:32,background:"#F5F5F0"}}>
-        <button
-          onClick={() => router.push("/dashboard")}
-          style={{background:"transparent",border:"none",color:"#888",fontSize:12,cursor:"pointer",padding:0,marginBottom:12}}
-        >
-          ← Clientes
-        </button>
-        {/* Breadcrumb */}
-        <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"#888",marginBottom:20}}>
-          <span style={{cursor:"pointer"}} onClick={() => router.push("/dashboard")}>Clientes</span>
-          <span style={{color:"#ccc"}}>/</span>
-          <span style={{fontWeight:600,color:"#111"}}>{client.name}</span>
-        </div>
-
-        {/* Header */}
-        <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:24}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
-            <div style={{display:"flex",alignItems:"center",gap:16}}>
-              {client.logoUrl ? (
-                <div style={{width:56,height:56,borderRadius:8,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",padding:4,flexShrink:0}}>
-                  <img src={client.logoUrl} alt={client.name} style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
-                </div>
-              ) : null}
-              <div>
-                <div style={{fontSize:20,fontWeight:700}}>{client.name}</div>
-                {client.address && <div style={{color:"#888",fontSize:12,marginTop:4}}>{client.address}</div>}
-              </div>
-            </div>
-            <div style={{display:"flex",gap:10}}>
-              <Button variant="primary" onClick={() => router.push(`/clients/${id}/edit`)}>Editar</Button>
-            </div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
-            {[["Contato",client.contact],["E-mail",client.email],["Telefone",client.phone]].map(([l,v]) => (
-              <div key={l as string}>
-                <div style={{fontSize:11,color:"#888",marginBottom:2}}>{l}</div>
-                <div style={{fontSize:13}}>{v ?? "—"}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Identidade visual (so mostra se tiver algo definido) */}
-          {(client.brandFont || (client.brandColors && client.brandColors.length > 0)) && (
-            <div style={{marginTop:20,paddingTop:20,borderTop:"1px solid #F0F0F0",display:"flex",alignItems:"center",gap:24,flexWrap:"wrap"}}>
-              {client.brandFont && (
-                <div>
-                  <div style={{fontSize:11,color:"#888",marginBottom:2}}>Tipografia</div>
-                  <div style={{fontSize:14,fontFamily:`'${client.brandFont}', sans-serif`}}>{client.brandFont}</div>
-                </div>
-              )}
-              {client.brandColors && client.brandColors.length > 0 && (
-                <div>
-                  <div style={{fontSize:11,color:"#888",marginBottom:4}}>Cores da marca</div>
-                  <div style={{display:"flex",gap:6}}>
-                    {client.brandColors.map((c, i) => (
-                      <div
-                        key={i}
-                        title={c.name ? `${c.name} (${c.hex})` : c.hex}
-                        style={{
-                          width:24,height:24,borderRadius:6,
-                          background:c.hex,
-                          border:"1px solid rgba(0,0,0,0.08)",
-                        }}
-                      />
+        {/* Padrao ZZOSY: Voltar (variant view, stroke amarelo) lado a lado
+            com CTA principal (primary) — mesma estrutura que /medias usa.
+            Header de identidade (logo + nome + brand) fica ABAIXO. */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,gap:16,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:16,flex:1,minWidth:0}}>
+            <Button
+              variant="view"
+              size="md"
+              onClick={() => router.push("/dashboard")}
+            >
+              ← Empresas
+            </Button>
+            <ClientLogoBadge client={{id, name: client.name, brandLogoUrl: client.brandLogoUrl}} size={48} radius={8} />
+            <div style={{display:"flex",flexDirection:"column",gap:2,flex:1,minWidth:0}}>
+              <div style={{fontSize:22,fontWeight:700,color:"#111",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{client.name}</div>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                {client.brandColors && client.brandColors.length > 0 && (
+                  <div style={{display:"flex",gap:4,alignItems:"center"}} title="Cores da marca — clique pra abrir o Design System">
+                    {client.brandColors.slice(0,6).map((c, i) => (
+                      <div key={i} style={{width:14,height:14,borderRadius:"50%",background:c.hex,border:"1px solid rgba(0,0,0,0.1)",cursor:"pointer"}} onClick={() => router.push(`/clients/${id}/design-system`)} />
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+                {client.brandFont && (
+                  <span
+                    onClick={() => router.push(`/clients/${id}/design-system`)}
+                    title="Tipografia da marca — clique pra abrir o Design System"
+                    style={{fontSize:12,color:"#666",fontFamily:`'${client.brandFont}', sans-serif`,cursor:"pointer",borderBottom:"1px dashed #ccc"}}>
+                    {client.brandFont}
+                  </span>
+                )}
+                <button
+                  onClick={() => router.push(`/clients/${id}/design-system`)}
+                  title="Design System — cores, fontes, tipografia e logo da marca"
+                  style={{background:"transparent",border:"1px solid #D0D0D0",color:"#666",fontSize:11,padding:"3px 10px",borderRadius:4,cursor:"pointer"}}>
+                  Design System
+                </button>
+                <button
+                  onClick={() => router.push(`/clients/${id}/edit`)}
+                  title="Editar dados administrativos da empresa (contato, endereço, etc)"
+                  style={{background:"transparent",border:"1px solid #D0D0D0",color:"#666",fontSize:11,padding:"3px 10px",borderRadius:4,cursor:"pointer"}}>
+                  Editar empresa
+                </button>
+              </div>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Lista de campanhas */}
+        {/* Lista de campanhas — PROTAGONISTA da pagina. Botao "+ Nova Campanha"
+            fica no header da SECAO de campanhas (alinhado ao titulo "Campanhas"),
+            nao no header da pagina. Razao: o CTA pertence ao contexto da lista,
+            nao da identidade da empresa. */}
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px",borderBottom:"1px solid #E0E0E0"}}>
-              <div style={{fontSize:14,fontWeight:700}}>Campanhas</div>
-              <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+                <div style={{fontSize:18,fontWeight:700,color:"#111"}}>Campanhas</div>
+                <div style={{fontSize:13,color:"#888"}}>({client.campaigns.length})</div>
+              </div>
+              <Button variant="primary" size="md" onClick={() => setShowModal(true)}>+ Nova Campanha</Button>
             </div>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead>

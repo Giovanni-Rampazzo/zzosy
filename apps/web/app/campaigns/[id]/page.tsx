@@ -244,7 +244,7 @@ export default function CampaignOverviewPage() {
                   client={{
                     id: campaign.client.id,
                     name: campaign.client.name ?? "Empresa",
-                    logoUrl: (campaign.client as any)?.logoUrl,
+                    brandLogoUrl: (campaign.client as any)?.brandLogoUrl,
                   }}
                   size={24}
                   radius={4}

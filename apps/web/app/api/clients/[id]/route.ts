@@ -39,7 +39,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 })
   const body = await req.json()
   const data: any = {}
-  for (const k of ["name", "contact", "email", "phone", "address", "logoUrl", "brandFont", "brandColors", "brandTypography", "customFontFiles"]) {
+  for (const k of ["name", "contact", "email", "phone", "address", "brandLogoUrl", "brandFont", "brandColors", "brandTypography", "customFontFiles"]) {
     if (k in body) data[k] = body[k]
   }
   // Propagacao automatica de tipografia + fonte da marca pra TODOS os assets,
