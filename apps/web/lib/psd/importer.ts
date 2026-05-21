@@ -153,6 +153,11 @@ export async function importPsdToCampaign(
     type: a.type,
     content: a.content,
     imageIndex: a.imageIndex,
+    // SHAPE assets carregam path/fill/stroke em `shape`. O endpoint le esse
+    // field e armazena como content JSON (route:200-205). Sem isso o BOX
+    // (Grid.psd: SHAPE solid) sumia entre toCampaign e API → editor nao tinha
+    // path pra renderizar o Fabric.Path.
+    shape: (a as any).shape,
     posX: 0, // sera derivado de kvLayer correspondente (mesmo idx)
     posY: 0,
     width: 0,
