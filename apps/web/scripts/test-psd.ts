@@ -15,10 +15,26 @@ import { spawnSync } from "node:child_process"
 import path from "node:path"
 import fs from "node:fs"
 
-const PSD = process.argv[2]
-if (!PSD || !fs.existsSync(PSD)) {
+// Junta argv[2..] em 1 string e normaliza whitespace — terminal multi-linha
+// (paste com wrap) parte o path em varios args ou poe \n no meio. Se o path
+// "cru" nao existir, tenta com whitespace colapsado (\s+ → " ").
+function resolvePsdPath(): string | null {
+  const raw = process.argv.slice(2).join(" ").trim()
+  if (!raw) return null
+  if (fs.existsSync(raw)) return raw
+  const collapsed = raw.replace(/\s+/g, " ")
+  if (fs.existsSync(collapsed)) return collapsed
+  return null
+}
+
+const PSD = resolvePsdPath()
+if (!PSD) {
+  const tried = process.argv.slice(2).join(" ").trim()
   console.error("Uso: npm run psd:test -- \"<caminho-do-psd>\"")
-  console.error(PSD ? `Arquivo nao existe: ${PSD}` : "")
+  if (tried) {
+    console.error(`Arquivo nao existe: ${tried}`)
+    console.error("Dica: se o nome tem espaco, arraste o arquivo pro terminal em vez de digitar.")
+  }
   process.exit(1)
 }
 
