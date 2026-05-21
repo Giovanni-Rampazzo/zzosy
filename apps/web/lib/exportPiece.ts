@@ -1586,12 +1586,36 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           const fillStr: string = typeof obj.fill === "string" ? obj.fill : ""
           const strokeStr: string = typeof obj.stroke === "string" ? obj.stroke : ""
           const strokeW: number = obj.strokeWidth ?? 0
+
+          // Stroke como Layer Style (effects.stroke). Decisao tecnica:
+          // ag-psd nao escreve vectorFill+vectorStroke juntos no mesmo layer
+          // (handler SoCo so aciona se vectorStroke==undefined → fill some).
+          // Layer Style Stroke renderiza identico no PS e o user edita via
+          // "Layer Style → Stroke" — alternativa Adobe-aceitavel. Combina
+          // com effects.stroke existente (psdLayerEffects) se houver.
+          let effectsWithStroke: any = psdLayerEffects ?? undefined
+          if (strokeStr && strokeW > 0) {
+            const strokeFx = {
+              enabled: true,
+              position: "outside",
+              size: { value: strokeW, units: "Pixels" },
+              fillType: "color",
+              color: hexToAgPsdRgb(strokeStr),
+              opacity: 1,
+              blendMode: "normal",
+            }
+            effectsWithStroke = {
+              ...(effectsWithStroke ?? {}),
+              stroke: [strokeFx],
+            }
+          }
+
           const psdLayer: any = {
             name,
             top, left, bottom, right,
             ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
             ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
-            ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
+            ...(effectsWithStroke ? { effects: effectsWithStroke } : {}),
             __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
             // "combine" = path puro (sem boolean ops). "subtract" subtrai do
             // composite e deixaria o shape invisivel.
@@ -1601,21 +1625,6 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           }
           if (fillStr) {
             psdLayer.vectorFill = { type: "color", color: hexToAgPsdRgb(fillStr) }
-          }
-          if (strokeStr && strokeW > 0) {
-            // ag-psd usa aliases curtos: 'butt'/'round'/'square' (LineCapType),
-            // 'miter'/'round'/'bevel' (LineJoinType), 'inside'/'center'/'outside'
-            // (LineAlignment). NAO as chaves PSD raw "strokeStyle*". Falha
-            // antes do fix: "Invalid value for enum: 'strokeStyleButtCap'".
-            psdLayer.vectorStroke = {
-              strokeEnabled: true,
-              fillEnabled: true,
-              lineWidth: { value: strokeW, units: "Pixels" },
-              lineAlignment: "outside",
-              lineCapType: "butt",
-              lineJoinType: "miter",
-              content: { type: "color", color: hexToAgPsdRgb(strokeStr) },
-            }
           }
           psdLayers.push(psdLayer)
           continue
