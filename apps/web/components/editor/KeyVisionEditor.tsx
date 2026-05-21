@@ -7,9 +7,10 @@ import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { MaskPanel } from "./MaskPanel"
 import { ExportAssetButtons } from "./ExportAssetButtons"
 import { migrateStyles } from "@/lib/migrateStyles"
+import { normalizeName } from "@/lib/normalize"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
-import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
+import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
 // poluem o console sem valor pro user final. Em dev, sao essenciais pra diagnostico.
@@ -119,8 +120,25 @@ function migrateBgLayerJson(l: any): BgLayerData {
 // canvas (raio = max(w,h)/2 garante cobertura total em qualquer angulo).
 // Convencao do angulo: 0deg = horizontal esquerda→direita; 90deg =
 // vertical cima→baixo. Mesma convencao de editores graficos modernos.
+// Robustez: stop.color pode chegar como objeto serializado ({r,g,b} ou
+// similar) em pecas/matrizes legadas. Canvas addColorStop crasha com
+// "could not be parsed as a color" — normaliza pra string CSS antes.
+function safeColorString(v: any): string {
+  if (typeof v === "string" && v) return v
+  if (v && typeof v === "object") {
+    const r = typeof v.r === "number" ? v.r : null
+    const g = typeof v.g === "number" ? v.g : null
+    const b = typeof v.b === "number" ? v.b : null
+    if (r !== null && g !== null && b !== null) {
+      const a = typeof v.a === "number" ? v.a : 1
+      return `rgba(${r},${g},${b},${a})`
+    }
+  }
+  return "#ffffff"
+}
+
 function buildBgFill(layer: BgLayerData, w: number, h: number, Gradient: any): any {
-  if (layer.kind === "solid") return layer.color
+  if (layer.kind === "solid") return safeColorString(layer.color)
   if (layer.kind === "gradient") {
     const rad = (layer.angle * Math.PI) / 180
     const cx = w / 2, cy = h / 2
@@ -129,7 +147,7 @@ function buildBgFill(layer: BgLayerData, w: number, h: number, Gradient: any): a
       return new Gradient({
         type: "radial",
         coords: { x1: cx, y1: cy, x2: cx, y2: cy, r1: 0, r2: r },
-        colorStops: layer.stops.map(s => ({ offset: s.offset, color: s.color })),
+        colorStops: layer.stops.map(s => ({ offset: s.offset, color: safeColorString(s.color) })),
       })
     }
     const r = Math.max(w, h) / 2
@@ -138,7 +156,7 @@ function buildBgFill(layer: BgLayerData, w: number, h: number, Gradient: any): a
     return new Gradient({
       type: "linear",
       coords: { x1: cx - dx, y1: cy - dy, x2: cx + dx, y2: cy + dy },
-      colorStops: layer.stops.map(s => ({ offset: s.offset, color: s.color })),
+      colorStops: layer.stops.map(s => ({ offset: s.offset, color: safeColorString(s.color) })),
     })
   }
   return "#ffffff"
@@ -216,7 +234,12 @@ async function applyBgFillAsync(rect: any, layer: BgLayerData, w: number, h: num
 }
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
+// LW = LARGURA DEFAULT do painel de Layers (esquerda). Pode ser redimensionada
+// pelo user via drag handle na borda direita do painel — state layersPanelWidth.
+// PW = largura fixa do painel Properties (direita). TH/BH = top/bottom bar.
 const LW = 220, PW = 260, TH = 48, BH = 44
+const LW_MIN = 180, LW_MAX = 500
+const LW_STORAGE_KEY = "zzosy.editor.layersPanelWidth"
 const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
 
@@ -558,6 +581,18 @@ async function composeRasterMaskIntoImage(
   assetW: number,
   assetH: number,
   inverted: boolean,
+  // Scale do layer no canvas (peca/matriz). Necessario pra converter coords:
+  // - maskRaster.posX/Y/W/H estao em CANVAS-SPACE (escala da peca)
+  // - assetPosX/Y estao em CANVAS-SPACE
+  // - sourceImg (assetW x assetH) esta em IMAGE-NATURAL-SPACE (sem escala)
+  // Pra desenhar a mask corretamente sobre a imagem natural, multiplicamos as
+  // coords da mask por (1/scaleX, 1/scaleY) — converte canvas→natural.
+  // Antes a mask era desenhada com coords da peca dentro de um canvas natural,
+  // ficando minuscula no quadrante 0,0 (sintoma: alpha aparecia num pedaco do
+  // layer e o resto sumia, peca importada de matriz quadrada pra Google wide
+  // mostrava so 25% do conteudo).
+  scaleX: number = 1,
+  scaleY: number = 1,
 ): Promise<HTMLCanvasElement | null> {
   if (typeof document === "undefined") return null
   // Carrega a imagem da mask
@@ -570,7 +605,7 @@ async function composeRasterMaskIntoImage(
   })
   if (!maskImg) return null
 
-  // Cria canvas do tamanho da imagem do asset.
+  // Cria canvas do tamanho da imagem do asset (IMAGE-NATURAL-SPACE).
   const canvas = document.createElement("canvas")
   canvas.width = assetW
   canvas.height = assetH
@@ -584,11 +619,17 @@ async function composeRasterMaskIntoImage(
   // 'destination-in': keeps destination (asset) where mask is opaque, removes where mask is transparent.
   // 'destination-out' (inverted): removes destination where mask is opaque.
   ctx.globalCompositeOperation = inverted ? "destination-out" : "destination-in"
-  // Posicao da mask relativa ao asset:
-  const maskOffsetX = maskRaster.posX - assetPosX
-  const maskOffsetY = maskRaster.posY - assetPosY
-  // Mask pode ter dimensoes diferentes da fonte; drawImage com escala mantem fidelidade.
-  ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskRaster.width, maskRaster.height)
+  // CONVERSAO canvas-space → image-natural-space:
+  // ratio = 1/scale. Se scale==1 (matriz), ratio==1 e nada muda.
+  // Se scale<1 (peca menor que matriz), ratio>1 e mask se expande pra cobrir
+  // a area inteira da imagem natural — alinhada com o que renderiza no canvas.
+  const ratioX = scaleX !== 0 ? 1 / scaleX : 1
+  const ratioY = scaleY !== 0 ? 1 / scaleY : 1
+  const maskOffsetX = (maskRaster.posX - assetPosX) * ratioX
+  const maskOffsetY = (maskRaster.posY - assetPosY) * ratioY
+  const maskW = maskRaster.width * ratioX
+  const maskH = maskRaster.height * ratioY
+  ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskW, maskH)
   // Reset pra default (canvas pode ser reutilizado, mas geralmente nao — defensivo).
   ctx.globalCompositeOperation = "source-over"
   return canvas
@@ -671,6 +712,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const campaignRef = useRef<Campaign | null>(null)
   const saveTimer = useRef<any>()
   const savedTextSelection = useRef<{ obj: any; start: number; end: number } | null>(null)
+  // Debounce timer pro auto-fit do textbox (text:changed). Sem isso, cada
+  // keystroke executava 2x initDimensions + setCoords + requestRenderAll —
+  // em textos grandes com styles per-char ficava VISIVELMENTE lento.
+  const autoFitTimer = useRef<any>(null)
+  // Tick do Properties panel agendado via rAF pra coalescer re-renders.
+  const selectedTickRaf = useRef<number | null>(null)
+  // Debounce dos PUTs de lastOverride / asset content. Sem debounce, mudar
+  // fontSize via input ou aplicar styles em sequencia rapida disparava 1
+  // PUT por mudanca — backend ficava sob carga e a UI percebia 'lag'.
+  const lastOverridePutTimer = useRef<any>(null)
+  const lastOverridePendingPayload = useRef<{ aid: string; payload: any } | null>(null)
+  const assetContentPutTimer = useRef<any>(null)
+  const assetContentPendingPayload = useRef<{ aid: string; payload: any } | null>(null)
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [piece, setPiece] = useState<any>(null)
   const pieceRef = useRef<any>(null)
@@ -734,9 +788,46 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // de sobrescrever fontSizeInput/leadingInput durante a digitação do user.
   const numericInputFocusedRef = useRef(false)
   const [selectedTick, setSelectedTick] = useState(0)
+  // Pulse key — incrementa toda vez que um NOVO layer eh selecionado. Usado no
+  // painel Layers pra disparar uma animacao breve de glow (cor da marca) que
+  // ajuda o user a localizar o layer correspondente apos clicar no canvas.
+  // Trocar o `key` da div forca o React a remontar com a animation no inicio.
+  const [layerPulseKey, setLayerPulseKey] = useState(0)
+  // Largura do painel Layers (esquerda) — resizable pelo user. Persiste em
+  // localStorage pra preservar a preferencia entre sessoes.
+  const [layersPanelWidth, setLayersPanelWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return LW
+    try {
+      const saved = window.localStorage?.getItem(LW_STORAGE_KEY)
+      const n = saved ? parseInt(saved, 10) : NaN
+      return Number.isFinite(n) ? Math.max(LW_MIN, Math.min(LW_MAX, n)) : LW
+    } catch { return LW }
+  })
+  // Ref sincronizado pra closure do onResize do canvas (que foi criado dentro
+  // de useEffect [campaign] e nao re-monta quando layersPanelWidth muda).
+  const layersPanelWidthRef = useRef(layersPanelWidth)
+  useEffect(() => {
+    layersPanelWidthRef.current = layersPanelWidth
+    try { window.localStorage?.setItem(LW_STORAGE_KEY, String(layersPanelWidth)) } catch {}
+    // Dispara resize do canvas pra recentralizar com nova largura disponivel.
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("resize"))
+  }, [layersPanelWidth])
+  // Drag em curso pra resize do painel — guarda mouseX inicial + width inicial.
+  const layersResizeRef = useRef<{ startX: number; startW: number } | null>(null)
   // Estado do drag-and-drop no painel Layers (visualIndex sendo arrastado / sobre)
   const [dragLayerIdx, setDragLayerIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  // Drag de FOLDER inteiro: armazena o path do folder sendo arrastado pra que
+  // o drop em outro folder/layer mova o folder completo (com subfolders).
+  const [dragFolderPath, setDragFolderPath] = useState<string[] | null>(null)
+  // Renaming inline: folder cujo nome esta sendo editado in-place no painel.
+  const [renamingFolderKey, setRenamingFolderKey] = useState<string | null>(null)
+  // Folder header sob o cursor durante drag (pra magnify dock-style)
+  const [dragOverFolderKey, setDragOverFolderKey] = useState<string | null>(null)
+  // Posicao do drop dentro do row alvo: "before" (top half) ou "after" (bottom
+  // half). Permite distinguir "vai cair entre A e B" (gap), com os dois rows
+  // vizinhos sofrendo magnify pra abrir espaco — feedback Photoshop+Dock.
+  const [dropPosition, setDropPosition] = useState<"before" | "after" | null>(null)
   const undoStack = useRef<string[]>([])
   const redoStack = useRef<string[]>([])
   // historyTick: força re-render dos botões undo/redo quando push/undo/redo
@@ -747,6 +838,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
   const isInitialized = useRef(false)
+  // Blob URLs criados via createObjectURL (SVG patcher e similares) precisam
+  // ser revogados explicitamente — o GC do browser NAO libera blob URLs
+  // criados via URL.createObjectURL ate revokeObjectURL ou navegacao. Sem
+  // limpeza, abrir/fechar editor varias vezes acumula MBs/GBs de blobs.
+  const svgBlobUrlsRef = useRef<string[]>([])
   // Guard sincrono pra prevenir double-init em Strict Mode / re-renders rapidos.
   // useEffect roda 2x em dev (strict mode). Se init e async, ambos podem passar pelos
   // guards iniciais antes do primeiro chegar a setar fabricRef.current = fc, resultando
@@ -786,6 +882,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // antes do React ter chance de re-renderizar).
   const brandColorsRef = useRef<BrandColor[]>([])
   useEffect(() => { brandColorsRef.current = brandColors }, [brandColors])
+  // Cor principal da MARCA — usada nos destaques de drag/drop (linha amarela,
+  // magnify glow, indicators). Fallback: amarelo zzosy. Re-calcula quando o
+  // brandColors mudar (sync com Client).
+  const accentColor = (typeof brandColors[0]?.hex === "string" && /^#[0-9a-fA-F]{6}$/.test(brandColors[0].hex))
+    ? brandColors[0].hex
+    : "#F5C400"
+  const accentRgba = (a: number) => {
+    const m = /^#([0-9a-f]{6})$/i.exec(accentColor)
+    if (!m) return `rgba(245,196,0,${a})`
+    const n = parseInt(m[1], 16)
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+  }
 
   // Quando brandColors muda (depois do load do client), re-sincroniza fills
   // de texto e cores de BG SOLID que tem brand ref. Renderiza + marca dirty
@@ -796,21 +904,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (brandColors.length === 0) return
     const fc = fabricRef.current
     if (!fc) return
-    const bgChanged = syncBrandRefsInBgLayers()
-    const textChanged = syncBrandRefsInTextObjects(fc)
-    if (!bgChanged && !textChanged) return
-    // Re-renderiza os Rects BG que mudaram (cor solid pode ter mudado)
-    const reSnapInit = () => {
-      // Após sync automático, RE-SNAP o estado atual como novo "init" do
-      // undo stack. Sem isso, undo até o início "desfaz" também o brand
-      // sync — que mudou outros textos sem o user ter feito.
-      try {
-        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
-        undoStack.current = [snap]
-        redoStack.current = []
-        setHistoryTick(t => t + 1)
-      } catch {}
+    // CRITICO: brand sync NAO eh acao do user — eh efeito colateral de mudanca
+    // em outra aba (edicao no /clients/[id]). Setamos isApplyingHistory.current
+    // = true ANTES dos obj.set pra que listeners object:modified/added/removed
+    // NAO disparem pushHistory automatico. Caso contrario, brand sync entraria
+    // como "acao" no stack, e undo do user desfaria o sync junto.
+    const wasApplying = isApplyingHistory.current
+    isApplyingHistory.current = true
+    let bgChanged = false
+    let textChanged = false
+    try {
+      bgChanged = syncBrandRefsInBgLayers()
+      textChanged = syncBrandRefsInTextObjects(fc)
+    } finally {
+      isApplyingHistory.current = wasApplying
     }
+    if (!bgChanged && !textChanged) return
+    // ANTES: zerava undoStack inteiro (`undoStack.current = [snap]`). Resultado
+    // catastrofico — qualquer brand update apagava TODO o trabalho previo do
+    // user (sintoma: "undo de um layer reseta override de outro layer sem
+    // relacao"). Agora apenas re-renderiza e marca dirty pro proximo save
+    // persistir as novas cores. Undo permanece intacto.
     if (bgChanged) {
       ;(async () => {
         const fabricMod: any = await import("fabric")
@@ -820,12 +934,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (r && l) await syncBgLayerToRect(r, l, canvasWRef.current, canvasHRef.current, fabricMod)
         }
         fc.renderAll()
-        reSnapInit()
       })()
     } else {
       fc.renderAll()
-      reSnapInit()
     }
+    // Marca dirty pra que o sync persista no proximo auto-save. Sem isso, se
+    // user fechar a aba sem editar nada, o sync visual nao seria salvo no DB.
+    isDirtyRef.current = true
+    setIsDirty(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandColors])
 
@@ -899,36 +1015,270 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [canvasH, setCanvasH] = useState(DEFAULT_H)
   const canvasWRef = useRef(DEFAULT_W)
   const canvasHRef = useRef(DEFAULT_H)
+  // Fontes do PSD que NAO foram encontradas no browser apos o pre-load.
+  // Cada entrada tem family (nome puro), weight (CSS numerico) e style
+  // pra permitir substituicao cirurgica (so nos textos que usam ESSA variante,
+  // sem alterar outras com a mesma family).
+  const [missingFonts, setMissingFonts] = useState<Array<{
+    family: string
+    weight: number
+    style: "normal" | "italic"
+    label: string
+  }>>([])
+  // Modal estilo Adobe que lista cada fonte missing com dropdown de substituicao
+  // + botao de upload. Aberto via botao no banner.
+  const [fontsModalOpen, setFontsModalOpen] = useState(false)
+  // Estado pendente de substituicao por variante missing — { family, weight, style }.
+  // Key = mf.label. Family-only choice (sem weight setado): assume weight/style
+  // da fonte original missing. Permite o user picar so a familia e ter
+  // substituicao "Bold Italic → Inter Bold Italic" sem precisar tocar no peso.
+  const [replacementChoices, setReplacementChoices] = useState<Record<string, { family?: string; weight?: number; style?: "normal" | "italic" }>>({})
+  // Ref pro input file de upload de fonte do modal. Re-uso entre as fontes:
+  // pendingFontUpload guarda a variante clicada ANTES do picker.
+  const fontUploadInputRef = useRef<HTMLInputElement>(null)
+  const pendingFontUpload = useRef<{ family: string; weight: number; style: "normal" | "italic"; label: string } | null>(null)
 
   // Carregar campanha + peça (se for modo peça)
   useEffect(() => {
+    let alive = true
     async function load() {
       const campRes = await fetch(`/api/campaigns/${campaignId}`)
+      if (!alive) return
       const camp: Campaign = await campRes.json()
+      if (!alive) return
       campaignRef.current = camp
-      // Carrega fonte da marca pra Fabric renderizar com ela
+      // ============================================================
+      // CARREGAMENTO DE FONTES — pipeline em CAMADAS bem definidas:
+      //   1. BRAND FONT (Design System): UMA estrategia por vez (custom OU
+      //      Google), sem duplicar registro. Evita conflito de @font-face onde
+      //      browser nao sabe qual usar.
+      //   2. PSD/TEXTOS: fontes referenciadas em assets/overrides sao tentadas
+      //      como Google Fonts via forceLoadFontFaces (404 silencioso se nao
+      //      for Google valida). customFontFiles ja registrados em (1) cobrem
+      //      a fonte da marca tb se referenciada nos textos.
+      //   3. DETECTION: measureText decide se familia carregou ou nao —
+      //      independente de qual origem foi (cache, Google CDN, custom file).
+      // ============================================================
       try {
-        const bf = camp.client?.brandFont
+        const bf = (camp.client?.brandFont ?? "").trim()
         const files = camp.client?.customFontFiles
+        const hasCustomFiles = Array.isArray(files) && files.length > 0
         if (bf) {
-          if (Array.isArray(files) && files.length > 0) loadCustomFontFamily(bf, files)
-          else loadGoogleFont(bf)
+          if (hasCustomFiles) {
+            // Cliente uploadou arquivos especificos pra esta fonte → fonte da
+            // verdade eh o arquivo dele, nao a Google. Registra apenas
+            // loadCustomFontFamily (que ja cobre family + PostScript + display
+            // aliases). NAO chama loadGoogleFont — evita registro duplo no
+            // mesmo nome (browser escolhia aleatoriamente entre os 2).
+            loadCustomFontFamily(bf, files)
+          } else {
+            // Sem arquivos custom: tenta como Google Font. Se nao for Google
+            // valida, link 404 silencioso e familia cai em fallback CSS no
+            // render (detection avisa o user via banner).
+            loadGoogleFont(bf)
+          }
         }
       } catch {}
+      // PSD fonts: coleta TODAS as fontes E SUAS VARIANTES (peso × estilo)
+      // usadas pelos assets de texto E pelos overrides. Sem checar variantes,
+      // o detection diz "Sicredi Sans OK" porque Sicredi Sans Regular esta
+      // carregada — mas Sicredi Sans Bold Italic (que o titulo usa) NAO esta,
+      // e o browser cai em serif italic fallback. Sintoma reportado: preview
+      // raster perfeito mas titulo do editor vira serif italico.
+      try {
+        const fontSet = new Set<string>() // pra forceLoadFontFaces (preload geral)
+        const variantSet = new Set<string>() // formato "family|weight|style" pra detection
+        // Normaliza weight pra numero CSS (Sicredi/PSD pode salvar "bold", 700, "700").
+        const weightToNum = (w: any): number => {
+          if (typeof w === "number") return w
+          if (typeof w === "string") {
+            const lower = w.trim().toLowerCase()
+            if (lower === "bold") return 700
+            if (lower === "normal" || lower === "regular") return 400
+            const n = Number(lower)
+            if (Number.isFinite(n) && n > 0) return n
+          }
+          return 400
+        }
+        const styleToCanon = (s: any): "normal" | "italic" => {
+          if (typeof s === "string" && /italic|oblique/i.test(s)) return "italic"
+          return "normal"
+        }
+        const addVariant = (family: any, weight: any, style: any) => {
+          if (typeof family !== "string" || !family) return
+          fontSet.add(family)
+          variantSet.add(`${family}|${weightToNum(weight)}|${styleToCanon(style)}`)
+        }
+        for (const a of (camp.assets ?? [])) {
+          if (a.type !== "TEXT") continue
+          const spans: any = typeof a.content === "string" ? (() => { try { return JSON.parse(a.content as any) } catch { return [] } })() : a.content
+          if (Array.isArray(spans)) {
+            for (const s of spans) {
+              addVariant(s?.style?.fontFamily, s?.style?.fontWeight, s?.style?.fontStyle)
+            }
+          }
+          // lastOverride: template visual aplicado na matriz mais recente
+          const lo: any = (a as any).lastOverride
+          if (lo) addVariant(lo.fontFamily, lo.fontWeight, lo.fontStyle)
+        }
+        // Matriz layers (overrides per-instancia)
+        const kvLayers: any = camp.keyVision?.layers
+        const kvList = typeof kvLayers === "string" ? (() => { try { return JSON.parse(kvLayers) } catch { return [] } })() : (Array.isArray(kvLayers) ? kvLayers : [])
+        for (const l of kvList) {
+          const ov = l?.overrides
+          if (ov) addVariant(ov.fontFamily, ov.fontWeight, ov.fontStyle)
+          // Styles per-char (cada char pode ter weight/style proprio)
+          const st = ov?.styles
+          if (st && typeof st === "object") {
+            for (const lineK of Object.keys(st)) {
+              const line = st[lineK]
+              if (!line || typeof line !== "object") continue
+              for (const colK of Object.keys(line)) {
+                const cs = line[colK]
+                if (cs) addVariant(cs.fontFamily, cs.fontWeight, cs.fontStyle)
+              }
+            }
+          }
+        }
+        if (fontSet.size > 0) {
+          ensurePsdFontsReady(Array.from(fontSet))
+          // Forca download EXPLICITO de cada @font-face (todos os pesos), pra
+          // garantir que o textbox renderize com a fonte real, nao fallback.
+          await forceLoadFontFaces(Array.from(fontSet), 6000)
+          // Detecta variantes ausentes via measureText (font detection classica).
+          // `document.fonts.check` da falso positivo em varios cenarios:
+          //   - <link> 404 ainda registra a familia no CSS, check retorna true
+          //   - Chrome sintetiza italic/bold a partir de Regular = check ok
+          //   - Custom fonts com aliases multi-name confundem o matching
+          // measureText compara a largura renderizada com a fonte custom vs com
+          // fallback puro (serif). Se forem iguais, a fonte custom NAO esta
+          // realmente sendo usada — caiu em fallback. Robusto e direto.
+          try {
+            // Aguarda CSSOM aplicar @font-face dos links injetados +
+            // browser registrar todas as fontes. Sem isso, mesmo apos
+            // forceLoadFontFaces resolver, o measureText do canvas podia
+            // dar falso positivo de "missing" em fonts Google que carregam
+            // lento (ex: Pacifico — handwriting, peso unico, raro de bater
+            // antes do init terminar).
+            try { await (document as any).fonts?.ready } catch {}
+            const probeCanvas = document.createElement("canvas")
+            const ctx = probeCanvas.getContext("2d")
+            if (ctx) {
+              const SAMPLE = "mwiI@#$%MNOQRS 1234567890"
+              const FALLBACKS = ["serif", "sans-serif", "monospace"]
+              // 1) Pra cada FAMILIA usada, await fonts.load() do Regular E
+              // depois mede largura. Se a familia INTEIRA esta missing (nenhuma
+              // variante carrega), reporta. Se Regular existe, browser sintetiza
+              // bold/italic — visual nao eh perfeito mas eh aceitavel.
+              const familyHasAnyVariant = async (family: string): Promise<boolean> => {
+                const escFamily = family.replace(/"/g, '\\"')
+                // Espera o <link rel=stylesheet> do CSS Google Fonts efetivamente
+                // baixar antes de medir. Sem isso, fonts.load() resolvia (browser
+                // promete carregar) mas o stylesheet ainda nao tinha @font-face
+                // registrado -> canvas caia em fallback. Sintoma: Dancing Script
+                // detectada como missing mesmo sendo a fonte do brand.
+                const linkId = `gfont-${family.replace(/\s+/g, "-")}`
+                const linkEl = document.getElementById(linkId) as HTMLLinkElement | null
+                if (linkEl && !linkEl.sheet) {
+                  await Promise.race([
+                    new Promise<void>((res) => {
+                      const done = () => res()
+                      linkEl.addEventListener("load", done, { once: true })
+                      linkEl.addEventListener("error", done, { once: true })
+                    }),
+                    new Promise<void>((res) => setTimeout(res, 5000)),
+                  ])
+                }
+                // Forca download do font efetivo (depois do sheet carregado, isso
+                // resolve quando a fonte esta REALMENTE disponivel pro canvas).
+                try { await (document as any).fonts?.load?.(`72px "${escFamily}"`) } catch {}
+                const probes: Array<{ w: number; s: "normal" | "italic" }> = [
+                  { w: 400, s: "normal" }, { w: 700, s: "normal" }, { w: 400, s: "italic" },
+                ]
+                for (const p of probes) {
+                  for (const fb of FALLBACKS) {
+                    ctx.font = `${p.s} ${p.w} 72px ${fb}`
+                    const baseW = ctx.measureText(SAMPLE).width
+                    ctx.font = `${p.s} ${p.w} 72px "${escFamily}", ${fb}`
+                    const testW = ctx.measureText(SAMPLE).width
+                    if (Math.abs(testW - baseW) > 0.5) return true
+                  }
+                }
+                return false
+              }
+              const familyAvailable = new Map<string, boolean>()
+              const missingMap = new Map<string, { family: string; weight: number; style: "normal" | "italic"; label: string }>()
+              for (const key of variantSet) {
+                const [family] = key.split("|")
+                let famOk = familyAvailable.get(family)
+                if (famOk === undefined) {
+                  famOk = await familyHasAnyVariant(family)
+                  familyAvailable.set(family, famOk)
+                }
+                if (!famOk && !missingMap.has(family)) {
+                  missingMap.set(family, { family, weight: 400, style: "normal", label: family })
+                }
+              }
+              if (alive) setMissingFonts(Array.from(missingMap.values()))
+            }
+          } catch (e) { editorLog("[font-detection] falha:", e) }
+        }
+      } catch (e) { editorLog("[font-preload] falha:", e) }
+      if (!alive) return
       if (camp.assets?.length) { assetIdRef.current = camp.assets[0].id }
 
       // MODO PEÇA: carrega peça PRIMEIRO, atualiza refs, depois disso seta campaign (que dispara init)
       if (pieceId) {
         const pieceRes = await fetch(`/api/pieces/${pieceId}`)
+        if (!alive) return
         const p = await pieceRes.json()
+        if (!alive) return
         const pdata = typeof p.data === "string" ? JSON.parse(p.data) : p.data
         const pw = pdata?.width ?? DEFAULT_W
         const ph = pdata?.height ?? DEFAULT_H
+        // Piece fonts: coleta fontes dos overrides + per-char styles em TODOS
+        // os steps (incluindo inativos pra que switchStep nao caia em fallback).
+        // ensurePsdFontsReady eh idempotente — fontes ja carregadas via matriz
+        // sao no-op.
+        try {
+          const pieceFonts = new Set<string>()
+          const collectFromLayers = (layers: any[]) => {
+            if (!Array.isArray(layers)) return
+            for (const l of layers) {
+              const f = l?.overrides?.fontFamily ?? l?.fontFamily
+              if (typeof f === "string" && f) pieceFonts.add(f)
+              const st = l?.overrides?.styles
+              if (st && typeof st === "object") {
+                for (const lineK of Object.keys(st)) {
+                  const line = st[lineK]
+                  if (!line || typeof line !== "object") continue
+                  for (const colK of Object.keys(line)) {
+                    const cf = line[colK]?.fontFamily
+                    if (typeof cf === "string" && cf) pieceFonts.add(cf)
+                  }
+                }
+              }
+            }
+          }
+          collectFromLayers(pdata?.layers ?? [])
+          if (Array.isArray(pdata?.steps)) {
+            for (const s of pdata.steps) collectFromLayers(s?.layers ?? [])
+          }
+          if (pieceFonts.size > 0) {
+            ensurePsdFontsReady(Array.from(pieceFonts))
+            // Mesmo motivo: forca o download REAL de cada @font-face antes
+            // do init criar os Textboxes — evita fallback Arial visual.
+            await forceLoadFontFaces(Array.from(pieceFonts), 6000)
+          }
+        } catch (e) { editorLog("[piece-font-preload] falha:", e) }
+        if (!alive) return
         // CRITICAL: setar refs ANTES de setCampaign para o init do canvas ter os dados certos
         pieceRef.current = p
         canvasWRef.current = pw
         canvasHRef.current = ph
-        const bg = pdata?.bgColor ?? camp.keyVision?.bgColor ?? "#ffffff"
+        // Robustez: bgColor SEMPRE string. DB legado pode ter objeto.
+        const rawBg = pdata?.bgColor ?? camp.keyVision?.bgColor
+        const bg = typeof rawBg === "string" ? rawBg : "#ffffff"
         bgColorRef.current = bg
         const bop = typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1
         bgOpacityRef.current = bop
@@ -978,7 +1328,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         setCampaign(camp)
       } else {
         // MODO MATRIZ
-        const bg = camp.keyVision?.bgColor ?? "#ffffff"
+        const rawBg = camp.keyVision?.bgColor
+        // Robustez: DB pode ter bgColor como objeto serializado (legado/bug).
+        // bgColor.toLowerCase() crasha se nao for string — normaliza aqui.
+        const bg = typeof rawBg === "string" ? rawBg : "#ffffff"
         const cw = camp.keyVision?.width ?? DEFAULT_W
         const ch = camp.keyVision?.height ?? DEFAULT_H
         bgColorRef.current = bg
@@ -993,6 +1346,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
     }
     load()
+    return () => { alive = false }
   }, [campaignId, pieceId])
 
   // Carrega a library de cores do cliente da campanha. Usado pra renderizar
@@ -1206,17 +1560,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         e.preventDefault()
         ;(async () => {
           try {
-            const cloned = await new Promise<any>((resolve) => {
-              active.clone((c: any) => resolve(c), [
-                "__assetId", "__assetLabel", "__isImage", "__maskData",
-                "__embedded", "imageDataUrl", "__hidden", "__locked",
-                "__fillBrandIdx", "__psdEffects", "__groupPath", "leadingPt",
-              ])
-            })
+            // Fabric v7: clone() returns Promise<FabricObject>. Second arg is
+            // propsToInclude (mantém metadata custom no clone).
+            const cloned: any = await (active as any).clone([
+              "__assetId", "__assetLabel", "__isImage", "__maskData",
+              "__embedded", "imageDataUrl", "__hidden", "__locked",
+              "__fillBrandIdx", "__psdEffects", "__groupPath", "leadingPt",
+            ])
             if (!cloned || !fc) return
             cloned.set({ left: (active.left ?? 0) + 30, top: (active.top ?? 0) + 30 })
-            // Novo __assetId pra nao conflitar com o original no save
-            ;(cloned as any).__assetId = (active.__assetId ? active.__assetId + "_copy" : undefined)
+            // __assetId: mantem mesmo do original — duplicata referencia o mesmo
+            // CampaignAsset (estilo "smart object linked"). Visual edits ficam
+            // como overrides per-layer. NUNCA usar "_copy" suffix — quebra match
+            // em assetMap no reload (audit C3).
             fc.add(cloned)
             fc.setActiveObject(cloned)
             fc.renderAll()
@@ -1456,9 +1812,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const cw = canvasWRef.current
       const ch = canvasHRef.current
 
-      const availW = window.innerWidth - LW - PW - 80
-      const availH = window.innerHeight - TH - BH - 80
-      const z = Math.round(Math.min(0.8, availW / cw, availH / ch) * 10) / 10
+      // Canvas DOM enche TODA a area visivel entre paineis (sem subtrair
+      // margem). Os handles do Fabric so podem ser renderizados DENTRO do
+      // canvas DOM — sem essa area total, handles fora da peca eram cortados
+      // pelas bordas. Margem visual entre canvas e paineis vem do estilo do
+      // container, nao do tamanho do canvas.
+      const availW = window.innerWidth - layersPanelWidth - PW
+      const availH = window.innerHeight - TH - BH
+      // HANDLE_MARGIN: pixels reservados ao redor da peca para os handles de
+      // selecao aparecerem (mesmo modelo Photoshop/Figma). Sem isso, peca
+      // com fit zoom encosta nas bordas do canvas e os handles top/right/
+      // bottom/left ficam cortados.
+      const HANDLE_MARGIN = 120
+      const z = Math.round(Math.min(0.8,
+        Math.max(0.05, (availW - HANDLE_MARGIN * 2) / cw),
+        Math.max(0.05, (availH - HANDLE_MARGIN * 2) / ch),
+      ) * 100) / 100
       zoomRef.current = z
       setZoom(z)
 
@@ -1484,6 +1853,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         height: Math.round(fullH),
         selection: true,
         preserveObjectStacking: true,
+        // controlsAboveOverlay: garante que as alcas de selecao (handles)
+        // sao desenhadas POR CIMA de qualquer overlay/object do canvas,
+        // mesmo se o objeto estiver atras dos bleed overlays. Sem isso, em
+        // alguns casos os handles ficavam invisiveis quando o objeto ja
+        // estava no z-stack abaixo de outros.
+        controlsAboveOverlay: true,
       })
       fc.setZoom(z)
       // Offset pra centralizar a peca no canvas grande. Em coords do canvas DOM:
@@ -1565,7 +1940,142 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Limpa interval pendente no cleanup pro caso de unmount durante edicao.
       cleanupFns.push(() => { if (selPollTimer) clearInterval(selPollTimer) })
       fc.on("selection:cleared", () => { if (alive) setSelected(null) })
+      // Photoshop-style chain mask: a raster mask anda junto com o layer
+      // quando o user move/redimensiona. Sem isso, mover o layer no editor
+      // deixava a mask "presa" no canvas — visualmente o layer movia com a
+      // mask ja bakeada no bitmap (correto), mas no SAVE o layer.mask.raster
+      // ficava nas coords originais — exportar pro PSD reposicionava a mask
+      // ERRADA. Aqui detectamos o delta entre o __maskAnchor (registrado em
+      // addAssetToCanvas) e a posicao atual, e propagamos pro __maskData.
+      const syncMaskToObj = (obj: any) => {
+        if (!obj) return
+        const anchor = obj.__maskAnchor
+        const maskData = obj.__maskData
+        if (!anchor || !maskData) return
+        const dLeft = (obj.left ?? 0) - anchor.left
+        const dTop = (obj.top ?? 0) - anchor.top
+        // Mask raster: ajusta posX/Y. Width/Height ficam intactos (resize do
+        // layer ainda nao escala a mask — Photoshop tambem nao escala por
+        // default; user precisa quebrar o chain pra editar).
+        if (maskData.type === "raster" && maskData.raster && (dLeft !== 0 || dTop !== 0)) {
+          maskData.raster.posX = Math.round(maskData.raster.posX + dLeft)
+          maskData.raster.posY = Math.round(maskData.raster.posY + dTop)
+        }
+        // Vector: mesma logica no bbox do path.
+        if (maskData.type === "vector" && maskData.vector && (dLeft !== 0 || dTop !== 0)) {
+          maskData.vector.posX = Math.round(maskData.vector.posX + dLeft)
+          maskData.vector.posY = Math.round(maskData.vector.posY + dTop)
+          // Path: nao re-escrevemos string aqui (caro). PSD export recalcula
+          // bbox a partir de posX/Y/W/H — suficiente pra Photoshop. Visual no
+          // canvas usa clipPath via applyMaskToFabric (binario silhueta).
+        }
+        anchor.left = obj.left ?? 0
+        anchor.top = obj.top ?? 0
+      }
+      fc.on("object:modified", (e: any) => { syncMaskToObj(e?.target) })
       fc.on("object:modified", () => { if (alive) doSave() })
+      // SAFE-AREA SNAP: ao mover texto, snap suave em padding mínimo lateral
+      // (~30-50px proporcional ao canvas, escalado pelo maior eixo). Photoshop
+      // smart guides. Soft snap: cede quando user "puxa" pra fora alem de
+      // tolerancia ou segura Cmd/Alt — extrapolar manualmente permitido.
+      // Tambem desenha guides visuais temporarias durante o move.
+      const SNAP_TOL = 8 // px de tolerancia pro snap "puxar"
+      const RELEASE_FORCE = 18 // px alem do snap pra liberar
+      fc.on("object:moving" as any, (e: any) => {
+        if (!alive) return
+        const obj = e?.target
+        if (!obj || (obj as any).__isBg || (obj as any).__isBleedOverlay) return
+        // Permite extrapolar sem snap se user segura Alt/Cmd (modifier key)
+        if ((e?.e as any)?.altKey || (e?.e as any)?.metaKey) {
+          ;(fc as any).__safeAreaGuides = null
+          return
+        }
+        const cw = canvasWRef.current
+        const ch = canvasHRef.current
+        // Padding proporcional: 4% do menor eixo, clamped 24..72
+        const pad = Math.round(Math.max(24, Math.min(72, Math.min(cw, ch) * 0.04)))
+        // Bbox do objeto (considera scale + width/height + origin)
+        const oL = obj.left ?? 0
+        const oT = obj.top ?? 0
+        const oW = (obj.width ?? 0) * (obj.scaleX ?? 1)
+        const oH = (obj.height ?? 0) * (obj.scaleY ?? 1)
+        const oR = oL + oW
+        const oB = oT + oH
+        // Snap conditions: distancia ate borda interna (cw - pad / ch - pad)
+        let newLeft = oL
+        let newTop = oT
+        const guides: { kind: "v" | "h"; pos: number }[] = []
+        // Esquerda
+        const distL = oL - pad
+        if (Math.abs(distL) < SNAP_TOL) {
+          newLeft = pad
+          guides.push({ kind: "v", pos: pad })
+        } else if (distL < 0 && distL > -RELEASE_FORCE) {
+          // Dentro da safe area pela esquerda, mas nao no snap exato — soft pull
+          newLeft = pad
+          guides.push({ kind: "v", pos: pad })
+        }
+        // Direita
+        const distR = (cw - pad) - oR
+        if (Math.abs(distR) < SNAP_TOL) {
+          newLeft = (cw - pad) - oW
+          guides.push({ kind: "v", pos: cw - pad })
+        } else if (distR < 0 && distR > -RELEASE_FORCE) {
+          newLeft = (cw - pad) - oW
+          guides.push({ kind: "v", pos: cw - pad })
+        }
+        // Topo
+        const distT = oT - pad
+        if (Math.abs(distT) < SNAP_TOL) {
+          newTop = pad
+          guides.push({ kind: "h", pos: pad })
+        } else if (distT < 0 && distT > -RELEASE_FORCE) {
+          newTop = pad
+          guides.push({ kind: "h", pos: pad })
+        }
+        // Base
+        const distB = (ch - pad) - oB
+        if (Math.abs(distB) < SNAP_TOL) {
+          newTop = (ch - pad) - oH
+          guides.push({ kind: "h", pos: ch - pad })
+        } else if (distB < 0 && distB > -RELEASE_FORCE) {
+          newTop = (ch - pad) - oH
+          guides.push({ kind: "h", pos: ch - pad })
+        }
+        if (newLeft !== oL) obj.left = newLeft
+        if (newTop !== oT) obj.top = newTop
+        // Armazena guides ativas pra after:render desenhar (linhas tracejadas)
+        ;(fc as any).__safeAreaGuides = guides.length > 0 ? guides : null
+      })
+      fc.on("mouse:up" as any, () => {
+        ;(fc as any).__safeAreaGuides = null
+        fc.requestRenderAll()
+      })
+      // Desenha guides visuais (smart guides) sobre o canvas pos-render.
+      // Fabric "after:render" roda apos cada renderAll — desenha por cima
+      // sem virar parte do canvas state (limpo no proximo render).
+      fc.on("after:render" as any, () => {
+        const guides = (fc as any).__safeAreaGuides as Array<{ kind: "v" | "h"; pos: number }> | null
+        if (!guides || guides.length === 0) return
+        const ctx = (fc as any).getTopContext?.() || fc.contextTop
+        if (!ctx) return
+        const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+        ctx.save()
+        // Aplica viewport transform (mesmo modo que os objetos)
+        ctx.transform(vt[0], vt[1], vt[2], vt[3], vt[4], vt[5])
+        ctx.strokeStyle = accentColor
+        ctx.lineWidth = 1 / (vt[0] || 1) // mantem 1px visual independente do zoom
+        ctx.setLineDash([6 / (vt[0] || 1), 4 / (vt[0] || 1)])
+        const cw = canvasWRef.current
+        const ch = canvasHRef.current
+        for (const g of guides) {
+          ctx.beginPath()
+          if (g.kind === "v") { ctx.moveTo(g.pos, 0); ctx.lineTo(g.pos, ch) }
+          else { ctx.moveTo(0, g.pos); ctx.lineTo(cw, g.pos) }
+          ctx.stroke()
+        }
+        ctx.restore()
+      })
       // Quando o usuario muda a selecao DENTRO de um textbox em modo edicao (cursor moveu,
       // selecao expandida, palavra selecionada), forca re-render do painel pra ler estilos
       // do caractere onde o cursor esta agora. Sem isso, painel mostra estado obsoleto
@@ -1676,29 +2186,42 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       cleanupFns.push(() => window.removeEventListener("keyup", onKeyUp))
       fc.on("text:changed", (e: any) => {
         if (!alive) return
-        setSelectedTick(t => t + 1)
+        // Coalesce Properties panel re-renders no proximo frame. Sem isso,
+        // cada keystroke disparava re-render completo do painel direito (font,
+        // size, color pickers, swatches) — em maquinas mais fracas, gerava
+        // lag visivel na digitacao.
+        if (selectedTickRaf.current == null) {
+          selectedTickRaf.current = requestAnimationFrame(() => {
+            selectedTickRaf.current = null
+            setSelectedTick(t => t + 1)
+          })
+        }
         // AUTO-FIT: ajusta o width do textbox ao conteudo quando o texto muda.
-        // Logica:
-        //   1. Salva o width atual.
-        //   2. Expande o width pra um valor grande (5000px) — Fabric vai re-wrappar
-        //      e como ninguem cabe alem desse limite, o texto ocupa o minimo necessario.
-        //   3. Mede calcTextWidth (a maior linha real apos remover wrap forcado).
-        //   4. Seta o width pro valor medido + uma margem pequena (8px) pra cursor caber.
-        // So roda em textbox (i-text nao tem width restrito), e so quando o conteudo de
-        // texto mudou (text:changed). Width arrastado manualmente nao dispara isso.
+        // DEBOUNCE 120ms: cada keystroke re-mede o texto inteiro via
+        // initDimensions x2 + calcTextWidth, o que em textos grandes (>100
+        // chars com styles per-char) e' MUITO caro. Debounce evita rodar em
+        // cada tecla durante digitacao continua — auto-fit roda quando o user
+        // para de digitar por 120ms (imperceptivel) e a digitacao em si volta
+        // a ser instantanea. Sintoma corrigido: 'lag pra atualizar os textos'.
         const obj = e?.target
         if (!obj || obj.type !== "textbox") return
-        try {
-          const oldWidth = obj.width
-          obj.set("width", 5000)
-          if (obj.initDimensions) obj.initDimensions()
-          const measured = obj.calcTextWidth ? obj.calcTextWidth() : oldWidth
-          const newWidth = Math.max(20, Math.ceil(measured) + 8)
-          obj.set("width", newWidth)
-          if (obj.initDimensions) obj.initDimensions()
-          obj.setCoords()
-          fc.requestRenderAll()
-        } catch (err) { console.warn("auto-fit textbox fail:", err) }
+        clearTimeout(autoFitTimer.current)
+        autoFitTimer.current = setTimeout(() => {
+          if (!alive) return
+          // Validacao: pode ter mudado o objeto / saido de edicao no entremeio
+          if (obj.type !== "textbox") return
+          try {
+            const oldWidth = obj.width
+            obj.set("width", 5000)
+            if (obj.initDimensions) obj.initDimensions()
+            const measured = obj.calcTextWidth ? obj.calcTextWidth() : oldWidth
+            const newWidth = Math.max(20, Math.ceil(measured) + 8)
+            obj.set("width", newWidth)
+            if (obj.initDimensions) obj.initDimensions()
+            obj.setCoords()
+            fc.requestRenderAll()
+          } catch (err) { console.warn("auto-fit textbox fail:", err) }
+        }, 120)
       })
       fc.on("object:added", () => { if (alive) refreshLayers(fc) })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
@@ -1763,6 +2286,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (!obj) return
 
         // Sempre limpar refs de edicao
+        const startText = (obj as any).__editStartText
+        const startStyles = (obj as any).__editStartStyles
         delete (obj as any).__editStartText
         delete (obj as any).__editStartStyles
 
@@ -1778,6 +2303,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // user perdia a edicao silenciosamente ao sair logo apos editar texto.
         isDirtyRef.current = true
         setIsDirty(true)
+        // History push explicito do estado final pos-edit. Fabric NAO dispara
+        // object:modified ao sair de text editing (so dispara em set() externo),
+        // entao sem esse push o undo pulava a edicao inteira. Compara contra
+        // start: se nada mudou (entrou e saiu sem digitar), pula o push pra
+        // nao poluir a pilha.
+        try {
+          const curText = (obj as any).text ?? ""
+          const curStyles = (obj as any).styles ?? {}
+          const textChanged = typeof startText === "string" && startText !== curText
+          const stylesChanged = startStyles && JSON.stringify(startStyles) !== JSON.stringify(curStyles)
+          if ((textChanged || stylesChanged) && !isApplyingHistory.current && isInitialized.current) {
+            pushHistory()
+          }
+        } catch {}
         if (!isApplyingHistory.current) doSave()
       })
 
@@ -1803,8 +2342,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (resizeTimer) clearTimeout(resizeTimer)
         resizeTimer = setTimeout(() => {
           if (!alive || !fabricRef.current) return
-          const newAvailW = window.innerWidth - LW - PW - 80
-          const newAvailH = window.innerHeight - TH - BH - 80
+          // Usa ref pra pegar o valor MAIS RECENTE — o useEffect [campaign] que
+          // captura essa closure nao re-roda quando layersPanelWidth muda.
+          // Canvas DOM = area visivel total (ver init pra contexto). Margem
+          // pros handles eh reservada no zoom calc, nao no tamanho do canvas.
+          const newAvailW = window.innerWidth - layersPanelWidthRef.current - PW
+          const newAvailH = window.innerHeight - TH - BH
           const fcRef = fabricRef.current
           ;(fabricRef as any).__canvasFullW = Math.max(1, newAvailW)
           ;(fabricRef as any).__canvasFullH = Math.max(1, newAvailH)
@@ -1819,17 +2362,43 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (resizeTimer) clearTimeout(resizeTimer)
       })
 
-      // Delete key remove selected
+      // Delete key remove selected + atalhos de viewport (estilo Figma)
       const onKey = (e: KeyboardEvent) => {
         if (!alive || !fabricRef.current) return
-        if (e.key !== "Delete" && e.key !== "Backspace") return
-        // Nao remove o objeto quando o user esta digitando num input do painel
+        // Guard global: nao interfere quando user esta digitando num input/textarea
         const t = e.target as HTMLElement | null
-        if (t) {
+        const inField = !!t && (() => {
           const tag = (t.tagName || "").toUpperCase()
-          if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
-          if (t.isContentEditable) return
+          if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
+          if (t.isContentEditable) return true
+          return false
+        })()
+        // Atalhos de viewport (estilo Figma):
+        //   Shift+1 = Zoom to fit (centraliza peca)
+        //   Shift+2 = Zoom to selection (foca objeto ativo)
+        //   Shift+0 = Zoom 100%
+        // So dispara se nao estiver em campo de texto E nao ha modifier conflitante.
+        if (!inField && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          if (e.key === "1" || e.code === "Digit1") {
+            e.preventDefault()
+            centerView()
+            return
+          }
+          if (e.key === "2" || e.code === "Digit2") {
+            e.preventDefault()
+            zoomToSelection()
+            return
+          }
+          if (e.key === "0" || e.code === "Digit0") {
+            e.preventDefault()
+            const fc = fabricRef.current
+            applyZoom(fc, 1)
+            return
+          }
         }
+        // Delete/Backspace remove objeto selecionado
+        if (e.key !== "Delete" && e.key !== "Backspace") return
+        if (inField) return
         const obj = fabricRef.current.getActiveObject()
         if (obj && !(obj as any).__isBg && !(obj as any).isEditing) {
           fabricRef.current.remove(obj)
@@ -1960,6 +2529,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // Layer LINKADO a um asset (peca gerada ou linkada do PSD)
             const asset = assetMap[layer.assetId] as Asset
             if (asset) {
+              // DEBUG: loga o estado da mask de cada layer da peca antes de
+              // criar o objeto Fabric. Permite inspecionar coords/tipo/schema
+              // diretamente do console — util pra diagnosticar mask deslocada.
+              if (layer.mask) {
+                console.log("[piece-load-mask]", asset.label, {
+                  type: layer.mask.type,
+                  enabled: layer.mask.enabled,
+                  schemaV: (layer.mask as any)._schemaV ?? "v1",
+                  layer_pos: { x: layer.posX, y: layer.posY },
+                  layer_scale: { x: layer.scaleX, y: layer.scaleY },
+                  layer_size: { w: layer.width, h: layer.height },
+                  mask_raster: layer.mask.raster,
+                  mask_vector_summary: layer.mask.vector ? { posX: layer.mask.vector.posX, posY: layer.mask.vector.posY, w: layer.mask.vector.width, h: layer.mask.vector.height, pathLen: (layer.mask.vector.path || "").length } : null,
+                })
+              }
               // Aplica overrides ao layer base
               const layerWithOverrides = {
                 ...layer,
@@ -2158,6 +2742,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Marca init concluido — saves sao liberados a partir daqui. Antes disso, salvar
       // poderia gravar layers: [] (canvas ainda nao tinha objetos carregados).
       isInitialized.current = true
+      // RE-MEASURE textboxes se uma fonte chegou DEPOIS do init: o load pre-
+      // request todas as fontes, mas se alguma demorou pra chegar no momento
+      // de criar o Textbox, ele foi medido com fallback (Arial) — letras
+      // ficam visualmente mais largas/compactas que o real. Quando a fonte
+      // chegar via fonts.ready, re-mede tudo. Sem isso, tracking PSD
+      // negativo aparece visualmente errado.
+      if (typeof document !== "undefined" && (document as any).fonts?.ready) {
+        ;(document as any).fonts.ready.then(() => {
+          if (!alive || !isInitialized.current) return
+          const objs = fc.getObjects()
+          let touched = 0
+          for (const o of objs) {
+            if (o.type === "textbox" || o.type === "i-text") {
+              if ((o as any).initDimensions) (o as any).initDimensions()
+              touched++
+            }
+          }
+          if (touched > 0) {
+            fc.requestRenderAll()
+            console.log("[fonts-ready] re-mediu", touched, "textboxes pos-load")
+          }
+        }).catch(() => {})
+      }
       // Auto-gera thumbnails pra steps inativos sem preview (background).
       // Renderiza offscreen — nao mexe no canvas principal. User nao vê piscar.
       // RESET do flag pra rodar de novo nesta peca (cada init = nova oportunidade).
@@ -2204,6 +2811,40 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       isInitialized.current = false
       // Cancela qualquer save pendente pra nao gravar lixo apos o user sair
       clearTimeout(saveTimer.current)
+      clearTimeout(autoFitTimer.current)
+      // Flush dos PUTs debounceados pendentes antes do unmount — sem isso,
+      // user editar e sair rapido podia perder a ultima mudanca (timer
+      // cancelado, PUT nunca foi enviado).
+      try {
+        const p1 = lastOverridePendingPayload.current
+        if (p1) {
+          lastOverridePendingPayload.current = null
+          fetch(`/api/campaigns/${campaignId}/assets/${p1.aid}`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(p1.payload), keepalive: true,
+          }).catch(() => {})
+        }
+        const p2 = assetContentPendingPayload.current
+        if (p2) {
+          assetContentPendingPayload.current = null
+          fetch(`/api/campaigns/${campaignId}/assets/${p2.aid}`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(p2.payload), keepalive: true,
+          }).catch(() => {})
+        }
+      } catch {}
+      clearTimeout(lastOverridePutTimer.current)
+      clearTimeout(assetContentPutTimer.current)
+      if (selectedTickRaf.current != null) { cancelAnimationFrame(selectedTickRaf.current); selectedTickRaf.current = null }
+      // Revoga todos os blob URLs criados pelo SVG patcher. Em sessoes longas
+      // ou com varios PSDs importados, a acumulacao chega a centenas de MB
+      // (cada SVG vira um blob URL retido na memoria).
+      try {
+        for (const u of svgBlobUrlsRef.current) {
+          try { URL.revokeObjectURL(u) } catch {}
+        }
+        svgBlobUrlsRef.current = []
+      } catch {}
       const fcc: any = fabricRef.current
       if (fcc) {
         if (fcc.__blockKeyHandler) document.removeEventListener("keydown", fcc.__blockKeyHandler, true)
@@ -2256,6 +2897,39 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
+      // DIAGNOSTICO: detecta MULTI-OBJ DIFF entre top atual e novo snap.
+      // Esperado: 1 obj mudou (a acao explicita do user). Se >1 mudou, algo
+      // foi modificado silenciosamente sem pushHistory entre as 2 acoes do
+      // user — sintoma reportado: "undo na posicao reseta override de
+      // outro layer". Log alerta no console, sem bloquear o save.
+      try {
+        if (top) {
+          const prevObjs: any[] = JSON.parse(top)?.objects ?? []
+          const newObjs: any[] = JSON.parse(snap)?.objects ?? []
+          const keyOf = (o: any) => o?.__assetId ?? o?.__assetLabel ?? `${o?.type}@${Math.round(o?.left ?? 0)},${Math.round(o?.top ?? 0)}`
+          const prevByKey = new Map<string, any>()
+          for (const o of prevObjs) prevByKey.set(keyOf(o), o)
+          const changes: Array<{ label: string; diffs: string[] }> = []
+          for (const o of newObjs) {
+            const prev = prevByKey.get(keyOf(o))
+            if (!prev) continue
+            const diffs: string[] = []
+            // Compara propriedades relevantes (props que o user esperaria controlar)
+            for (const k of ["left", "top", "scaleX", "scaleY", "angle", "width", "height",
+                             "fill", "fontSize", "fontFamily", "fontWeight", "fontStyle",
+                             "charSpacing", "lineHeight", "textAlign", "text", "opacity",
+                             "visible", "globalCompositeOperation"]) {
+              if (JSON.stringify(prev[k]) !== JSON.stringify(o[k])) diffs.push(k)
+            }
+            // styles per-char
+            if (JSON.stringify(prev.styles ?? {}) !== JSON.stringify(o.styles ?? {})) diffs.push("styles")
+            if (diffs.length > 0) changes.push({ label: o.__assetLabel ?? "?", diffs })
+          }
+          if (changes.length > 1) {
+            console.warn("[pushHistory] MULTI-OBJ DIFF detectado — provavel modificacao silenciosa entre acoes:", changes)
+          }
+        }
+      } catch {}
       undoStack.current.push(snap)
       // Mantém 31 entradas: 30 undos + estado atual.
       if (undoStack.current.length > 31) undoStack.current.shift()
@@ -2266,9 +2940,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     } catch (e) { /* ignora */ }
   }
 
-  async function applySnapshot(snap: string) {
+  // Retorna true se aplicou com sucesso, false se abortou (circuit breaker).
+  // Permite que undo()/redo() saibam reverter o pop quando o snap eh ruim.
+  async function applySnapshot(snap: string): Promise<boolean> {
     const fc = fabricRef.current
-    if (!fc) return
+    if (!fc) return false
     isApplyingHistory.current = true
     // Cancela qualquer save pendente IMEDIATAMENTE — antes do loadFromJSON disparar
     // eventos que poderiam re-agendar saves em estado transitorio.
@@ -2287,6 +2963,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Remove backgroundImage/overlayImage do snap se existirem
       delete snapData.backgroundImage
       delete snapData.overlayImage
+
+      // CIRCUIT BREAKER: se o snap esta vazio mas o canvas atual tem objetos
+      // validos, ABORTA o restore. Quase certamente o snap foi corrompido
+      // (push num momento ruim) e aplica-lo apagaria todo o trabalho do user.
+      // Sintoma reportado: "undo apaga tudo, vira bagunca". Melhor manter o
+      // estado atual e remover o snap ruim do topo da pilha.
+      const currentValidObjects = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && (o.__assetId || o.__embedded))
+      const snapValidObjects = (Array.isArray(snapData?.objects) ? snapData.objects : []).filter((s: any) => !s?.__isBg && !s?.__isBleedOverlay && (s?.__assetId || s?.__embedded))
+      if (snapValidObjects.length === 0 && currentValidObjects.length > 0) {
+        srvLog("undo-ABORT-empty-snap", { currentObjs: currentValidObjects.length })
+        isApplyingHistory.current = false
+        return false
+      }
 
       // Fabric v6: 2o arg de loadFromJSON eh REVIVER (callback per-objeto), nao
       // callback de conclusao. Passar `() => resolve()` ali resolvia a Promise
@@ -2323,28 +3012,63 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (restored.length !== snapObjectsNoBg.length) {
         console.warn("[applySnapshot] mismatch: restored=", restored.length, "vs snap=", snapObjectsNoBg.length)
       }
-      // ESTRATEGIA NOVA: em vez de iterar por INDEX (fragil — ordem do loadFromJSON
-      // pode diferir do snap), mapeia src por POSITION+TYPE pra parear com o
-      // objeto restaurado mais provavel. Falhas (sem match) caem pro index
-      // positional como fallback.
-      // Match case-insensitive: Fabric serializa type como "Image"/"Textbox"
-      // (PascalCase da classe), mas instancias depois de loadFromJSON expoem
-      // o.type como "image"/"textbox" (lowercase). Sem normalizar, o pareamento
-      // por chave falhava sempre e caia no fallback positional — que e fragil.
-      const srcByKey = new Map<string, any>()
-      for (const s of snapObjectsNoBg) {
-        if (!s) continue
-        const tnorm = String(s.type ?? "").toLowerCase()
-        const key = `${tnorm}@${Math.round(s.left ?? 0)},${Math.round(s.top ?? 0)}`
-        srcByKey.set(key, s)
+      // ESTRATEGIA DE PAREAMENTO src↔restored — robusta contra:
+      //  - reordenacao do loadFromJSON (raro mas possivel)
+      //  - layers sobrepostos com type+position identicos (bug antigo: dois
+      //    textos arrastados pra mesma coord colidiam no map por chave, undo
+      //    pareava errado e __assetId/__maskData iam pro objeto errado —
+      //    sintoma reportado pelo user: 'undo confunde layers, apaga tudo')
+      // Niveis de match em ordem decrescente de confiabilidade:
+      //  1. __assetId com FILA (queue por aid) — mesmo aid pode ter N copias,
+      //     parea na ordem em que aparecem no snap vs no restored.
+      //  2. __embedded com fila (PSD-avulso sem aid)
+      //  3. Fallback POSITIONAL POR INDEX (mesma ordem do array de objects).
+      // Sem mapeamento por chave colisiva.
+      const buildQueues = (arr: any[]) => {
+        const aidQ = new Map<string, any[]>()
+        const embQ: any[] = []
+        const rest: any[] = []
+        for (const o of arr) {
+          if (!o) continue
+          if (o.__assetId) {
+            const q = aidQ.get(o.__assetId) ?? []
+            q.push(o)
+            aidQ.set(o.__assetId, q)
+          } else if (o.__embedded) {
+            embQ.push(o)
+          } else {
+            rest.push(o)
+          }
+        }
+        return { aidQ, embQ, rest }
       }
+      const srcQ = buildQueues(snapObjectsNoBg)
+      const restAidPos = new Map<string, number>() // contador per-aid pra fallback
+      let embCursor = 0
       for (let i = 0; i < restored.length; i++) {
         const obj: any = restored[i]
-        // Tenta match por type+position primeiro. Fallback pra index.
-        const tnorm = String(obj.type ?? "").toLowerCase()
-        const posKey = `${tnorm}@${Math.round(obj.left ?? 0)},${Math.round(obj.top ?? 0)}`
-        const src = srcByKey.get(posKey) ?? snapObjectsNoBg[i]
-        if (!src) continue
+        let src: any = null
+        if (obj.__assetId) {
+          const q = srcQ.aidQ.get(obj.__assetId)
+          if (q && q.length > 0) {
+            const idx = restAidPos.get(obj.__assetId) ?? 0
+            src = q[idx]
+            restAidPos.set(obj.__assetId, idx + 1)
+          }
+        } else if (obj.__embedded) {
+          src = srcQ.embQ[embCursor++] ?? null
+        }
+        if (!src) {
+          // Ultimo recurso: positional por index global no snap. Funciona quando
+          // loadFromJSON preserva ordem (caso comum); falha graciosamente caso
+          // contrario (props customizadas ficam ausentes pro objeto, save vai
+          // bloquear no filtro __assetId).
+          src = snapObjectsNoBg[i]
+          if (!src) continue
+          // Se src ja foi reclamado por __assetId acima, evita usa-lo de novo
+          // (preferiu o match estavel). O proximo nao-aid pode acabar sem src,
+          // o que e melhor que sobrescrever props erradas.
+        }
         // CRITICO: Fabric loadFromJSON pode NÃO restaurar props customizadas
         // mesmo passando-as no toJSON. Restaurar EXPLICITAMENTE preservando
         // o valor original (mesmo se o obj atual já tem — sobrescreve com o
@@ -2373,6 +3097,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // do __maskData original — fonte da verdade do LayerMask.
         if (src.__maskData) {
           obj.__maskData = src.__maskData
+          // Recria anchor de mask-tracking. Sem isso, mover layer pos-undo
+          // faria a mask "saltar" (delta calculado em relacao a anchor zerado).
+          obj.__maskAnchor = {
+            left: obj.left ?? 0, top: obj.top ?? 0,
+            scaleX: obj.scaleX ?? 1, scaleY: obj.scaleY ?? 1,
+          }
           const { Image: FabImage, Path } = await import("fabric")
           obj.clipPath = null
           // PARA IMAGES COM RASTER MASK: re-baka a mask no bitmap. Fabric v7
@@ -2380,7 +3110,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // solida). No load inicial fazemos via composeRasterMaskIntoImage;
           // no undo o snap serializou src=URL original (sem bake), entao
           // o bake se perde. Aqui re-bakamos pra restaurar o visual identico.
-          if (obj.type === "image" && src.__maskData.type === "raster" && src.__maskData.raster?.dataUrl) {
+          if (obj.type === "image" && src.__maskData.type === "raster" && src.__maskData.raster?.dataUrl && src.__maskData.enabled !== false) {
             try {
               // Pega o element atual (imagem ja carregada pelo loadFromJSON)
               const el = (obj as any)._element ?? (obj as any).getElement?.()
@@ -2392,6 +3122,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 const composed = await composeRasterMaskIntoImage(
                   el, src.__maskData.raster, posX, posY, naturalW, naturalH,
                   !!src.__maskData.inverted,
+                  obj.scaleX ?? 1, obj.scaleY ?? 1,
                 )
                 if (composed) {
                   // Substitui o element do FabricImage pelo canvas baked.
@@ -2475,7 +3206,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       fc.renderAll()
       refreshLayers(fc)
-    } catch (e) { console.warn("applySnapshot fail:", e) }
+      // BRAND RESYNC POS-UNDO: snaps antigos podem ter fills/cores DESATUALIZADOS
+      // se brand color do cliente mudou entre o momento do snap e agora. Sem
+      // este sync, undo "desfazia" brand changes que NAO foram acao do user —
+      // sintoma: "undo na posicao de um layer reseta override de outro layer".
+      // Re-aplica os fills atuais aos objetos que tem __fillBrandIdx, e cores
+      // atuais aos bgLayers que tem colorBrandIdx. Continua dentro do guard
+      // isApplyingHistory=true pra nao disparar push automatico.
+      try {
+        syncBrandRefsInBgLayers()
+        syncBrandRefsInTextObjects(fc)
+        fc.renderAll()
+      } catch {}
+    } catch (e) {
+      console.warn("applySnapshot fail:", e)
+      clearTimeout(saveTimer.current)
+      isApplyingHistory.current = false
+      return false
+    }
     // Limpa quaisquer save timers pendentes que poderiam ter sido enfileirados
     // por eventos de Fabric durante o loadFromJSON (object:added/modified).
     // Esses timers, se disparassem agora, salvariam layers em estado intermediario.
@@ -2488,26 +3236,52 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     setIsDirty(true)
     // Dispara save imediato do novo estado (sem debounce)
     doSave()
+    return true
   }
 
   async function undo() {
     if (undoStack.current.length < 2) return
+    // Re-entrancy guard: undo/redo clicados rapido em sequencia podem
+    // iniciar um segundo applySnapshot enquanto o primeiro ainda esta no
+    // await loadFromJSON ou mask rebake. Resultado: canvas em estado misto
+    // de dois snaps, listeners de Fabric disparando em ordem imprevisivel.
+    // Sintoma reportado pelo user: 'undo confunde os layers, apaga tudo'.
+    if (isApplyingHistory.current) return
     const fc = fabricRef.current
     if (!fc) return
     // Topo da pilha eh o estado atual; guarda no redo e aplica o anterior
     const current = undoStack.current.pop()!
-    redoStack.current.push(current)
     const previous = undoStack.current[undoStack.current.length - 1]
-    if (previous) await applySnapshot(previous)
+    if (!previous) {
+      undoStack.current.push(current)
+      return
+    }
+    const ok = await applySnapshot(previous)
+    if (!ok) {
+      // applySnapshot abortou (snap ruim). Restaura a pilha pra estado antes
+      // do undo — sem isso, redoStack ganhava um snap que nunca foi aplicado
+      // e undo seguinte pulava pra um estado inconsistente.
+      undoStack.current.push(current)
+      return
+    }
+    redoStack.current.push(current)
     setSelected(null)
     setHistoryTick(t => t + 1)
   }
 
   async function redo() {
     if (redoStack.current.length === 0) return
+    // Re-entrancy guard (mesmo motivo do undo).
+    if (isApplyingHistory.current) return
     const next = redoStack.current.pop()!
+    const ok = await applySnapshot(next)
+    if (!ok) {
+      // Mesmo tratamento do undo: snap ruim, devolve pro redoStack pra nao
+      // perder o estado nem deixar a pilha incoerente.
+      redoStack.current.push(next)
+      return
+    }
     undoStack.current.push(next)
-    await applySnapshot(next)
     setSelected(null)
     setHistoryTick(t => t + 1)
   }
@@ -2914,6 +3688,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 })
                 const blob = new Blob([patched], { type: "image/svg+xml" })
                 imgSrc = URL.createObjectURL(blob)
+                svgBlobUrlsRef.current.push(imgSrc)
               }
             } catch (e) { console.warn("[SVG] falha lendo dimensoes:", e) }
           }
@@ -2947,11 +3722,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               let sourceForFabric: HTMLImageElement | HTMLCanvasElement = el
               if (layer?.mask?.type === "raster" && layer.mask.enabled !== false && layer.mask.raster?.dataUrl) {
                 srvLog("mask-BAKE-START", { label: asset.label, posX, posY, naturalW, naturalH, maskPos: { x: layer.mask.raster.posX, y: layer.mask.raster.posY }, maskSize: { w: layer.mask.raster.width, h: layer.mask.raster.height } })
+                // Console debug: deixa o user inspecionar sem precisar abrir
+                // /api/debug. Roda 1x por layer no load — barato.
+                console.log("[mask-bake-debug]", asset.label, {
+                  layer_pos: { x: posX, y: posY },
+                  layer_scale: { x: sx, y: sy },
+                  image_natural: { w: naturalW, h: naturalH },
+                  layer_size_canvas: { w: naturalW * sx, h: naturalH * sy },
+                  mask: layer.mask.raster,
+                  mask_schemaV: (layer.mask as any)._schemaV ?? "v1-pre-scaleLayerMask",
+                  computed_ratio: { x: 1/sx, y: 1/sy },
+                  computed_offset_natural: { x: (layer.mask.raster.posX - posX) / sx, y: (layer.mask.raster.posY - posY) / sy },
+                  computed_size_natural: { w: layer.mask.raster.width / sx, h: layer.mask.raster.height / sy },
+                })
                 try {
-                  const composed = await composeRasterMaskIntoImage(el, layer.mask.raster, posX, posY, naturalW, naturalH, !!layer.mask.inverted)
+                  // sx/sy: scale do layer no canvas atual. Mask coords sao em
+                  // canvas-space, sourceImg em image-natural-space — passamos
+                  // o scale pra conversao acontecer dentro de composeRaster*.
+                  const composed = await composeRasterMaskIntoImage(el, layer.mask.raster, posX, posY, naturalW, naturalH, !!layer.mask.inverted, sx, sy)
                   if (composed) {
                     sourceForFabric = composed
                     srvLog("mask-BAKE-OK", { label: asset.label, canvasW: composed.width, canvasH: composed.height })
+                    console.log("[mask-bake-result]", asset.label, "composed canvas:", composed.width, "x", composed.height)
                   } else {
                     srvLog("mask-BAKE-NULL", { label: asset.label, reason: "composeRasterMaskIntoImage returned null" })
                   }
@@ -2968,6 +3760,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ;(img as any).__assetLabel = asset.label
           if (psdEffects) (img as any).__psdEffects = psdEffects
           if (psdGroupPath) (img as any).__groupPath = psdGroupPath
+          // Mask metadata: anota __maskData direto, sem depender de
+          // applyMaskToFabricObject. Para imagens com raster mask, o bake ja
+          // foi feito acima (composeRasterMaskIntoImage), mas precisamos da
+          // anotacao pra que saveNow consiga gravar layer.mask no proximo save.
+          // Sem isso, swap de asset / re-render perdia a mascara silenciosamente.
+          if (layer?.mask) {
+            ;(img as any).__maskData = layer.mask
+            // Anchor pra tracking de movimento. Quando o user arrasta o layer,
+            // object:modified detecta delta entre __maskAnchor.{left,top} e
+            // obj.{left,top}, e propaga pro __maskData.raster.posX/Y. Sem isso,
+            // mover o layer no editor deixava a mascara presa nas coords
+            // originais (Photoshop liga mask ao layer por default — chain icon).
+            ;(img as any).__maskAnchor = {
+              left: posX, top: posY,
+              scaleX: img.scaleX ?? 1, scaleY: img.scaleY ?? 1,
+            }
+          }
           applyFabricEffects(img, psdEffects, Shadow)
           fc.add(img)
           fc.requestRenderAll()
@@ -2983,19 +3792,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(r as any).__assetId = asset.id
       ;(r as any).__assetLabel = asset.label
       if (psdGroupPath) (r as any).__groupPath = psdGroupPath
+      // Preserva mask metadata mesmo no fallback (imagem falhou ao carregar).
+      // Sem isso, o proximo save grava layer sem mask e a mascara some
+      // permanentemente — mesmo quando a URL da imagem voltar a funcionar.
+      if (layer?.mask) {
+        ;(r as any).__maskData = layer.mask
+        ;(r as any).__maskAnchor = { left: posX, top: posY, scaleX: scaleX ?? 1, scaleY: scaleY ?? 1 }
+      }
       fc.add(r)
     } else {
       const spans = getSpans(asset)
       const data = spansToTextboxData(spans)
       const def = data.defaultStyle
-      // Texto: se layer tem override (peca/matriz com texto personalizado), usa esse.
-      // Senao, usa o lastOverride do asset (template visual aplicado na matriz mais
-      // recente). Senao, usa default.
+      // Texto: MERGE entre assetTpl (lastOverride - template do asset) e layerOv
+      // (override per-instancia na peca/matriz). Layer prevalece quando ambos
+      // setam o mesmo campo. Sem o merge, layer parcial (so com fontSize)
+      // bloqueava acesso ao asset.lastOverride.leadingPt — leading caia em
+      // default Fabric (1.0). Sintoma: "entrelinhas vem alterada".
       const layerOv = layer?.overrides
       const assetTpl: any = ((asset as any).lastOverride && typeof (asset as any).lastOverride === "object")
         ? (asset as any).lastOverride
         : null
-      const ov: any = layerOv ?? assetTpl ?? null
+      const ov: any = (layerOv || assetTpl)
+        ? { ...(assetTpl ?? {}), ...(layerOv ?? {}) }
+        : null
       // Texto: PECA pode ter override per-instancia (layer.overrides.text), usado
       // pra preservar quebras de linha inseridas localmente sem propagar pra matriz.
       // Se nao houver override, texto vem do asset.content (data.text) — fonte da
@@ -3079,6 +3899,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
       }
 
+      // Initial lineHeight Adobe-style. effLeadingPt eh absoluto em pt; lineHeight
+      // do Fabric eh multiplicador. Conversao: lh = leadingPt / fontSize.
+      //
+      // NAO inflamos lineHeight pra acomodar fontSize variavel per-char (chars
+      // maiores que o default). Inflar aumenta a altura TOTAL do textbox e faz
+      // ele sobrepor textboxes posicionados logo abaixo (titulo cobrindo o
+      // subtitulo, p.ex.). PS aplica leading per-linha — Fabric nao tem isso —
+      // entao linha com glyph maior pode overflow visualmente dentro do textbox,
+      // mas a altura TOTAL bate com o PSD e textboxes vizinhos nao colidem.
+      const initialLineHeight = (typeof effLeadingPt === "number" && effFontSize > 0)
+        ? effLeadingPt / effFontSize
+        : (typeof ov?.lineHeight === "number" ? ov.lineHeight : 1.2)
       const t = new Textbox(initialText, {
         left: posX, top: posY,
         width: Math.max(effWidth, 200),
@@ -3087,10 +3919,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         fontWeight: (ov?.fontWeight ?? def.fontWeight ?? "normal"),
         fontStyle: (ov?.fontStyle ?? (def as any).fontStyle ?? "normal"),
         fill: effFill,
-        // Adobe-style "Auto" leading default = 1:1 com fontSize. Override pode mudar
-        // depois via ov.lineHeight ou ov.leadingPt. Fabric default eh 1.16 (estranho
-        // visualmente, gera espacamento extra).
-        lineHeight: 1.0,
+        lineHeight: initialLineHeight,
         // editable: true permite duplo-clique pra SELECIONAR caracteres (necessario
         // pra aplicar styles per-char no painel direito). Mas digitar/apagar e
         // bloqueado por listener separado abaixo, porque caracteres so podem ser
@@ -3140,6 +3969,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (typeof fillBrandIdx === "number") (t as any).__fillBrandIdx = fillBrandIdx
       if (psdEffects) (t as any).__psdEffects = psdEffects
       if (psdGroupPath) (t as any).__groupPath = psdGroupPath
+      // DS link tracking: textbox vinculado ao preset do Design System tem
+      // bolinha verde no painel de layers. Layer customizado pelo user via
+      // Properties Panel quebra o vinculo (vermelho). Flag persistida no
+      // override do layer pra round-trip — se vier false do save, mantem;
+      // senao default true pra layers de asset com brandPresetKey.
+      const assetHasBrandPreset = !!(asset as any)?.lastOverride?.brandPresetKey
+      const savedDsLinked = (layerOv as any)?.dsLinked
+      if (assetHasBrandPreset) {
+        ;(t as any).__dsLinked = savedDsLinked !== false // default true; salva false explicito mantem
+      }
+      // Mask metadata: anotacao garantida pra que saveNow consiga gravar
+      // layer.mask. Independente de applyMaskToFabricObject rodar depois.
+      if (layer?.mask) {
+        ;(t as any).__maskData = layer.mask
+        ;(t as any).__maskAnchor = {
+          left: posX, top: posY,
+          scaleX: t.scaleX ?? 1, scaleY: t.scaleY ?? 1,
+        }
+      }
       applyFabricEffects(t, psdEffects, Shadow)
       fc.add(t)
     }
@@ -3148,6 +3996,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   function refreshLayers(fc: any) {
     // Igual Photoshop: layers visiveis aparecem no painel, BG sempre embaixo
     // (no fim da lista — UI renderiza top→bottom matching o z-stack do canvas).
+    // Placeholders de folder vazio sao incluidos (pra `__groupPath` deles
+    // fazer o folder aparecer nos headers), mas marcados como isPlaceholder
+    // pra UI esconder a row em si.
     const objs = fc.getObjects().filter((o: any) => !o.__isBleedOverlay)
     setLayers(
       objs.map((o: any, i: number) => ({
@@ -3162,6 +4013,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // Painel usa pra renderizar hierarquia indentada com headers de folder
           // entre layers (igual Photoshop).
           groupPath: Array.isArray(o.__groupPath) ? o.__groupPath : [],
+          // Placeholder de folder vazio: o painel renderiza o header do folder
+          // mas pula a row do layer em si.
+          isPlaceholder: o.__folderPlaceholder === true,
         }))
         .reverse()
     )
@@ -3178,6 +4032,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (bgObj) fc.sendObjectToBack(bgObj)
     fc.renderAll()
     refreshLayers(fc)
+    // History: Fabric NAO dispara object:modified em bring/send. Sem este
+    // push, reorder via botoes ou teclado nao entra no undo stack.
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
     doSave()
   }
 
@@ -3194,6 +4051,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (targetGroupPath !== undefined) {
       if (targetGroupPath.length === 0) delete (obj as any).__groupPath
       else (obj as any).__groupPath = targetGroupPath
+      // Limpa placeholder do folder destino se ele virou "ocupado" — agora
+      // tem layer real dentro, o placeholder eh redundante.
+      const targetKey = targetGroupPath.join("›")
+      const placeholders = fc.getObjects().filter((o: any) => o.__folderPlaceholder
+        && Array.isArray(o.__groupPath)
+        && o.__groupPath.join("›") === targetKey)
+      for (const p of placeholders) fc.remove(p)
     }
     // Painel mostra os objetos invertidos (topo painel = topo canvas), entao o
     // indice "real" na lista de objects (de tras pra frente) eh: (total-1) - visualIdx
@@ -3215,6 +4079,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (bgObj) fc.sendObjectToBack(bgObj)
     fc.renderAll()
     refreshLayers(fc)
+    // History: Fabric NAO dispara object:modified em moveObjectTo. Sem este
+    // push, drag-drop pra reordenar layers / mover entre folders nao entra
+    // no undo stack — Cmd+Z nao desfaz reorders.
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
     doSave()
   }
 
@@ -3226,6 +4094,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     obj.set("visible", !hidden)
     fc.renderAll()
     refreshLayers(fc)
+    // History: set('visible') nao dispara object:modified. Sem push, toggle
+    // do olho/cadeado fica fora do undo stack.
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
     // Save sem debounce: acao deliberada do user, nao pode ser perdida se ele
     // sair da pagina logo apos clicar (cleanup do useEffect cancelaria o timer).
     doSaveNow()
@@ -3257,6 +4128,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (changed > 0) {
       fc.renderAll()
       refreshLayers(fc)
+      // History: toggle massivo de visibility/lock em folder nao dispara
+      // object:modified (set('visible') eh setter direto). Push pra entrar
+      // no undo stack.
+      if (isInitialized.current && !isApplyingHistory.current) pushHistory()
       doSaveNow()
     }
   }
@@ -3288,6 +4163,274 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     return children.every((o: any) => o.__locked === true)
   }
 
+  // === FOLDER MANAGEMENT (Photoshop-style groups) ===
+  // Folders sao derivados de __groupPath nos Fabric objects. Pra criar/mover/
+  // renomear/deletar folders, basta mexer no __groupPath dos filhos.
+
+  // Coleta todos os layers cujo __groupPath comeca por folderPath (descendentes
+  // recursivos do folder, incluindo subfolders). Usado por moveFolder, rename,
+  // delete pra atuar no folder inteiro de uma vez.
+  function getFolderDescendants(folderPath: string[]): any[] {
+    const fc = fabricRef.current
+    if (!fc) return []
+    return fc.getObjects().filter((o: any) => {
+      if (o.__isBg || o.__isBleedOverlay) return false
+      const op: string[] = Array.isArray(o.__groupPath) ? o.__groupPath : []
+      if (op.length < folderPath.length) return false
+      for (let i = 0; i < folderPath.length; i++) if (op[i] !== folderPath[i]) return false
+      return true
+    })
+  }
+
+  /**
+   * Seleciona TODOS os layers de um folder (incluso sub-folders) no canvas.
+   * Photoshop-style: clicar no folder no painel = manipular composite do grupo.
+   * Fabric ActiveSelection move/escala/rotaciona como grupo preservando posicoes
+   * relativas. Pula layers locked (Fabric ActiveSelection bug: objeto locked
+   * dentro de selecao impede o resto de se mover).
+   */
+  async function selectFolderInCanvas(folderPath: string[]): Promise<void> {
+    const fc = fabricRef.current
+    if (!fc) return
+    const objects = getFolderDescendants(folderPath).filter((o: any) => !o.__locked && o.selectable !== false)
+    if (objects.length === 0) {
+      // Folder so com layers locked/hidden — desativa selecao atual e sai.
+      fc.discardActiveObject()
+      fc.requestRenderAll()
+      return
+    }
+    fc.discardActiveObject()
+    if (objects.length === 1) {
+      fc.setActiveObject(objects[0])
+    } else {
+      // Fabric v6: ActiveSelection eh a forma canonica de "multi-select".
+      // Suporta move/scale/rotate como grupo, e os children mantem coords
+      // relativas ao centro do bbox da selecao.
+      const { ActiveSelection } = await import("fabric")
+      const sel = new (ActiveSelection as any)(objects, { canvas: fc })
+      fc.setActiveObject(sel)
+    }
+    fc.requestRenderAll()
+  }
+
+  // Coleta todos os paths de folders existentes (derivados dos groupPaths dos
+  // layers — folder existe se PELO MENOS um layer aponta pra ele). Usado pra
+  // detectar conflito de nome ao criar/renomear.
+  function getAllFolderPaths(): Set<string> {
+    const fc = fabricRef.current
+    if (!fc) return new Set()
+    const out = new Set<string>()
+    for (const o of fc.getObjects()) {
+      if ((o as any).__isBg || (o as any).__isBleedOverlay) continue
+      const op: string[] = Array.isArray((o as any).__groupPath) ? (o as any).__groupPath : []
+      // Adiciona TODOS os prefixos (folder pai + ancestrais)
+      for (let i = 1; i <= op.length; i++) {
+        out.add(op.slice(0, i).join("›"))
+      }
+    }
+    return out
+  }
+
+  // Cria um folder novo. Se ha selecao no canvas (selected ou ActiveSelection
+  // multi), move OS layers selecionados pra dentro do folder. Senao, cria
+  // folder vazio com placeholder — mas como o painel deriva folders de layers
+  // reais, folder vazio nao apareceria. Por isso na ausencia de selecao,
+  // alertamos o user.
+  // parentPath: se passado, o novo folder eh subfolder dessa pasta.
+  /**
+   * Cria um folder novo. Comportamento Adobe-style:
+   *  - `moveSelection=false` (default do botao "+ Folder"): cria folder VAZIO.
+   *    Adiciona placeholder Rect 1x1 invisivel pra o painel renderizar o folder.
+   *    User arrasta layers pra dentro manualmente.
+   *  - `moveSelection=true`: pega selecao ativa e move pra dentro (Cmd+G no PS).
+   *
+   * Antes: o botao "+ Folder" SEMPRE movia a selecao ativa. Combinado com a
+   * feature recente de `selectFolderInCanvas` (clicar no header do folder seleciona
+   * todos os children via ActiveSelection), clicar "+ Folder" depois de clicar
+   * num folder existente MOVIA TUDO pra dentro do novo folder. Bug visivel:
+   * "perde os outros layers" do folder de origem.
+   */
+  async function createFolder(name: string, parentPath: string[] = [], moveSelection = false) {
+    const fc = fabricRef.current
+    if (!fc || !name?.trim()) return
+    const cleanName = name.trim()
+    const newPath = [...parentPath, cleanName]
+    const key = newPath.join("›")
+    const existing = getAllFolderPaths()
+    if (existing.has(key)) {
+      alert(`Folder "${cleanName}" ja existe nesse nivel.`)
+      return
+    }
+    if (moveSelection) {
+      // Cmd+G style: move selecao ativa pra dentro.
+      const active = fc.getActiveObject() as any
+      let targets: any[] = []
+      if (active) {
+        const inner = Array.isArray(active._objects) ? active._objects : null
+        targets = inner ?? [active]
+        targets = targets.filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
+      }
+      if (targets.length === 0) {
+        alert("Selecione um ou mais layers no canvas pra mover pra dentro do folder.")
+        return
+      }
+      for (const o of targets) {
+        ;(o as any).__groupPath = newPath
+      }
+    } else {
+      // Folder vazio: cria placeholder invisivel pra o painel renderizar.
+      // Rect 1x1 com excludeFromExport=true (nao sai no PNG/PSD export) e
+      // __folderPlaceholder=true (marker pra deletar quando user arrasta layer
+      // real pra dentro). NAO mexe na selecao atual.
+      const { Rect } = await import("fabric")
+      const ph = new (Rect as any)({
+        left: 0, top: 0, width: 1, height: 1,
+        fill: "rgba(0,0,0,0)", stroke: "rgba(0,0,0,0)",
+        selectable: false, evented: false, excludeFromExport: true, visible: false,
+      })
+      ;(ph as any).__folderPlaceholder = true
+      ;(ph as any).__groupPath = newPath
+      ;(ph as any).__assetLabel = "(folder placeholder)"
+      fc.add(ph)
+    }
+    fc.renderAll()
+    refreshLayers(fc)
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+    doSave()
+  }
+
+  // Renomeia um folder existente: muda o segmento `folderPath[depth]` em todos
+  // os descendentes pro novo nome. Subfolders e layers preservam a hierarquia.
+  function renameFolder(folderPath: string[], newName: string) {
+    const fc = fabricRef.current
+    if (!fc || !newName?.trim() || folderPath.length === 0) return
+    const cleanName = newName.trim()
+    // Conflito: se ja existe folder com mesmo path renomeado, aborta
+    const newPath = [...folderPath.slice(0, -1), cleanName]
+    const newKey = newPath.join("›")
+    const existing = getAllFolderPaths()
+    if (existing.has(newKey) && newKey !== folderPath.join("›")) {
+      alert(`Folder "${cleanName}" ja existe nesse nivel.`)
+      return
+    }
+    const depth = folderPath.length - 1
+    const descs = getFolderDescendants(folderPath)
+    for (const o of descs) {
+      const op: string[] = [...((o as any).__groupPath ?? [])]
+      op[depth] = cleanName
+      ;(o as any).__groupPath = op
+    }
+    fc.renderAll()
+    refreshLayers(fc)
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+    doSave()
+  }
+
+  // Move um folder INTEIRO (com subfolders e layers) pra um novo parentPath.
+  // Ex: mover ["LOGO","Subfolder"] pra parent ["CODEZIN"] → vira ["CODEZIN","Subfolder"].
+  // Pra mover pra raiz, passa parentPath = [].
+  function moveFolderTo(folderPath: string[], newParentPath: string[]) {
+    const fc = fabricRef.current
+    if (!fc || folderPath.length === 0) return
+    // Sanity: nao pode mover folder pra dentro de si mesmo (ou descendente).
+    // newParentPath nao pode comecar com folderPath.
+    if (newParentPath.length >= folderPath.length) {
+      let isDescendant = true
+      for (let i = 0; i < folderPath.length; i++) {
+        if (newParentPath[i] !== folderPath[i]) { isDescendant = false; break }
+      }
+      if (isDescendant) return // mover pra dentro de si mesmo: ignora
+    }
+    const folderName = folderPath[folderPath.length - 1]
+    const newFolderPath = [...newParentPath, folderName]
+    // Conflito de nome no destino
+    const existing = getAllFolderPaths()
+    if (newFolderPath.join("›") !== folderPath.join("›") && existing.has(newFolderPath.join("›"))) {
+      alert(`Ja existe um folder "${folderName}" no destino.`)
+      return
+    }
+    const descs = getFolderDescendants(folderPath)
+    for (const o of descs) {
+      const op: string[] = [...((o as any).__groupPath ?? [])]
+      // Substitui o prefixo folderPath por newFolderPath
+      const tail = op.slice(folderPath.length)
+      ;(o as any).__groupPath = [...newFolderPath, ...tail]
+    }
+    // Limpa placeholder do PARENT destino (se folder destino era vazio antes,
+    // agora tem conteudo real — placeholder vira lixo). Aceita apenas placeholders
+    // cujo groupPath bate EXATO com newParentPath.
+    const parentKey = newParentPath.join("›")
+    if (parentKey) {
+      const placeholders = fc.getObjects().filter((o: any) => o.__folderPlaceholder
+        && Array.isArray(o.__groupPath)
+        && o.__groupPath.join("›") === parentKey)
+      for (const p of placeholders) fc.remove(p)
+    }
+    // Reposiciona descendentes do folder movido pra ficarem contiguos no z-stack
+    // (Fabric usa ordem do array). Sem isso, layers do folder movido podem ficar
+    // intercalados com layers de outros folders no painel, e a renderizacao de
+    // headers/indentacao parece "fora do folder destino" mesmo o __groupPath
+    // estando correto.
+    if (descs.length > 0) {
+      const allObjs = fc.getObjects()
+      // Acha o ultimo layer (no z-stack) do PARENT destino que NAO eh dos descs movidos
+      const parentSiblings = allObjs.filter((o: any) => {
+        const op: string[] = Array.isArray(o.__groupPath) ? o.__groupPath : []
+        if (op.join("›") !== parentKey) return false
+        return !descs.includes(o)
+      })
+      // Se ha algum sibling, posiciona descs logo APOS o ultimo sibling no
+      // z-stack (= visualmente CONTIGUO com o folder destino no painel).
+      // Se nao ha sibling (parent eh raiz vazia / so o placeholder), envia
+      // descs pro topo do z-stack (apareceram na ordem natural).
+      let insertAfter = parentSiblings.length > 0
+        ? allObjs.indexOf(parentSiblings[parentSiblings.length - 1])
+        : -1
+      for (const d of descs) {
+        const currentIdx = allObjs.indexOf(d)
+        if (currentIdx < 0) continue
+        // moveObjectTo posiciona objeto no index dado. Apos cada move,
+        // recalcula posicao (Fabric mantem o array atualizado).
+        insertAfter = Math.min(insertAfter + 1, fc.getObjects().length - 1)
+        fc.moveObjectTo(d, insertAfter)
+      }
+    }
+    // BG sempre no fundo
+    const bgObj = fc.getObjects().find((o: any) => o.__isBg)
+    if (bgObj) fc.sendObjectToBack(bgObj)
+    fc.renderAll()
+    refreshLayers(fc)
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+    doSave()
+  }
+
+  // Deleta um folder. Por padrao, MOVE os filhos pra pasta pai (ou raiz se folder
+  // era topo). Se deleteContents=true, remove os filhos do canvas tambem.
+  function deleteFolder(folderPath: string[], deleteContents: boolean = false) {
+    const fc = fabricRef.current
+    if (!fc || folderPath.length === 0) return
+    const descs = getFolderDescendants(folderPath)
+    if (deleteContents) {
+      for (const o of descs) fc.remove(o)
+    } else {
+      // Move filhos pra parent path (1 nivel acima)
+      const parentPath = folderPath.slice(0, -1)
+      for (const o of descs) {
+        const op: string[] = [...((o as any).__groupPath ?? [])]
+        const tail = op.slice(folderPath.length)
+        if (parentPath.length === 0 && tail.length === 0) {
+          delete (o as any).__groupPath
+        } else {
+          ;(o as any).__groupPath = [...parentPath, ...tail]
+        }
+      }
+    }
+    fc.renderAll()
+    refreshLayers(fc)
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+    doSave()
+  }
+
   function toggleLayerLock(obj: any) {
     const fc = fabricRef.current
     if (!fc || !obj) return
@@ -3307,6 +4450,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (locked && fc.getActiveObject() === obj) fc.discardActiveObject()
     fc.renderAll()
     refreshLayers(fc)
+    // History: obj.set({selectable, evented, lock*}) nao dispara modified.
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
     // Save sem debounce: acao deliberada do user, nao pode ser perdida se ele
     // sair da pagina logo apos clicar (cleanup do useEffect cancelaria o timer).
     doSaveNow()
@@ -3497,6 +4642,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const sy = (layer.scaleY ?? 1) * scale
         const angle = layer.rotation ?? 0
         const overrides = layer.overrides ?? {}
+        // PSD blend/opacity preservados no thumb. Sem isso, step thumbs (auto-gen
+        // ou export) renderizam multiply/screen como "source-over" — preview
+        // diferente do editor que respeita esses.
+        const psdProps: any = {}
+        if (typeof layer.opacity === "number" && layer.opacity < 1 && layer.opacity >= 0.01) {
+          psdProps.opacity = layer.opacity
+        }
+        if (typeof layer.blendMode === "string" && layer.blendMode && layer.blendMode !== "source-over") {
+          psdProps.globalCompositeOperation = layer.blendMode
+        }
         if (asset.type === "IMAGE") {
           if (!asset.imageUrl) continue
           try {
@@ -3509,6 +4664,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             })
             const fimg = new FabricImage(img, {
               left, top, scaleX: sx, scaleY: sy, angle,
+              ...psdProps,
             })
             sfc.add(fimg)
           } catch (e) { /* skip */ }
@@ -3535,6 +4691,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             textAlign: overrides.textAlign ?? "left",
             lineHeight: overrides.lineHeight ?? 1.0,
             charSpacing: overrides.charSpacing ?? 0,
+            ...psdProps,
           })
           if (overrides.styles) {
             // styles per-char tem fontSize na escala da peca; precisa re-escalar
@@ -3692,7 +4849,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const offsetX = vt[4] ?? 0
       const offsetY = vt[5] ?? 0
       const dataUrl = fc.toDataURL({
-        format: "jpeg", quality: 0.92,
+        // PNG (nao JPEG): preserva o canal alpha quando a peca tem mascaras
+        // raster com transparencia ou bg transparente. JPEG flatava tudo
+        // pra cor solida — apresentacao perdia o look correto.
+        format: "png",
         multiplier: thumbScale / z,
         left: offsetX, top: offsetY,
         width: canvasWRef.current * z,
@@ -3700,8 +4860,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       const blob = await (await fetch(dataUrl)).blob()
       const fd = new FormData()
-      fd.append("thumbnail", blob, "kv-thumb.jpg")
+      fd.append("thumbnail", blob, "kv-thumb.png")
       await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+      // Broadcast cross-tab pra preview em outras paginas (campanhas list,
+      // dashboard) refetch o KV thumb atualizado.
+      try {
+        if (typeof BroadcastChannel !== "undefined") {
+          const bc = new BroadcastChannel("zzosy-campaigns")
+          bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
+          bc.close()
+        }
+      } catch {}
     } catch (e) { console.warn("[uploadMatrixThumb] fail:", e) }
   }
 
@@ -3744,6 +4913,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         srvLog("uploadPieceThumb-STEP-FAIL", { error: String(e?.message ?? e) })
       }
     }
+    // Broadcast pra OUTRAS ABAS (lista de pecas, apresentacao) atualizarem
+    // preview em tempo real. BroadcastChannel funciona same-origin entre tabs
+    // sem precisar de server push. Listener em /pieces refetch imediato.
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        const bc = new BroadcastChannel("zzosy-pieces")
+        bc.postMessage({ type: "piece-updated", pieceId: pId, campaignId, ts: Date.now() })
+        bc.close()
+      }
+    } catch {}
   }
 
   // Helper: envia log do client pro terminal do servidor (pra debug fica
@@ -3797,6 +4976,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
     savingInFlightRef.current = true
     setSaving(true)
+    // Flush sincrono de PUTs de asset pendentes ANTES de gravar peca/KV.
+    // Sem isso, layer.overrides poderia referenciar template antigo do asset
+    // (lastOverride debounceado nao subiu ainda) — proxima peca gerada herda
+    // o estado errado.
+    try { await flushPendingAssetPuts() } catch {}
     // Snapshot dos refs ALVO desta operacao. Se o user navegar pra outra peca
     // no meio, este save ainda persistira a peca onde a edicao foi feita
     // (em vez de gravar dados antigos sobre a peca nova).
@@ -3877,6 +5061,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (o.styles && Object.keys(o.styles).length > 0) {
               layer.overrides.styles = o.styles
             }
+            // DS link: persiste false explicito quando user customizou. True
+            // eh default, omitido pra economizar JSON.
+            if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
           }
           return layer
         })
@@ -4040,6 +5227,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (o.styles && Object.keys(o.styles).length > 0) {
               layer.overrides.styles = o.styles
             }
+            if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
           }
           return layer
         })
@@ -4071,7 +5259,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
         const dataUrl = fc.toDataURL({
-          format: "jpeg", quality: 0.92,
+          // PNG preserva alpha (ver comentario em uploadMatrixThumb).
+          format: "png",
           multiplier: thumbScale / z,
           left: offsetX,
           top: offsetY,
@@ -4080,7 +5269,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         })
         const blob = await (await fetch(dataUrl)).blob()
         const fd = new FormData()
-        fd.append("thumbnail", blob, "kv-thumb.jpg")
+        fd.append("thumbnail", blob, "kv-thumb.png")
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
       } catch (e) { console.warn("KV thumb upload failed:", e) }
     }
@@ -4321,7 +5510,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // IndexedDB. Próximas chamadas reusam a mesma pasta.
   async function idbGet(key: string): Promise<any> {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open("zzysy-handles", 1)
+      const req = indexedDB.open("zzosy-handles", 1)
       req.onupgradeneeded = () => req.result.createObjectStore("h")
       req.onsuccess = () => {
         try {
@@ -4337,7 +5526,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   }
   async function idbSet(key: string, value: any): Promise<void> {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open("zzysy-handles", 1)
+      const req = indexedDB.open("zzosy-handles", 1)
       req.onupgradeneeded = () => req.result.createObjectStore("h")
       req.onsuccess = () => {
         try {
@@ -4435,7 +5624,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         externalPsdHandle.current = fileHandle
         setExternalPsdName(fileName)
         const path = `${clientName} / ${campName} / ${vehName} / ${mediaName} / ${fileName}`
-        alert(`✅ PSD salvo em:\n${path}\n\n1. Abra o arquivo no Photoshop\n2. Edite + salve (Cmd+S)\n3. Volta e clica 🔄 Sync`)
+        alert(`PSD salvo em:\n${path}\n\n1. Abra o arquivo no Photoshop\n2. Edite + salve (Cmd+S)\n3. Volta e clica em Sync`)
       } else {
         // Fallback: download
         const url = URL.createObjectURL(blob)
@@ -4443,7 +5632,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         a.href = url; a.download = fileName
         document.body.appendChild(a); a.click()
         setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 100)
-        alert(`📁 PSD baixado: ${fileName}\n\nSeu browser não suporta sync automático (use Chrome ou Edge).\nDepois de editar no Photoshop, re-importe o arquivo via "📁 PSD".`)
+        alert(`PSD baixado: ${fileName}\n\nSeu browser não suporta sync automático (use Chrome ou Edge).\nDepois de editar no Photoshop, re-importe o arquivo via "PSD".`)
       }
     } catch (e: any) {
       if (e?.name === "AbortError") return
@@ -4458,7 +5647,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   async function syncFromExternalApp() {
     const handle = externalPsdHandle.current
     if (!handle) {
-      alert("Nenhum PSD externo vinculado. Use '🎨 Editar Externo' primeiro.")
+      alert("Nenhum PSD externo vinculado. Use 'Editar Externo' primeiro.")
       return
     }
     try {
@@ -4556,10 +5745,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (c) psdBg = { kind: "solid", color: c, opacity: 1 }
       }
 
-      // Index de assets por nome normalizado pra match rapido
+      // Index de assets por nome normalizado pra match rapido. Usa normalizeName
+      // (mesma logica do PsdPieceImporter + import-psd endpoint) — remove acentos
+      // e espacos internos, garantindo match consistente em todos os caminhos.
       const assetsByName = new Map<string, any>()
       for (const a of (camp.assets ?? [])) {
-        const k = (a.label ?? "").trim().toLowerCase()
+        const k = normalizeName(a.label ?? "")
         if (k) assetsByName.set(k, a)
       }
 
@@ -4584,7 +5775,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       for (const layer of leaves) {
         const name = (layer.name ?? "").trim()
         if (!name || name === "Background") { ignored++; continue }
-        const asset = assetsByName.get(name.toLowerCase())
+        const asset = assetsByName.get(normalizeName(name))
         if (!asset) {
           ignored++
           missingNames.push(name)
@@ -4740,17 +5931,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // ============================================================
 
   function doSave() {
-    // Debounce 800ms: usado por mudancas frequentes (drag, digitacao, edit).
-    clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(performSave, 800)
+    // MODO MANUAL: NAO faz auto-save mais. Apenas marca dirty pra que o
+    // botao "Salvar" no header e o confirm-exit ao fechar saibam que ha
+    // mudancas pendentes. User precisa clicar Salvar explicitamente — UX
+    // pedido pelo user: "nao e para o editor salvar automatico".
+    isDirtyRef.current = true
+    setIsDirty(true)
   }
 
   function doSaveNow(): Promise<void> {
-    // Sem debounce: usado por acoes deliberadas do user (toggle olho/cadeado).
-    // Retorna a Promise do performSave pra quem precisar aguardar (ex: addStep
-    // antes de fazer upload do thumb do novo step, evitando race condition).
-    clearTimeout(saveTimer.current)
-    return performSave()
+    // Manual mode: doSaveNow tb so marca dirty agora. Operacoes que precisam
+    // de sync REAL com banco (add step, undo/redo que pre-popula thumb)
+    // chamam performSave() diretamente.
+    isDirtyRef.current = true
+    setIsDirty(true)
+    return Promise.resolve()
+  }
+
+  /**
+   * Flush sincrono dos PUTs debounceados pendentes de asset (lastOverride +
+   * content). Necessario antes de qualquer save manual/automatico pra que o
+   * banco esteja com o template/content mais recente antes do PATCH da peca/KV
+   * persistir layers. Sem isso, race: PATCH grava layer.overrides apontando
+   * pra template antigo que ainda nao subiu.
+   */
+  async function flushPendingAssetPuts(): Promise<void> {
+    clearTimeout(lastOverridePutTimer.current)
+    clearTimeout(assetContentPutTimer.current)
+    const promises: Promise<any>[] = []
+    const p1 = lastOverridePendingPayload.current
+    if (p1) {
+      lastOverridePendingPayload.current = null
+      promises.push(fetch(`/api/campaigns/${campaignId}/assets/${p1.aid}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p1.payload),
+      }).catch(err => console.warn("[flush lastOverride] failed:", err)))
+    }
+    const p2 = assetContentPendingPayload.current
+    if (p2) {
+      assetContentPendingPayload.current = null
+      promises.push(fetch(`/api/campaigns/${campaignId}/assets/${p2.aid}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p2.payload),
+      }).catch(err => console.warn("[flush assetContent] failed:", err)))
+    }
+    if (promises.length > 0) await Promise.all(promises)
   }
 
   async function performSave() {
@@ -4775,8 +6000,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       saveTimer.current = setTimeout(performSave, 200)
       return
     }
+    // Mutex de save: se outro save ja esta em voo (saveNow ou performSave),
+    // ESPERA terminar antes de prosseguir. Sem isso, 2 performSave paralelos
+    // gravavam a mesma peca em PATCHes concorrentes — ultimo ganhava, podia
+    // sobrescrever dados mais recentes do primeiro.
+    if (savingInFlightRef.current) {
+      const startWait = Date.now()
+      while (savingInFlightRef.current && Date.now() - startWait < 5000) {
+        await new Promise(r => setTimeout(r, 50))
+      }
+      if (savingInFlightRef.current) {
+        editorLog("[performSave] timeout esperando save anterior — abortando")
+        return
+      }
+    }
+    savingInFlightRef.current = true
+    // Flush sincrono de PUTs de asset pendentes ANTES de gravar peca/KV.
+    // Sem isso, layer.overrides poderia referenciar template antigo do asset
+    // (lastOverride debounceado nao subiu ainda).
+    try { await flushPendingAssetPuts() } catch {}
     const fc = fabricRef.current
-    if (!fc) return
+    if (!fc) { savingInFlightRef.current = false; return }
     setSaving(true)
 
     if (pieceId && pieceRef.current) {
@@ -4902,6 +6146,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           isDirtyRef.current = false
           setIsDirty(false)
           setSaving(false)
+          savingInFlightRef.current = false
           return
         }
       }
@@ -5060,6 +6305,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (hadLayers) {
           editorLog("[SAVE-MATRIX-2] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
           setSaving(false)
+          savingInFlightRef.current = false
           return
         }
       }
@@ -5083,7 +6329,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
         const dataUrl = fc.toDataURL({
-          format: "jpeg", quality: 0.92,
+          // PNG preserva alpha (ver comentario em uploadMatrixThumb).
+          format: "png",
           multiplier: thumbScale / z,
           left: offsetX,
           top: offsetY,
@@ -5092,13 +6339,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         })
         const blob = await (await fetch(dataUrl)).blob()
         const fd = new FormData()
-        fd.append("thumbnail", blob, "kv-thumb.jpg")
+        fd.append("thumbnail", blob, "kv-thumb.png")
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
       } catch (e) { console.warn("KV thumb upload failed:", e) }
       isDirtyRef.current = false
       setIsDirty(false)
     }
     setSaving(false)
+    savingInFlightRef.current = false
   }
 
   // Cria um asset TEXT novo na campanha + auto-seleciona ele no dropdown +
@@ -5437,10 +6685,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     bgOpacityRef.current = layers[0].opacity
     setBgOpacity(layers[0].opacity)
     if (layers[0].kind === "solid") {
-      bgColorRef.current = layers[0].color
-      setBgColor(layers[0].color)
+      const c = typeof layers[0].color === "string" ? layers[0].color : "#ffffff"
+      bgColorRef.current = c
+      setBgColor(c)
     } else if (layers[0].kind === "gradient") {
-      const c = layers[0].stops[0]?.color ?? "#ffffff"
+      const c = typeof layers[0].stops?.[0]?.color === "string" ? layers[0].stops[0].color : "#ffffff"
       bgColorRef.current = c
       setBgColor(c)
     }
@@ -5500,8 +6749,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (fill) setHexInput(fill)
   }, [selected, selectedTick])
 
-  // Sincroniza bgHexInput com bgColor
-  useEffect(() => { setBgHexInput(bgColor) }, [bgColor])
+  // Sincroniza bgHexInput com bgColor. Defensiva: bgColor sempre string aqui.
+  useEffect(() => { setBgHexInput(typeof bgColor === "string" ? bgColor : "#ffffff") }, [bgColor])
+
+  // Auto-scroll: traz o row do layer selecionado pro foco no painel Layers.
+  // Quando o user seleciona um obj no CANVAS (clicando direto nele), o
+  // painel pode estar com scroll diferente e o row sumido. Smooth scroll
+  // pra ficar evidente onde ele esta na arvore.
+  // Tambem dispara pulse de glow no row pra chamar a atencao do user —
+  // remonta a div via key={layerPulseKey} pra reiniciar a CSS animation.
+  useEffect(() => {
+    if (!selected) return
+    setLayerPulseKey(k => k + 1)
+    // rAF pra esperar o re-render terminar antes de medir o DOM
+    requestAnimationFrame(() => {
+      try {
+        const el = document.querySelector<HTMLElement>('[data-layer-selected="1"]')
+        if (!el) return
+        // scrollIntoView com block: "nearest" so rola se necessario (UX boa)
+        el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+      } catch {}
+    })
+  }, [selected, selectedTick])
 
   // Sincroniza bgColor/bgOpacity state com o BG layer ATUALMENTE selecionado.
   // Quando nada esta selecionado, mostra os valores do BG[0] (fundo) — UX
@@ -5613,11 +6882,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const asset = c.assets.find((a: Asset) => a.id === aid)
       if (asset) (asset as any).lastOverride = lastOverride
     }
-    // Persiste no banco (fire-and-forget)
-    fetch(`/api/campaigns/${campaignId}/assets/${aid}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lastOverride }),
-    }).catch(err => console.warn("[updateAssetLastOverride] failed:", err))
+    // Persiste no banco com DEBOUNCE 400ms: sliders/inputs em sequencia rapida
+    // antes acumulavam 1 PUT por mudanca, sobrecarregando a API. O ultimo PUT
+    // ganha (mantem payload mais recente).
+    lastOverridePendingPayload.current = { aid, payload: { lastOverride } }
+    clearTimeout(lastOverridePutTimer.current)
+    lastOverridePutTimer.current = setTimeout(() => {
+      const pending = lastOverridePendingPayload.current
+      if (!pending) return
+      lastOverridePendingPayload.current = null
+      fetch(`/api/campaigns/${campaignId}/assets/${pending.aid}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pending.payload),
+      }).catch(err => console.warn("[updateAssetLastOverride] failed:", err))
+    }, 400)
   }
 
   // Matriz: propaga caracteres editados pro asset.content (fonte da verdade
@@ -5696,10 +6974,98 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const asset = c.assets.find((a: Asset) => a.id === aid)
       if (asset) (asset as any).content = finalSpans
     }
-    fetch(`/api/campaigns/${campaignId}/assets/${aid}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: finalSpans }),
-    }).catch(err => console.warn("[updateAssetContent] failed:", err))
+    // PUT debounceado 400ms — content do asset dispara TRANSACTION pesada
+    // (migra styles em todas pecas + matriz). Sem debounce, sair de edicao
+    // rapida em multiplos textboxes acumulava 1 transaction por exit.
+    assetContentPendingPayload.current = { aid, payload: { content: finalSpans } }
+    clearTimeout(assetContentPutTimer.current)
+    assetContentPutTimer.current = setTimeout(() => {
+      const pending = assetContentPendingPayload.current
+      if (!pending) return
+      assetContentPendingPayload.current = null
+      fetch(`/api/campaigns/${campaignId}/assets/${pending.aid}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pending.payload),
+      }).catch(err => console.warn("[updateAssetContent] failed:", err))
+    }, 400)
+  }
+
+  /**
+   * Substitui cirurgicamente uma fonte missing por outra disponivel em TODOS
+   * os textboxes do canvas que usam essa variante exata (family + weight + style).
+   * Adobe-style "Replace Missing Fonts": preserva textos que usam outras variantes
+   * da mesma familia (ex: substituir Sicredi Sans Bold Italic nao mexe em
+   * Sicredi Sans Regular). Per-char styles tambem sao varridos.
+   *
+   * Persiste via doSave; canvas re-mede com initDimensions.
+   */
+  function substituteFontInCanvas(
+    oldFamily: string,
+    oldWeight: number,
+    oldStyle: "normal" | "italic",
+    newFamily: string,
+  ) {
+    const fc = fabricRef.current
+    if (!fc) return
+    const weightToNum = (w: any): number => {
+      if (typeof w === "number") return w
+      if (typeof w === "string") {
+        const lower = w.trim().toLowerCase()
+        if (lower === "bold") return 700
+        if (lower === "normal" || lower === "regular") return 400
+        const n = Number(lower)
+        if (Number.isFinite(n) && n > 0) return n
+      }
+      return 400
+    }
+    const styleToCanon = (s: any): "normal" | "italic" =>
+      typeof s === "string" && /italic|oblique/i.test(s) ? "italic" : "normal"
+    let touched = 0
+    for (const o of fc.getObjects()) {
+      if (o.type !== "textbox" && o.type !== "i-text") continue
+      const tb = o as any
+      // CRITICO: captura defaults ORIGINAIS antes de mexer — fallback per-char
+      // precisa comparar contra o que estava antes da substituicao, nao depois.
+      const originalDefaultFamily = tb.fontFamily
+      const originalDefaultWeight = tb.fontWeight
+      const originalDefaultStyle = tb.fontStyle
+      // Default do textbox: troca se a variante bate exatamente
+      if (originalDefaultFamily === oldFamily
+          && weightToNum(originalDefaultWeight) === oldWeight
+          && styleToCanon(originalDefaultStyle) === oldStyle) {
+        tb.set("fontFamily", newFamily)
+        touched++
+      }
+      // Per-char: itera styles e troca cada char que bate
+      const styles = tb.styles
+      if (styles && typeof styles === "object") {
+        for (const lineKey of Object.keys(styles)) {
+          const line = styles[lineKey]
+          if (!line || typeof line !== "object") continue
+          for (const colKey of Object.keys(line)) {
+            const cs = line[colKey]
+            if (!cs) continue
+            const charFamily = cs.fontFamily ?? originalDefaultFamily
+            const charWeight = weightToNum(cs.fontWeight ?? originalDefaultWeight)
+            const charStyle = styleToCanon(cs.fontStyle ?? originalDefaultStyle)
+            if (charFamily === oldFamily && charWeight === oldWeight && charStyle === oldStyle) {
+              cs.fontFamily = newFamily
+              touched++
+            }
+          }
+        }
+      }
+      if ((tb as any).initDimensions) (tb as any).initDimensions()
+      tb.setCoords()
+    }
+    if (touched > 0) {
+      fc.requestRenderAll()
+      isDirtyRef.current = true
+      setIsDirty(true)
+      if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+      doSave()
+    }
+    return touched
   }
 
   function applyStyle(key: string, val: any, brandIdx?: number) {
@@ -5716,6 +7082,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       } else {
         delete (obj as any).__fillBrandIdx
       }
+    }
+    // DS link: mudanca via Properties Panel em campos tipograficos quebra o
+    // vinculo com o Design System (esse layer fica "customizado"). Scale,
+    // posicao, rotacao, fill NAO quebram — soh esses 5 campos centrais:
+    // fontFamily/fontWeight/fontSize/leadingPt/charSpacing (+ fontStyle).
+    // Bolinha no painel de layers vira vermelha. Setado APENAS quando o
+    // user atua via UI (esta funcao), nao em re-set programatico de save/load.
+    // INCLUI fill (cor) quando aplicado SEM brandIdx — cor custom (hex picker)
+    // quebra link com DS. Cor de swatch da marca (brandIdx setado) mantem link.
+    // Sem isso, server propagava preset e sobrescrevia override de cor sem
+    // detectar que o user havia customizado.
+    const breaksDsLink =
+      key === "fontFamily" || key === "fontWeight" || key === "fontStyle"
+      || key === "fontSize" || key === "leadingPt" || key === "charSpacing"
+      || (key === "fill" && typeof brandIdx !== "number")
+    if (breaksDsLink) {
+      ;(obj as any).__dsLinked = false
     }
 
     const isText = obj.type === "textbox" || obj.type === "i-text"
@@ -5757,8 +7140,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // (ex: ate observado que pode "comer" espacos em algumas situacoes de styles per-char).
       if (styleKey !== "fill" && (obj as any).initDimensions) (obj as any).initDimensions()
     } else if (isText) {
-      // Aplica como default do textbox. Caracteres com override per-char MANTEM seu estilo
-      // (igual Photoshop: mudar a cor padrao nao apaga as cores das letras especificas).
+      // Aplica como default do textbox. Caracteres com override per-char MANTEM
+      // seu estilo PRA COR (Photoshop: mudar cor padrao nao apaga cores das
+      // letras especificas). MAS pra fontSize/fontFamily/fontWeight sem
+      // selecao parcial, o user esperava "mudar tudo" — sintoma reportado:
+      // "nao consigo alterar o tamanho da fonte do titulo". Removemos os
+      // per-char overrides desses campos pra que o set() default tenha efeito
+      // visual completo.
+      if (styleKey === "fontSize" || styleKey === "fontFamily" || styleKey === "fontWeight" || styleKey === "fontStyle") {
+        const styles = (obj as any).styles
+        if (styles && typeof styles === "object") {
+          for (const lineKey of Object.keys(styles)) {
+            const line = styles[lineKey]
+            if (!line || typeof line !== "object") continue
+            for (const colKey of Object.keys(line)) {
+              if (line[colKey] && Object.prototype.hasOwnProperty.call(line[colKey], styleKey)) {
+                delete line[colKey][styleKey]
+              }
+              // Limpa entry vazio pra nao deixar lixo
+              if (line[colKey] && Object.keys(line[colKey]).length === 0) delete line[colKey]
+            }
+            if (Object.keys(line).length === 0) delete styles[lineKey]
+          }
+        }
+      }
       obj.set(styleKey, value)
       // Adobe-style: leading e fontSize sao independentes. Quando muda fontSize, o leadingPt
       // (em pontos absolutos) fica congelado, mas o lineHeight do Fabric (multiplicador)
@@ -5777,6 +7182,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // que sera aplicado em swaps futuros e novas pecas.
     if (isText) updateAssetLastOverride(obj)
 
+    // History: applyStyle modifica obj via setSelectionStyles/.set, e Fabric
+    // NAO dispara object:modified em mudancas programaticas (so em mouse
+    // drag/resize/rotate). Sem push explicito, mudanças de cor/fontSize/
+    // fontFamily/charSpacing/lineHeight/textAlign nao entram no undo stack.
+    // Sintoma reportado: "undo desfaz config do texto que nao foi tocado
+    // nessa acao" — porque o snap anterior nem capturou o estado COM config.
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
     // Modelo final: styles editados via painel direito sao SEMPRE locais
     // (override do layer), tanto na matriz quanto na peca. Nao propaga pro asset.
     doSave()
@@ -5796,6 +7208,45 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     ;(obj as any).setCoords()
     fc.renderAll()
     setSelectedTick(t => t + 1)
+    // History: mudanca programatica nao dispara object:modified.
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+    doSave()
+  }
+
+  /**
+   * Aplica blend mode (PSD-style) no objeto selecionado. Canvas usa nomes
+   * `globalCompositeOperation` (multiply, screen, overlay, etc). Persistido
+   * no save como layer.blendMode (round-trip pro PSD).
+   *
+   * "source-over" = Normal (default). Outros valores ativam blending no
+   * canvas Fabric. Funciona pra qualquer tipo de objeto (texto, imagem, etc).
+   */
+  function changeObjectBlendMode(mode: string) {
+    const fc = fabricRef.current; const obj = selected
+    if (!fc || !obj) return
+    ;(obj as any).set("globalCompositeOperation", mode)
+    fc.requestRenderAll()
+    setSelectedTick(t => t + 1)
+    isDirtyRef.current = true
+    setIsDirty(true)
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+    doSave()
+  }
+
+  /**
+   * Opacidade 0..1 do objeto selecionado. Round-trip: vira layer.opacity
+   * (preservado no PSD export).
+   */
+  function changeObjectOpacity(opacity: number) {
+    const fc = fabricRef.current; const obj = selected
+    if (!fc || !obj) return
+    const clamped = Math.max(0, Math.min(1, opacity))
+    ;(obj as any).set("opacity", clamped)
+    fc.requestRenderAll()
+    setSelectedTick(t => t + 1)
+    isDirtyRef.current = true
+    setIsDirty(true)
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
     doSave()
   }
 
@@ -5830,6 +7281,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (!isText) return
     if (pt === null) delete obj.leadingPt
     else obj.leadingPt = pt
+    // DS link: alterar leading via Properties Panel quebra o vinculo.
+    obj.__dsLinked = false
     syncLineHeightFromLeading(obj)
     if (obj.initDimensions) obj.initDimensions()
     obj.setCoords()
@@ -5844,6 +7297,120 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   function changeZoom(delta: number) {
     const fc = fabricRef.current; if (!fc) return
     applyZoom(fc, Math.min(3, Math.max(0.05, zoomRef.current + delta)))
+  }
+
+  /**
+   * Centraliza a peca no viewport com zoom fit — mesma logica do init: reserva
+   * HANDLE_MARGIN ao redor da peca pros handles aparecerem mesmo em objetos
+   * que extrapolam o artboard. applyZoom recalcula offset + overlays. Util
+   * quando o user faz pan/zoom e quer voltar ao estado inicial.
+   *
+   * Atalho: Shift+1 (estilo Figma) ou clica em "Centralizar" na barra.
+   */
+  function centerView() {
+    const fc = fabricRef.current; if (!fc) return
+    const fullW = (fabricRef as any).__canvasFullW ?? fc.getWidth()
+    const fullH = (fabricRef as any).__canvasFullH ?? fc.getHeight()
+    const cw = canvasWRef.current
+    const ch = canvasHRef.current
+    const HANDLE_MARGIN = 120
+    const z = Math.round(Math.min(0.8,
+      Math.max(0.05, (fullW - HANDLE_MARGIN * 2) / cw),
+      Math.max(0.05, (fullH - HANDLE_MARGIN * 2) / ch),
+    ) * 100) / 100
+    applyZoom(fc, z)
+  }
+
+  /**
+   * Alinha o objeto selecionado ao centro da PECA (artboard), tanto horizontal
+   * quanto verticalmente. Usa aCoords pra bbox real (respeita scale + rotacao);
+   * fallback pra left/top/width/height quando aCoords nao disponivel.
+   *
+   * Importante: aqui "centro do canvas" eh o CENTRO DA PECA (coords do mundo
+   * Fabric: cw/2, ch/2), nao o centro do canvas DOM. Sem isso, com zoom/pan
+   * arbitrarios, o objeto cairia em pixels que nao tem nada a ver com a peca.
+   *
+   * Suporta ActiveSelection: move todo o grupo preservando spacing relativo.
+   */
+  function centerObjectInCanvas() {
+    const fc = fabricRef.current; if (!fc) return
+    const active = fc.getActiveObject() as any
+    if (!active) return
+    if ((active as any).__isBg || (active as any).__isBleedOverlay) return
+    const cw = canvasWRef.current
+    const ch = canvasHRef.current
+    // Pega bbox em coords do mundo
+    let bx: number, by: number, bw: number, bh: number
+    if (active.aCoords) {
+      const br = active.aCoords
+      const xs = [br.tl.x, br.tr.x, br.bl.x, br.br.x]
+      const ys = [br.tl.y, br.tr.y, br.bl.y, br.br.y]
+      bx = Math.min(...xs); by = Math.min(...ys)
+      bw = Math.max(...xs) - bx; bh = Math.max(...ys) - by
+    } else {
+      bx = active.left ?? 0
+      by = active.top ?? 0
+      bw = (active.width ?? 100) * (active.scaleX ?? 1)
+      bh = (active.height ?? 100) * (active.scaleY ?? 1)
+    }
+    // Delta pra centralizar bbox no centro da peca
+    const dx = (cw - bw) / 2 - bx
+    const dy = (ch - bh) / 2 - by
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+    active.set({
+      left: (active.left ?? 0) + dx,
+      top: (active.top ?? 0) + dy,
+    })
+    active.setCoords()
+    fc.fire("object:modified", { target: active })
+    fc.requestRenderAll?.()
+  }
+
+  /**
+   * Zoom-to-selection (estilo Figma Shift+2): ajusta zoom e pan pra que o
+   * objeto ativo (ou ActiveSelection) preencha o viewport com margem. Se nada
+   * estiver selecionado, faz o mesmo que centerView (fit da peca).
+   *
+   * Atalho: Shift+2.
+   */
+  function zoomToSelection() {
+    const fc = fabricRef.current; if (!fc) return
+    const active = fc.getActiveObject() as any
+    if (!active) { centerView(); return }
+    // bbox em coords do mundo
+    const br = active.aCoords ?? null
+    let minX: number, minY: number, maxX: number, maxY: number
+    if (br) {
+      minX = Math.min(br.tl.x, br.tr.x, br.bl.x, br.br.x)
+      maxX = Math.max(br.tl.x, br.tr.x, br.bl.x, br.br.x)
+      minY = Math.min(br.tl.y, br.tr.y, br.bl.y, br.br.y)
+      maxY = Math.max(br.tl.y, br.tr.y, br.bl.y, br.br.y)
+    } else {
+      const l = active.left ?? 0, t = active.top ?? 0
+      const w = (active.width ?? 100) * (active.scaleX ?? 1)
+      const h = (active.height ?? 100) * (active.scaleY ?? 1)
+      minX = l; minY = t; maxX = l + w; maxY = t + h
+    }
+    const bw = Math.max(1, maxX - minX)
+    const bh = Math.max(1, maxY - minY)
+    const fullW = (fabricRef as any).__canvasFullW ?? fc.getWidth()
+    const fullH = (fabricRef as any).__canvasFullH ?? fc.getHeight()
+    // Margem maior pro objeto nao encostar nas bordas
+    const PAD = 160
+    const z = Math.round(Math.min(3,
+      Math.max(0.05, (fullW - PAD * 2) / bw),
+      Math.max(0.05, (fullH - PAD * 2) / bh),
+    ) * 100) / 100
+    // Aplica zoom (recria overlays + setViewportTransform). Depois ajusta vt
+    // pra centralizar o objeto especifico no canvas DOM.
+    applyZoom(fc, z)
+    const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    vt[4] = fullW / 2 - cx * z
+    vt[5] = fullH / 2 - cy * z
+    fc.setViewportTransform(vt)
+    fc.requestRenderAll?.()
   }
 
   /**
@@ -5933,7 +7500,64 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (typeof newTplH === "number") swapHeight = newTplH
     }
 
-    const layerSpec = {
+    // Pra IMAGE: pre-carrega a imagem do novo asset pra descobrir naturalW/H
+    // e calcular scale uniforme baseado na MENOR DIMENSAO do current. Sem
+    // isso, o novo asset herdava width E height do current e distorcia (caia
+    // no caminho "width + height explicitos -> stretch" do addAssetToCanvas).
+    // Anchor point: centro do bbox do current (vertical + horizontal). Mantem
+    // o asset novo onde o antigo estava.
+    let imageLayerOverride: { posX: number; posY: number; scaleX: number; scaleY: number } | null = null
+    if (newAsset.type === "IMAGE" && newAsset.imageUrl) {
+      try {
+        const naturalDims = await new Promise<{ w: number; h: number } | null>((resolve) => {
+          const el = new window.Image()
+          el.crossOrigin = "anonymous"
+          el.onload = () => resolve({ w: el.naturalWidth || el.width || 1, h: el.naturalHeight || el.height || 1 })
+          el.onerror = () => resolve(null)
+          el.src = newAsset.imageUrl!
+        })
+        if (naturalDims) {
+          // Bbox em coords do mundo do current. aCoords respeita scale+rotation.
+          let bx: number, by: number, bw: number, bh: number
+          const aC = (currentObj as any).aCoords
+          if (aC) {
+            const xs = [aC.tl.x, aC.tr.x, aC.bl.x, aC.br.x]
+            const ys = [aC.tl.y, aC.tr.y, aC.bl.y, aC.br.y]
+            bx = Math.min(...xs); by = Math.min(...ys)
+            bw = Math.max(...xs) - bx; bh = Math.max(...ys) - by
+          } else {
+            bx = currentObj.left ?? 0
+            by = currentObj.top ?? 0
+            bw = (currentObj.width ?? 100) * (currentObj.scaleX ?? 1)
+            bh = (currentObj.height ?? 100) * (currentObj.scaleY ?? 1)
+          }
+          const minSide = Math.min(bw, bh)
+          // Scale uniforme: novo asset cabe dentro do menor lado preservando
+          // aspect ratio. Se asset eh wide e current eh tall, encolhe pelo
+          // height; se asset eh tall e current eh wide, encolhe pelo width.
+          const maxNatural = Math.max(naturalDims.w, naturalDims.h)
+          const scale = minSide / maxNatural
+          const scaledW = naturalDims.w * scale
+          const scaledH = naturalDims.h * scale
+          // Anchor central: posiciona o novo asset com center = center do current.
+          imageLayerOverride = {
+            posX: bx + (bw - scaledW) / 2,
+            posY: by + (bh - scaledH) / 2,
+            scaleX: scale,
+            scaleY: scale,
+          }
+        }
+      } catch (e) { editorLog("[swapAsset] preload image falhou:", e) }
+    }
+
+    const layerSpec = imageLayerOverride ? {
+      posX: imageLayerOverride.posX,
+      posY: imageLayerOverride.posY,
+      scaleX: imageLayerOverride.scaleX,
+      scaleY: imageLayerOverride.scaleY,
+      rotation: currentObj.angle ?? 0,
+      overrides: newAssetOverrides,
+    } : {
       posX: currentObj.left ?? 0,
       posY: currentObj.top ?? 0,
       width: swapWidth,
@@ -6003,9 +7627,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   return (
     <div ref={wrapperRef} style={{ position: "fixed", inset: 0, background: "#1e1e1e", overflow: "hidden" }}>
+      {/* CSS keyframes pra pulse de destaque do row selecionado no painel
+          Layers. Usa CSS variable --zzosy-accent setada no row pra refletir
+          a cor da marca atual. 3 batidas em 1.2s, depois descansa. */}
+      <style>{`
+        @keyframes zzosy-layer-pulse {
+          0%   { box-shadow: 0 0 0 2px transparent; background: transparent; }
+          15%  { box-shadow: 0 0 20px 4px var(--zzosy-accent-strong), inset 0 0 0 2px var(--zzosy-accent); background: var(--zzosy-accent-soft); }
+          35%  { box-shadow: 0 0 8px 1px var(--zzosy-accent-soft); background: var(--zzosy-accent-faint); }
+          55%  { box-shadow: 0 0 20px 4px var(--zzosy-accent-strong), inset 0 0 0 2px var(--zzosy-accent); background: var(--zzosy-accent-soft); }
+          75%  { box-shadow: 0 0 8px 1px var(--zzosy-accent-soft); background: var(--zzosy-accent-faint); }
+          100% { box-shadow: 0 0 0 2px transparent; background: var(--zzosy-accent-faint); }
+        }
+      `}</style>
       <div style={{
         position: "absolute",
-        left: LW, top: TH + BH, right: PW, bottom: 0,
+        left: layersPanelWidth, top: TH + BH, right: PW, bottom: 0,
         overflow: "hidden",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
@@ -6041,19 +7678,56 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // frescos do servidor.
             if (typeof window !== "undefined") window.location.href = dest
           }
-          // Se ha mudancas nao salvas, mostra dialog de confirmacao (Cancelar /
-          // Descartar / Salvar e sair). Sem isso, o usuario pode perder edicoes
-          // por engano se o auto-save ainda nao tiver disparado.
+          // Pergunta SOMENTE quando ha mudancas pendentes. Se tudo salvo,
+          // navega direto — perguntar "deseja sair" sem razao real era
+          // interrupcao desnecessaria (user clicou em Voltar => quer voltar).
           if (isDirtyRef.current) {
             setConfirmExit(() => navigate)
-            return
+          } else {
+            navigate()
           }
-          navigate()
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
           title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
           {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
         </button>
         <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
+        {/* Indicador de estado de save — explicita pro user antes do clique:
+            "Não salvo" laranja = clicar Voltar pergunta antes de sair.
+            "Salvo" cinza  = clicar Voltar vai direto.
+            Sem isso, o comportamento "pergunta vs nao pergunta" parecia
+            aleatorio porque o auto-save de 800ms muda isDirty no meio. */}
+        <span
+          title={isDirty || saving
+            ? "Há alterações não salvas — clique Salvar"
+            : "Tudo salvo"}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            fontSize: 11, marginLeft: 8,
+            color: isDirty || saving ? "#f59e0b" : "#4ade80",
+          }}>
+          <span style={{
+            display: "inline-block", width: 7, height: 7, borderRadius: "50%",
+            background: isDirty || saving ? "#f59e0b" : "#4ade80",
+          }} />
+          {saving ? "Salvando…" : isDirty ? "Não salvo" : "Salvo"}
+        </span>
+        {/* Botao SALVAR manual. Editor nao salva mais automatico — user precisa
+            clicar pra persistir. Disabled quando nada mudou OU ja esta salvando. */}
+        <button
+          onClick={() => { performSave() }}
+          disabled={!isDirty || saving}
+          title={!isDirty ? "Nada pra salvar" : saving ? "Aguarde…" : "Salvar alteracoes"}
+          style={{
+            background: (!isDirty || saving) ? "#1a1a1a" : "#F5C400",
+            border: (!isDirty || saving) ? "1px solid #333" : "none",
+            borderRadius: 6, padding: "6px 14px", marginLeft: 8,
+            fontWeight: 700, fontSize: 13,
+            cursor: (!isDirty || saving) ? "not-allowed" : "pointer",
+            color: (!isDirty || saving) ? "#666" : "#111",
+          }}
+        >
+          {saving ? "Salvando…" : "Salvar"}
+        </button>
         {/* Atalho direto pra apresentacao da campanha */}
         {campaignId && (
           <button
@@ -6061,17 +7735,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const navigate = () => {
                 if (typeof window !== "undefined") window.location.href = `/campaigns/${campaignId}/presentation`
               }
-              // Mesma logica do Voltar: pergunta antes se tem mudancas pendentes.
-              if (isDirtyRef.current) {
-                setConfirmExit(() => navigate)
-                return
-              }
-              navigate()
+              // Mesma logica: pergunta SO se tem mudancas pendentes.
+              if (isDirtyRef.current) setConfirmExit(() => navigate)
+              else navigate()
             }}
             title="Ir direto para a apresentacao desta campanha"
             style={{ background: "transparent", border: "1px solid #444", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", color: "#aaa", marginLeft: 4 }}
           >
-            🎬 Apresentação
+            Apresentação
           </button>
         )}
         {/* STEPS NAVIGATION (modo peca apenas) */}
@@ -6085,7 +7756,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   title="Step anterior"
                   style={{ background: "transparent", border: "none", color: activeStepIndex === 0 ? "#333" : "#aaa", cursor: activeStepIndex === 0 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 6px", lineHeight: 1 }}
                 >
-                  ◀
+                  Anterior
                 </button>
                 <span style={{ fontSize: 11, color: "#bbb", fontWeight: 600, minWidth: 60, textAlign: "center" }}>
                   Step {activeStepIndex + 1} de {stepCount}
@@ -6096,7 +7767,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   title="Proximo step"
                   style={{ background: "transparent", border: "none", color: activeStepIndex >= stepCount - 1 ? "#333" : "#aaa", cursor: activeStepIndex >= stepCount - 1 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 6px", lineHeight: 1 }}
                 >
-                  ▶
+                  Próximo
                 </button>
                 <div style={{ width: 1, height: 16, background: "#333", margin: "0 2px" }} />
               </>
@@ -6113,7 +7784,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               title="Substituir o conteúdo do step ativo por um PSD (layers com mesmo nome de asset são linkadas; sem match = ignoradas)"
               style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
             >
-              📁 PSD
+              PSD
             </button>
             {/* Editar Externo: exporta PSD pro disco (FSA API) com hierarquia
                 cliente/campanha/veiculo/midia automática. Option/Alt+click
@@ -6123,7 +7794,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               title="Exporta esta peça como PSD organizada em cliente/campanha/veiculo/midia. Option+click pra trocar pasta raiz. Depois edita no Photoshop, salva, clica 'Sync'."
               style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
             >
-              🎨 Editar Externo
+              Editar Externo
             </button>
             {externalPsdName && (
               <button
@@ -6131,7 +7802,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 title={`Re-importa "${externalPsdName}" do disco (use após salvar no Photoshop)`}
                 style={{ background: "#2a2a1a", border: "1px solid #F5C400", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
               >
-                🔄 Sync
+                Sync
               </button>
             )}
             <input
@@ -6153,17 +7824,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 title="Apagar este step (Option+click pula confirmacao)"
                 style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
               >
-                🗑
+                Remover step
               </button>
             )}
           </div>
         )}
         <div style={{ flex: 1 }} />
-        {saving && <span style={{ fontSize: 11, color: "#555" }}>Salvando...</span>}
+        {/* "Salvando..." removido daqui — agora o indicador "Salvo / Não salvo /
+            Salvando" fica ao lado do botao Voltar (linha ~6993) — UM lugar so. */}
         <span style={{ fontSize: 11, color: "#555" }}>{canvasW} × {canvasH}</span>
         {/* Acoes secundarias alinhadas a direita: Assets sempre, Legendas so em modo peca */}
         <button onClick={() => {
           const go = () => router.push(`/campaigns/${campaignId}/assets`)
+          // Pergunta SO se tem mudancas pendentes — sem perguntar a toa.
           if (isDirtyRef.current) setConfirmExit(() => go)
           else go()
         }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
@@ -6173,6 +7846,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         {isPieceMode && pieceId && (
           <button onClick={() => {
             const go = () => router.push(`/pieces/${pieceId}`)
+            // Pergunta SO se tem mudancas pendentes.
             if (isDirtyRef.current) setConfirmExit(() => go)
             else go()
           }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
@@ -6227,6 +7901,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     if (o.lineHeight !== undefined) overrides.lineHeight = o.lineHeight
                     if ((o as any).leadingPt !== undefined) overrides.leadingPt = (o as any).leadingPt
                   }
+                  // Propriedades de round-trip PSD (blendMode/opacity/effects/mask/
+                  // groupPath/hidden/locked) precisam vir DO OBJETO FABRIC pro
+                  // pseudoData do export. Sem isso, o export do KV gerava PSD
+                  // com tudo no default ("normal", opacity 1, sem effects, sem
+                  // folders) — perdia mudancas que o user fez no editor.
+                  const blendMode = (typeof o.globalCompositeOperation === "string"
+                    && o.globalCompositeOperation
+                    && o.globalCompositeOperation !== "source-over")
+                    ? o.globalCompositeOperation : undefined
+                  const opacity = (typeof o.opacity === "number" && o.opacity < 1) ? o.opacity : undefined
+                  const psdEffects = ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object")
+                    ? (o as any).__psdEffects : undefined
+                  const maskData = ((o as any).__maskData && typeof (o as any).__maskData === "object")
+                    ? (o as any).__maskData : undefined
+                  const groupPath = Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0
+                    ? (o as any).__groupPath : undefined
+                  const hidden = (o as any).__hidden === true ? true : undefined
+                  const locked = (o as any).__locked === true ? true : undefined
                   return {
                     assetId: o.__assetId,
                     posX: Math.round(o.left ?? 0),
@@ -6238,6 +7930,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     width: Math.round(o.width ?? 400),
                     height: Math.round(o.height ?? 100),
                     overrides,
+                    ...(blendMode ? { blendMode } : {}),
+                    ...(opacity !== undefined ? { opacity } : {}),
+                    ...(psdEffects ? { effects: psdEffects } : {}),
+                    ...(maskData ? { mask: maskData } : {}),
+                    ...(groupPath ? { groupPath } : {}),
+                    ...(hidden ? { hidden } : {}),
+                    ...(locked ? { locked } : {}),
                   }
                 })
               const pseudoData = {
@@ -6266,7 +7965,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           Exportar
         </button>
         {!isPieceMode && (
-          <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>▶ Gerar Peças</button>
+          <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>Gerar Peças</button>
         )}
         {/* Undo / Redo — 30 estados no stack. Atalhos: Cmd/Ctrl+Z (undo),
             Cmd/Ctrl+Shift+Z ou Cmd/Ctrl+Y (redo). */}
@@ -6282,7 +7981,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         </button>
       </div>
 
-      <div style={{ position: "fixed", top: TH, left: LW, right: PW, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
+      <div style={{ position: "fixed", top: TH, left: layersPanelWidth, right: PW, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
         <span style={{ fontSize: 11, color: "#555", fontWeight: 600, flexShrink: 0 }}>Asset:</span>
         <select value={assetId} onChange={e => { setAssetId(e.target.value); assetIdRef.current = e.target.value }}
           style={{ background: "#222", color: "white", border: "1px solid #333", borderRadius: 4, padding: "4px 8px", fontSize: 12, maxWidth: 260 }}>
@@ -6324,13 +8023,74 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             createTextAssetAndAdd permanece definida pra back-compat caso algum
             caminho ainda chame, mas nao tem mais UI. */}
         <div style={{ flex: 1 }} />
+        <button onClick={centerObjectInCanvas} style={bS} title="Centralizar objeto selecionado no canvas (vertical + horizontal)">Centralizar</button>
+        <button onClick={centerView} style={bS} title="Fit da peça no viewport (Shift+1)">Fit</button>
+        <button onClick={zoomToSelection} style={bS} title="Focar no objeto selecionado (Shift+2)">Focar seleção</button>
         <button onClick={() => changeZoom(-0.1)} style={bS}>−</button>
         <span style={{ fontSize: 11, color: "#555", minWidth: 40, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
         <button onClick={() => changeZoom(+0.1)} style={bS}>+</button>
       </div>
 
-      <div style={{ ...pS, left: 0, width: LW, borderRight: "1px solid #2a2a2a", paddingTop: TH }}>
-        <div style={{ padding: "10px 14px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Layers</div>
+      <div style={{ ...pS, left: 0, width: layersPanelWidth, borderRight: "1px solid #2a2a2a", paddingTop: TH }}>
+        {/* Drag handle de resize do painel — barra fininha na borda direita.
+            Mouse-down marca posicao inicial; mousemove em window recalcula
+            largura; mouse-up libera. localStorage persiste. Clamped [180,500]
+            pra nao ficar minusculo nem esmagar o canvas. */}
+        <div
+          onMouseDown={e => {
+            e.preventDefault()
+            layersResizeRef.current = { startX: e.clientX, startW: layersPanelWidth }
+            const onMove = (ev: MouseEvent) => {
+              const st = layersResizeRef.current
+              if (!st) return
+              const dx = ev.clientX - st.startX
+              const next = Math.max(LW_MIN, Math.min(LW_MAX, st.startW + dx))
+              setLayersPanelWidth(next)
+            }
+            const onUp = () => {
+              layersResizeRef.current = null
+              window.removeEventListener("mousemove", onMove)
+              window.removeEventListener("mouseup", onUp)
+              document.body.style.cursor = ""
+              document.body.style.userSelect = ""
+            }
+            window.addEventListener("mousemove", onMove)
+            window.addEventListener("mouseup", onUp)
+            document.body.style.cursor = "ew-resize"
+            document.body.style.userSelect = "none"
+          }}
+          onDoubleClick={() => setLayersPanelWidth(LW)}
+          title="Arraste pra redimensionar · duplo-clique pra resetar"
+          style={{
+            position: "absolute",
+            top: 0, right: -3, bottom: 0,
+            width: 6,
+            cursor: "ew-resize",
+            zIndex: 110,
+            background: "transparent",
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = accentRgba(0.18) }}
+          onMouseLeave={e => { if (!layersResizeRef.current) (e.currentTarget as HTMLElement).style.background = "transparent" }}
+        />
+        <div style={{ padding: "10px 14px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0, display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ flex: 1 }}>Layers</span>
+          {/* Botao + Folder: cria folder novo movendo a selecao pra dentro.
+              Sem selecao, mostra alerta orientando user a selecionar primeiro
+              (Photoshop tambem nao cria folder vazio sem layer). */}
+          <button
+            title="Novo folder (move layers selecionados pra dentro)"
+            onClick={() => {
+              const name = window.prompt("Nome do folder:")
+              if (name) createFolder(name)
+            }}
+            style={{
+              background: "transparent", border: "1px solid #333", borderRadius: 4,
+              padding: "2px 6px", fontSize: 10, color: "#aaa", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 3,
+            }}>
+            <span style={{ fontSize: 11 }}>+ Folder</span>
+          </button>
+        </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
           {!layers.length && <div style={{ fontSize: 11, color: "#444", textAlign: "center", padding: "24px 12px" }}>Adicione assets ao canvas</div>}
           {/* Pre-processa: pra cada layer, calcula quais folder headers devem
@@ -6356,21 +8116,126 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             ;(layers as any).__rowMeta = meta
             return null
           })()}
+          {/* DROP ZONE TOPO: permite colocar layer ACIMA do primeiro (zIndex max).
+              Aparece como uma faixa fina sempre que ha um drag ativo; durante
+              dragOver mostra a linha amarela + abre espaco com magnify. */}
+          {(dragLayerIdx !== null || dragFolderPath !== null) && layers.length > 0 && (
+            <div
+              onDragOver={e => {
+                if (dragLayerIdx === null && !dragFolderPath) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = "move"
+                if (dragOverIdx !== -1 || dropPosition !== "before") {
+                  setDragOverIdx(-1)
+                  setDropPosition("before")
+                }
+              }}
+              onDragLeave={() => { if (dragOverIdx === -1) { setDragOverIdx(null); setDropPosition(null) } }}
+              onDrop={e => {
+                e.preventDefault()
+                setDragOverIdx(null); setDropPosition(null)
+                // Topo = posicao visual 0 (mais acima no painel = topo do z-stack).
+                // Preserva o groupPath do layer atualmente no topo (entra na pasta).
+                const topPath: string[] = Array.isArray(layers[0]?.groupPath) ? layers[0].groupPath : []
+                if (dragFolderPath) {
+                  const dragged = dragFolderPath
+                  setDragFolderPath(null)
+                  moveFolderTo(dragged, topPath)
+                  return
+                }
+                const src = dragLayerIdx
+                setDragLayerIdx(null)
+                if (src === null) return
+                const srcLayer = layers[src]
+                if (srcLayer) reorderLayer(srcLayer.obj, 0, topPath)
+              }}
+              style={{
+                height: dragOverIdx === -1 ? 16 : 8,
+                position: "relative",
+                transition: "height 140ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+              }}
+            >
+              {dragOverIdx === -1 && (
+                <div style={{
+                  position: "absolute", left: 8, right: 8, top: "50%", transform: "translateY(-50%)",
+                  height: 3, borderRadius: 2, background: accentColor,
+                  boxShadow: `0 0 8px ${accentRgba(0.9)}, 0 0 14px ${accentRgba(0.6)}`,
+                  pointerEvents: "none",
+                }} />
+              )}
+            </div>
+          )}
           {layers.map((layer, i) => {
             const m = ((layers as any).__rowMeta ?? [])[i] ?? { headers: [], indent: 0, hidden: false }
             const headers = m.headers
             const indent = m.indent
             const hiddenByCollapse = m.hidden
-            const isSel = selected === layer.obj
+            // Folder placeholder: renderiza headers (com onDrop/onDragOver normais
+            // pra aceitar arrasto de layers reais pra dentro). A row em si vira
+            // invisivel via flag isPlaceholder usado no return da row pra display:none.
+            const isPlaceholder = (layer as any).isPlaceholder === true
+            // Highlight verde: layer ativo OU membro de ActiveSelection (multi-
+            // select via Shift+click). Sem o ramo do ActiveSelection, multi-
+            // select selecionava os objetos no canvas mas o painel nao mostrava
+            // visualmente quais estavam no grupo.
+            const isSel = (() => {
+              if (!selected) return false
+              if (selected === layer.obj) return true
+              if ((selected as any)?.type === "activeselection") {
+                const objs = (selected as any).getObjects?.() ?? (selected as any)._objects ?? []
+                return objs.includes(layer.obj)
+              }
+              return false
+            })()
             const layerAssetId = layer.obj?.__assetId
             const isEditingThis = editingLayerAssetId && layerAssetId === editingLayerAssetId
             const maskData = (layer.obj as any)?.__maskData
             const hasMask = !!maskData
             const isHidden = layer.hidden === true
             const isLocked = layer.locked === true
-            const isDragOver = dragOverIdx === i && dragLayerIdx !== null && dragLayerIdx !== i
-            const dragLineTop = isDragOver && (dragLayerIdx ?? 0) > i
-            const dragLineBottom = isDragOver && (dragLayerIdx ?? 0) < i
+            // GAP-BASED magnify: detecta qual GAP entre rows esta sendo alvo
+            // (Photoshop-style: linha entre layers). Os 2 rows ADJACENTES ao
+            // gap recebem magnify pra ABRIR ESPACO visualmente, deixando claro
+            // onde o item vai cair. Diferente do row-target classico (em cima
+            // de um), aqui o feedback eh "vai cair AQUI entre A e B".
+            //
+            // Mapeamento gap → rows afetados:
+            //   dropPosition="before" e dragOverIdx=i → gap entre (i-1) e i
+            //     → magnify em (i-1) com glow embaixo + i com glow em cima
+            //   dropPosition="after" e dragOverIdx=i → gap entre i e (i+1)
+            //     → magnify em i com glow embaixo + (i+1) com glow em cima
+            const isAnyDrag = dragLayerIdx !== null || dragFolderPath !== null
+            // Calcula posicoes do gap ativo (top index do gap = row acima, bot index = row abaixo)
+            let gapTop = -1, gapBot = -1
+            if (isAnyDrag && dragOverIdx !== null && dropPosition !== null) {
+              if (dropPosition === "before") { gapTop = dragOverIdx - 1; gapBot = dragOverIdx }
+              else { gapTop = dragOverIdx; gapBot = dragOverIdx + 1 }
+            }
+            const isAboveGap = i === gapTop
+            const isBelowGap = i === gapBot
+            const isAdjacentToGap = isAboveGap || isBelowGap
+            // Distancia ate o gap pra magnify suave dos vizinhos mais distantes
+            const distToGap = (gapTop < 0) ? 999 : Math.min(
+              Math.abs(i - gapTop),
+              Math.abs(i - gapBot),
+            )
+            const magnifyScale = isAdjacentToGap ? 1.04 : distToGap === 1 ? 1.015 : 1
+            const magnifyShadow = isAdjacentToGap
+              ? (isAboveGap
+                  ? `0 4px 14px ${accentRgba(0.35)}, inset 0 -2px 0 ${accentRgba(0.9)}`
+                  : `0 -4px 14px ${accentRgba(0.35)}, inset 0 2px 0 ${accentRgba(0.9)}`)
+              : distToGap === 1 ? `0 2px 6px ${accentRgba(0.12)}` : "none"
+            const magnifyZ = isAdjacentToGap ? 3 : distToGap === 1 ? 2 : 1
+            // Margin extra no rows adjacentes pra ABRIR ESPACO entre eles —
+            // efeito Photoshop "vai cair AQUI". Adicionamos no lado que toca
+            // o gap (top do row de baixo, bottom do row de cima).
+            const gapMarginTop = isBelowGap ? 6 : 0
+            const gapMarginBottom = isAboveGap ? 6 : 0
+            // Background pulse mais sutil nos rows adjacentes
+            const dropBg = isAdjacentToGap ? accentRgba(0.10) : isSel ? accentRgba(0.08) : "transparent"
+            // Linhas legadas (mantidas pra back-compat, mas com fallback p/ gap)
+            const dragLineTop = false
+            const dragLineBottom = false
             return (
               <React.Fragment key={`row-${i}`}>
                 {/* Folder headers novos pra esta linha (entradas em pastas) */}
@@ -6382,38 +8247,96 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   const folderLocked = isGroupLocked(path)
                   return (
                   <div key={`folder-${h.key}-${i}`}
-                    onClick={() => toggleFolder(h.key)}
+                    data-folder-key={h.key}
+                    draggable
+                    onDragStart={e => {
+                      // Drag de FOLDER inteiro: marca o path. onDrop em outro
+                      // folder/layer move o folder completo (com subfolders).
+                      setDragFolderPath(path)
+                      e.dataTransfer.effectAllowed = "move"
+                      e.dataTransfer.setData("text/plain", `folder:${path.join("›")}`)
+                      e.stopPropagation()
+                    }}
+                    onDragEnd={() => { setDragFolderPath(null); setDragOverFolderKey(null); setDropPosition(null) }}
+                    onClick={() => {
+                      // Click no header: SELECIONA todos os layers do folder no canvas
+                      // (Photoshop-style — manipular o grupo move/escala/rotaciona
+                      // todos juntos). Toggle do expand/collapse foi separado pro
+                      // proprio triangulo abaixo. Sem isso, nao tinha como
+                      // manipular o folder como composite.
+                      if (!renamingFolderKey) selectFolderInCanvas(path)
+                    }}
+                    onDoubleClick={e => {
+                      e.stopPropagation()
+                      setRenamingFolderKey(h.key)
+                    }}
                     onDragOver={e => {
-                      // Folder header eh drop target: arrastar um layer pra cima
-                      // dele = mover pra DENTRO desta pasta (Photoshop-style).
-                      if (dragLayerIdx === null) return
+                      // Aceita drop de layer OU de outro folder pra aninhar.
+                      if (dragLayerIdx === null && !dragFolderPath) return
+                      // Nao aceita drop de si mesmo ou descendente
+                      if (dragFolderPath) {
+                        const drag = dragFolderPath.join("›")
+                        const cur = path.join("›")
+                        if (drag === cur || cur.startsWith(drag + "›")) return
+                      }
                       e.preventDefault()
                       e.dataTransfer.dropEffect = "move"
+                      if (dragOverFolderKey !== h.key) setDragOverFolderKey(h.key)
                     }}
+                    onDragLeave={() => { if (dragOverFolderKey === h.key) setDragOverFolderKey(null) }}
                     onDrop={e => {
                       e.preventDefault()
+                      e.stopPropagation()
+                      setDragOverFolderKey(null)
+                      // Caso 1: dropping FOLDER em outro folder = nest (sub-folder)
+                      if (dragFolderPath) {
+                        const dragged = dragFolderPath
+                        setDragFolderPath(null)
+                        // Move dragged pra DENTRO do folder atual (vira sub-folder)
+                        moveFolderTo(dragged, path)
+                        return
+                      }
+                      // Caso 2: dropping LAYER em folder = mover layer pra dentro
                       const src = dragLayerIdx
                       setDragLayerIdx(null); setDragOverIdx(null)
                       if (src === null) return
                       const srcLayer = layers[src]
                       if (!srcLayer) return
-                      // Move o layer pra dentro desta pasta. Posicao visual = i
-                      // (logo apos o folder header, como se fosse o primeiro item
-                      // do folder pelo z-stack atual).
                       reorderLayer(srcLayer.obj, i, path)
                     }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 4,
-                      padding: `6px 8px 6px ${12 + h.depth * 12}px`,
-                      cursor: "pointer",
-                      fontSize: 10, fontWeight: 700,
-                      textTransform: "uppercase", letterSpacing: "0.5px",
-                      color: "#888",
-                      background: "rgba(255,255,255,0.02)",
-                      borderTop: "1px solid #222",
-                    }}
-                    title={`${h.collapsed ? "Expandir" : "Recolher"} folder do PSD · arraste layer pra adicionar a esta pasta`}>
-                    <span style={{ width: 10, display: "inline-block" }}>{h.collapsed ? "▶" : "▼"}</span>
+                    style={(() => {
+                      const isDraggedSelf = !!(dragFolderPath && dragFolderPath.join("›") === path.join("›"))
+                      const isDropHere = dragOverFolderKey === h.key
+                      return {
+                        display: "flex", alignItems: "center", gap: 4,
+                        padding: `6px 8px 6px ${12 + h.depth * 12}px`,
+                        cursor: "grab",
+                        fontSize: 10, fontWeight: 700,
+                        textTransform: "uppercase", letterSpacing: "0.5px",
+                        color: isDropHere ? "#fff" : "#888",
+                        background: isDropHere
+                          ? accentRgba(0.20)
+                          : "rgba(255,255,255,0.02)",
+                        borderTop: "1px solid #222",
+                        opacity: isDraggedSelf ? 0.3 : 1,
+                        transform: isDropHere ? "scale(1.05)" : "scale(1)",
+                        transformOrigin: "left center",
+                        boxShadow: isDropHere
+                          ? `0 4px 16px ${accentRgba(0.45)}, 0 0 0 2px ${accentRgba(0.85)}, inset 0 0 0 1px ${accentRgba(0.3)}`
+                          : "none",
+                        borderRadius: isDropHere ? 4 : 0,
+                        zIndex: isDropHere ? 4 : 1,
+                        position: "relative",
+                        transition: "transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 120ms ease, background 100ms ease, color 100ms ease, border-radius 120ms ease",
+                        willChange: dragLayerIdx !== null || dragFolderPath ? "transform" : "auto",
+                      }
+                    })()}
+                    title={`Click: selecionar todos os layers do grupo · arraste pra mover/aninhar · duplo-clique pra renomear`}>
+                    <span
+                      onClick={e => { e.stopPropagation(); toggleFolder(h.key) }}
+                      title={h.collapsed ? "Expandir" : "Recolher"}
+                      style={{ width: 14, display: "inline-flex", justifyContent: "center", cursor: "pointer" }}
+                    >{h.collapsed ? "▶" : "▼"}</span>
                     {/* Olho do folder — toggle em massa pros filhos */}
                     <button
                       onClick={e => { e.stopPropagation(); setGroupAttribute(path, "__hidden", !folderHidden) }}
@@ -6448,8 +8371,65 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         </svg>
                       )}
                     </button>
-                    <span style={{ fontSize: 10 }}>📁</span>
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</span>
+                    {renamingFolderKey === h.key ? (
+                      <input
+                        autoFocus
+                        defaultValue={h.name}
+                        onClick={e => e.stopPropagation()}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") {
+                            const v = (e.currentTarget as HTMLInputElement).value
+                            if (v && v !== h.name) renameFolder(path, v)
+                            setRenamingFolderKey(null)
+                          } else if (e.key === "Escape") {
+                            setRenamingFolderKey(null)
+                          }
+                        }}
+                        onBlur={e => {
+                          const v = e.currentTarget.value
+                          if (v && v !== h.name) renameFolder(path, v)
+                          setRenamingFolderKey(null)
+                        }}
+                        style={{
+                          flex: 1, fontSize: 10, fontWeight: 700,
+                          textTransform: "uppercase", letterSpacing: "0.5px",
+                          background: "#0a0a0a", color: "#fff",
+                          border: "1px solid #F5C400", borderRadius: 3,
+                          padding: "1px 4px", outline: "none",
+                          minWidth: 0,
+                        }}
+                      />
+                    ) : (
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</span>
+                    )}
+                    {/* Botao + sub-folder: cria um folder filho dentro deste */}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        const name = window.prompt(`Nome do sub-folder dentro de "${h.name}":`)
+                        if (name) createFolder(name, path)
+                      }}
+                      title="Adicionar sub-folder (move selecao pra ele)"
+                      style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: "#666", fontSize: 11, lineHeight: 1 }}>
+                      +
+                    </button>
+                    {/* Botao deletar folder: move filhos pra parent (Alt+click apaga conteudo). */}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        const altClick = (e as any).altKey === true
+                        if (altClick) {
+                          if (!confirm(`Apagar folder "${h.name}" E TODOS seus layers do canvas?`)) return
+                          deleteFolder(path, true)
+                        } else {
+                          if (!confirm(`Apagar folder "${h.name}"? Os layers serao movidos pra pasta pai.`)) return
+                          deleteFolder(path, false)
+                        }
+                      }}
+                      title="Apagar folder (filhos vao pra parent) · Alt+click pra apagar tudo"
+                      style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: "#555", fontSize: 11, lineHeight: 1 }}>
+                      ×
+                    </button>
                   </div>
                   )
                 })}
@@ -6464,40 +8444,171 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   // Firefox precisa de dataTransfer.setData pra ativar drag
                   e.dataTransfer.setData("text/plain", String(i))
                 }}
-                onDragEnd={() => { setDragLayerIdx(null); setDragOverIdx(null) }}
+                onDragEnd={() => { setDragLayerIdx(null); setDragOverIdx(null); setDragOverFolderKey(null); setDropPosition(null) }}
                 onDragOver={e => {
-                  if (dragLayerIdx === null || dragLayerIdx === i) return
+                  // Aceita drop de layer ou de folder
+                  if (dragLayerIdx === null && !dragFolderPath) return
+                  if (dragLayerIdx === i) return
                   e.preventDefault()
                   e.dataTransfer.dropEffect = "move"
                   if (dragOverIdx !== i) setDragOverIdx(i)
+                  // Detecta GAP: top half do row = drop ENTRE i-1 e i (before),
+                  // bottom half = drop ENTRE i e i+1 (after). Photoshop usa
+                  // linha azul fina; aqui usamos magnify dos 2 vizinhos pra
+                  // abrir espaco visualmente claro.
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  const y = e.clientY - rect.top
+                  const pos: "before" | "after" = y < rect.height / 2 ? "before" : "after"
+                  if (dropPosition !== pos) setDropPosition(pos)
                 }}
-                onDragLeave={() => { if (dragOverIdx === i) setDragOverIdx(null) }}
+                onDragLeave={() => { if (dragOverIdx === i) { setDragOverIdx(null); setDropPosition(null) } }}
                 onDrop={e => {
                   e.preventDefault()
+                  const pos = dropPosition
+                  setDropPosition(null)
+                  // Caso folder→layer: move folder pra mesma pasta do layer alvo
+                  if (dragFolderPath) {
+                    const dragged = dragFolderPath
+                    setDragFolderPath(null); setDragOverIdx(null)
+                    const targetParent: string[] = Array.isArray(layer.groupPath) ? layer.groupPath : []
+                    moveFolderTo(dragged, targetParent)
+                    return
+                  }
                   const src = dragLayerIdx
                   setDragLayerIdx(null); setDragOverIdx(null)
                   if (src === null || src === i) return
-                  // src e i sao indices VISUAIS (topo painel = topo canvas).
-                  // Move o objeto que estava em layers[src] pra posicao visual i.
-                  // groupPath: assume o group do layer alvo (Photoshop: arrastar
-                  // pra dentro de outro layer dentro de uma pasta = entra naquela
-                  // pasta). Se o alvo nao esta em pasta, sai da pasta.
                   const srcLayer = layers[src]
                   const targetPath: string[] = Array.isArray(layer.groupPath) ? layer.groupPath : []
-                  if (srcLayer) reorderLayer(srcLayer.obj, i, targetPath)
+                  // Ajusta o index visual baseado em "before/after": "after" = +1
+                  // (cai abaixo do alvo), "before" = o proprio i. reorderLayer
+                  // posiciona o src exatamente no targetVisualIndex.
+                  const insertAt = pos === "after" ? i + 1 : i
+                  if (srcLayer) reorderLayer(srcLayer.obj, insertAt, targetPath)
                 }}
-                onClick={() => { if (isEditingThis) return; fabricRef.current?.setActiveObject(layer.obj); fabricRef.current?.renderAll(); setSelected(layer.obj) }}
+                onClick={async (e) => {
+                  if (isEditingThis) return
+                  const fc = fabricRef.current
+                  if (!fc) return
+                  // Multi-select estilo Photoshop/Figma:
+                  //  - Shift+click: toggle do layer atual na selecao (acrescenta/remove).
+                  //  - Click puro: substitui selecao por este unico layer.
+                  // Sem isso, so dava pra selecionar multiplos via marquee no canvas
+                  // — painel sempre selecionava um.
+                  const additive = e.shiftKey || (e as any).metaKey || (e as any).ctrlKey
+                  const target = layer.obj
+                  if ((target as any).__isBg || (target as any).__isBleedOverlay) {
+                    fc.setActiveObject(target)
+                    fc.renderAll()
+                    setSelected(target)
+                    return
+                  }
+                  if (!additive) {
+                    fc.discardActiveObject()
+                    fc.setActiveObject(target)
+                    fc.renderAll()
+                    setSelected(target)
+                    return
+                  }
+                  const fabricMod = await import("fabric") as any
+                  const ActiveSelection = fabricMod.ActiveSelection
+                  const active = fc.getActiveObject() as any
+                  const currentObjs: any[] = active?.type === "activeselection"
+                    ? [...(active.getObjects?.() ?? active._objects ?? [])]
+                    : (active && active !== target ? [active] : [])
+                  // Se ja existe nessa selecao, toggle off (remove). Senao, adiciona.
+                  const exists = currentObjs.includes(target)
+                  const next = exists
+                    ? currentObjs.filter(o => o !== target)
+                    : [...currentObjs, target]
+                  fc.discardActiveObject()
+                  if (next.length === 0) {
+                    setSelected(null)
+                  } else if (next.length === 1) {
+                    fc.setActiveObject(next[0])
+                    setSelected(next[0])
+                  } else {
+                    const sel = new ActiveSelection(next, { canvas: fc })
+                    fc.setActiveObject(sel)
+                    setSelected(sel)
+                  }
+                  fc.requestRenderAll?.()
+                }}
+                data-layer-row={i}
+                data-layer-selected={isSel ? "1" : "0"}
+                // Key muda a cada novo select pra reiniciar a CSS animation
+                key={isSel ? `row-${i}-pulse-${layerPulseKey}` : `row-${i}`}
                 style={{
-                  display: "flex", alignItems: "center", gap: 4,
+                  // Placeholder de folder vazio: row invisivel. Headers do folder
+                  // (acima nesta mesma row) continuam renderizando com onDrop normal.
+                  display: isPlaceholder ? "none" : "flex",
+                  alignItems: "center", gap: 4,
                   padding: `8px 8px 8px ${12 + indent}px`,
-                  cursor: isEditingThis ? "default" : "grab",
-                  borderLeft: isSel ? "2px solid #F5C400" : "2px solid transparent",
-                  background: isSel ? "rgba(245,196,0,0.08)" : "transparent",
+                  cursor: "default",
+                  borderLeft: isSel ? `2px solid ${accentColor}` : "2px solid transparent",
+                  background: dropBg,
                   opacity: dragLayerIdx === i ? 0.3 : 1,
-                  borderTop: dragLineTop ? "2px solid #F5C400" : "2px solid transparent",
-                  borderBottom: dragLineBottom ? "2px solid #F5C400" : "2px solid transparent",
+                  borderTop: dragLineTop ? `3px solid ${accentColor}` : "2px solid transparent",
+                  borderBottom: dragLineBottom ? `3px solid ${accentColor}` : "2px solid transparent",
+                  // CSS variables pra animation pulse (declaradas na <style> global do componente)
+                  ["--zzosy-accent" as any]: accentColor,
+                  ["--zzosy-accent-strong" as any]: accentRgba(0.55),
+                  ["--zzosy-accent-soft" as any]: accentRgba(0.18),
+                  ["--zzosy-accent-faint" as any]: accentRgba(0.08),
+                  // Animation: dispara so quando isSel (key muda a cada selecao reinicia)
+                  animation: isSel ? "zzosy-layer-pulse 1200ms ease-out" : undefined,
+                  // Magnify dock-style: scale + shadow + z-index. Gap-based:
+                  // rows adjacentes ao GAP target abrem espaco via marginTop/Bottom,
+                  // ficando claro "vai cair NO MEIO desses dois".
+                  transform: `scale(${magnifyScale})`,
+                  transformOrigin: "left center",
+                  boxShadow: magnifyShadow,
+                  zIndex: magnifyZ,
+                  position: "relative",
+                  borderRadius: isAdjacentToGap ? 4 : 0,
+                  marginTop: gapMarginTop,
+                  marginBottom: gapMarginBottom,
+                  transition: "transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 140ms ease, background 100ms ease, border-radius 140ms ease, margin 140ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+                  willChange: isAnyDrag ? "transform, margin" : "auto",
                 }}
               >
+                {/* Drop indicator: barra amarela com glow no GAP aberto entre
+                    os dois rows adjacentes. Aparece SOMENTE no row de cima do
+                    gap (isAboveGap), posicionada no bottom: -8px pra cair no
+                    espaco aberto pelo marginBottom: 6px. */}
+                {isAboveGap && (
+                  <div style={{
+                    position: "absolute",
+                    left: 4 + indent,
+                    right: 4,
+                    bottom: -7,
+                    height: 3,
+                    borderRadius: 2,
+                    background: accentColor,
+                    boxShadow: `0 0 8px ${accentRgba(0.9)}, 0 0 14px ${accentRgba(0.6)}`,
+                    pointerEvents: "none",
+                    zIndex: 5,
+                  }} />
+                )}
+                {/* Drag handle: 3 tracos horizontais (hamburger). Cursor grab
+                    so neste icone, nao no row inteiro — antes o cursor de mao
+                    aberta aparecia em todo o row (ficava grande, atrapalhando
+                    leitura). Visual fica discreto mas claro como o que arrastar. */}
+                {!layer.isBg && !isEditingThis && (
+                  <div
+                    title="Arraste pra reordenar"
+                    style={{
+                      display: "flex", flexDirection: "column", justifyContent: "center",
+                      gap: 2, padding: "0 4px", cursor: "grab",
+                      color: dragLayerIdx === i ? accentColor : "#444",
+                      flexShrink: 0,
+                    }}
+                    onMouseDown={e => e.stopPropagation()}
+                  >
+                    <span style={{ width: 10, height: 1.5, background: "currentColor", borderRadius: 1 }} />
+                    <span style={{ width: 10, height: 1.5, background: "currentColor", borderRadius: 1 }} />
+                    <span style={{ width: 10, height: 1.5, background: "currentColor", borderRadius: 1 }} />
+                  </div>
+                )}
                 {/* Visibilidade (olho) — primeiro da row, igual Photoshop */}
                 <button
                   title={isHidden ? "Mostrar layer" : "Esconder layer"}
@@ -6550,6 +8661,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </button>
                 {/* Thumb do layer (cor por tipo) */}
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: layer.type === "textbox" ? "#F5C400" : "#86efac", flexShrink: 0 }} />
+                {/* Bolinha DS link status (so pra textboxes vinculados a preset
+                    do Design System). Verde = mesmo do DS; Vermelha = customizado.
+                    User customiza via Properties Panel; scale/posicao NAO quebram. */}
+                {(layer.type === "textbox" || layer.type === "i-text") && (() => {
+                  const obj: any = layer.obj
+                  // So mostra a bolinha pra layers que tem assetId com brandPresetKey.
+                  // Sem isso, qualquer texto teria bolinha — confunde o user (texto
+                  // criado fora dos presets nao tem "link" pra DS pra checar).
+                  const assetId = obj.__assetId
+                  if (!assetId) return null
+                  const asset = (campaign?.assets ?? []).find(a => a.id === assetId)
+                  const lo: any = (asset as any)?.lastOverride
+                  if (!lo?.brandPresetKey) return null
+                  const linked = obj.__dsLinked !== false
+                  return (
+                    <div
+                      title={linked ? "Sincronizado com o Design System" : "Customizado — diverge do Design System"}
+                      style={{
+                        width: 8, height: 8, borderRadius: "50%",
+                        background: linked ? "#22c55e" : "#ef4444",
+                        flexShrink: 0,
+                        marginLeft: 2,
+                        boxShadow: linked ? "0 0 4px rgba(34,197,94,0.5)" : "0 0 4px rgba(239,68,68,0.5)",
+                      }}
+                    />
+                  )
+                })()}
                 {/* Thumb da mascara (so aparece quando ha mascara). Igual Photoshop: */}
                 {/* clique = seleciona; Shift+clique = toggle enabled; Alt+clique = invert. */}
                 {/* Botao direito (oncontextmenu) = remover. */}
@@ -6630,14 +8768,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     autoFocus
                     defaultValue={layer.label}
                     onClick={e => e.stopPropagation()}
+                    onMouseDown={e => e.stopPropagation()}
                     onBlur={async e => {
-                      const v = e.target.value.trim()
+                      const el = e.currentTarget
+                      if (!el || (el as any).__renameCommitted) return
+                      ;(el as any).__renameCommitted = true
+                      const v = (el.value ?? "").trim()
                       if (v && v !== layer.label) await renameLayer(layer.obj, v)
                       setEditingLayerAssetId(null)
                     }}
                     onKeyDown={async e => {
-                      if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur() }
-                      else if (e.key === "Escape") { e.preventDefault(); setEditingLayerAssetId(null) }
+                      e.stopPropagation()
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        const el = e.currentTarget
+                        ;(el as any).__renameCommitted = true
+                        const v = (el.value ?? "").trim()
+                        if (v && v !== layer.label) await renameLayer(layer.obj, v)
+                        setEditingLayerAssetId(null)
+                      } else if (e.key === "Escape") {
+                        e.preventDefault()
+                        ;(e.currentTarget as any).__renameCommitted = true
+                        setEditingLayerAssetId(null)
+                      }
                     }}
                     style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#fff", background: "#0d0d0d", border: "1px solid #F5C400", borderRadius: 3, padding: "2px 6px", outline: "none", fontFamily: "inherit" }}
                   />
@@ -6645,7 +8798,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   <span
                     title="Duplo clique para renomear"
                     onDoubleClick={e => { e.stopPropagation(); if (layerAssetId) setEditingLayerAssetId(layerAssetId) }}
-                    style={{ fontSize: 12, color: isSel ? "#fff" : "#888", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
+                    style={{ fontSize: 12, color: isSel ? accentColor : "#888", fontWeight: isSel ? 600 : 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
                   >{layer.label}</span>
                 )}
                 {!layer.isBg && (
@@ -6657,6 +8810,53 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             </React.Fragment>
             )
           })}
+          {/* DROP ZONE FUNDO: permite colocar layer ABAIXO do ultimo (zIndex min).
+              Mesma logica do topo, mas posicao = layers.length. */}
+          {(dragLayerIdx !== null || dragFolderPath !== null) && layers.length > 0 && (
+            <div
+              onDragOver={e => {
+                if (dragLayerIdx === null && !dragFolderPath) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = "move"
+                if (dragOverIdx !== -2 || dropPosition !== "after") {
+                  setDragOverIdx(-2)
+                  setDropPosition("after")
+                }
+              }}
+              onDragLeave={() => { if (dragOverIdx === -2) { setDragOverIdx(null); setDropPosition(null) } }}
+              onDrop={e => {
+                e.preventDefault()
+                setDragOverIdx(null); setDropPosition(null)
+                const lastIdx = layers.length - 1
+                const bottomPath: string[] = Array.isArray(layers[lastIdx]?.groupPath) ? layers[lastIdx].groupPath : []
+                if (dragFolderPath) {
+                  const dragged = dragFolderPath
+                  setDragFolderPath(null)
+                  moveFolderTo(dragged, bottomPath)
+                  return
+                }
+                const src = dragLayerIdx
+                setDragLayerIdx(null)
+                if (src === null) return
+                const srcLayer = layers[src]
+                if (srcLayer) reorderLayer(srcLayer.obj, layers.length - 1, bottomPath)
+              }}
+              style={{
+                height: dragOverIdx === -2 ? 16 : 8,
+                position: "relative",
+                transition: "height 140ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+              }}
+            >
+              {dragOverIdx === -2 && (
+                <div style={{
+                  position: "absolute", left: 8, right: 8, top: "50%", transform: "translateY(-50%)",
+                  height: 3, borderRadius: 2, background: accentColor,
+                  boxShadow: `0 0 8px ${accentRgba(0.9)}, 0 0 14px ${accentRgba(0.6)}`,
+                  pointerEvents: "none",
+                }} />
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -6746,7 +8946,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         if (/^#[0-9a-fA-F]{6}$/.test(v)) changeBg(v)
                       }}
                       onBlur={() => {
-                        if (!/^#[0-9a-fA-F]{6}$/.test(bgHexInput)) setBgHexInput(bgColor)
+                        if (!/^#[0-9a-fA-F]{6}$/.test(bgHexInput)) setBgHexInput(typeof bgColor === "string" ? bgColor : "#ffffff")
                       }}
                       placeholder="#RRGGBB"
                       style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
@@ -6760,7 +8960,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         {brandColors.map((bc, i) => {
                           const currentBgLayer = bgLayersRef.current[currentBgIdx()]
                           const activeByRef = currentBgLayer?.kind === "solid" && currentBgLayer.colorBrandIdx === i
-                          const activeByHex = !activeByRef && bgColor.toLowerCase() === bc.hex.toLowerCase()
+                          // Defensiva contra bgColor nao-string (BG gradient/image)
+                          const bgStr = typeof bgColor === "string" ? bgColor : ""
+                          const activeByHex = !activeByRef && bgStr.toLowerCase() === bc.hex.toLowerCase()
                           return (
                             <div key={`${bc.hex}-${i}`} onClick={() => changeBg(bc.hex, i)}
                               title={bc.name ? `${bc.name} (${bc.hex}) — vincula à marca` : `${bc.hex} — vincula à marca`}
@@ -6774,10 +8976,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
                   )}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-                    {SWATCHES.map(c => (
+                    {SWATCHES.map(c => {
+                      // bgColor pode vir como objeto/undefined em pecas com
+                      // bgLayer gradient/image (kind != "solid"). Defensiva
+                      // pra evitar crash do .toLowerCase() — comparacao
+                      // simplesmente fica falsa quando nao ha cor solida.
+                      const bgStr = typeof bgColor === "string" ? bgColor : ""
+                      return (
                       <div key={c} onClick={() => changeBg(c)}
-                        style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgColor.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                    ))}
+                        style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgStr.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                    )})}
                   </div>
                 </>
               )
@@ -6977,6 +9185,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             let effectiveFontFamily = selected.fontFamily ?? "Arial"
             let effectiveFontSize = selected.fontSize ?? 80
             let effectiveFill = selected.fill ?? "#111111"
+            // fontWeight efetivo: pra Google Fonts (e custom uploadadas), o
+            // peso vive aqui (numero CSS 100-900), nao no nome do fontFamily.
+            // WeightPicker usa pra mostrar peso correto e trocar via onPickWeight.
+            let effectiveFontWeight: string | number = (selected as any).fontWeight ?? "normal"
             // Detector de "valor misto" — quando o texto tem partes com fontes/tamanhos/cores
             // diferentes, painel mostra placeholder em vez de um valor incorreto.
             let mixedFontFamily = false
@@ -7006,21 +9218,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 const boxFont = (selected as any).fontFamily
                 const boxSize = (selected as any).fontSize
                 const boxFill = (selected as any).fill
+                const boxWeight = (selected as any).fontWeight
                 const fams = new Set<string>()
                 const sizes = new Set<number>()
                 const fills = new Set<string>()
+                const weights = new Set<string | number>()
                 for (const s of styles) {
                   fams.add(s.fontFamily ?? boxFont)
                   sizes.add(s.fontSize ?? boxSize)
                   fills.add(s.fill ?? boxFill)
+                  weights.add(s.fontWeight ?? boxWeight ?? "normal")
                 }
                 return {
                   fontFamily: fams.size === 1 ? [...fams][0] : null,
                   fontSize: sizes.size === 1 ? [...sizes][0] : null,
                   fill: fills.size === 1 ? [...fills][0] : null,
+                  fontWeight: weights.size === 1 ? [...weights][0] : null,
                   mixedFamily: fams.size > 1,
                   mixedSize: sizes.size > 1,
                   mixedFill: fills.size > 1,
+                  mixedWeight: weights.size > 1,
                 }
               } catch { return null }
             }
@@ -7035,6 +9252,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 else mixedFontSize = true
                 if (r.fill !== null) effectiveFill = r.fill
                 else mixedFill = true
+                if (r.fontWeight !== null) effectiveFontWeight = r.fontWeight
               }
             } else if (isEditingText && isText) {
               // Edit mode + cursor (sem range): le do caractere atual (do anterior se cursor no fim)
@@ -7046,6 +9264,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   if (r.fontFamily !== null) effectiveFontFamily = r.fontFamily
                   if (r.fontSize !== null) effectiveFontSize = r.fontSize
                   if (r.fill !== null) effectiveFill = r.fill
+                  if (r.fontWeight !== null) effectiveFontWeight = r.fontWeight
                 }
               }
             } else if (isText) {
@@ -7062,11 +9281,54 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   else mixedFontSize = true
                   if (r.fill !== null) effectiveFill = r.fill
                   else mixedFill = true
+                  if (r.fontWeight !== null) effectiveFontWeight = r.fontWeight
                 }
               }
             }
             return (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* CAMADA — blend mode + opacidade. PSD-style: cada layer pode ter
+                multiply/screen/overlay/etc e opacidade. Aplicado a todos os tipos
+                (texto/imagem/embedded). Round-trip: persistido no save. */}
+            <div>
+              <div style={secS}>Camada</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6 }}>
+                <select
+                  value={(selected as any).globalCompositeOperation ?? "source-over"}
+                  onChange={e => changeObjectBlendMode(e.target.value)}
+                  style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20 }}
+                  title="Modo de mistura do layer (Photoshop-style)"
+                >
+                  <option value="source-over">Normal</option>
+                  <option value="multiply">Multiply</option>
+                  <option value="screen">Screen</option>
+                  <option value="overlay">Overlay</option>
+                  <option value="darken">Darken</option>
+                  <option value="lighten">Lighten</option>
+                  <option value="color-dodge">Color Dodge</option>
+                  <option value="color-burn">Color Burn</option>
+                  <option value="hard-light">Hard Light</option>
+                  <option value="soft-light">Soft Light</option>
+                  <option value="difference">Difference</option>
+                  <option value="exclusion">Exclusion</option>
+                  <option value="hue">Hue</option>
+                  <option value="saturation">Saturation</option>
+                  <option value="color">Color</option>
+                  <option value="luminosity">Luminosity</option>
+                  <option value="lighter">Linear Dodge</option>
+                </select>
+                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                  <input
+                    type="number" min={0} max={100} step={1}
+                    value={Math.round(((selected as any).opacity ?? 1) * 100)}
+                    onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
+                    title="Opacidade (0-100%)"
+                    style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }}
+                  />
+                  <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
+                </div>
+              </div>
+            </div>
             <div>
               <div style={secS}>Trocar asset</div>
               <select
@@ -7140,7 +9402,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               </div>
               <div>
                 <div style={secS}>Peso</div>
-                <WeightPicker value={effectiveFontFamily} onChange={(f) => applyStyle("fontFamily", f)} />
+                {/* WeightPicker tem dois modos:
+                    - Sistema (Helvetica Neue Bold, Avenir Light): troca fontFamily.
+                    - Google/custom (Exo 2, Manrope, fontes do cliente): mesma
+                      familia, muda fontWeight numerico CSS via onPickWeight.
+                    Decisao acontece dentro do WeightPicker baseado na presenca
+                    da familia na lista de variantes do sistema. */}
+                <WeightPicker
+                  value={effectiveFontFamily}
+                  fontWeight={effectiveFontWeight}
+                  onChange={(f) => applyStyle("fontFamily", f)}
+                  onPickWeight={(w) => applyStyle("fontWeight", w)}
+                />
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -7315,6 +9588,47 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ) : (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{selected.__assetLabel ?? "Elemento"}</div>
+            {/* CAMADA — blend mode + opacidade (mesmo controle do painel de texto).
+                PSD-style: imagens, shapes e embedded layers tb suportam multiply/etc. */}
+            <div>
+              <div style={secS}>Camada</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6 }}>
+                <select
+                  value={(selected as any).globalCompositeOperation ?? "source-over"}
+                  onChange={e => changeObjectBlendMode(e.target.value)}
+                  style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20 }}
+                  title="Modo de mistura do layer (Photoshop-style)"
+                >
+                  <option value="source-over">Normal</option>
+                  <option value="multiply">Multiply</option>
+                  <option value="screen">Screen</option>
+                  <option value="overlay">Overlay</option>
+                  <option value="darken">Darken</option>
+                  <option value="lighten">Lighten</option>
+                  <option value="color-dodge">Color Dodge</option>
+                  <option value="color-burn">Color Burn</option>
+                  <option value="hard-light">Hard Light</option>
+                  <option value="soft-light">Soft Light</option>
+                  <option value="difference">Difference</option>
+                  <option value="exclusion">Exclusion</option>
+                  <option value="hue">Hue</option>
+                  <option value="saturation">Saturation</option>
+                  <option value="color">Color</option>
+                  <option value="luminosity">Luminosity</option>
+                  <option value="lighter">Linear Dodge</option>
+                </select>
+                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                  <input
+                    type="number" min={0} max={100} step={1}
+                    value={Math.round(((selected as any).opacity ?? 1) * 100)}
+                    onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
+                    title="Opacidade (0-100%)"
+                    style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }}
+                  />
+                  <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
+                </div>
+              </div>
+            </div>
             <div>
               <div style={secS}>Trocar asset</div>
               <select
@@ -7374,34 +9688,61 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         )}
       </div>
 
-      {confirmExit && (
+      {confirmExit && (() => {
+        // Adapta texto/botoes ao estado: dirty mostra 3 opcoes (Cancelar/Descartar/
+        // Salvar e sair); limpo mostra 2 (Cancelar/Voltar). Sempre pergunta pra
+        // que o user nao saia por engano — pedido do user pra ser consistente.
+        const dirty = isDirtyRef.current || isDirty
+        return (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 24, width: 420, border: "1px solid #333" }}>
-            <div style={{ color: "white", fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Salvar alterações?</div>
-            <div style={{ color: "#888", fontSize: 13, marginBottom: 18 }}>Você tem mudanças não salvas. O que deseja fazer?</div>
+            <div style={{ color: "white", fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
+              {dirty ? "Salvar alterações?" : "Voltar para a campanha?"}
+            </div>
+            <div style={{ color: "#888", fontSize: 13, marginBottom: 18 }}>
+              {dirty
+                ? "Você tem mudanças não salvas. O que deseja fazer?"
+                : "Tudo salvo. Deseja sair do editor?"}
+            </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setConfirmExit(null)}
                 style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "8px 14px", color: "#888", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
-              <button onClick={() => { const go = confirmExit; setConfirmExit(null); if (go) go() }}
-                style={{ background: "transparent", border: "1px solid #d33", borderRadius: 6, padding: "8px 14px", color: "#d33", fontSize: 13, cursor: "pointer" }}>Descartar</button>
+              {dirty && (
+                <button onClick={() => {
+                  const go = confirmExit
+                  setConfirmExit(null)
+                  // Reseta isDirty ANTES de navegar pra que o beforeunload
+                  // listener do browser nao dispare o "Leave site?" nativo
+                  // (user ja decidiu via nosso dialog).
+                  isDirtyRef.current = false
+                  setIsDirty(false)
+                  if (go) go()
+                }}
+                  style={{ background: "transparent", border: "1px solid #d33", borderRadius: 6, padding: "8px 14px", color: "#d33", fontSize: 13, cursor: "pointer" }}>Descartar</button>
+              )}
               <button onClick={async () => {
                 const go = confirmExit
                 setConfirmExit(null)
-                try {
-                  await saveNow()
-                  console.log("[ConfirmExit] save completo, navegando…")
-                } catch (e) {
-                  console.warn("[ConfirmExit] saveNow falhou:", e)
+                if (dirty) {
+                  try {
+                    await saveNow()
+                    console.log("[ConfirmExit] save completo, navegando…")
+                  } catch (e) {
+                    console.warn("[ConfirmExit] saveNow falhou:", e)
+                  }
                 }
                 if (go) {
                   try { go() } catch (e) { console.warn("[ConfirmExit] go() falhou:", e) }
                 }
               }}
-                style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 14px", color: "#111", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Salvar e sair</button>
+                style={{ background: accentColor, border: "none", borderRadius: 6, padding: "8px 14px", color: "#111", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                {dirty ? "Salvar" : "Sair"}
+              </button>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {exportOpen && exportPieces.length > 0 && (
         <ExportDialog
@@ -7412,6 +9753,578 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       )}
 
       {modal && <GeneratePiecesModal campaignId={campaignId} fabricRef={fabricRef} onClose={() => setModal(false)} onGenerated={() => { setModal(false); router.push(`/pieces?campaignId=${campaignId}`) }} />}
+
+      {/* Banner de fontes ausentes — aparece quando uma fonte usada por algum
+          asset NAO esta disponivel no browser (Google Fonts 404 silencioso ou
+          fonte custom nunca uploadada). Sintoma sem este banner: preview do KV
+          (raster PSD) vem perfeito, mas Textbox cai em Arial sem o user saber.
+          Botao "Subir fonte" usa o mesmo fluxo do PsdImporter modal — file
+          picker .ttf/.otf, salva em customFontFiles do cliente, recarrega a
+          familia in-tab. */}
+      {missingFonts.length > 0 && (
+        <div style={{
+          position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)",
+          maxWidth: 720, width: "calc(100% - 32px)",
+          background: "#1a1a1a", border: "1px solid #facc15", borderLeft: "4px solid #facc15",
+          borderRadius: 8, padding: "12px 16px", zIndex: 9000,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#facc15", marginBottom: 2 }}>
+              Fontes não encontradas — {missingFonts.length} variante{missingFonts.length > 1 ? "s" : ""}
+            </div>
+            <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {missingFonts.slice(0, 3).map(f => f.label).join(", ")}{missingFonts.length > 3 ? `, +${missingFonts.length - 3}` : ""}
+            </div>
+          </div>
+          <button
+            onClick={() => setFontsModalOpen(true)}
+            disabled={!campaign?.client?.id}
+            title={campaign?.client?.id ? "Abrir gerenciador de fontes ausentes" : "Cliente nao identificado"}
+            style={{
+              background: campaign?.client?.id ? "#facc15" : "#333",
+              color: campaign?.client?.id ? "#000" : "#666",
+              border: "none", borderRadius: 6,
+              padding: "8px 14px", fontSize: 12, fontWeight: 700,
+              cursor: campaign?.client?.id ? "pointer" : "not-allowed", flexShrink: 0,
+            }}
+          >
+            Resolver fontes
+          </button>
+          <button
+            onClick={() => setMissingFonts([])}
+            title="Fechar aviso (nao resolve, apenas oculta)"
+            style={{
+              background: "transparent", border: "none", color: "#666",
+              fontSize: 18, cursor: "pointer", padding: "0 4px", lineHeight: 1, flexShrink: 0,
+            }}
+          >×</button>
+        </div>
+      )}
+
+      {/* Modal de gerenciamento de fontes ausentes — estilo Adobe "Find Font".
+          Pra cada variante missing: nome + dropdown "Substituir por..." +
+          botao de upload do arquivo .ttf/.otf. Substituir aplica imediato no
+          canvas; upload registra como customFontFile do cliente. */}
+      {fontsModalOpen && missingFonts.length > 0 && (
+        <div
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setFontsModalOpen(false) }}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9500,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div style={{
+            background: "#1a1a1a", color: "#fff",
+            borderRadius: 12, border: "1px solid #333",
+            width: "100%", maxWidth: 760, maxHeight: "85vh",
+            display: "flex", flexDirection: "column",
+            boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
+          }}>
+            <div style={{ padding: "18px 20px", borderBottom: "1px solid #2a2a2a" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
+                Fontes ausentes
+              </div>
+              <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+                Cada variante do PSD que não está disponível no browser. Substitua por
+                uma fonte já instalada ou suba o arquivo <code style={{ background: "#0f0f0f", padding: "1px 5px", borderRadius: 3 }}>.ttf</code>/<code style={{ background: "#0f0f0f", padding: "1px 5px", borderRadius: 3 }}>.otf</code> exato.
+                Substituição afeta só os textos que usam essa variante específica.
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
+              {/* Sub-header das colunas — Adobe-style alinhamento visual */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 170px 130px 100px 100px",
+                gap: 8, alignItems: "center",
+                padding: "6px 8px",
+                fontSize: 9, color: "#666", fontWeight: 700,
+                textTransform: "uppercase", letterSpacing: 0.6,
+              }}>
+                <div>Fonte ausente</div>
+                <div>Substituir família</div>
+                <div>Peso / estilo</div>
+                <div></div>
+                <div></div>
+              </div>
+              {missingFonts.map((mf, idx) => {
+                const familyOptions: Array<{ value: string; label: string; group: string }> = []
+                const brandFont = campaign?.client?.brandFont
+                if (typeof brandFont === "string" && brandFont.trim()) {
+                  familyOptions.push({ value: brandFont, label: brandFont, group: "Marca" })
+                }
+                const SYSTEM = ["Arial", "Helvetica", "Times New Roman", "Georgia", "Verdana", "Tahoma", "Courier New"]
+                for (const s of SYSTEM) {
+                  if (s !== brandFont) familyOptions.push({ value: s, label: s, group: "Sistema" })
+                }
+                for (const g of GOOGLE_FONTS) {
+                  if (g.name !== brandFont) familyOptions.push({ value: g.name, label: g.name, group: "Google Fonts" })
+                }
+                const groups = ["Marca", "Sistema", "Google Fonts"] as const
+                // 9 pesos × 2 estilos. Label legivel mantem a paridade com Adobe.
+                const WEIGHT_STYLE_OPTIONS: Array<{ value: string; label: string }> = [
+                  { value: "100|normal", label: "Thin" },
+                  { value: "100|italic", label: "Thin Italic" },
+                  { value: "200|normal", label: "ExtraLight" },
+                  { value: "200|italic", label: "ExtraLight Italic" },
+                  { value: "300|normal", label: "Light" },
+                  { value: "300|italic", label: "Light Italic" },
+                  { value: "400|normal", label: "Regular" },
+                  { value: "400|italic", label: "Italic" },
+                  { value: "500|normal", label: "Medium" },
+                  { value: "500|italic", label: "Medium Italic" },
+                  { value: "600|normal", label: "SemiBold" },
+                  { value: "600|italic", label: "SemiBold Italic" },
+                  { value: "700|normal", label: "Bold" },
+                  { value: "700|italic", label: "Bold Italic" },
+                  { value: "800|normal", label: "ExtraBold" },
+                  { value: "800|italic", label: "ExtraBold Italic" },
+                  { value: "900|normal", label: "Black" },
+                  { value: "900|italic", label: "Black Italic" },
+                ]
+                const choice = replacementChoices[mf.label] ?? {}
+                // Default do dropdown de peso: peso da fonte missing (Adobe-style:
+                // se voce esta substituindo Bold Italic, comeca em Bold Italic).
+                const effectiveWeight = choice.weight ?? mf.weight
+                const effectiveStyle = choice.style ?? mf.style
+                const currentWeightValue = `${effectiveWeight}|${effectiveStyle}`
+                const canApply = !!choice.family
+
+                async function applySubstitution(family: string, weight: number, style: "normal" | "italic") {
+                  try {
+                    const { loadGoogleFont, forceLoadFontFaces } = await import("@/lib/google-fonts")
+                    const isGoogle = GOOGLE_FONTS.some(g => g.name === family)
+                    if (isGoogle) {
+                      loadGoogleFont(family)
+                      await forceLoadFontFaces([family], 4000)
+                    }
+                  } catch {}
+                  // Aplica trocando a familia E sincronizando weight+style nos
+                  // textos afetados — Photoshop-style "replace with this weight".
+                  const fc = fabricRef.current
+                  if (fc) {
+                    const weightToNum = (w: any): number => {
+                      if (typeof w === "number") return w
+                      if (typeof w === "string") {
+                        const lower = w.trim().toLowerCase()
+                        if (lower === "bold") return 700
+                        if (lower === "normal" || lower === "regular") return 400
+                        const n = Number(lower)
+                        if (Number.isFinite(n) && n > 0) return n
+                      }
+                      return 400
+                    }
+                    const styleToCanon = (s: any): "normal" | "italic" =>
+                      typeof s === "string" && /italic|oblique/i.test(s) ? "italic" : "normal"
+                    let touched = 0
+                    for (const o of fc.getObjects()) {
+                      if (o.type !== "textbox" && o.type !== "i-text") continue
+                      const tb = o as any
+                      // Snapshot defaults antes de mexer — fallback per-char tem
+                      // que comparar contra valor original, nao o ja substituido.
+                      const origFamily = tb.fontFamily
+                      const origWeight = tb.fontWeight
+                      const origStyle = tb.fontStyle
+                      const matchesDefault = origFamily === mf.family
+                        && weightToNum(origWeight) === mf.weight
+                        && styleToCanon(origStyle) === mf.style
+                      if (matchesDefault) {
+                        tb.set("fontFamily", family)
+                        tb.set("fontWeight", weight)
+                        tb.set("fontStyle", style)
+                        touched++
+                      }
+                      const styles = tb.styles
+                      if (styles && typeof styles === "object") {
+                        for (const lineKey of Object.keys(styles)) {
+                          const line = styles[lineKey]
+                          if (!line || typeof line !== "object") continue
+                          for (const colKey of Object.keys(line)) {
+                            const cs = line[colKey]
+                            if (!cs) continue
+                            const charFamily = cs.fontFamily ?? origFamily
+                            const charWeight = weightToNum(cs.fontWeight ?? origWeight)
+                            const charStyle = styleToCanon(cs.fontStyle ?? origStyle)
+                            if (charFamily === mf.family && charWeight === mf.weight && charStyle === mf.style) {
+                              cs.fontFamily = family
+                              cs.fontWeight = weight
+                              cs.fontStyle = style
+                              touched++
+                            }
+                          }
+                        }
+                      }
+                      if ((tb as any).initDimensions) (tb as any).initDimensions()
+                      tb.setCoords()
+                    }
+                    if (touched > 0) {
+                      fc.requestRenderAll()
+                      isDirtyRef.current = true
+                      setIsDirty(true)
+                      if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+                      doSave()
+                    }
+                    console.log("[font-substitute]", mf.label, "→", `${family} ${weight} ${style}`, `(${touched} alvos)`)
+                  }
+
+                  // Propagacao no banco: substituicao deve persistir em
+                  // asset.content (spans) E asset.lastOverride pra que ao
+                  // reabrir o editor, o detection nao volte a reportar a
+                  // mesma fonte como missing. Sem isso, o save do canvas
+                  // atualizava so o layer.overrides do KV/Piece, mas as
+                  // spans do asset (fonte da verdade dos chars) continuavam
+                  // referenciando a familia missing.
+                  try {
+                    const weightToNumOuter = (w: any): number => {
+                      if (typeof w === "number") return w
+                      if (typeof w === "string") {
+                        const lower = w.trim().toLowerCase()
+                        if (lower === "bold") return 700
+                        if (lower === "normal" || lower === "regular") return 400
+                        const n = Number(lower)
+                        if (Number.isFinite(n) && n > 0) return n
+                      }
+                      return 400
+                    }
+                    const styleToCanonOuter = (s: any): "normal" | "italic" =>
+                      typeof s === "string" && /italic|oblique/i.test(s) ? "italic" : "normal"
+                    const matchesVariant = (entry: any): boolean => {
+                      if (!entry || typeof entry !== "object") return false
+                      const f = entry.fontFamily
+                      if (typeof f !== "string" || f !== mf.family) return false
+                      return weightToNumOuter(entry.fontWeight) === mf.weight
+                        && styleToCanonOuter(entry.fontStyle) === mf.style
+                    }
+                    const replaceFields = (entry: any) => {
+                      entry.fontFamily = family
+                      entry.fontWeight = weight
+                      entry.fontStyle = style
+                    }
+                    const assetsToPatch: Array<{ id: string; content: any; lastOverride: any }> = []
+                    for (const a of (campaign?.assets ?? [])) {
+                      if (a.type !== "TEXT") continue
+                      let assetDirty = false
+                      // 1) Spans em content
+                      const spansRaw: any = typeof a.content === "string"
+                        ? (() => { try { return JSON.parse(a.content as any) } catch { return [] } })()
+                        : a.content
+                      let newContent: any = spansRaw
+                      if (Array.isArray(spansRaw)) {
+                        const newSpans = spansRaw.map((s: any) => {
+                          if (matchesVariant(s?.style)) {
+                            const ns = { ...s.style }
+                            replaceFields(ns)
+                            assetDirty = true
+                            return { ...s, style: ns }
+                          }
+                          return s
+                        })
+                        newContent = newSpans
+                      }
+                      // 2) lastOverride: default + styles per-char.
+                      // CRITICO: o matchesVariant per-char usa `lo` (original)
+                      // como fallback pros campos nao setados, NAO `newLO` (que
+                      // ja foi atualizado se default match). Senao chars sem
+                      // fontFamily explicito (herdam do default original) deixam
+                      // de bater apos o default ja ter sido reescrito.
+                      const lo: any = (a as any).lastOverride
+                      let newLO: any = lo
+                      if (lo && typeof lo === "object") {
+                        newLO = { ...lo }
+                        const defaultMatched = matchesVariant(lo)
+                        if (defaultMatched) {
+                          replaceFields(newLO)
+                          assetDirty = true
+                        }
+                        if (lo.styles && typeof lo.styles === "object") {
+                          const newStyles: any = {}
+                          let stylesDirty = false
+                          for (const lineKey of Object.keys(lo.styles)) {
+                            const line = lo.styles[lineKey]
+                            if (!line || typeof line !== "object") {
+                              newStyles[lineKey] = line
+                              continue
+                            }
+                            const newLine: any = {}
+                            for (const colKey of Object.keys(line)) {
+                              const cs = line[colKey]
+                              if (cs && matchesVariant({
+                                fontFamily: cs.fontFamily ?? lo.fontFamily,
+                                fontWeight: cs.fontWeight ?? lo.fontWeight,
+                                fontStyle: cs.fontStyle ?? lo.fontStyle,
+                              })) {
+                                const nc = { ...cs }
+                                replaceFields(nc)
+                                newLine[colKey] = nc
+                                stylesDirty = true
+                              } else {
+                                newLine[colKey] = cs
+                              }
+                            }
+                            newStyles[lineKey] = newLine
+                          }
+                          if (stylesDirty) {
+                            newLO.styles = newStyles
+                            assetDirty = true
+                          }
+                        }
+                      }
+                      if (assetDirty) {
+                        assetsToPatch.push({ id: a.id, content: newContent, lastOverride: newLO })
+                      }
+                    }
+                    if (assetsToPatch.length > 0) {
+                      // PATCH em paralelo (asset endpoint aceita content e lastOverride
+                      // via PATCH simples — sem migrate de overrides do KV/Piece pois
+                      // estes ja foram atualizados pelo doSave do canvas).
+                      await Promise.all(assetsToPatch.map(p =>
+                        fetch(`/api/campaigns/${campaignId}/assets/${p.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            content: typeof p.content === "string" ? p.content : JSON.stringify(p.content),
+                            lastOverride: p.lastOverride,
+                          }),
+                        }).catch(err => console.warn("[font-substitute] PATCH asset falhou:", p.id, err))
+                      ))
+                      // Atualiza campaignRef em-memoria pra o proximo detection
+                      // dentro da MESMA sessao nao re-reportar a fonte velha.
+                      if (campaignRef.current && Array.isArray(campaignRef.current.assets)) {
+                        const patchedMap = new Map(assetsToPatch.map(p => [p.id, p]))
+                        campaignRef.current = {
+                          ...campaignRef.current,
+                          assets: campaignRef.current.assets.map((a: any) => {
+                            const p = patchedMap.get(a.id)
+                            if (!p) return a
+                            return { ...a, content: p.content, lastOverride: p.lastOverride }
+                          }),
+                        }
+                      }
+                      console.log("[font-substitute] PATCH em", assetsToPatch.length, "assets")
+                    }
+                  } catch (e) {
+                    console.warn("[font-substitute] propagacao no banco falhou:", e)
+                  }
+
+                  setMissingFonts(prev => prev.filter(x => x.label !== mf.label))
+                  setReplacementChoices(prev => { const c = { ...prev }; delete c[mf.label]; return c })
+                }
+
+                return (
+                  <div key={mf.label}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 170px 130px 100px 100px",
+                      gap: 8, alignItems: "center",
+                      padding: "10px 8px",
+                      borderTop: idx === 0 ? "none" : "1px solid #232323",
+                    }}>
+                    {/* Coluna 1: nome + indicador */}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 13, color: "#fff", fontWeight: 600,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {mf.label}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#f87171", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#f87171" }} />
+                        Ausente · cai em fallback
+                      </div>
+                    </div>
+                    {/* Coluna 2: dropdown FAMILIA */}
+                    <select
+                      value={choice.family ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setReplacementChoices(prev => ({
+                          ...prev,
+                          [mf.label]: { ...prev[mf.label], family: val || undefined },
+                        }))
+                      }}
+                      style={{
+                        background: "#0f0f0f", color: "#fff",
+                        border: "1px solid #333", borderRadius: 6,
+                        padding: "7px 8px", fontSize: 12, cursor: "pointer",
+                        outline: "none", fontFamily: "inherit", minWidth: 0,
+                      }}
+                    >
+                      <option value="">Família…</option>
+                      {groups.map(g => {
+                        const inGroup = familyOptions.filter(o => o.group === g)
+                        if (inGroup.length === 0) return null
+                        return (
+                          <optgroup key={g} label={g}>
+                            {inGroup.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </optgroup>
+                        )
+                      })}
+                    </select>
+                    {/* Coluna 3: dropdown PESO/ESTILO. Default = peso da fonte
+                        missing (Bold Italic substituido por outra fonte comeca
+                        em Bold Italic). User pode mudar livremente. */}
+                    <select
+                      value={currentWeightValue}
+                      onChange={(e) => {
+                        const [wStr, sStr] = e.target.value.split("|")
+                        const weight = Number(wStr)
+                        const style: "normal" | "italic" = sStr === "italic" ? "italic" : "normal"
+                        setReplacementChoices(prev => ({
+                          ...prev,
+                          [mf.label]: { ...prev[mf.label], weight, style },
+                        }))
+                      }}
+                      style={{
+                        background: "#0f0f0f", color: "#fff",
+                        border: "1px solid #333", borderRadius: 6,
+                        padding: "7px 8px", fontSize: 12, cursor: "pointer",
+                        outline: "none", fontFamily: "inherit",
+                      }}
+                    >
+                      {WEIGHT_STYLE_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    {/* Coluna 4: botao APLICAR substituicao */}
+                    <button
+                      onClick={() => {
+                        if (!choice.family) return
+                        applySubstitution(choice.family, effectiveWeight, effectiveStyle)
+                      }}
+                      disabled={!canApply}
+                      title={canApply ? `Substituir ${mf.label} por ${choice.family} ${effectiveWeight} ${effectiveStyle === "italic" ? "Italic" : ""}` : "Escolha a familia primeiro"}
+                      style={{
+                        background: canApply ? "#facc15" : "#2a2a2a",
+                        color: canApply ? "#000" : "#555",
+                        border: "none", borderRadius: 6,
+                        padding: "8px 10px", fontSize: 11, fontWeight: 700,
+                        cursor: canApply ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      Aplicar
+                    </button>
+                    {/* Coluna 5: botao SUBIR ARQUIVO */}
+                    <button
+                      onClick={() => {
+                        pendingFontUpload.current = mf
+                        fontUploadInputRef.current?.click()
+                      }}
+                      title={`Subir arquivo .ttf/.otf de "${mf.label}"`}
+                      style={{
+                        background: "transparent", color: "#facc15",
+                        border: "1px solid #facc15", borderRadius: 6,
+                        padding: "8px 10px", fontSize: 11, fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Subir
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #2a2a2a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 11, color: "#666" }}>
+                Substituições e uploads salvam no cliente — disponíveis em futuras campanhas.
+              </div>
+              <button
+                onClick={() => setFontsModalOpen(false)}
+                style={{
+                  background: "#facc15", color: "#000",
+                  border: "none", borderRadius: 6,
+                  padding: "8px 18px", fontSize: 12, fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <input
+        ref={fontUploadInputRef}
+        type="file"
+        accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf"
+        style={{ display: "none" }}
+        onChange={async (e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ""
+          const pending = pendingFontUpload.current
+          pendingFontUpload.current = null
+          const clientId = campaign?.client?.id
+          if (!file || !pending || !clientId) return
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const r = new FileReader()
+              r.onload = () => resolve(r.result as string)
+              r.onerror = () => reject(new Error("read fail"))
+              r.readAsDataURL(file)
+            })
+            const { detectFontMetadata, loadCustomFontFamily } = await import("@/lib/google-fonts")
+            const meta = detectFontMetadata(file.name)
+            // Usa o family puro (sem peso/estilo) do missing — o arquivo carrega
+            // com weight/style detectados do filename. loadCustomFontFamily
+            // registra varios @font-face com aliases pra cobrir o nome PSD.
+            const family = pending.family
+            const cRes = await fetch(`/api/clients/${clientId}`)
+            const cData = await cRes.json()
+            const existingFiles: any[] = Array.isArray(cData.customFontFiles) ? cData.customFontFiles : []
+            const newFile = { url: dataUrl, weight: meta.weight, style: meta.style, fileName: file.name }
+            const updatedFiles = [...existingFiles, newFile]
+            const patchBody: any = { customFontFiles: updatedFiles }
+            if (!cData.brandFont || cData.brandFont.trim() === "") patchBody.brandFont = family
+            await fetch(`/api/clients/${clientId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(patchBody),
+            })
+            loadCustomFontFamily(family, updatedFiles)
+            // Re-checa via measureText. Cada variante eh testada individualmente —
+            // user pode ter subido so a Bold; Italic e SemiBold ainda missing.
+            try {
+              const probeCanvas = document.createElement("canvas")
+              const ctx = probeCanvas.getContext("2d")
+              if (ctx) {
+                const SAMPLE = "mwiI@#$%MNOQRS 1234567890"
+                const FALLBACKS = ["serif", "sans-serif", "monospace"]
+                const stillMissing = missingFonts.filter(mf => {
+                  const escFamily = mf.family.replace(/"/g, '\\"')
+                  for (const fb of FALLBACKS) {
+                    ctx.font = `${mf.style} ${mf.weight} 72px ${fb}`
+                    const baseW = ctx.measureText(SAMPLE).width
+                    ctx.font = `${mf.style} ${mf.weight} 72px "${escFamily}", ${fb}`
+                    const testW = ctx.measureText(SAMPLE).width
+                    if (Math.abs(testW - baseW) > 0.5) return false // resolvida
+                  }
+                  return true // ainda missing
+                })
+                setMissingFonts(stillMissing)
+              } else {
+                setMissingFonts(prev => prev.filter(mf => mf.label !== pending.label))
+              }
+            } catch {
+              setMissingFonts(prev => prev.filter(mf => mf.label !== pending.label))
+            }
+            const fc = fabricRef.current
+            if (fc) {
+              const objs = fc.getObjects()
+              for (const o of objs) {
+                if ((o.type === "textbox" || o.type === "i-text") && (o as any).initDimensions) {
+                  ;(o as any).initDimensions()
+                }
+              }
+              fc.requestRenderAll()
+            }
+          } catch (err) {
+            console.warn("[font-upload] falhou:", err)
+            alert("Falha ao subir a fonte. Verifique se eh um arquivo .ttf ou .otf valido.")
+          }
+        }}
+      />
     </div>
   )
 }

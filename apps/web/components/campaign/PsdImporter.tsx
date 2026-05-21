@@ -1,11 +1,16 @@
 "use client"
 import { useState, useRef } from "react"
-import { detectFontMetadata, normalizePsdFontToGoogle, loadCustomFontFamily, type CustomFontFile } from "@/lib/google-fonts"
+import { detectFontMetadata, normalizePsdFontToGoogle, loadCustomFontFamily, extractFontWeight, type CustomFontFile } from "@/lib/google-fonts"
 import { Button } from "@/components/ui/Button"
+import { autoHidePhantomFolders } from "@/lib/psdLayerVisibility"
 
 interface Props {
   campaignId: string
   onImported: () => void
+  /** Tamanho do botao — default "md" (alinha com toolbars), passa "lg" pra
+      colunas de CTA principal. Mantem a filosofia ZZOSY de uniformidade
+      visual em cada contexto. */
+  size?: "sm" | "md" | "lg"
 }
 
 function colorToHex(color: any): string {
@@ -57,13 +62,27 @@ function computeLeafUnionBbox(layer: any): { minX: number; minY: number; maxX: n
 // groupPath: array de nomes de folder ancestrais (raiz → pai direto). Preserva
 // a hierarquia de groups do Photoshop pro round-trip. Sem isso, ao re-exportar
 // o PSD designers perdem toda a organização de pastas.
+//
+// inheritedEffects: effects (layer style) aplicados em folders ancestrais. PS
+// permite aplicar `fx` (stroke, color overlay, drop shadow, etc) num grupo
+// inteiro — efeito vale pro composite do grupo. ag-psd entrega `folder.effects`
+// igual qualquer layer; antes ignoravamos. Agora propagamos pros children como
+// inheritedEffects. Cada layer folha pode mergear com seu proprio effects.
+// Sintoma reportado pelo user: "folder 'Icones' tinha Stroke + Color Overlay
+// no PS, no ZZOSY veio sem o efeito".
 function collectAllLayers(
   layers: any[],
   parentHidden = false,
   inheritedRawMask: RawMaskRef | null = null,
   groupPath: string[] = [],
-): Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any; adjustments: any[] }> {
-  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any; adjustments: any[] }> = []
+  inheritedEffects: any[] = [],
+  // Folder ancestral mais proximo que tem layer style (colorOverlay/stroke/etc)
+  // visual. Quando setado, o leaf processa via "composite slice" — recorta
+  // psd.canvas na bbox da leaf em vez de usar layer.canvas (que pode nao ter o
+  // effect aplicado quando ag-psd nao parseia layer style de groups Pass Through).
+  ancestorWithVisualEffects: any | null = null,
+): Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any; adjustments: any[]; inheritedEffects: any[]; ancestorWithVisualEffects: any | null }> {
+  const result: Array<{ layer: any; inheritedRawMask: RawMaskRef | null; groupPath: string[]; clipBase: any; adjustments: any[]; inheritedEffects: any[]; ancestorWithVisualEffects: any | null }> = []
   // PS clipping chain: layer com clipping=true clipa pela primeira layer
   // NAO-clipping IMEDIATAMENTE ABAIXO no painel = no mesmo grupo. "Abaixo no
   // painel" = INDICE ANTERIOR no array de children (PSD armazena bottom→top).
@@ -126,7 +145,21 @@ function collectAllLayers(
       }
       const folderName = (layer.name ?? "").trim() || "Group"
       const childPath = [...groupPath, folderName]
-      result.push(...collectAllLayers(layer.children, effectiveHidden, folderMask, childPath))
+      const folderEffects = extractPsdEffects(layer)
+      const nextInheritedEffects = folderEffects
+        ? [...inheritedEffects, folderEffects]
+        : inheritedEffects
+      // Heuristica: detectar folder com layer style mesmo quando ag-psd nao
+      // parseia (Pass Through groups, formato Obfx legacy, etc). `layer.effects`
+      // truthy OU `objectBasedEffects` (campo bruto) indica que o PS aplicou
+      // algo visualmente. Pra esses folders, descendentes serao processados
+      // via "composite slice" do psd.canvas, garantindo pixel correto.
+      const folderHasLayerStyle = !!(folderEffects
+        || (layer as any).effects
+        || (layer as any).objectBasedEffects
+        || (layer as any).objectEffects)
+      const nextAncestor = folderHasLayerStyle ? layer : ancestorWithVisualEffects
+      result.push(...collectAllLayers(layer.children, effectiveHidden, folderMask, childPath, nextInheritedEffects, nextAncestor))
       // Folder serve como base de clipping se a proxima sibling for clipping=true.
       // Em PS, clipping pode usar folder abaixo — usamos o folder.mask como
       // silhueta aproximada (folder composite real seria mais fiel mas custoso).
@@ -136,7 +169,7 @@ function collectAllLayers(
     // Layer-folha: detecta clipping (precisa referenciar a base pra recortar)
     const isClipping = layer.clipping === true
     const isAdjustment = !!layer.adjustment
-    const entry: any = { layer, inheritedRawMask, groupPath, clipBase: null, adjustments: [] }
+    const entry: any = { layer, inheritedRawMask, groupPath, clipBase: null, adjustments: [], inheritedEffects, ancestorWithVisualEffects }
     if (isClipping && clipBaseInThisFolder) {
       entry.clipBase = clipBaseInThisFolder
     }
@@ -334,13 +367,18 @@ function vectorMaskToSvgPath(vm: any): { d: string; bbox: { minX: number; minY: 
 // Permite composicao (interseccao) entre multiplas masks no mesmo workspace.
 function buildRasterMaskCanvas(m: any, layerLeft: number = 0, layerTop: number = 0, layerRight?: number, layerBottom?: number)
   : { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean } | null {
-  const offX = m.positionRelativeToLayer ? layerLeft : 0
-  const offY = m.positionRelativeToLayer ? layerTop : 0
+  // FIX 2026-05-18: ag-psd retorna mask.left/top/right/bottom SEMPRE em coords
+  // ABSOLUTAS do canvas, mesmo quando positionRelativeToLayer=true. Esse flag
+  // tem semantica adobe (mask move junto com o layer se o user arrastar no PS),
+  // mas os valores nos campos ja sao absolutos quando lidos do PSD.
+  // Antes somavamos layerLeft/Top => coords duplicadas, mask ia parar fora do
+  // canvas e nao recortava nada visivelmente — sintoma: "alpha channel embaixo
+  // do bonequinho nao renderiza, terminal inteiro aparece".
   const src = m.canvas as HTMLCanvasElement
-  const mLeft = (m.left ?? 0) + offX
-  const mTop = (m.top ?? 0) + offY
-  const mRight = (m.right ?? ((m.left ?? 0) + src.width)) + offX
-  const mBottom = (m.bottom ?? ((m.top ?? 0) + src.height)) + offY
+  const mLeft = (m.left ?? 0)
+  const mTop = (m.top ?? 0)
+  const mRight = (m.right ?? ((m.left ?? 0) + src.width))
+  const mBottom = (m.bottom ?? ((m.top ?? 0) + src.height))
   const defaultColor = typeof m.defaultColor === "number" ? m.defaultColor : 255
   const expandToBounds = layerRight != null && layerBottom != null
   const finalLeft = expandToBounds ? Math.min(mLeft, layerLeft) : mLeft
@@ -848,16 +886,11 @@ function bakeImageEffects(src: HTMLCanvasElement, effects: any): { canvas: HTMLC
   // 3. BASE BITMAP (desenha com offset pro pad)
   ctx.drawImage(src, pad, pad)
 
-  // 4. COLOR OVERLAY: tint do bitmap existente
-  if (co && co.color) {
-    ctx.globalCompositeOperation = psdBlendToCompositeOp(co.blendMode)
-    // source-atop garante que só pinta onde tem alpha (preserva silhueta)
-    if (ctx.globalCompositeOperation === "source-over") ctx.globalCompositeOperation = "source-atop"
-    ctx.fillStyle = co.color
-    ctx.globalAlpha = co.opacity ?? 1
-    ctx.fillRect(0, 0, outW, outH)
-    ctx.globalAlpha = 1
-  }
+  // 4. COLOR OVERLAY: NAO bakeamos no bitmap. Render do editor aplica via
+  // BlendColor.tint (Fabric filter); export PSD escreve effect.colorOverlay
+  // que o Photoshop aplica em runtime. Sem isso, bitmap saia tingido +
+  // export removia effect → PSD aberto perdia o color overlay editavel.
+  // (Antigo bake foi removido apos audit ZZOSY 2026-05-20.)
 
   // 4.5 INNER SHADOW: sombra DENTRO da silhueta. Estrategia:
   // 1) inverte alpha da base (areas vazias→opaque, opaque→vazias)
@@ -1135,7 +1168,7 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
-export function PsdImporter({ campaignId, onImported }: Props) {
+export function PsdImporter({ campaignId, onImported, size = "md" }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [progress, setProgress] = useState("")
@@ -1147,6 +1180,10 @@ export function PsdImporter({ campaignId, onImported }: Props) {
   // so, reusado pra cada fonte; clicamos via .click() apos setar o pendingFontName)
   const fontUploadInputRef = useRef<HTMLInputElement>(null)
   const pendingFontName = useRef<string | null>(null)
+  // Lock pra serializar uploads de fonte (2 cliques rapidos → o segundo aguarda).
+  // Sem isso o GET /api/clients/{id} de cada upload parte do mesmo base e o
+  // segundo PATCH sobrescreve o primeiro (audit C5).
+  const fontUploadLock = useRef<Promise<void>>(Promise.resolve())
 
   async function handleFile(file: File) {
     if (loading) return // guard de re-entrada
@@ -1170,6 +1207,11 @@ export function PsdImporter({ campaignId, onImported }: Props) {
       const psd = readPsd(buffer, { skipLayerImageData: false, skipCompositeImageData: false, skipThumbnail: true })
 
       setProgress("Extraindo layers...")
+      // Detecta folders top-level "fantasmas" (presentes no PSD mas ausentes do
+      // composite raster que o PS gerou) e marca como hidden ANTES do collect.
+      // Caso comum: PSD multi-formato (1 STORY + 2 STORIES + PROFILE + ...).
+      // Sem isso, todos eram importados sobrepostos.
+      autoHidePhantomFolders(psd)
       const allLayerEntries = collectAllLayers(psd.children ?? [])
       const assets: any[] = []
       const imageBlobs: Blob[] = []
@@ -1225,7 +1267,8 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         guidToIndex.set(guid, idx)
       }
 
-      for (const { layer, inheritedRawMask, groupPath, clipBase, adjustments } of allLayerEntries) {
+      for (let _layerIdx = 0; _layerIdx < allLayerEntries.length; _layerIdx++) {
+        const { layer, inheritedRawMask, groupPath, clipBase, adjustments, inheritedEffects, ancestorWithVisualEffects } = allLayerEntries[_layerIdx]
         const name = (layer.name ?? "").trim()
         // Fix #6: filtra a "Background" auto-criada pelo PS (raster top-level
         // sem placedLayer), mas deixa passar Smart Objects intencionais que o
@@ -1267,10 +1310,10 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           bbox: `(${layer.left},${layer.top})-(${layer.right},${layer.bottom})`,
         })
 
-        const left = layer.left ?? 0
-        const top = layer.top ?? 0
-        const width = Math.max((layer.right ?? left + 200) - left, 10)
-        const height = Math.max((layer.bottom ?? top + 50) - top, 10)
+        let left = layer.left ?? 0
+        let top = layer.top ?? 0
+        let width = Math.max((layer.right ?? left + 200) - left, 10)
+        let height = Math.max((layer.bottom ?? top + 50) - top, 10)
 
         // === EXTRAI MASCARA (raster, vector, clipping) ===
         // ag-psd expoe: layer.mask (raster) com canvas+left+top+right+bottom,
@@ -1380,7 +1423,26 @@ export function PsdImporter({ campaignId, onImported }: Props) {
         // invisíveis no canvas.
         const psdOpacity = typeof (layer as any).opacity === "number" ? Math.max(0, Math.min(1, (layer as any).opacity)) : undefined
         const psdBlend = psdBlendToCanvas((layer as any).blendMode) ?? undefined
-        const psdEffects = extractPsdEffects(layer)
+        // Effects: merge do `layer.effects` proprio + effects herdados de
+        // folders ancestrais (collectAllLayers empilha durante a descida).
+        // Conflict resolution Adobe-style: effect do proprio layer prevalece;
+        // folder so contribui efeitos que o layer nao tem (ex: layer com so
+        // dropShadow + folder com stroke → asset fica com ambos).
+        const ownEffects = extractPsdEffects(layer)
+        let psdEffects: any | undefined = ownEffects
+        if (Array.isArray(inheritedEffects) && inheritedEffects.length > 0) {
+          // Merge: itera dos ancestrais mais distantes pra mais proximos, em
+          // cima own no final. Resulta em own > parent direto > avo > ...
+          const merged: any = {}
+          for (const fx of inheritedEffects) {
+            if (!fx) continue
+            for (const k of Object.keys(fx)) merged[k] = fx[k]
+          }
+          if (ownEffects) {
+            for (const k of Object.keys(ownEffects)) merged[k] = ownEffects[k]
+          }
+          if (Object.keys(merged).length > 0) psdEffects = merged
+        }
 
         if (layer.text) {
           const td = layer.text
@@ -1413,20 +1475,11 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           // usam Light(300), Medium(500), SemiBold(600), Black(900) — antes
           // mapeavamos tudo pra "normal"/"bold" e o browser caia em fallback,
           // perdendo a hierarquia visual (titulo Light com peso 400 ficava igual
-          // ao corpo Regular). Agora detecta o sufixo exato e retorna o weight
-          // ISO (100-900) que o Google Fonts (com axis wght@*) resolve direto.
-          const extractWeight = (psdName: string, fauxBold: boolean): number => {
-            if (fauxBold) return 700
-            if (/(^|-)Thin/i.test(psdName)) return 100
-            if (/(^|-)(ExtraLight|UltraLight)/i.test(psdName)) return 200
-            if (/(^|-)Light/i.test(psdName)) return 300
-            if (/(^|-)(Medium|Md)/i.test(psdName)) return 500
-            if (/(^|-)(SemiBold|DemiBold|SemiBd|DemiBd)/i.test(psdName)) return 600
-            if (/(^|-)(ExtraBold|UltraBold)/i.test(psdName)) return 800
-            if (/(^|-)(Black|Heavy)/i.test(psdName)) return 900
-            if (/(^|-)Bold/i.test(psdName) || /-(bd|b)$/i.test(psdName)) return 700
-            return 400 // Regular/Roman default
-          }
+          // Peso CSS numerico via helper compartilhado (lib/google-fonts.ts).
+          // Antes era duplicacao inline com regex distinta — agora ambos
+          // importers (matriz e peca) usam a mesma logica.
+          const extractWeight = (psdName: string, fauxBold: boolean): number =>
+            fauxBold ? 700 : extractFontWeight(psdName)
           const defWeight = extractWeight(defFontName, !!defStyle.fauxBold)
           const defStyleItalic = (defStyle.fauxItalic || isItalicByName) ? "italic" : "normal"
           // Alinhamento real do paragraphStyle (era hardcoded "left" — texto
@@ -1450,37 +1503,33 @@ export function PsdImporter({ campaignId, onImported }: Props) {
             if (Number.isFinite(avg) && avg > 0) textScale = avg
           }
           const scaledDefFontSize = defFontSize * textScale
-          // Leading em PONTOS já escalado. HEURÍSTICA PHOTOSHOP:
-          // autoLeading=true (explicit) → usa o fator do paragraphStyle (1.2 default)
-          // leading === fontSize (PSD freq. stora isso quando "Auto" tá marcado mas
-          //   a UI mostra valor explicito) → também trata como Auto
-          // caso contrário usa o valor literal.
-          // Sem essa heuristica, textos com leading=fontSize renderizam com
-          // lineHeight=1.0 (linhas baselines grudadas) e ficam sobrepostos.
+          // Leading em PONTOS — modelo Adobe. Estados que Photoshop persiste:
+          //   1. autoLeading=true (explicit) → Auto (fontSize × autoLeadingFactor)
+          //   2. leading=undefined → Auto (default, designer nao tocou)
+          //   3. leading=N && autoLeading=false (explicit) → LITERAL puro
+          //   4. leading=N (mesmo valor de fontSize) && autoLeading=undefined →
+          //      ambiguo. Empiricamente PS persiste assim quando "Auto" esta
+          //      marcado na UI mas o flag nao foi salvo. Mais comum que o
+          //      designer setar literal=fontSize. Por isso: trata como Auto.
+          //
+          // Regra final: assume Auto a menos que autoLeading SEJA explicitamente
+          // false. Trade-off: titulo com leading INTENCIONALMENTE compactado
+          // (=fontSize) precisa de ajuste manual no editor. Acceptable.
           const defLeadingRaw = typeof defStyle.leading === "number" ? defStyle.leading : undefined
           const paraAutoFactor = typeof td.paragraphStyle?.autoLeading === "number" ? td.paragraphStyle.autoLeading : 1.2
           const leadingEqualsFont = defLeadingRaw !== undefined && Math.abs(defLeadingRaw - defFontSize) < 0.5
-          const isLeadingAuto = defStyle.autoLeading === true || defLeadingRaw === undefined || leadingEqualsFont
+          const isLeadingAuto = defStyle.autoLeading === true
+            || defLeadingRaw === undefined
+            || (leadingEqualsFont && defStyle.autoLeading !== false)
           const defLeadingPt = isLeadingAuto
             ? Math.round(scaledDefFontSize * paraAutoFactor)
             : Math.round(defLeadingRaw! * textScale)
 
-          // Normalizador inline: PSD PostScript name → Google Font family.
-          // Mesma logica que normalizePsdFontToGoogle em lib/google-fonts.ts.
-          // Replicada inline pra evitar import dinamico em loop quente.
-          //   "OpenSans-BoldItalic" → "Open Sans"
-          //   "Exo2Roman-Bold"      → "Exo 2"   (Roman = variante PostScript)
-          //   "ArialMT"             → "Arial"   (MT suffix Adobe)
-          const normalizeFamily = (psdName: string): string => {
-            if (!psdName) return psdName
-            let base = psdName.replace(/-(Thin|ExtraLight|UltraLight|Light|Regular|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy)(Italic|Oblique)?$/i, "")
-                              .replace(/-(Italic|Oblique)$/i, "")
-                              .replace(/Roman$/i, "")
-                              .replace(/MT$/, "")
-                              .trim()
-            let spaced = base.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-            return spaced.replace(/([A-Za-z])(\d)/g, "$1 $2")
-          }
+          // Usa o normalizador compartilhado de lib/google-fonts.ts. Sem isso,
+          // tinhamos duplicacao inline com bugs distintos (ex: nao tratava
+          // sufixo "-Weight-Italic" com hifen extra, comum em PSDs Sicredi).
+          const normalizeFamily = (psdName: string): string =>
+            normalizePsdFontToGoogle(psdName) ?? psdName
           const defFamilyNorm = normalizeFamily(defFontName)
 
           let spans: any[] = []
@@ -1590,12 +1639,128 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           })
         } else if (layer.canvas || ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke))) {
           try {
-            // Shape layer com vectorFill/vectorStroke: ag-psd às vezes entrega
-            // canvas só com stroke (fill vem de Color Overlay) ou nem isso.
-            // Re-renderizamos vector UNDER + ag-psd canvas POR CIMA pra garantir
-            // o visual completo (escudo verde do piloto Sicredi caía nesse caso).
-            const renderedShape = renderShapeLayerCanvas(layer, width, height, left, top)
-            const preBakeOriginal: HTMLCanvasElement = renderedShape ?? (layer.canvas as HTMLCanvasElement)
+            // COMPOSITE SLICE deterministico via pixel comparison:
+            //
+            // Problema: ag-psd nao popula `layer.effects` em folders Pass Through
+            // (e em PSDs de versoes antigas/legacy). `layer.canvas` entregue eh
+            // a "silhueta crua" sem layer style. Detectar via `folder.effects`
+            // falhava silenciosamente porque ag-psd nao expoe.
+            //
+            // Solucao: comparar pixel-sample do `layer.canvas` com mesmo ponto
+            // do `psd.canvas` (composite final do PS). Se diferem significativa-
+            // mente, o PS aplicou algo (layer style, blend mode, adjustment,
+            // mascara externa) → usamos o pixel do COMPOSITE como verdade.
+            // Sem depender de qualquer flag de ag-psd. Robusto.
+            // Prioriza layer.canvas (pixel REAL que o PS rasterizou pra este
+            // layer, com vectorFill + layer styles APENAS do proprio layer
+            // aplicados). Renderizar vector via renderShapeLayerCanvas usa
+            // vectorFill.color cru — pode divergir do que o PS exibiu quando
+            // designer tem Color Overlay enabled/disabled (vectorFill fica
+            // congelado no PSD, overlay decide o pixel final).
+            //
+            // Sintoma reportado: CTA com Color Overlay DESLIGADO no PS aparecia
+            // verde no editor (renderShape pintou vectorFill=verde mesmo o
+            // composite mostrando o tom desligado). Layer.canvas reflete o
+            // pixel real do composite por-layer.
+            const layerCanvasRaw = (layer.canvas as HTMLCanvasElement | undefined)
+            const layerCanvas: HTMLCanvasElement = layerCanvasRaw
+              ?? renderShapeLayerCanvas(layer, width, height, left, top)
+              ?? document.createElement("canvas")
+            const psdComposite = (psd as any).canvas as HTMLCanvasElement | undefined
+
+            // BBOXES dos layers VISIVEIS ACIMA deste no z-order (entries > _layerIdx).
+            // Quando um sample point esta coberto por algum desses, a diferenca
+            // composite-vs-layer naquele ponto NAO eh "PS aplicou effect ao layer
+            // atual" — eh outro layer pintando por cima. Sem essa exclusao, um
+            // BG raster grande (ex: grid 2400x2400) vira IMAGE asset contendo
+            // o TEXTO de uma layer acima (bug: editor mostrava texto duplicado
+            // — uma vez vindo do composite-slice, outra do TEXT layer original).
+            const aboveBoxes: Array<{ l: number; t: number; r: number; b: number }> = []
+            for (let j = _layerIdx + 1; j < allLayerEntries.length; j++) {
+              const al = allLayerEntries[j].layer
+              if (!al || al.hidden || al.adjustment) continue
+              const al_l = al.left ?? 0
+              const al_t = al.top ?? 0
+              const al_r = al.right ?? al_l
+              const al_b = al.bottom ?? al_t
+              if (al_r > al_l && al_b > al_t) aboveBoxes.push({ l: al_l, t: al_t, r: al_r, b: al_b })
+            }
+            const isCoveredByAbove = (cx: number, cy: number): boolean => {
+              for (const b of aboveBoxes) {
+                if (cx >= b.l && cx < b.r && cy >= b.t && cy < b.b) return true
+              }
+              return false
+            }
+
+            const compositeDiffers = (() => {
+              if (!psdComposite || width <= 0 || height <= 0) return false
+              try {
+                const lctx = layerCanvas.getContext("2d", { willReadFrequently: true })
+                const pctx = psdComposite.getContext("2d", { willReadFrequently: true })
+                if (!lctx || !pctx) return false
+                // Grid 7×7 = 49 pontos. Suficiente pra capturar pixels mesmo em
+                // icones finos com pouca area opaca.
+                const samples: Array<[number, number]> = []
+                for (let yy = 1; yy <= 7; yy++) {
+                  for (let xx = 1; xx <= 7; xx++) {
+                    samples.push([Math.round(width * xx / 8), Math.round(height * yy / 8)])
+                  }
+                }
+                let visibleInLayer = 0
+                let visibleInComposite = 0
+                let differingSamples = 0
+                for (const [lx, ly] of samples) {
+                  if (lx >= layerCanvas.width || ly >= layerCanvas.height) continue
+                  const lp = lctx.getImageData(lx, ly, 1, 1).data
+                  const cx = Math.round(left + lx)
+                  const cy = Math.round(top + ly)
+                  if (cx < 0 || cy < 0 || cx >= psdComposite.width || cy >= psdComposite.height) continue
+                  // Skip samples cobertos por layers acima: o composite ali
+                  // reflete OUTRO layer, nao mudanca do layer atual.
+                  if (isCoveredByAbove(cx, cy)) continue
+                  const cp = pctx.getImageData(cx, cy, 1, 1).data
+                  if (lp[3] >= 16) visibleInLayer++
+                  if (cp[3] >= 16) visibleInComposite++
+                  // Compara so quando o layer tem pixel visivel (alpha > 0).
+                  // Pixels transparentes no layer nao adicionam info.
+                  if (lp[3] >= 16) {
+                    const dr = Math.abs(lp[0] - cp[0])
+                    const dg = Math.abs(lp[1] - cp[1])
+                    const db = Math.abs(lp[2] - cp[2])
+                    if (dr + dg + db > 24) differingSamples++
+                  }
+                }
+                // Caso 1 (heuristica normal): pelo menos 1 pixel visivel no layer
+                // diferiu do composite. Difference > 0 = PS aplicou algo.
+                if (visibleInLayer >= 1 && differingSamples >= 1) return true
+                // Caso 2 (icone "fantasma"): layer.canvas TODO transparente mas
+                // composite tem pixels. Acontece quando ag-psd nao renderiza o
+                // layer (shape com layer style complexo / smart object com bug).
+                // Composite eh a unica fonte de pixel real.
+                if (visibleInLayer === 0 && visibleInComposite >= 3) return true
+                return false
+              } catch { return false }
+            })()
+
+            let preBakeOriginal: HTMLCanvasElement
+            if (compositeDiffers && psdComposite) {
+              const slice = document.createElement("canvas")
+              slice.width = Math.max(1, Math.round(width))
+              slice.height = Math.max(1, Math.round(height))
+              const sctx = slice.getContext("2d")
+              if (sctx) {
+                const sx = Math.max(0, Math.min(psdComposite.width, Math.round(left)))
+                const sy = Math.max(0, Math.min(psdComposite.height, Math.round(top)))
+                const sw = Math.max(0, Math.min(psdComposite.width - sx, Math.round(width)))
+                const sh = Math.max(0, Math.min(psdComposite.height - sy, Math.round(height)))
+                if (sw > 0 && sh > 0) sctx.drawImage(psdComposite, sx, sy, sw, sh, 0, 0, sw, sh)
+                preBakeOriginal = slice
+              } else {
+                preBakeOriginal = layerCanvas
+              }
+            } else {
+              preBakeOriginal = layerCanvas
+            }
             // ADJUSTMENT LAYERS: aplica Levels/Brightness/Hue+Sat antes do bake.
             // Em PS, adjustments no mesmo grupo (acima desta layer) modificam
             // os pixels DESTA layer. Clona o canvas pra nao mutar o original.
@@ -1615,22 +1780,74 @@ export function PsdImporter({ campaignId, onImported }: Props) {
               } catch (e) { console.warn("[psd-adjust] falha em", name, e) }
             }
             // Bake colorOverlay/gradientOverlay/dropShadow/outerGlow no bitmap.
-            // Fabric não tem source-atop tint pra image fill — só fazendo bake
-            // o logo Sicredi (outline raster + colorOverlay verde) aparece com
-            // o fill correto no editor.
-            const baked = bakeImageEffects(preBake, psdEffects)
-            const finalCanvas = baked.canvas
+            // Quando o pixel veio via composite slice (psd.canvas), o PS ja
+            // aplicou TUDO — passamos effects vazios pro bake pra evitar dupla
+            // aplicacao (effect do folder pintando em cima do pixel ja tingido).
+            const usedCompositeSlice = compositeDiffers
+            const effectsForBake = usedCompositeSlice ? undefined : psdEffects
+            const baked = bakeImageEffects(preBake, effectsForBake)
+            let finalCanvas = baked.canvas
             const bakePad = baked.pad
-            // Effects que foram embutidas no bitmap: REMOVE do JSON pra evitar
-            // dupla aplicação. Agora bakeamos TAMBEM innerShadow, innerGlow,
-            // stroke (alem de colorOverlay/gradientOverlay/dropShadow/outerGlow).
-            // Mantém bevel/satin pra round-trip (sao mais complexos e raros).
-            let effectsForLayer = psdEffects
-            if (bakePad > 0 || (psdEffects && (psdEffects.colorOverlay || psdEffects.gradientOverlay || psdEffects.innerShadow || psdEffects.innerGlow || psdEffects.stroke))) {
+            // CLIP ao tamanho do canvas do PSD. Layers com bleed (bbox extrapola
+            // o documento, ex: bg/grid em -200 → 2200 num doc 2000x2000) sao
+            // recortados pra so manter o que esta DENTRO do canvas. Sem isso, o
+            // asset vinha 2400x2400 num doc 2000x2000 e o editor renderizava com
+            // overflow visivel.
+            //
+            // bakePad expande o bitmap pra alem do bbox PSD (shadow/glow). Pra
+            // nao cortar essas regioes ainda dentro do doc, calculamos clip em
+            // coords do finalCanvas (espaco com bakePad incluso) e ajustamos
+            // left/top/width/height (em coords do BBOX original do layer) pra
+            // bater com a area visivel pos-clip — preservando a semantica do
+            // assets.push abaixo (posX = left - bakePad, width = width + 2*pad).
+            const docW = psd.width
+            const docH = psd.height
+            {
+              const fcDocLeft = left - bakePad // onde finalCanvas comeca no doc
+              const fcDocTop = top - bakePad
+              const fcW = finalCanvas.width
+              const fcH = finalCanvas.height
+              const clipL = Math.max(0, -fcDocLeft)
+              const clipT = Math.max(0, -fcDocTop)
+              const clipR = Math.min(fcW, docW - fcDocLeft)
+              const clipB = Math.min(fcH, docH - fcDocTop)
+              const clipW = clipR - clipL
+              const clipH = clipB - clipT
+              const needsClip = clipL > 0 || clipT > 0 || clipR < fcW || clipB < fcH
+              if (needsClip && clipW > 0 && clipH > 0) {
+                const clipped = document.createElement("canvas")
+                clipped.width = clipW
+                clipped.height = clipH
+                const cx = clipped.getContext("2d")
+                if (cx) {
+                  cx.drawImage(finalCanvas, clipL, clipT, clipW, clipH, 0, 0, clipW, clipH)
+                  finalCanvas = clipped
+                  // Apos o clip:
+                  //  novo fcDocLeft = fcDocLeft + clipL
+                  //  novo finalCanvas.width = clipW
+                  // Como assets.push usa posX = left - bakePad, width = width + 2*pad,
+                  // ajustamos left/width pra essa relacao continuar valida:
+                  left = fcDocLeft + clipL + bakePad
+                  top = fcDocTop + clipT + bakePad
+                  width = clipW - bakePad * 2
+                  height = clipH - bakePad * 2
+                }
+              }
+            }
+            // Effects que foram embutidos no bitmap → REMOVE do JSON pra evitar
+            // dupla aplicacao no render. Quando viemos via composite slice, o
+            // pixel ja tem TUDO (PS aplicou no composite). Caso contrario, bake
+            // aplicou dropShadow/outerGlow/innerShadow/innerGlow/stroke (effects
+            // que tem visual EXTRA-BBOX ou complicados de renderizar em runtime).
+            //
+            // colorOverlay e gradientOverlay NAO sao mais bakeados — renderizam
+            // em runtime via applyFabricEffects (BlendColor.tint pra imagem,
+            // fill direto pra texto/shape). Mantidos no JSON pra round-trip:
+            // export PSD escreve effect, Photoshop aplica → preserva edicao.
+            let effectsForLayer: any = usedCompositeSlice ? undefined : psdEffects
+            if (!usedCompositeSlice && (bakePad > 0 || (psdEffects && (psdEffects.innerShadow || psdEffects.innerGlow || psdEffects.stroke)))) {
               if (psdEffects) {
                 effectsForLayer = { ...psdEffects }
-                delete effectsForLayer.colorOverlay
-                delete effectsForLayer.gradientOverlay
                 delete effectsForLayer.dropShadow
                 delete effectsForLayer.outerGlow
                 delete effectsForLayer.innerShadow
@@ -1791,15 +2008,16 @@ export function PsdImporter({ campaignId, onImported }: Props) {
           thumbCanvas.height = th
           const ctx = thumbCanvas.getContext("2d")
           if (ctx) {
-            ctx.fillStyle = "#ffffff"
-            ctx.fillRect(0, 0, tw, th)
+            // NAO pinta fundo branco — PSD composto ja tem alpha. Pintar branco
+            // mata a transparencia (apresentacao perde o alpha do KV).
             ctx.drawImage(psd.canvas as HTMLCanvasElement, 0, 0, tw, th)
             const thumbBlob: Blob | null = await new Promise(resolve => {
-              thumbCanvas.toBlob(b => resolve(b), "image/jpeg", 0.85)
+              // PNG preserva alpha (ver comentarios em uploadMatrixThumb).
+              thumbCanvas.toBlob(b => resolve(b), "image/png")
             })
             if (thumbBlob) {
               const tfd = new FormData()
-              tfd.append("thumbnail", thumbBlob, "kv-thumb.jpg")
+              tfd.append("thumbnail", thumbBlob, "kv-thumb.png")
               await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: tfd })
             }
           }
@@ -1849,7 +2067,7 @@ export function PsdImporter({ campaignId, onImported }: Props) {
     <>
       <Button
         variant="primary"
-        size="lg"
+        size={size}
         accept=".psd"
         onFileSelect={(f) => handleFile(f)}
         loading={loading}
@@ -1930,54 +2148,62 @@ export function PsdImporter({ campaignId, onImported }: Props) {
                 const fontName = pendingFontName.current
                 pendingFontName.current = null
                 if (!file || !fontName || !missingFontsModal.clientId) return
-                // Marca uploading
+                // Cap de 5MB pre-base64 — TTF/OTF maiores que isso sao raros e
+                // viram ~7MB em base64 dentro do JSON LongText (audit C5).
+                if (file.size > 5 * 1024 * 1024) {
+                  setMissingFontsModal(m => m && {
+                    ...m,
+                    fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "error" as const, errorMsg: `Arquivo > 5MB (${(file.size / 1024 / 1024).toFixed(1)}MB)` } : f)
+                  })
+                  return
+                }
                 setMissingFontsModal(m => m && {
                   ...m,
                   fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "uploading" as const } : f)
                 })
-                try {
-                  // Le arquivo como dataUrl base64
-                  const dataUrl = await new Promise<string>((resolve, reject) => {
-                    const r = new FileReader()
-                    r.onload = () => resolve(r.result as string)
-                    r.onerror = () => reject(new Error("read fail"))
-                    r.readAsDataURL(file)
-                  })
-                  const meta = detectFontMetadata(file.name)
-                  // Familia derivada do NOME DO PSD (fontName) que esta faltando,
-                  // nao do filename — assim o brandFont bate exatamente com o
-                  // fontFamily salvo em styles[].fontFamily pelos textos.
-                  const family = normalizePsdFontToGoogle(fontName) ?? fontName
-                  // GET client atual
-                  const cid = missingFontsModal.clientId
-                  const cRes = await fetch(`/api/clients/${cid}`)
-                  const cData = await cRes.json()
-                  const existingFiles: CustomFontFile[] = Array.isArray(cData.customFontFiles) ? cData.customFontFiles : []
-                  const newFile: CustomFontFile = { url: dataUrl, weight: meta.weight, style: meta.style, fileName: file.name }
-                  const updatedFiles = [...existingFiles, newFile]
-                  // PATCH client. Se brandFont nao setado, seta com a familia atual.
-                  const patchBody: any = { customFontFiles: updatedFiles }
-                  if (!cData.brandFont || cData.brandFont.trim() === "") patchBody.brandFont = family
-                  await fetch(`/api/clients/${cid}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(patchBody),
-                  })
-                  // Carrega imediatamente no tab atual (multi-alias registra
-                  // sob family + PostScript + display name)
-                  loadCustomFontFamily(family, updatedFiles)
-                  // Marca como done
-                  setMissingFontsModal(m => m && {
-                    ...m,
-                    fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "done" as const } : f)
-                  })
-                } catch (err: any) {
-                  console.warn("[font-upload] falhou:", err)
-                  setMissingFontsModal(m => m && {
-                    ...m,
-                    fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "error" as const, errorMsg: String(err?.message ?? err) } : f)
-                  })
-                }
+                // Serializa: aguarda upload anterior antes de partir. Sem isso
+                // dois cliques rapidos racam o GET → segundo PATCH sobrescreve
+                // customFontFiles do primeiro (audit C5).
+                const prev = fontUploadLock.current
+                fontUploadLock.current = (async () => {
+                  await prev
+                  try {
+                    const dataUrl = await new Promise<string>((resolve, reject) => {
+                      const r = new FileReader()
+                      r.onload = () => resolve(r.result as string)
+                      r.onerror = () => reject(new Error("read fail"))
+                      r.readAsDataURL(file)
+                    })
+                    const meta = detectFontMetadata(file.name)
+                    const family = normalizePsdFontToGoogle(fontName) ?? fontName
+                    const cid = missingFontsModal.clientId!
+                    const cRes = await fetch(`/api/clients/${cid}`)
+                    if (!cRes.ok) throw new Error(`GET /api/clients/${cid} → HTTP ${cRes.status}`)
+                    const cData = await cRes.json()
+                    const existingFiles: CustomFontFile[] = Array.isArray(cData.customFontFiles) ? cData.customFontFiles : []
+                    const newFile: CustomFontFile = { url: dataUrl, weight: meta.weight, style: meta.style, fileName: file.name }
+                    const updatedFiles = [...existingFiles, newFile]
+                    const patchBody: any = { customFontFiles: updatedFiles }
+                    if (!cData.brandFont || cData.brandFont.trim() === "") patchBody.brandFont = family
+                    const pRes = await fetch(`/api/clients/${cid}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(patchBody),
+                    })
+                    if (!pRes.ok) throw new Error(`PATCH falhou — HTTP ${pRes.status}`)
+                    loadCustomFontFamily(family, updatedFiles)
+                    setMissingFontsModal(m => m && {
+                      ...m,
+                      fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "done" as const } : f)
+                    })
+                  } catch (err: any) {
+                    console.warn("[font-upload] falhou:", err)
+                    setMissingFontsModal(m => m && {
+                      ...m,
+                      fonts: m.fonts.map(f => f.name === fontName ? { ...f, status: "error" as const, errorMsg: String(err?.message ?? err) } : f)
+                    })
+                  }
+                })()
               }}
             />
             <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 12 }}>
