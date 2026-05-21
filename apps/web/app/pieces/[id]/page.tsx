@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
-import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { USER_SELECTABLE_STATUSES, statusMeta } from "@/lib/pieceStatus"
 import { Button } from "@/components/ui/Button"
 
 interface Piece {
@@ -19,7 +19,7 @@ interface Piece {
 }
 
 // ENTREGUE eh marcador automatico (set apenas pelo backend ao criar entrega).
-const STATUS_OPTIONS = PIECE_STATUS_LIST.filter(s => s !== "ENTREGUE").map(s => ({ value: s, label: statusMeta(s).label }))
+const STATUS_OPTIONS = USER_SELECTABLE_STATUSES.map(s => ({ value: s, label: statusMeta(s).label }))
 
 export default function PiecePage() {
   const { id } = useParams<{ id: string }>()
@@ -170,7 +170,7 @@ export default function PiecePage() {
             {!saving && saved && <span style={{ fontSize: 11, color: "#15803d" }}>✓ Salvo</span>}
             <Button variant="danger" onClick={(e) => deletePiece(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
             <Button variant="info" onClick={duplicatePiece} loading={duplicating}>Duplicar</Button>
-            <Button variant="primary" onClick={safeBack} title="Voltar para a campanha (salva alteracoes pendentes antes)">← Voltar</Button>
+            <Button variant="view" onClick={safeBack} title="Voltar para a campanha (salva alteracoes pendentes antes)">← Voltar</Button>
           </div>
         </div>
 

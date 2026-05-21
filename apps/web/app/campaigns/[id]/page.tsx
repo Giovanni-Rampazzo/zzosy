@@ -6,13 +6,14 @@ import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
-import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { PIECE_STATUS_LIST, USER_SELECTABLE_STATUSES, statusMeta } from "@/lib/pieceStatus"
 import { FilterPill } from "@/components/ui/FilterPill"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
 import { PsdPieceImporter } from "@/components/campaign/PsdPieceImporter"
 import { Button } from "@/components/ui/Button"
+import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
 
@@ -21,7 +22,7 @@ interface Campaign {
   id: string
   name: string
   code?: string | null
-  client: { id: string; name: string }
+  client: { id: string; name: string; logoUrl?: string | null; brandColors?: Array<{ hex: string; name?: string | null; role?: string | null }> | null }
   psdName?: string | null
   assets: Asset[]
   keyVision?: { width?: number; height?: number; bgColor?: string; thumbnailUrl?: string | null; updatedAt?: string } | null
@@ -237,10 +238,33 @@ export default function CampaignOverviewPage() {
         {/* Header com titulo a esquerda + voltar a direita */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 24 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {campaign.client?.id && (
+                <ClientLogoBadge
+                  client={{
+                    id: campaign.client.id,
+                    name: campaign.client.name ?? "Empresa",
+                    logoUrl: (campaign.client as any)?.logoUrl,
+                  }}
+                  size={24}
+                  radius={4}
+                />
+              )}
               <span style={{ cursor: "pointer" }} onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}>
                 {campaign.client?.name ?? "—"}
-              </span> /
+              </span>
+              <span>/</span>
+              {campaign.client?.id && (
+                <button
+                  onClick={() => router.push(`/clients/${campaign.client!.id}/design-system`)}
+                  title="Abrir o Design System da empresa (cores, fontes, tipografia, logo)"
+                  style={{
+                    background:"transparent", border:"1px solid #D0D0D0", color:"#666",
+                    fontSize:11, padding:"3px 10px", borderRadius:4, cursor:"pointer",
+                  }}>
+                  Design System
+                </button>
+              )}
             </div>
             {/* Linha unica: codigo na esquerda + nome da campanha na direita.
                 Sem label "Codigo" — o campo edita inline e fala por si. */}
@@ -288,7 +312,10 @@ export default function CampaignOverviewPage() {
         <CampaignSubnav
           campaignId={id}
           clientId={campaign.client?.id}
+          clientName={campaign.client?.name}
           activeTab="campaign"
+          hasAssets={!!campaign.assets && campaign.assets.length > 0}
+          hasPieces={pieces.length > 0}
         />
 
         {/* Preview KV + botões */}
@@ -327,24 +354,57 @@ export default function CampaignOverviewPage() {
             </div>
             <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, marginTop: 12, textAlign: "center" }}>Key Vision (Matriz)</div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <PsdImporter campaignId={id} onImported={loadAll} />
-            {campaign.assets && campaign.assets.length > 0 && (
-              <PsdPieceImporter
-                campaignId={id}
-                campaignAssets={campaign.assets}
-                onImported={loadAll}
-              />
-            )}
-            <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/assets`)}>Assets</Button>
-            <Button variant="primary" size="lg" onClick={() => router.push(`/campaigns/${id}/presentation`)} disabled={pieces.length === 0}>
-              Apresentação
-            </Button>
-            <Button variant="primary" size="lg" onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)} disabled={!campaign.assets || campaign.assets.length === 0}>
-              Gerar peça
-            </Button>
-            <Button variant="primary" size="lg" onClick={() => setDeliveryOpen(true)} disabled={pieces.length === 0}>Entrega</Button>
-          </div>
+          {/* Coluna de AÇÕES da campanha (modificam dados — nao sao
+              navegacao). Navegacao (Assets/KV/Pecas/Apresentacao) fica no
+              CampaignSubnav no topo. Hierarquia visual: CTA principal eh
+              o "proximo passo" do fluxo do user — depende do estado:
+                - sem assets         → Importar PSD (primary)
+                - com assets, sem pecas → Gerar peca (primary)
+                - com pecas          → Entrega (primary)
+              Outros ficam secondary. Reduz ruido visual e guia o user. */}
+          {(() => {
+            const hasAssets = !!campaign.assets && campaign.assets.length > 0
+            const hasPieces = pieces.length > 0
+            const primaryStep: "import" | "generate" | "deliver" =
+              !hasAssets ? "import" : !hasPieces ? "generate" : "deliver"
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2 }}>Matriz</div>
+                <PsdImporter
+                  campaignId={id}
+                  onImported={loadAll}
+                  size="lg"
+                />
+                {hasAssets && (
+                  <PsdPieceImporter
+                    campaignId={id}
+                    campaignAssets={campaign.assets}
+                    onImported={loadAll}
+                  />
+                )}
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2, marginTop: 8 }}>Conteúdo</div>
+                <Button
+                  variant={primaryStep === "generate" ? "primary" : "secondary"}
+                  size="lg"
+                  onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
+                  disabled={!hasAssets}
+                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}
+                >
+                  + Gerar peça
+                </Button>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2, marginTop: 8 }}>Entrega</div>
+                <Button
+                  variant={primaryStep === "deliver" ? "primary" : "secondary"}
+                  size="lg"
+                  onClick={() => setDeliveryOpen(true)}
+                  disabled={!hasPieces}
+                  title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}
+                >
+                  Empacotar entrega
+                </Button>
+              </div>
+            )
+          })()}
         </div>
 
         {/* Lista de peças */}
@@ -394,7 +454,7 @@ export default function CampaignOverviewPage() {
           {bulkStatusOpen && (
             <div style={{ background: "white", border: "1px solid #E0E0E0", borderRadius: 8, padding: 8, marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap", boxShadow: "0 2px 6px rgba(0,0,0,0.05)" }}>
               <span style={{ fontSize: 11, color: "#888", padding: "5px 8px" }}>Marcar como:</span>
-              {PIECE_STATUS_LIST.filter(s => s !== "ENTREGUE").map(s => {
+              {USER_SELECTABLE_STATUSES.map(s => {
                 const meta = statusMeta(s)
                 return (
                   <button key={s} onClick={() => bulkSetStatus(s)}

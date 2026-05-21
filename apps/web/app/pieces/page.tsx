@@ -44,15 +44,81 @@ function PiecesContent() {
   const [exportOpen, setExportOpen] = useState(false)
   const [campaignName, setCampaignName] = useState<string | undefined>(undefined)
   const [campaignClientId, setCampaignClientId] = useState<string | undefined>(undefined)
+  const [campaignClientName, setCampaignClientName] = useState<string | undefined>(undefined)
+  const [campaignHasAssets, setCampaignHasAssets] = useState<boolean>(false)
 
   useEffect(() => {
+    let cancelled = false
     const url = campaignId ? `/api/pieces?campaignId=${campaignId}` : "/api/pieces"
-    fetch(url).then(r => r.json()).then(d => { setPieces(d); setLoading(false) })
+    // Carga inicial — com loading state
+    fetch(url).then(r => r.json()).then(d => {
+      if (cancelled) return
+      setPieces(d); setLoading(false)
+    })
     if (campaignId) {
       fetch(`/api/campaigns/${campaignId}`).then(r => r.json()).then((c: any) => {
+        if (cancelled) return
         setCampaignName(c?.title ?? c?.name)
         setCampaignClientId(c?.client?.id ?? c?.clientId)
+        setCampaignClientName(c?.client?.name)
+        setCampaignHasAssets(Array.isArray(c?.assets) && c.assets.length > 0)
       }).catch(() => {})
+    }
+
+    // === PREVIEW REAL-TIME ===
+    // Refetch silencioso: pega mudancas externas (outra aba, outro user, scripts).
+    // 5s eh balance entre frescor visual e load no server. Pula visualmente
+    // piscar comparando updatedAt — atualiza apenas pieces que mudaram.
+    async function silentRefetch() {
+      if (cancelled || typeof document === "undefined" || document.hidden) return
+      try {
+        const r = await fetch(url, { cache: "no-store" })
+        if (!r.ok) return
+        const fresh: Piece[] = await r.json()
+        if (cancelled) return
+        setPieces(prev => {
+          // Se quantidade mudou ou ids diferentes → substitui completo
+          const prevIds = prev.map(p => p.id).join("|")
+          const freshIds = fresh.map(p => p.id).join("|")
+          if (prevIds !== freshIds) return fresh
+          // Mesmo conjunto: faz merge preservando referencias quando updatedAt
+          // nao mudou (evita re-render desnecessario do <img>).
+          return prev.map(p => {
+            const next = fresh.find(f => f.id === p.id)
+            if (!next) return p
+            const prevTs = new Date((p as any).updatedAt ?? 0).getTime()
+            const nextTs = new Date((next as any).updatedAt ?? 0).getTime()
+            return nextTs > prevTs ? next : p
+          })
+        })
+      } catch {}
+    }
+    const pollTimer = setInterval(silentRefetch, 5000)
+
+    // Listener BroadcastChannel: editor faz postMessage quando salva uma peca.
+    // Refetch IMEDIATO quando notificado (sem esperar o polling). Cross-tab.
+    let bc: BroadcastChannel | null = null
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        bc = new BroadcastChannel("zzosy:pieces")
+        bc.onmessage = (ev) => {
+          const msg = ev.data
+          if (!msg || msg.type !== "piece-updated") return
+          // Se a peca atualizada eh dessa campanha (ou estamos vendo todas), refetch
+          if (!campaignId || msg.campaignId === campaignId) silentRefetch()
+        }
+      }
+    } catch {}
+
+    // Tambem refetch quando a aba volta a ficar visivel (user trocou de aba e voltou)
+    const onVisible = () => { if (!document.hidden) silentRefetch() }
+    document.addEventListener("visibilitychange", onVisible)
+
+    return () => {
+      cancelled = true
+      clearInterval(pollTimer)
+      document.removeEventListener("visibilitychange", onVisible)
+      try { bc?.close() } catch {}
     }
   }, [campaignId])
 
@@ -139,10 +205,10 @@ function PiecesContent() {
           <CampaignSubnav
             campaignId={campaignId}
             clientId={campaignClientId}
+            clientName={campaignClientName}
             activeTab="pieces"
-            inlineActions={
-              <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${campaignId}/presentation`)}>Apresentação</Button>
-            }
+            hasAssets={campaignHasAssets}
+            hasPieces={pieces.length > 0}
           />
         )}
         <div className="flex items-center justify-between mb-6">
@@ -274,6 +340,10 @@ function PiecesContent() {
                       size="sm"
                       onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))}
                     />
+                  </div>
+                  <div className="flex items-center gap-1 mt-2 pt-2 border-t border-[#F0F0F0]">
+                    <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça">Duplicar</Button>
+                    <Button variant="danger" size="sm" onClick={(e) => deleteOne(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                   </div>
                 </div>
               </div>

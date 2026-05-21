@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
@@ -61,6 +61,9 @@ export default function PresentationPage() {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
+  // Modo apresentacao fullscreen
+  const [presenting, setPresenting] = useState(false)
+  const [presentIdx, setPresentIdx] = useState(0)
   const brand = useBrand()
   // Subset do brand passado aos slides (campos opcionais com fallback nos defaults).
   const slideBrand = {
@@ -89,6 +92,35 @@ export default function PresentationPage() {
         }
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
+        // Garante step thumbs pra pecas multi-step que tem steps sem imageUrl.
+        // Acontece quando user adiciona steps via editor mas nao re-abriu a
+        // peca (autoGen do editor so roda na abertura). Roda em background
+        // depois do render inicial; refetcha lista de pecas quando algum thumb
+        // foi gerado, atualizando o preview sem reload manual.
+        if (Array.isArray(p) && p.length > 0) {
+          ;(async () => {
+            try {
+              const { ensureStepThumbsForPieces } = await import("@/lib/ensureStepThumbs")
+              const touched = await ensureStepThumbsForPieces(
+                p.map((piece: any) => ({ id: piece.id, campaignId: id, steps: piece.steps })),
+                async (cid: string) => {
+                  const r = await fetch(`/api/campaigns/${cid}`, { cache: "no-store" })
+                  if (!r.ok) return []
+                  const cdata = await r.json()
+                  return Array.isArray(cdata?.assets) ? cdata.assets : []
+                },
+              )
+              if (touched.length > 0) {
+                console.log("[PRESENTATION] regenerou step thumbs em", touched.length, "pecas; refetching")
+                const r = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" })
+                if (r.ok) {
+                  const fresh: any[] = await r.json()
+                  setPieces(fresh)
+                }
+              }
+            } catch (e) { console.warn("[PRESENTATION] ensureStepThumbs falhou:", e) }
+          })()
+        }
       } finally {
         setLoading(false)
       }
@@ -112,9 +144,33 @@ export default function PresentationPage() {
     }
     window.addEventListener("focus", refetch)
     document.addEventListener("visibilitychange", onVisibilityChange)
+
+    // === PREVIEW REAL-TIME (mesma logica de /pieces) ===
+    // BroadcastChannel: editor salva uma peca/matriz → notifica todos os
+    // viewers da apresentacao pra refetch imediato.
+    let bcPieces: BroadcastChannel | null = null
+    let bcCampaigns: BroadcastChannel | null = null
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        bcPieces = new BroadcastChannel("zzosy:pieces")
+        bcPieces.onmessage = (ev) => {
+          if (ev.data?.type === "piece-updated" && ev.data?.campaignId === id) refetch()
+        }
+        bcCampaigns = new BroadcastChannel("zzosy:campaigns")
+        bcCampaigns.onmessage = (ev) => {
+          if (ev.data?.type === "kv-updated" && ev.data?.campaignId === id) refetch()
+        }
+      }
+    } catch {}
+    // Polling 6s pra capturar mudancas externas (multi-user, batch scripts)
+    const poll = setInterval(() => { if (!document.hidden) refetch() }, 6000)
+
     return () => {
       window.removeEventListener("focus", refetch)
       document.removeEventListener("visibilitychange", onVisibilityChange)
+      clearInterval(poll)
+      try { bcPieces?.close() } catch {}
+      try { bcCampaigns?.close() } catch {}
     }
   }, [id])
 
@@ -234,7 +290,66 @@ export default function PresentationPage() {
   const segmentDividers = groups.filter(g => g.segment !== null).length
   const totalSlides = 2 + segmentDividers + totalPieceSlides + 1
 
-  let slideNum = 0
+  // === MONTA LISTA LINEAR DE SLIDES ===
+  // Usada tanto pra render em scroll quanto pra modo apresentacao fullscreen.
+  // Cada entry tem { node, label } pra exibir contador "X de N · Label".
+  type SlideEntry = { node: React.ReactNode; label: string; id?: string }
+  const slides: SlideEntry[] = []
+  slides.push({ label: "Capa", node: <SlideCover brand={slideBrand} /> })
+  slides.push({
+    label: "Código + Nome da campanha",
+    node: (
+      <SlideCode
+        campaignName={campaign.name}
+        code={campaign.code ?? null}
+        brand={slideBrand}
+        campaignId={campaign.id}
+        onCampaignChange={(next) => setCampaign(c => c ? { ...c, ...(next.name !== undefined ? { name: next.name } : {}), ...(next.code !== undefined ? { code: next.code } : {}) } : c)}
+      />
+    ),
+  })
+  for (const group of groups) {
+    if (group.segment !== null) {
+      slides.push({ label: `Segmento: ${group.segment}`, node: <SlideSegment segment={group.segment} brand={slideBrand} /> })
+    }
+    for (const p of group.pieces) {
+      const chunks = chunkPieceSteps(p)
+      chunks.forEach((slide, si) => {
+        const displayName = slide.totalChunks > 1
+          ? `${p.name || "Peça"} (Parte ${slide.chunkIndex + 1}/${slide.totalChunks})`
+          : (p.name || "Peça sem nome")
+        const stepsForSlide = slide.stepsChunk
+          ? slide.stepsChunk.map((s: any, i: number) => ({ ...s, index: slide.chunkIndex * STEPS_PER_SLIDE + i }))
+          : null
+        const isLastChunk = slide.chunkIndex === slide.totalChunks - 1
+        slides.push({
+          label: displayName,
+          id: si === 0 ? `piece-${p.id}` : undefined,
+          node: (
+            <SlidePiece
+              name={displayName}
+              width={p.width}
+              height={p.height}
+              widthValue={p.widthValue}
+              heightValue={p.heightValue}
+              widthUnit={p.widthUnit}
+              heightUnit={p.heightUnit}
+              imageUrl={p.imageUrl ?? null}
+              steps={stepsForSlide}
+              copy={p.copy ?? null}
+              pieceId={p.id}
+              hideCard={!isLastChunk}
+              brand={slideBrand}
+              onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
+              onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
+              onStepClick={(stepIndex) => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation&stepIndex=${stepIndex}`)}
+            />
+          ),
+        })
+      })
+    }
+  }
+  slides.push({ label: "Obrigado", node: <SlideThanks brand={slideBrand} /> })
 
   return (
     <PageShell>
@@ -262,6 +377,7 @@ export default function PresentationPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${id}`)}>Voltar</Button>
+          <Button variant="primary" size="md" onClick={() => { setPresentIdx(0); setPresenting(true) }}>Apresentar</Button>
           <Button variant="primary" size="md" onClick={exportPPTX} disabled={exporting}>
             {exporting ? "Exportando…" : "Exportar PPT"}
           </Button>
@@ -282,79 +398,164 @@ export default function PresentationPage() {
           maxWidth: 938, width: "100%",
           margin: "0 auto",
         }}>
-          <SlideRow num={++slideNum} total={totalSlides} label="Capa">
-            <SlideCover brand={slideBrand} />
-          </SlideRow>
-
-          <SlideRow num={++slideNum} total={totalSlides} label="Código + Nome da campanha">
-            <SlideCode
-              campaignName={campaign.name}
-              code={campaign.code ?? null}
-              brand={slideBrand}
-              campaignId={campaign.id}
-              onCampaignChange={(next) => setCampaign(c => c ? { ...c, ...(next.name !== undefined ? { name: next.name } : {}), ...(next.code !== undefined ? { code: next.code } : {}) } : c)}
-            />
-          </SlideRow>
-
-          {groups.map((group, gi) => (
-            <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              {group.segment !== null && (
-                <SlideRow num={++slideNum} total={totalSlides} label={`Segmento: ${group.segment}`}>
-                  <SlideSegment segment={group.segment} brand={slideBrand} />
-                </SlideRow>
-              )}
-              {group.pieces.flatMap(p => {
-                const slides = chunkPieceSteps(p)
-                return slides.map((slide, si) => {
-                  // Nome: se a peca foi quebrada, mostra "Nome (Parte N/M)".
-                  const displayName = slide.totalChunks > 1
-                    ? `${p.name || "Peça"} (Parte ${slide.chunkIndex + 1}/${slide.totalChunks})`
-                    : (p.name || "Peça sem nome")
-                  // Re-indexa os steps do chunk pra label "Step N" comecar
-                  // do indice global (nao reseta a cada slide).
-                  const stepsForSlide = slide.stepsChunk
-                    ? slide.stepsChunk.map((s: any, i: number) => ({
-                        ...s,
-                        index: slide.chunkIndex * STEPS_PER_SLIDE + i,
-                      }))
-                    : null
-                  // hideCard: chunks NAO-finais escondem a legenda. So o
-                  // ultimo chunk mostra (mais natural visualmente — legenda
-                  // vem depois de todos os steps).
-                  const isLastChunk = slide.chunkIndex === slide.totalChunks - 1
-                  return (
-                    <SlideRow key={`${p.id}-${si}`} id={si === 0 ? `piece-${p.id}` : undefined} num={++slideNum} total={totalSlides} label={displayName}>
-                      <SlidePiece
-                        name={displayName}
-                        width={p.width}
-                        height={p.height}
-                        widthValue={p.widthValue}
-                        heightValue={p.heightValue}
-                        widthUnit={p.widthUnit}
-                        heightUnit={p.heightUnit}
-                        imageUrl={p.imageUrl ?? null}
-                        steps={stepsForSlide}
-                        copy={p.copy ?? null}
-                        pieceId={p.id}
-                        hideCard={!isLastChunk}
-                        brand={slideBrand}
-                        onCopyChange={(next) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, copy: next } : x))}
-                        onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation`)}
-                        onStepClick={(stepIndex) => router.push(`/editor?campaignId=${id}&pieceId=${p.id}&from=presentation&stepIndex=${stepIndex}`)}
-                      />
-                    </SlideRow>
-                  )
-                })
-              })}
-            </div>
+          {slides.map((s, idx) => (
+            <SlideRow key={idx} id={s.id} num={idx + 1} total={slides.length} label={s.label}>
+              {s.node}
+            </SlideRow>
           ))}
-
-          <SlideRow num={++slideNum} total={totalSlides} label="Obrigado">
-            <SlideThanks brand={slideBrand} />
-          </SlideRow>
         </div>
       </div>
+
+      {/* MODO APRESENTAÇÃO FULLSCREEN — renderiza 1 slide por vez com setas */}
+      {presenting && (
+        <FullscreenPresenter
+          slides={slides}
+          index={presentIdx}
+          onIndex={setPresentIdx}
+          onExit={() => setPresenting(false)}
+        />
+      )}
     </PageShell>
+  )
+}
+
+/**
+ * Overlay fullscreen com 1 slide centralizado + setas < > + contador + ESC pra sair.
+ * Usa Fullscreen API real do browser pra ocupar a tela toda (esconde barra do
+ * sistema). Teclado: ←/→/Space/PageUp/PageDown navega; Esc/F sai.
+ */
+function FullscreenPresenter({ slides, index, onIndex, onExit }: {
+  slides: Array<{ node: React.ReactNode; label: string; id?: string }>
+  index: number
+  onIndex: (i: number) => void
+  onExit: () => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Entra em fullscreen ao montar; sai no unmount. Sincroniza estado com
+  // fullscreenchange (caso user aperte F11 ou Esc nativo).
+  useEffect(() => {
+    const el = containerRef.current
+    if (el && el.requestFullscreen) {
+      el.requestFullscreen().catch(() => {})
+    }
+    function onFsChange() {
+      if (!document.fullscreenElement) onExit()
+    }
+    document.addEventListener("fullscreenchange", onFsChange)
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange)
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {})
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Atalhos de teclado: navegacao + sair
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { onExit(); return }
+      if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown" || e.key === "ArrowDown") {
+        e.preventDefault()
+        onIndex(Math.min(slides.length - 1, index + 1))
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "ArrowUp") {
+        e.preventDefault()
+        onIndex(Math.max(0, index - 1))
+      } else if (e.key === "Home") {
+        onIndex(0)
+      } else if (e.key === "End") {
+        onIndex(slides.length - 1)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [index, slides.length, onIndex, onExit])
+
+  const current = slides[index]
+  if (!current) return null
+  const atStart = index === 0
+  const atEnd = index === slides.length - 1
+
+  return (
+    <div ref={containerRef} style={{
+      position: "fixed", inset: 0,
+      background: "#000",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 9999, padding: 32,
+    }}>
+      {/* Slide centralizado, mantendo aspecto 16:9 (igual SlideRow) */}
+      <div style={{
+        width: "min(96vw, calc(96vh * 16 / 9))",
+        aspectRatio: "16 / 9",
+        position: "relative",
+      }}>
+        {current.node}
+      </div>
+
+      {/* SETA ESQUERDA */}
+      <button
+        onClick={() => onIndex(Math.max(0, index - 1))}
+        disabled={atStart}
+        title="Anterior (←)"
+        style={{
+          position: "fixed", left: 24, top: "50%", transform: "translateY(-50%)",
+          width: 56, height: 56, borderRadius: "50%",
+          background: atStart ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.12)",
+          border: "1px solid rgba(255,255,255,0.2)",
+          color: atStart ? "#444" : "#fff",
+          fontSize: 24, cursor: atStart ? "not-allowed" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(8px)",
+          transition: "background 120ms ease, transform 120ms ease",
+        }}
+      >‹</button>
+
+      {/* SETA DIREITA */}
+      <button
+        onClick={() => onIndex(Math.min(slides.length - 1, index + 1))}
+        disabled={atEnd}
+        title="Próximo (→)"
+        style={{
+          position: "fixed", right: 24, top: "50%", transform: "translateY(-50%)",
+          width: 56, height: 56, borderRadius: "50%",
+          background: atEnd ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.12)",
+          border: "1px solid rgba(255,255,255,0.2)",
+          color: atEnd ? "#444" : "#fff",
+          fontSize: 24, cursor: atEnd ? "not-allowed" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(8px)",
+          transition: "background 120ms ease, transform 120ms ease",
+        }}
+      >›</button>
+
+      {/* CONTADOR + LABEL no rodape */}
+      <div style={{
+        position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)",
+        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        padding: "8px 18px", borderRadius: 999,
+        display: "flex", alignItems: "center", gap: 12,
+        color: "#fff", fontSize: 13,
+      }}>
+        <span style={{ fontWeight: 700 }}>{index + 1} / {slides.length}</span>
+        <span style={{ opacity: 0.6 }}>·</span>
+        <span style={{ opacity: 0.85, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{current.label}</span>
+      </div>
+
+      {/* BOTAO SAIR no canto superior direito */}
+      <button
+        onClick={onExit}
+        title="Sair (Esc)"
+        style={{
+          position: "fixed", top: 20, right: 20,
+          background: "rgba(255,255,255,0.08)",
+          border: "1px solid rgba(255,255,255,0.15)",
+          color: "#fff", padding: "6px 14px", borderRadius: 6,
+          cursor: "pointer", fontSize: 12, fontWeight: 600,
+        }}
+      >Sair (Esc)</button>
+    </div>
   )
 }
 

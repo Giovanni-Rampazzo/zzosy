@@ -4924,7 +4924,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // dashboard) refetch o KV thumb atualizado.
       try {
         if (typeof BroadcastChannel !== "undefined") {
-          const bc = new BroadcastChannel("zzosy-campaigns")
+          const bc = new BroadcastChannel("zzosy:campaigns")
           bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
           bc.close()
         }
@@ -4976,7 +4976,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // sem precisar de server push. Listener em /pieces refetch imediato.
     try {
       if (typeof BroadcastChannel !== "undefined") {
-        const bc = new BroadcastChannel("zzosy-pieces")
+        const bc = new BroadcastChannel("zzosy:pieces")
         bc.postMessage({ type: "piece-updated", pieceId: pId, campaignId, ts: Date.now() })
         bc.close()
       }
@@ -5334,7 +5334,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // — listeners ficavam stale.
         try {
           if (typeof BroadcastChannel !== "undefined") {
-            const bc = new BroadcastChannel("zzosy-campaigns")
+            const bc = new BroadcastChannel("zzosy:campaigns")
             bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
             bc.close()
           }
@@ -6411,7 +6411,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
         try {
           if (typeof BroadcastChannel !== "undefined") {
-            const bc = new BroadcastChannel("zzosy-campaigns")
+            const bc = new BroadcastChannel("zzosy:campaigns")
             bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
             bc.close()
           }

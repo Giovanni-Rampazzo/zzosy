@@ -12,6 +12,15 @@ export type PieceStatus = keyof typeof PIECE_STATUSES
 
 export const PIECE_STATUS_LIST: PieceStatus[] = ["STANDBY", "CRIACAO", "CLIENTE", "APROVADO", "REPROVADO", "ENTREGUE"]
 
+// Status default em novas pieces / fallback de render. Antes era literal
+// "STANDBY" espalhado em 12+ arquivos (audit F3.1).
+export const DEFAULT_PIECE_STATUS: PieceStatus = "STANDBY"
+
+// Status que o user pode escolher via UI (badge dropdown, filtros). Exclui
+// ENTREGUE que e auto-setado em POST /api/deliveries. Antes era literal
+// `PIECE_STATUS_LIST.filter(s => s !== "ENTREGUE")` duplicado em 4 lugares.
+export const USER_SELECTABLE_STATUSES: PieceStatus[] = PIECE_STATUS_LIST.filter(s => s !== "ENTREGUE")
+
 export function statusMeta(status: string | null | undefined) {
   if (!status) return PIECE_STATUSES.STANDBY
   return (PIECE_STATUSES as any)[status] ?? PIECE_STATUSES.STANDBY
