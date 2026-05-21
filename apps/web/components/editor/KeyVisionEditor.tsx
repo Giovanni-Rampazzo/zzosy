@@ -3786,6 +3786,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         })
         ;(p as any).__assetId = asset.id
         ;(p as any).__assetLabel = asset.label
+        // Marker explicito pra detectar SHAPE no painel direito + save. Type
+        // do Fabric.Path pode variar entre versoes ("path", "Path", null em
+        // certos casos de toObject roundtrip); flag custom eh imune.
+        ;(p as any).__isShape = true
         if (psdEffects) (p as any).__psdEffects = psdEffects
         if (psdGroupPath) (p as any).__groupPath = psdGroupPath
         applyFabricEffects(p, psdEffects, Shadow)
@@ -5230,7 +5234,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // DS link: persiste false explicito quando user customizou. True
             // eh default, omitido pra economizar JSON.
             if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
-          } else if (o.type === "path") {
+          } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override: fill/stroke/strokeWidth editados via painel.
             // Sem isso, ao recarregar a peca/editor as edicoes voltavam pro
             // asset.content original (PSD raw) — perdia tudo.
@@ -5401,7 +5405,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               layer.overrides.styles = o.styles
             }
             if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
-          } else if (o.type === "path") {
+          } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override (matriz): fill/stroke/strokeWidth editados via painel.
             if (typeof o.fill === "string") layer.overrides.fill = o.fill
             if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
@@ -6318,7 +6322,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (o.styles && Object.keys(o.styles).length > 0) {
               layer.overrides.styles = o.styles
             }
-          } else if (o.type === "path") {
+          } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override (doSave peca): mesmo padrao do save matriz.
             if (typeof o.fill === "string") layer.overrides.fill = o.fill
             if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
@@ -6485,7 +6489,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (o.styles && Object.keys(o.styles).length > 0) {
               layer.overrides.styles = o.styles
             }
-          } else if (o.type === "path") {
+          } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override (doSave matriz): mesmo padrao dos outros sites.
             if (typeof o.fill === "string") layer.overrides.fill = o.fill
             if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
@@ -9790,7 +9794,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           </div>
             )
           })()
-        ) : selected.type === "path" ? (
+        ) : ((selected as any).__isShape === true || selected.type === "path" || selected.type === "Path") ? (
           /* SHAPE editor (Fabric.Path) — fill + stroke + stroke-width editaveis.
              Mantem o path vetorial vivo (sem rasterizar), preservando edicao
              Photoshop-like. Sincroniza com Fabric via .set + renderAll. */
