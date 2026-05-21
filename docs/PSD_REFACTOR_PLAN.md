@@ -118,11 +118,22 @@ Cada bug acima exige solução individual (heurísticas / fallbacks) que vira **
 - [ ] Editor cria `Fabric.Path` com fill/stroke nativos
 - [ ] Edição vetorial no editor (sem rasterizar)
 
-### Fase 5 — Adjustment + Blend Modes (sessão 8-9)
+### Fase 5 — Blend Modes (sessão 8-9)
 
-- [ ] `PsdAdjustmentLayer` types: Levels, Curves, HueSat, ColorBalance, Brightness, Contrast, etc
-- [ ] Editor aplica via Fabric `Filter` ou offscreen composite
-- [ ] Blend modes: mapping completo PSD → canvas + fallback documentado
+- [ ] Blend modes: mapping COMPLETO PSD → canvas (todos os 27 + passThrough)
+- [ ] Pra blend modes nao suportados por globalCompositeOperation nativo
+      (vividLight, pinLight, hardMix, etc), implementar via shader/pixel manipulation
+      em offscreen canvas — fidelidade matematica Adobe
+- [ ] Satin + Bevel & Emboss effects
+- [ ] Effect blendMode + opacity per-effect (cada effect tem seus props)
+
+**Critério de saída:** todos os 27 blend modes Adobe renderizam identicos
+ao PS num test fixture controlado.
+
+**FORA DESSA FASE (decisao do user):**
+- Adjustment Layers (Levels, Curves, etc) — IGNORADOS no import. Marca
+  aviso no console pro user aplicar manualmente antes de salvar o PSD.
+- Smart Filters — IGNORADOS.
 
 ### Fase 6 — Round-trip (sessão 10-11)
 
@@ -149,10 +160,31 @@ Considerando ~2-3 sessões por semana, **3-4 semanas de calendário**.
 3. **Performance:** modelo separado vs baked pode ser mais lento (effects calculados live). Mitigação: cache de render quando layer não muda.
 4. **Regressão visual:** durante a transição, alguns PSDs podem ficar piores antes de ficar melhores. Mitigação: branch separado, comparison testing com fixtures.
 
-## Decisão necessária do user
+## Decisões tomadas (Giovanni)
 
-**Antes de seguir pra Fase 1, preciso de:**
+1. ✅ **Arquitetura aprovada** (3 módulos separados, sem bake)
+2. ✅ **Escopo refinado**: Layer Effects + Masks + Sólidos + Canais Alpha.
+   FORA: Adjustments, Smart Filters, 3D, layer comps, video.
+3. ✅ **Branch separado**: `claude/psd-refactor` criado a partir de
+   `claude/piece-card-zero-padding` post-F12.
+4. ✅ **Pode mexer em outras coisas em paralelo**, MAS sempre seguindo a
+   **lógica Adobe** e priorizando **robustez profissional**, mesmo que
+   leve mais tempo.
 
-1. Aprovação do data model (após F12.2)
-2. Confirmação que não tem feature urgente que dependa do importer atual nas próximas 3 semanas
-3. Branch strategy: `claude/psd-refactor` ou continuar no branch atual?
+## Princípio guia (Giovanni)
+
+> "Faça a base certa para não termos mais nenhum problema com arquivos
+>  de Photoshop. E que eles se falem na mesma linguagem."
+
+Operacionalmente isso significa:
+
+- **Fidelidade matemática Adobe**, não aproximação. Blend modes implementados
+  via fórmula correta, não fallback "parecido o suficiente".
+- **Round-trip identico**: import → export gera PSD funcionalmente equivalente
+  (binary diff aceitavel, semantica identica).
+- **Mesma linguagem**: o PSD do usuário, o nosso editor e o PSD exportado
+  falam o mesmo "data model" (PsdDocument). Não há tradução com perdas
+  ocultas — toda perda é explicita no log + documentada.
+- **Sem heurísticas frágeis**: o renderer trata cada estrutura PSD
+  declarativamente. Se ag-psd não expõe alguma feature, isso é UM caso
+  de não-cobertura, não silenciosa.
