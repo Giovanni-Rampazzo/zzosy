@@ -582,6 +582,7 @@ function buildClippingMaskCanvas(
   layerTop: number,
   layerRight: number,
   layerBottom: number,
+  psdComposite?: HTMLCanvasElement | null,
 ): { canvas: HTMLCanvasElement; posX: number; posY: number; width: number; height: number; disabled: boolean } | null {
   if (!clipBase) return null
   // Caso 1: clipBase eh folder com mask. Adobe usa o composite do folder como
@@ -605,23 +606,60 @@ function buildClippingMaskCanvas(
     return buildRasterMaskCanvas(m, layerLeft, layerTop, layerRight, layerBottom)
   }
   // Caso 2: clipBase eh layer com canvas. Adobe usa o ALPHA do canvas direto.
-  if (clipBase.canvas) {
-    const baseL = clipBase.left ?? 0
-    const baseT = clipBase.top ?? 0
-    const baseR = clipBase.right ?? baseL
-    const baseB = clipBase.bottom ?? baseT
+  // Caso 2b (fallback): se canvas do clipBase nao foi decodificado pelo ag-psd
+  // (acontece em PSDs muito grandes / smart objects sem raster), tenta SLICE
+  // do composite do PSD nas coords do bbox do clipBase. Sem isso, a clipping
+  // chain falhava → mask placeholder rect → user via foto em retangulo em vez
+  // do silhuette real (audit F11).
+  const baseL = clipBase.left ?? 0
+  const baseT = clipBase.top ?? 0
+  const baseR = clipBase.right ?? baseL
+  const baseB = clipBase.bottom ?? baseT
+  let sourceCanvas: HTMLCanvasElement | null = (clipBase.canvas as HTMLCanvasElement | undefined) ?? null
+  let usedCompositeFallback = false
+  if (!sourceCanvas && psdComposite && baseR > baseL && baseB > baseT) {
+    const sx = Math.max(0, Math.min(psdComposite.width, Math.round(baseL)))
+    const sy = Math.max(0, Math.min(psdComposite.height, Math.round(baseT)))
+    const sw = Math.max(0, Math.min(psdComposite.width - sx, Math.round(baseR - baseL)))
+    const sh = Math.max(0, Math.min(psdComposite.height - sy, Math.round(baseB - baseT)))
+    if (sw > 0 && sh > 0) {
+      const slice = document.createElement("canvas")
+      slice.width = sw; slice.height = sh
+      const sctx = slice.getContext("2d")
+      if (sctx) {
+        sctx.drawImage(psdComposite, sx, sy, sw, sh, 0, 0, sw, sh)
+        sourceCanvas = slice
+        usedCompositeFallback = true
+        console.log("[psd-mask] clipBase sem canvas — fallback composite slice", { name: clipBase.name, bbox: `${baseL},${baseT}→${baseR},${baseB}` })
+      }
+    }
+  }
+  if (sourceCanvas) {
     // Converte alpha do canvas em grayscale (R=G=B=alpha, A=255) pra que
     // buildRasterMaskCanvas processe via sua rotina gray→alpha padrao.
-    const c = clipBase.canvas as HTMLCanvasElement
     const tmp = document.createElement("canvas")
-    tmp.width = c.width; tmp.height = c.height
+    tmp.width = sourceCanvas.width; tmp.height = sourceCanvas.height
     const tctx = tmp.getContext("2d")
     if (!tctx) return null
-    tctx.drawImage(c, 0, 0)
-    const id = tctx.getImageData(0, 0, c.width, c.height)
+    tctx.drawImage(sourceCanvas, 0, 0)
+    const id = tctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height)
     const dd = id.data
     for (let i = 0; i < dd.length; i += 4) {
-      dd[i] = dd[i + 1] = dd[i + 2] = dd[i + 3]
+      // Quando usamos composite slice como fonte, o alpha do composite eh
+      // sempre 255 (PS sempre rasteriza fundo opaco). A silhueta entao vira
+      // tudo "visivel" — nao serve. Usa LUMINANCIA invertida (regiões escuras
+      // do composite onde a silhueta foi pintada viram visiveis na mask).
+      // Funciona pra silhuetas escuras sobre fundo claro (caso comum: shield
+      // preto sobre verde do BG). Pra silhuetas claras, pode falhar — mas
+      // melhor que rect bbox completo.
+      if (usedCompositeFallback) {
+        const lum = 0.299 * dd[i] + 0.587 * dd[i + 1] + 0.114 * dd[i + 2]
+        // Inverte: pixel escuro (lum baixa) = mais visivel na mask
+        const v = Math.round(255 - lum)
+        dd[i] = dd[i + 1] = dd[i + 2] = v
+      } else {
+        dd[i] = dd[i + 1] = dd[i + 2] = dd[i + 3]
+      }
       dd[i + 3] = 255
     }
     tctx.putImageData(id, 0, 0)
@@ -1396,7 +1434,11 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
         const hasClipping = (layer as any).clipping === true && !!clipBase
         if (hasClipping) {
           try {
-            const w = buildClippingMaskCanvas(clipBase, left, top, left + width, top + height)
+            // psd.canvas como fallback quando clipBase.canvas nao foi decodificado
+            // (PSDs gigantes, smart objects). Sem ele, clipping silenciava em
+            // placeholder rect — user via foto recortada em retangulo.
+            const compositeForFallback = (psd as any).canvas as HTMLCanvasElement | undefined
+            const w = buildClippingMaskCanvas(clipBase, left, top, left + width, top + height, compositeForFallback ?? null)
             if (w) silhouettes.push(w)
           } catch (e) { console.warn("[psd-mask] clipping silhouette falhou:", name, e) }
         }

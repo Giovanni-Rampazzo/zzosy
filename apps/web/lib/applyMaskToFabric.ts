@@ -11,12 +11,23 @@
 import type { LayerMask } from "@/lib/maskTypes"
 
 export async function applyMaskToFabricObject(fabric: any, obj: any, mask: LayerMask | null | undefined): Promise<void> {
+  // Salva o objeto LayerMask original no Fabric object pra round-trip do save.
+  // IMPORTANTE: anota ANTES do early-return de !enabled. Mascara desabilitada
+  // (enabled=false) ainda precisa ser persistida — Photoshop guarda mascaras
+  // ocultas e o user pode re-habilitar. Sem essa anotacao, save grava layers
+  // sem mask e ao recarregar a mask some pra sempre.
+  if (mask) (obj as any).__maskData = mask
   if (!mask || !mask.enabled) return
 
-  // Salva o objeto LayerMask original no Fabric object pra round-trip do save.
-  // Sem isso, ao salvar perderia o tipo/path/dataUrl original e so sobraria
-  // o clipPath aplicado (que nao da pra serializar de volta no formato LayerMask).
-  ;(obj as any).__maskData = mask
+  // Photoshop-style: text-layer raster masks sao aplicadas como ALPHA pixel
+  // (texto fica semi-transparente nas regioes cinza da mask). Fabric v7 Image
+  // clipPath ignora alpha — vira silhueta binaria que recorta o texto como
+  // retangulo preto. Sem bake possivel pra texto vetorial. Decisao Adobe-fiel:
+  // preserva __maskData pra round-trip ao salvar/exportar PSD, mas pula
+  // aplicacao visual no canvas (texto inteiro continua visivel). Re-exportar
+  // o PSD mantem a mask no layer.
+  const isText = obj?.type === "textbox" || obj?.type === "i-text"
+  if (isText && mask.type === "raster") return
 
   try {
     if (mask.type === "vector" && mask.vector) {
@@ -76,39 +87,21 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
     }
 
     if (mask.type === "clipping" && mask.clipping) {
-      // Clipping mask: este layer recorta o layer ABAIXO (zIndex menor).
-      // Aplicacao: pegamos o objeto Fabric do layer abaixo, clonamos como clipPath.
-      // Marcamos __clippingMask + __clippingTargetIndex pra round-trip do save.
+      // Clipping mask placeholder: chegou aqui pq buildClippingMaskCanvas
+      // retornou null no import (clipBase sem canvas + sem composite slice
+      // como fallback). Aplicar rect bbox do layer abaixo DESVIRTUA o resultado
+      // visual (audit F11): em PS o photo eh recortado pelo SILHUETTE real,
+      // nao pelo bbox retangular.
+      //
+      // Antes (pre-F11): criava Fabric.Path rect ABS com bbox do target →
+      // photo apareceria recortado em quadrado, e o user veria a foto
+      // extrapolar a forma curva da silhueta.
+      //
+      // Decisao Adobe-fiel: melhor NAO aplicar mask alguma e mostrar o photo
+      // inteiro do que mascarar errado. Anotacao __clippingMask preserva
+      // round-trip pro PSD export. User pode reaplicar mask manualmente no
+      // editor com Vector Mask – Reveal All / Hide All ou desenhar.
       ;(obj as any).__clippingMask = true
-      try {
-        const canvas = (obj as any).canvas
-        if (canvas) {
-          const objs = canvas.getObjects()
-          const idx = objs.indexOf(obj)
-          // Procura o layer imediatamente abaixo (com zIndex menor) que nao seja bg.
-          let target: any = null
-          for (let i = idx - 1; i >= 0; i--) {
-            const candidate = objs[i]
-            if (!(candidate as any).__isBg) { target = candidate; break }
-          }
-          if (target) {
-            // Cria um Rect com bbox do target como clipPath. Idealmente seria o
-            // outline real do target, mas isso requer clone profundo (path/textbox).
-            // Pra retangulo basico funciona; pra outline preciso de mais trabalho.
-            const tx = target.left ?? 0
-            const ty = target.top ?? 0
-            const tw = (target.width ?? 100) * (target.scaleX ?? 1)
-            const th = (target.height ?? 100) * (target.scaleY ?? 1)
-            const path = `M ${tx} ${ty} L ${tx + tw} ${ty} L ${tx + tw} ${ty + th} L ${tx} ${ty + th} Z`
-            const clipPath = new fabric.Path(path, {
-              absolutePositioned: true,
-              inverted: false,
-            })
-            obj.clipPath = clipPath
-            obj.dirty = true
-          }
-        }
-      } catch (e) { console.warn("[clipping-mask] falha:", e) }
       return
     }
   } catch (e) {
