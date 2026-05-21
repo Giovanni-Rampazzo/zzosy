@@ -27,15 +27,38 @@ function resolvePsdPath(): string | null {
   return null
 }
 
-const PSD = resolvePsdPath()
+// Sem argumento: auto-detecta o PSD mais recente no ~/Desktop. Usuario nao
+// precisa digitar/colar/escapar nome — basta ter um .psd no Desktop.
+function autoDetectPsd(): string | null {
+  const home = process.env.HOME || ""
+  const desktop = path.join(home, "Desktop")
+  if (!fs.existsSync(desktop)) return null
+  const psds = fs.readdirSync(desktop)
+    .filter(f => f.toLowerCase().endsWith(".psd"))
+    .map(f => {
+      const full = path.join(desktop, f)
+      const st = fs.statSync(full)
+      return { full, mtime: st.mtimeMs }
+    })
+    .sort((a, b) => b.mtime - a.mtime)
+  return psds[0]?.full ?? null
+}
+
+let PSD = resolvePsdPath()
 if (!PSD) {
   const tried = process.argv.slice(2).join(" ").trim()
-  console.error("Uso: npm run psd:test -- \"<caminho-do-psd>\"")
   if (tried) {
     console.error(`Arquivo nao existe: ${tried}`)
-    console.error("Dica: se o nome tem espaco, arraste o arquivo pro terminal em vez de digitar.")
+    console.error("Tentando auto-detectar PSD no ~/Desktop…")
   }
-  process.exit(1)
+  PSD = autoDetectPsd()
+  if (PSD) {
+    console.log(`✓ Usando PSD auto-detectado: ${path.basename(PSD)}\n`)
+  } else {
+    console.error("Uso: npm run psd:test -- \"<caminho-do-psd>\"")
+    console.error("Nenhum .psd encontrado no ~/Desktop pra auto-detectar.")
+    process.exit(1)
+  }
 }
 
 const APPS_WEB = path.resolve(__dirname, "..")
