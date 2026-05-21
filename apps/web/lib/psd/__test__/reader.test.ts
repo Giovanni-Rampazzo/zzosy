@@ -11,6 +11,7 @@
  */
 import fs from "fs"
 import { readPsdDocument, resolveClippingChains } from "../reader"
+import { buildCampaignFromPsd } from "../toCampaign"
 
 const PSD_PATH = process.argv[2]
 if (!PSD_PATH || !fs.existsSync(PSD_PATH)) {
@@ -71,3 +72,35 @@ function count(layers: any[]) {
 count(document.layers)
 console.log("=== COUNTS ===")
 for (const [k, n] of Object.entries(counts)) console.log(`  ${k.padEnd(12)} ${n}`)
+console.log()
+
+// ── Fase 1 (toCampaign): valida mapping pro modelo do editor ──────
+console.log("=== buildCampaignFromPsd ===")
+const build = buildCampaignFromPsd(document)
+console.log(`  canvas:       ${build.width}×${build.height}`)
+console.log(`  bgColor:      ${build.bgColor}`)
+console.log(`  assets:       ${build.assets.length} (${build.assets.filter(a => a.type === "TEXT").length} TEXT, ${build.assets.filter(a => a.type === "IMAGE").length} IMAGE)`)
+console.log(`  kvLayers:     ${build.kvLayers.length}`)
+console.log(`  imageBlobs:   ${build.imageBlobs.length}`)
+console.log(`  warnings:     ${build.warnings.length}`)
+if (build.warnings.length > 0) {
+  for (const w of build.warnings) console.log(`    [${w.kind}] ${w.layerName}: ${w.message}`)
+}
+console.log()
+
+// Sample: text com effects
+const textsWithEffects = build.assets.filter(a => a.type === "TEXT" && a.effects)
+console.log(`=== TEXTS COM EFFECTS (${textsWithEffects.length}) ===`)
+for (const t of textsWithEffects) {
+  const fxKeys = Object.keys(t.effects ?? {}).join(",")
+  console.log(`  "${t.label}" — effects=[${fxKeys}] pixelsIncludeEffects=${t.pixelsIncludeEffects}`)
+}
+console.log()
+
+// Sample: smart objects com pixelsIncludeEffects=true
+const sosBaked = build.assets.filter(a => a.type === "IMAGE" && a.pixelsIncludeEffects)
+console.log(`=== SMART OBJECTS (pixels com effects baked: ${sosBaked.length}) ===`)
+for (const s of sosBaked) {
+  const fxKeys = Object.keys(s.effects ?? {}).join(",") || "(none)"
+  console.log(`  "${s.label}" — effects metadata=[${fxKeys}] (editor NAO adiciona shadow extra)`)
+}
