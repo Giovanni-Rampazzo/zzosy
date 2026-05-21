@@ -12,10 +12,22 @@ function parseJson(val: any) {
   return val
 }
 
+// Verifica que a campanha esta no tenant da sessao antes de qualquer acesso
+// a KV (audit P1.5).
+async function assertCampaignInTenant(campaignId: string, tenantId: string): Promise<boolean> {
+  const c = await prisma.campaign.findFirst({
+    where: { id: campaignId, client: { tenantId } },
+    select: { id: true },
+  })
+  return !!c
+}
+
 export async function GET(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
+  if (!(await assertCampaignInTenant(id, tenantId))) return NextResponse.json({ error: "Not found" }, { status: 404 })
   const kv = await prisma.keyVision.findUnique({ where: { campaignId: id } })
   if (!kv) return NextResponse.json(null)
   return NextResponse.json({ ...kv, data: parseJson(kv.data), layers: parseJson(kv.layers) })
@@ -24,7 +36,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
+  if (!(await assertCampaignInTenant(id, tenantId))) return NextResponse.json({ error: "Not found" }, { status: 404 })
   const body = await req.json()
   const bgColor = body.bgColor ?? "#ffffff"
   const newLayers = Array.isArray(body.layers) ? body.layers : []

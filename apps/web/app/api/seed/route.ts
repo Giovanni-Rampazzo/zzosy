@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 const DEFAULT_FORMATS = [
@@ -28,6 +30,13 @@ const DEFAULT_FORMATS = [
 ]
 
 export async function POST() {
+  // Audit P1.8: agora exige SUPER_ADMIN. Antes era aberto — qualquer um podia
+  // re-popular media formats globais.
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if ((session.user as any)?.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
   const existing = await prisma.mediaFormat.count({ where: { isDefault: true } })
   if (existing > 0) return NextResponse.json({ message: "Já populado", count: existing })
 

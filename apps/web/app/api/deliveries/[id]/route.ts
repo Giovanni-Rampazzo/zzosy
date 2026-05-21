@@ -10,9 +10,10 @@ type Ctx = { params: Promise<{ id: string }> }
 export async function GET(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
-  const delivery = await prisma.delivery.findUnique({
-    where: { id },
+  const delivery = await prisma.delivery.findFirst({
+    where: { id, campaign: { client: { tenantId } } },
     include: {
       campaign: { include: { client: true } },
       deliveredBy: { select: { id: true, name: true, email: true } },
@@ -26,8 +27,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
-  const delivery = await prisma.delivery.findUnique({ where: { id } })
+  const delivery = await prisma.delivery.findFirst({ where: { id, campaign: { client: { tenantId } } } })
   if (!delivery) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   // Apagar arquivo fisico (best-effort)

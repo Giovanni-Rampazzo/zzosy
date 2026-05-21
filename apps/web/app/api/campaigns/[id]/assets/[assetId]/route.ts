@@ -6,6 +6,24 @@ import { migrateStyles } from "@/lib/migrateStyles"
 
 type Ctx = { params: Promise<{ id: string; assetId: string }> }
 
+// Whitelist de fields aceitos em PATCH/PUT (audit P1.10).
+const ASSET_PATCH_FIELDS = new Set([
+  "imageUrl", "label", "order", "visible", "value", "content", "lastOverride",
+])
+
+// Verifica que o asset pertence a uma campaign no tenant da sessao E que o
+// campaignId da URL bate com o asset.campaignId (defesa em profundidade contra
+// assetId enumeration).
+async function findAssetForTenant(assetId: string, campaignId: string, tenantId: string) {
+  return prisma.campaignAsset.findFirst({
+    where: {
+      id: assetId,
+      campaignId,
+      campaign: { client: { tenantId } },
+    },
+  })
+}
+
 function parseContent(raw: any): any[] {
   if (!raw) return []
   if (typeof raw === "string") { try { return JSON.parse(raw) } catch { return [] } }
@@ -47,10 +65,12 @@ function migrateOverrideText(oldOverrideText: string, newAssetCleanText: string)
 export async function PUT(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
   const { id: campaignId, assetId } = await ctx.params
+  const oldAsset = await findAssetForTenant(assetId, campaignId, tenantId)
+  if (!oldAsset) return NextResponse.json({ error: "Not found" }, { status: 404 })
   const body = await req.json()
 
-  const oldAsset = await prisma.campaignAsset.findUnique({ where: { id: assetId } })
   const oldText = spansToText(parseContent(oldAsset?.content))
 
   const data: any = {}
@@ -185,16 +205,27 @@ export async function PUT(req: Request, ctx: Ctx) {
 export async function PATCH(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const { assetId } = await ctx.params
+  const tenantId = (session.user as any).tenantId
+  const { id: campaignId, assetId } = await ctx.params
+  const existing = await findAssetForTenant(assetId, campaignId, tenantId)
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
   const body = await req.json()
-  const asset = await prisma.campaignAsset.update({ where: { id: assetId }, data: body })
+  // Whitelist (audit P1.10) — antes era spread raw, qualquer field passava.
+  const data: any = {}
+  for (const k of Object.keys(body ?? {})) {
+    if (ASSET_PATCH_FIELDS.has(k)) data[k] = body[k]
+  }
+  const asset = await prisma.campaignAsset.update({ where: { id: assetId }, data })
   return NextResponse.json(asset)
 }
 
 export async function DELETE(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
   const { id: campaignId, assetId } = await ctx.params
+  const existing = await findAssetForTenant(assetId, campaignId, tenantId)
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   // Cascade delete: tira o asset E todas as layers (matriz + peças) que o referenciam.
   // Tudo numa transação atômica para evitar layers órfãs.

@@ -21,22 +21,32 @@ import { prisma } from "@/lib/prisma"
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
 
   const body = await req.json().catch(() => ({}))
   const ids: string[] = Array.isArray(body?.ids) ? body.ids.filter((x: any) => typeof x === "string") : []
   const newMediaFormatId: string | undefined = typeof body?.mediaFormatId === "string" && body.mediaFormatId ? body.mediaFormatId : undefined
   if (!ids.length) return NextResponse.json({ error: "ids vazio" }, { status: 400 })
 
-  // Se body passou mediaFormatId, busca pra ter width/height/dpi
+  // Se body passou mediaFormatId, busca pra ter width/height/dpi.
+  // Audit P1.6: valida que mediaFormat existe E pertence ao tenant (ou eh default).
   let newFormat: { id: string; width: number; height: number; dpi: number } | null = null
   if (newMediaFormatId) {
-    const mf = await prisma.mediaFormat.findUnique({ where: { id: newMediaFormatId } })
+    const mf = await prisma.mediaFormat.findFirst({
+      where: { id: newMediaFormatId, OR: [{ isDefault: true }, { tenantId }] },
+    })
     if (!mf) return NextResponse.json({ error: "mediaFormatId nao encontrado" }, { status: 404 })
     newFormat = { id: mf.id, width: mf.width, height: mf.height, dpi: mf.dpi ?? 72 }
   }
 
+  // Audit P1.6: filtra pieces que pertencem ao tenant. O comentario antigo
+  // alegava "RLS garantida" mas o where era so id:{in:ids} — qualquer user
+  // podia duplicar pecas de outros tenants.
   const originals = await prisma.piece.findMany({
-    where: { id: { in: ids } },
+    where: {
+      id: { in: ids },
+      campaign: { client: { tenantId } },
+    },
     include: { campaign: { select: { id: true } } },
   })
   if (!originals.length) return NextResponse.json({ error: "Nenhuma peca encontrada" }, { status: 404 })

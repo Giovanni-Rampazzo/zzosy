@@ -29,6 +29,7 @@ import { normalizeName } from "@/lib/normalize"
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
 
   const body = await req.json().catch(() => ({}))
   const { campaignId, name, width, height, data, newTextAssets } = body || {}
@@ -43,8 +44,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "data.layers obrigatorio" }, { status: 400 })
   }
 
-  // Valida que a campanha existe (RLS pelo tenant ja garantida no fetch)
-  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } })
+  // Audit P1.6: valida que a campanha pertence ao tenant da sessao. O comentario
+  // antigo alegava "RLS garantida" mas findUnique nao filtra por tenant.
+  const campaign = await prisma.campaign.findFirst({
+    where: { id: campaignId, client: { tenantId } },
+  })
   if (!campaign) return NextResponse.json({ error: "Campanha nao encontrada" }, { status: 404 })
 
   // PASSO 1: cria assets TEXT novos (se houver) e mapeia label normalizado -> assetId.

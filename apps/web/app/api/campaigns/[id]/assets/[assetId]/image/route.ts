@@ -16,8 +16,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const tenantId = (session.user as any).tenantId
 
     const { id, assetId } = await ctx.params
+    // Verifica que asset pertence ao tenant + matches campaignId (audit P1.4).
+    const exists = await prisma.campaignAsset.findFirst({
+      where: { id: assetId, campaignId: id, campaign: { client: { tenantId } } },
+      select: { id: true },
+    })
+    if (!exists) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
     const formData = await req.formData()
     const file = formData.get("image") as File

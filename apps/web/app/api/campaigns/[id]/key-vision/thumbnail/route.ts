@@ -12,7 +12,11 @@ type Ctx = { params: Promise<{ id: string }> }
 export async function POST(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
+  // Audit P1.5: scope cross-tenant antes de aceitar upload.
+  const ok = await prisma.campaign.findFirst({ where: { id, client: { tenantId } }, select: { id: true } })
+  if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   const formData = await req.formData()
   const file = formData.get("thumbnail") as File | null
@@ -23,7 +27,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
   const dir = path.join(process.cwd(), "public", "uploads", "campaigns", id)
   await mkdir(dir, { recursive: true })
-  const fname = `kv-thumb-${Date.now()}.jpg`
+  // Detecta formato pelo MIME pra usar extensao correta. PNG preserva alpha
+  // (necessario pra apresentacao mostrar KVs com mascaras raster). JPEG fica
+  // como fallback pra clientes antigos que ainda mandam JPEG.
+  const mime = file.type || "image/png"
+  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg"
+  const fname = `kv-thumb-${Date.now()}.${ext}`
   await writeFile(path.join(dir, fname), buf)
 
   const publicUrl = `/uploads/campaigns/${id}/${fname}`

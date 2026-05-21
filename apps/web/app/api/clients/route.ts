@@ -3,6 +3,13 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
+// Whitelist de fields aceitos no POST. Antes era spread raw — qualquer field
+// passava (incluindo FK arbitraria, contadores, IDs internos). Audit P1.9.
+const CLIENT_CREATE_FIELDS = new Set([
+  "name", "contact", "email", "phone", "address", "logoUrl",
+  "brandFont", "brandColors", "brandTypography", "customFontFiles",
+])
+
 export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -30,12 +37,18 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
-    const client = await prisma.client.create({
-      data: { ...body, tenantId }
-    })
+    if (!body?.name || typeof body.name !== "string") {
+      return NextResponse.json({ error: "name obrigatorio" }, { status: 400 })
+    }
+    const data: any = { tenantId }
+    for (const k of Object.keys(body ?? {})) {
+      if (CLIENT_CREATE_FIELDS.has(k)) data[k] = body[k]
+    }
+    const client = await prisma.client.create({ data })
     return NextResponse.json(client)
   } catch (err: any) {
     console.error("[CLIENT-CREATE] erro:", err?.message, err?.code)
-    return NextResponse.json({ error: err?.message ?? "Erro interno" }, { status: 500 })
+    // Nao retorna e.message (pode leak schema info).
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 })
   }
 }
