@@ -64,6 +64,7 @@ export async function exportPiecePsdV2(input: ExportPiecePsdInput): Promise<Expo
     dpi,
     assets: editorAssets,
     layers: editorLayers,
+    bgLayers: extractBgLayers(data),
   }
 
   const doc: PsdDocument = buildPsdDocumentFromEditor(buildInput)
@@ -112,6 +113,17 @@ function normalizeLayerForEditor(l: any): EditorLayer {
     effects: l.effects ?? null,
     overrides: l.overrides ?? {},
   }
+}
+
+/**
+ * Extrai bgLayers do piece.data — espelha bgLayersFromData de lib/exportPiece.
+ * Retorna undefined se default branco (sem precisar virar layer no PSD).
+ */
+function extractBgLayers(data: any): EditorBuildInput["bgLayers"] {
+  const layers = Array.isArray(data?.bgLayers) && data.bgLayers.length > 0
+    ? data.bgLayers
+    : [{ kind: "solid", color: data?.bgColor ?? "#ffffff", opacity: typeof data?.bgOpacity === "number" ? data.bgOpacity : 1 }]
+  return layers
 }
 
 type EmbeddedFormat = "psb" | "psd" | "png" | "jpg" | "pdf" | "ai" | "unknown"

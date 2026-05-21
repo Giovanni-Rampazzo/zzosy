@@ -468,12 +468,91 @@ function imageDataToCanvas(img: PsdImageData, warn: (w: WriteWarning) => void, l
  * dataUrl. Apos prepareImageDataAsync, writePsdDocument acessa os canvases
  * diretamente.
  */
+/**
+ * Rasteriza bgLayers (schema BG-7 do editor) num HTMLCanvasElement.
+ * Espelha a logica de lib/exportPiece.renderBgLayersOntoCanvas mas
+ * isolada aqui pra nao criar dependencia cruzada entre lib/psd e
+ * lib/exportPiece.
+ */
+async function rasterizeBgLayersToCanvas(bgLayers: any[], width: number, height: number): Promise<HTMLCanvasElement | null> {
+  if (typeof document === "undefined") return null
+  const c = document.createElement("canvas")
+  c.width = width
+  c.height = height
+  const ctx = c.getContext("2d")
+  if (!ctx) return null
+  for (const layer of bgLayers) {
+    ctx.save()
+    ctx.globalAlpha = typeof layer.opacity === "number" ? layer.opacity : 1
+    ctx.globalCompositeOperation = (layer.blendMode ?? "source-over") as GlobalCompositeOperation
+    try {
+      if (layer.kind === "solid") {
+        ctx.fillStyle = layer.color ?? "#ffffff"
+        ctx.fillRect(0, 0, width, height)
+      } else if (layer.kind === "gradient") {
+        const angle = typeof layer.angle === "number" ? layer.angle : 90
+        const rad = (angle * Math.PI) / 180
+        const cx = width / 2, cy = height / 2
+        const r = Math.max(width, height) / 2
+        const grad = layer.gradientType === "radial"
+          ? ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(width, height) / 2)
+          : ctx.createLinearGradient(cx - Math.cos(rad) * r, cy - Math.sin(rad) * r, cx + Math.cos(rad) * r, cy + Math.sin(rad) * r)
+        for (const s of (layer.stops ?? [])) {
+          if (typeof s?.offset === "number" && typeof s?.color === "string") grad.addColorStop(s.offset, s.color)
+        }
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, width, height)
+      } else if (layer.kind === "image" && typeof layer.imageDataUrl === "string" && layer.imageDataUrl) {
+        const img = await new Promise<HTMLImageElement | null>((resolve) => {
+          const i = new Image()
+          i.crossOrigin = "anonymous"
+          i.onload = () => resolve(i)
+          i.onerror = () => resolve(null)
+          i.src = layer.imageDataUrl
+        })
+        if (img) {
+          if (layer.fit === "tile") {
+            const pat = ctx.createPattern(img, "repeat")
+            if (pat) { ctx.fillStyle = pat; ctx.fillRect(0, 0, width, height) }
+          } else if (layer.fit === "fill") {
+            ctx.drawImage(img, 0, 0, width, height)
+          } else {
+            const iw = img.naturalWidth || img.width || 1
+            const ih = img.naturalHeight || img.height || 1
+            const s = layer.fit === "contain" ? Math.min(width / iw, height / ih) : Math.max(width / iw, height / ih)
+            const dw = iw * s, dh = ih * s
+            ctx.drawImage(img, (width - dw) / 2, (height - dh) / 2, dw, dh)
+          }
+        }
+      }
+    } finally {
+      ctx.restore()
+    }
+  }
+  return c
+}
+
 export async function prepareImageDataAsync(doc: PsdDocument): Promise<void> {
   if (typeof document === "undefined") return
   const decodes: Promise<void>[] = []
 
-  function decodeOne(imgData: PsdImageData): Promise<void> {
-    if (imgData.format !== "dataUrl" || typeof imgData.data !== "string") return Promise.resolve()
+  async function decodeOne(imgData: PsdImageData): Promise<void> {
+    if (imgData.format !== "dataUrl" || typeof imgData.data !== "string") return
+    const url = imgData.data as string
+    // BG-7 placeholder: __zzosy-bg:<encoded JSON> — rasteriza bgLayers
+    // diretamente num canvas (sem precisar de Image load). Usado pra
+    // background gradient/solid/image saido do editor via fromEditor.
+    if (url.startsWith("__zzosy-bg:")) {
+      try {
+        const payload = JSON.parse(decodeURIComponent(url.slice("__zzosy-bg:".length)))
+        const c = await rasterizeBgLayersToCanvas(payload.bgLayers, payload.width, payload.height)
+        if (c) {
+          ;(imgData as any).data = c as any
+          ;(imgData as any).format = "canvas"
+        }
+      } catch (e) { console.warn("[psd-writer] bg placeholder falhou:", e) }
+      return
+    }
     return new Promise((resolve) => {
       const el = new Image()
       el.onload = () => {
@@ -482,14 +561,12 @@ export async function prepareImageDataAsync(doc: PsdDocument): Promise<void> {
         c.height = el.naturalHeight || imgData.height
         const ctx = c.getContext("2d")
         if (ctx) ctx.drawImage(el, 0, 0)
-        // Replace data com canvas direto. format vira "raw" pra sinalizar
-        // que o writer ja tem o canvas.
         ;(imgData as any).data = c as any
         ;(imgData as any).format = "canvas"
         resolve()
       }
       el.onerror = () => resolve()
-      el.src = imgData.data as string
+      el.src = url
     })
   }
 

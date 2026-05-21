@@ -58,7 +58,19 @@ export interface EditorBuildInput {
   layers: EditorLayer[]
   /** Assets referenciados. */
   assets: EditorAsset[]
+  /**
+   * Background layers (schema BG-7 do editor): solid/gradient/image.
+   * Quando presente, eh rasterizado pra um canvas e adicionado como
+   * PsdImageLayer "Background" no fundo (zIndex=-Infinity).
+   * Skip se for so um bg solid #ffffff puro (default, nao precisa exportar).
+   */
+  bgLayers?: BgLayer[]
 }
+
+export type BgLayer =
+  | { kind: "solid"; color: string; opacity?: number; blendMode?: string }
+  | { kind: "gradient"; gradientType?: "linear" | "radial"; angle?: number; stops: { offset: number; color: string }[]; opacity?: number; blendMode?: string }
+  | { kind: "image"; imageDataUrl: string; fit?: "cover" | "contain" | "fill" | "tile"; opacity?: number; blendMode?: string }
 
 export interface EditorLayer {
   assetId: string
@@ -107,7 +119,7 @@ export interface EditorAsset {
 // ────────────────────────────────────────────────────────────────────
 
 export function buildPsdDocumentFromEditor(input: EditorBuildInput): PsdDocument {
-  const { width, height, dpi = 72, layers, assets } = input
+  const { width, height, dpi = 72, layers, assets, bgLayers } = input
   const assetById = new Map<string, EditorAsset>()
   for (const a of assets) assetById.set(a.id, a)
 
@@ -116,6 +128,12 @@ export function buildPsdDocumentFromEditor(input: EditorBuildInput): PsdDocument
   const sorted = [...layers].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
 
   const psdLayers: PsdLayer[] = []
+  // Background layer (BG-7 schema): rasteriza bgLayers num canvas e adiciona
+  // como image layer "Background" no fundo. Skip se for so um solid branco
+  // (default, nao precisa virar layer dedicada).
+  const bg = bgLayers && bgLayers.length > 0 ? buildBackgroundLayer(bgLayers, width, height) : null
+  if (bg) psdLayers.push(bg)
+
   for (const l of sorted) {
     const asset = assetById.get(l.assetId)
     if (!asset) continue
@@ -134,6 +152,44 @@ export function buildPsdDocumentFromEditor(input: EditorBuildInput): PsdDocument
     metadata: {
       createdAt: new Date().toISOString(),
     },
+  }
+}
+
+function buildBackgroundLayer(bgLayers: BgLayer[], width: number, height: number): PsdImageLayer | null {
+  // Skip white-solid default (sem opacity/blendMode custom).
+  if (bgLayers.length === 1) {
+    const b = bgLayers[0]
+    if (b.kind === "solid" && (b.color === "#ffffff" || b.color === "#FFFFFF")
+        && (b.opacity == null || b.opacity === 1)
+        && (b.blendMode == null || b.blendMode === "source-over")) {
+      return null
+    }
+  }
+  // BG fica como pseudo-dataUrl com schema custom — renderBackgroundToDataUrl
+  // roda em prepareImageDataAsync (browser). Server-side, fica como
+  // placeholder vazio que sera resolvido depois.
+  const placeholderUrl = `__zzosy-bg:${encodeURIComponent(JSON.stringify({ bgLayers, width, height }))}`
+  const bbox = { left: 0, top: 0, right: width, bottom: height }
+  return {
+    type: "image",
+    id: "__bg__",
+    name: "Background",
+    bbox,
+    visible: true,
+    opacity: 1,
+    blendMode: "normal",
+    mask: null,
+    effects: {},
+    locked: true,
+    groupPath: [],
+    clipping: false,
+    imageData: {
+      data: placeholderUrl,
+      width,
+      height,
+      format: "dataUrl",
+    },
+    pixelsIncludeEffects: true,
   }
 }
 
@@ -178,10 +234,12 @@ function buildTextLayer(l: EditorLayer, asset: EditorAsset): PsdTextLayer {
   const leading = typeof leadingPt === "number" ? leadingPt : undefined
 
   const bbox = computeBBox(l)
-  // styleRuns: se spans tem mais de um, materializa.
-  const styleRuns = buildStyleRunsFromSpans(spans, def)
-    // override.styles tem prioridade (per-char map salvo na peca)
-    .concat(buildStyleRunsFromStylesMap(overrides.styles))
+  // styleRuns: combina spans (do asset) + per-char map (overrides.styles da peca).
+  // Per-char map tem prioridade pra overlaps (overrides explicitos).
+  const styleRuns = mergeStyleRuns(
+    buildStyleRunsFromSpans(spans, def),
+    buildStyleRunsFromCharMap(text, overrides.styles),
+  )
 
   return {
     type: "text",
@@ -399,12 +457,101 @@ function buildStyleRunsFromSpans(spans: any[], def: any): { start: number; lengt
   return out
 }
 
-function buildStyleRunsFromStylesMap(styles: any): { start: number; length: number; style: any }[] {
-  // overrides.styles eh um Fabric per-char map { lineIdx: { charIdx: style } }.
-  // Conversao linear-cursor exige conhecer o texto — pra Fase 7 deixamos
-  // como TODO e privilegiamos spans (que ja vem normalizados do importer).
-  if (!styles) return []
-  return []
+/**
+ * Converte o Fabric per-char styles map { lineIdx: { charIdx: style } } pro
+ * formato PsdTextStyleRun[] do modelo canonical.
+ *
+ * Anatomia do Fabric map:
+ *  - chave externa = indice da linha visual (split por \n)
+ *  - chave interna = indice do char DENTRO da linha (sem contar o \n)
+ *  - valor = { fill, fontSize, fontWeight, fontFamily, ... }
+ *
+ * Algoritmo:
+ *  1. Walk char-by-char no texto raw, mantendo (lineIdx, colIdx, absIdx)
+ *  2. Pra cada char, busca styles[lineIdx]?.[colIdx]
+ *  3. Agrupa consecutivos com mesmo style em UM run
+ *  4. Converte chaves Fabric → chaves PsdCharStyle (fill→color, etc)
+ *
+ * Chars sem entrada no map herdam de defaultStyle (sem run explicito).
+ */
+function buildStyleRunsFromCharMap(text: string, styles: any): { start: number; length: number; style: any }[] {
+  if (!styles || typeof styles !== "object") return []
+  const out: { start: number; length: number; style: any }[] = []
+  let lineIdx = 0
+  let colIdx = 0
+  let runStart = -1
+  let runKey: string | null = null
+  let runStyle: any = null
+
+  function flush(endAbs: number) {
+    if (runStart < 0 || !runStyle) return
+    out.push({ start: runStart, length: endAbs - runStart, style: runStyle })
+    runStart = -1
+    runKey = null
+    runStyle = null
+  }
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === "\n") {
+      flush(i)
+      lineIdx++
+      colIdx = 0
+      continue
+    }
+    const raw = styles[lineIdx]?.[colIdx]
+    const norm = raw ? normalizeFabricStyle(raw) : null
+    const key = norm ? JSON.stringify(norm) : ""
+    if (key !== runKey) {
+      flush(i)
+      if (norm) {
+        runStart = i
+        runKey = key
+        runStyle = norm
+      }
+    }
+    colIdx++
+  }
+  flush(text.length)
+  return out
+}
+
+function normalizeFabricStyle(s: any): any {
+  if (!s || typeof s !== "object") return null
+  const out: any = {}
+  if (s.fill) out.color = s.fill
+  if (s.fontFamily) out.fontFamily = s.fontFamily
+  if (s.fontSize != null) out.fontSize = s.fontSize
+  if (s.fontWeight != null) out.fontWeight = normalizeFontWeight(s.fontWeight)
+  if (s.fontStyle === "italic") out.fontStyle = "italic"
+  if (s.underline) out.underline = true
+  if (s.linethrough || s.strikethrough) out.strikethrough = true
+  if (s.charSpacing != null) out.tracking = s.charSpacing
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/**
+ * Merge dois sets de runs (spans + per-char map). Per-char map tem prioridade
+ * pra overlaps porque vem de overrides explicitos da peca.
+ */
+function mergeStyleRuns(
+  fromSpans: { start: number; length: number; style: any }[],
+  fromCharMap: { start: number; length: number; style: any }[],
+): { start: number; length: number; style: any }[] {
+  if (fromCharMap.length === 0) return fromSpans
+  if (fromSpans.length === 0) return fromCharMap
+  // Per-char map sobrescreve regioes overlap; chars fora dele herdam dos spans.
+  // Implementacao simples: mark intervals ocupados por char map, depois
+  // adiciona spans nao overlap.
+  const merged = [...fromCharMap]
+  for (const run of fromSpans) {
+    const overlaps = fromCharMap.some(c =>
+      c.start < run.start + run.length && c.start + c.length > run.start
+    )
+    if (!overlaps) merged.push(run)
+  }
+  merged.sort((a, b) => a.start - b.start)
+  return merged
 }
 
 function buildEffects(e: EditorEffects | null | undefined): PsdLayerEffects {
