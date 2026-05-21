@@ -1570,14 +1570,19 @@ export function PsdImporter({ campaignId, onImported, size = "md" }: Props) {
               const fontWeight = rs.font?.name ? extractWeight(fontName, !!rs.fauxBold) : defWeight
               const fontStyle = (rs.fauxItalic || isItalicRs) ? "italic" : defStyleItalic
               const fontFamilyNorm = normalizeFamily(fontName)
-              spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontStyle, fontFamily: fontFamilyNorm } })
+              // Tracking per-run: PSD pode variar letterspacing entre runs.
+              // Antes (audit M1) so o defTracking ia pro charSpacing, runs com
+              // tracking customizado herdavam o default — texto multi-run com
+              // tracking variavel renderizava com tracking do primeiro run.
+              const runTracking = typeof rs.tracking === "number" ? rs.tracking : defTracking
+              spans.push({ text: segment, style: { color, fontSize: Math.round(fontSize), fontWeight, fontStyle, fontFamily: fontFamilyNorm, charSpacing: runTracking } })
               cursor += len
             }
             if (cursor < rawText.length) {
-              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFamilyNorm } })
+              spans.push({ text: rawText.substring(cursor), style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFamilyNorm, charSpacing: defTracking } })
             }
           } else {
-            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFamilyNorm } }]
+            spans = [{ text: rawText, style: { color: defColor, fontSize: Math.round(scaledDefFontSize), fontWeight: defWeight, fontStyle: defStyleItalic, fontFamily: defFamilyNorm, charSpacing: defTracking } }]
           }
 
           // Fix #1 (cont): td.boundingBox vem em PONTOS no espaco PRE-transform —
@@ -1633,6 +1638,9 @@ export function PsdImporter({ campaignId, onImported, size = "md" }: Props) {
                   fontFamily: span.style.fontFamily,
                   fontWeight: span.style.fontWeight,
                   fontStyle: span.style.fontStyle,
+                  // Tracking per-char (audit M1) — sem isso runs variam mas
+                  // o charSpacing efetivo era so o def (primeiro run).
+                  ...(typeof span.style.charSpacing === "number" ? { charSpacing: span.style.charSpacing } : {}),
                 }
                 charInLine++
               }

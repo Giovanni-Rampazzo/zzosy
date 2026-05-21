@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { UNITS, toPx, Unit } from "@/lib/unitConversion"
@@ -35,6 +36,7 @@ function formatNum(v: number | string): string {
 }
 
 export default function MediasPage() {
+  const router = useRouter()
   const [formats, setFormats] = useState<MediaFormat[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -170,12 +172,24 @@ export default function MediasPage() {
   return (
     <PageShell>
       <div style={{padding:32}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:32}}>
-          <div>
-            <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Mídias e Formatos</h1>
-            <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Formatos disponíveis para geração de peças</p>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:32,gap:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
+            {/* Voltar com stroke amarelo, mesmo size do "+ Novo formato".
+                Padrao ZZOSY: variant="view" = fill branco + stroke amarelo +
+                texto preto. Mesma altura/peso visual do CTA principal. */}
+            <Button
+              variant="view"
+              size="md"
+              onClick={() => { router.push("/dashboard") }}
+            >
+              ← Voltar
+            </Button>
+            <div>
+              <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Mídias e Formatos</h1>
+              <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Formatos disponíveis para geração de peças</p>
+            </div>
           </div>
-          <Button variant="primary" onClick={openCreate}>+ Novo formato</Button>
+          <Button variant="primary" size="md" onClick={openCreate}>+ Novo formato</Button>
         </div>
 
         {loading ? <div style={{textAlign:"center",padding:"64px 0",color:"#888"}}>Carregando...</div> : (
