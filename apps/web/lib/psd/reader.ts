@@ -492,8 +492,18 @@ function readVectorFill(vf: any): import("./types").PsdFill | null {
 function readVectorStroke(vs: any): import("./types").PsdStroke | null {
   if (!vs) return null
   if (vs.strokeEnabled === false) return null
-  const width = typeof vs.lineWidth === "number" ? vs.lineWidth : 1
-  const color = vs.color ? rgbToHex(vs.color) : "#000000"
+  // ag-psd: lineWidth eh UnitsValue ({value, units}), nao number.
+  // Color vem dentro de vs.content (mesma estrutura de vectorFill).
+  const width = readUnitsValue(vs.lineWidth, 1)
+  // vs.content tem shape similar a vectorFill: { type: "color"|"gradient"|...
+  //   "color"?: {r,g,b}, "gradient"?: {...}, "pattern"?: {...} }
+  let color = "#000000"
+  if (vs.content?.type === "color" && vs.content.color) {
+    color = rgbToHex(vs.content.color)
+  } else if (vs.color) {
+    // Fallback raro: algumas versoes ag-psd antigas expoe color top-level.
+    color = rgbToHex(vs.color)
+  }
   const positionMap: Record<string, "inside" | "center" | "outside"> = {
     "strokeStyleAlignInside": "inside",
     "strokeStyleAlignCenter": "center",
@@ -515,8 +525,18 @@ function readVectorStroke(vs: any): import("./types").PsdStroke | null {
     position: positionMap[vs.lineAlignment] ?? "outside",
     cap: capMap[vs.lineCapType] ?? "butt",
     join: joinMap[vs.lineJoinType] ?? "miter",
-    dash: Array.isArray(vs.lineDashSet) ? vs.lineDashSet : undefined,
+    dash: Array.isArray(vs.lineDashSet) ? vs.lineDashSet.map((u: any) => readUnitsValue(u, 0)) : undefined,
   }
+}
+
+/**
+ * Extrai um numero de um UnitsValue do ag-psd ({value, units}) com fallback.
+ * UnitsValue eh o shape padrao pra qualquer medida no PSD (px, %, in, etc).
+ */
+function readUnitsValue(u: any, fallback: number): number {
+  if (typeof u === "number") return u
+  if (u && typeof u.value === "number") return u.value
+  return fallback
 }
 
 // ── Adjustment (out of scope — apenas stub pra TS) ───────────────────
