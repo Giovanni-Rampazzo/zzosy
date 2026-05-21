@@ -1258,6 +1258,38 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
     setLoading(true)
     setError("")
     setProgress("Lendo PSD...")
+
+    // F12: pipeline novo (Adobe-fidelity). Ativa via URL ?useNewPsdPipeline=1
+    // ou localStorage["zzosy:newPsdPipeline"] = "1". Coexiste com legacy ate
+    // Fase 6 onde substituicao acontece. Sem flag = legacy continua rodando.
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null
+    const useNew = (params?.get("useNewPsdPipeline") === "1")
+      || (typeof localStorage !== "undefined" && localStorage.getItem("zzosy:newPsdPipeline") === "1")
+    if (useNew) {
+      try {
+        const { importPsdToCampaign } = await import("@/lib/psd/importer")
+        const result = await importPsdToCampaign(file, campaignId, {
+          onProgress: (m) => setProgress(m),
+          onWarning: (w) => console.warn(`[psd-new ${w.kind}]`, w.layerName, w.message),
+        })
+        if (!result.ok) {
+          setError(result.error ?? "Erro desconhecido no pipeline novo")
+          setLoading(false)
+          return
+        }
+        setProgress(`OK — ${result.stats?.assets} assets em ${result.stats?.durationMs}ms`)
+        console.log("[psd-new] stats:", result.stats, "warnings:", result.warnings.length, "fonts:", result.requiredFonts)
+        // TODO Fase 2: integrar missing-fonts modal usando result.requiredFonts
+        onImported()
+        setLoading(false)
+        return
+      } catch (e: any) {
+        console.error("[psd-new] crash:", e)
+        setError(`Pipeline novo crashou: ${e?.message ?? e}. Caindo no legacy.`)
+        // Cai no legacy abaixo (nao return aqui)
+      }
+    }
+
     try {
       const agPsd = await import("ag-psd")
       const { readPsd } = agPsd

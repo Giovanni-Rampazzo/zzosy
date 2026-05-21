@@ -1,0 +1,200 @@
+/**
+ * importer — entry point do pipeline novo de PSD.
+ *
+ * Coordena: file → reader → toCampaign → upload + POST API.
+ *
+ * Esse modulo SUBSTITUI a logica core do componente PsdImporter.tsx (legacy).
+ * Coexiste com o legacy enquanto a Fase 2+ amadurece. Wire-up via feature
+ * flag (URL ?useNewPsdPipeline=1 ou env var).
+ */
+import { readPsdDocument, resolveClippingChains, type ReadWarning } from "./reader"
+import { buildCampaignFromPsd, type CampaignBuild, type BuildWarning } from "./toCampaign"
+
+export interface ImportResult {
+  ok: boolean
+  /** Mensagem pra UI quando ok=false. */
+  error?: string
+  /** Stats pos-import pra log + telemetria. */
+  stats?: {
+    assets: number
+    layers: number
+    imageBlobs: number
+    durationMs: number
+  }
+  /** Warnings agregados (reader + builder). */
+  warnings: Array<ReadWarning | BuildWarning>
+  /** Fontes referenciadas — UI usa pra missing-fonts modal. */
+  requiredFonts: string[]
+}
+
+export interface ImportOptions {
+  /** Hook de progresso pra UI exibir percentual ou texto. */
+  onProgress?: (msg: string) => void
+  /** Hook chamado pra cada warning conforme acontece. */
+  onWarning?: (w: ReadWarning | BuildWarning) => void
+  /** PSD muito grande? skipMaster pula upload do .psd original (faz upload
+   *  separado depois via chunked endpoint). Threshold default: 50MB. */
+  skipMasterIfLarger?: number
+}
+
+const DEFAULT_SKIP_MASTER = 50 * 1024 * 1024 // 50MB
+
+/**
+ * Importa um arquivo PSD pra uma campanha ZZOSY usando o pipeline NOVO.
+ *
+ * Diferenca do importer legacy:
+ *  - Effects sao DADOS no asset (nao baked em pixels)
+ *  - Smart Objects vem com `pixelsIncludeEffects: true` (editor nao adiciona
+ *    Fabric.Shadow extra — evita doubling)
+ *  - Mask como dado discriminado
+ *  - Clipping chain resolvida explicitamente
+ *  - Warnings explicitos pra features fora de escopo
+ *
+ * @returns ImportResult com ok=true/false + warnings + stats
+ */
+export async function importPsdToCampaign(
+  file: File,
+  campaignId: string,
+  options: ImportOptions = {},
+): Promise<ImportResult> {
+  const t0 = performance.now()
+  const warnings: Array<ReadWarning | BuildWarning> = []
+  const skipMasterThreshold = options.skipMasterIfLarger ?? DEFAULT_SKIP_MASTER
+
+  options.onProgress?.("Lendo PSD…")
+  let bytes: ArrayBuffer
+  try {
+    bytes = await file.arrayBuffer()
+  } catch (e: any) {
+    return { ok: false, error: `Falha ao ler bytes do PSD: ${e?.message ?? e}`, warnings, requiredFonts: [] }
+  }
+
+  options.onProgress?.("Decodificando layers…")
+  let document
+  try {
+    const result = readPsdDocument(bytes, {
+      includeImageData: true,
+      includeComposite: true,
+      onWarning: (w) => {
+        warnings.push(w)
+        options.onWarning?.(w)
+      },
+    })
+    document = result.document
+  } catch (e: any) {
+    return { ok: false, error: `Falha ao decodificar PSD: ${e?.message ?? e}`, warnings, requiredFonts: [] }
+  }
+
+  resolveClippingChains(document)
+
+  options.onProgress?.("Mapeando assets…")
+  let build: CampaignBuild
+  try {
+    build = buildCampaignFromPsd(document)
+    for (const w of build.warnings) {
+      warnings.push(w)
+      options.onWarning?.(w)
+    }
+  } catch (e: any) {
+    return { ok: false, error: `Falha ao mapear assets: ${e?.message ?? e}`, warnings, requiredFonts: [] }
+  }
+
+  if (build.assets.length === 0) {
+    return {
+      ok: false,
+      error: "Nenhum asset extraido. PSD pode ter so adjustments ou layers vazias.",
+      warnings,
+      requiredFonts: build.requiredFonts,
+    }
+  }
+
+  options.onProgress?.(`Enviando ${build.assets.length} assets ao servidor…`)
+
+  // Monta FormData esperado pelo endpoint POST /api/campaigns/[id]/import-psd
+  const fd = new FormData()
+  // Mapeia assets pro shape que o endpoint aceita. tempId vira posicao no
+  // array; imageIndex aponta pra position do blob em images[].
+  const apiAssets = build.assets.map((a, idx) => ({
+    label: a.label,
+    type: a.type,
+    content: a.content,
+    imageIndex: a.imageIndex,
+    posX: 0, // sera derivado de kvLayer correspondente (mesmo idx)
+    posY: 0,
+    width: 0,
+    height: 0,
+    zIndex: idx,
+    lastOverride: a.lastOverride,
+    mask: a.mask,
+    hidden: a.hidden,
+    locked: a.locked,
+    opacity: build.kvLayers[idx]?.opacity ?? 1,
+    blendMode: build.kvLayers[idx]?.blendMode ?? "source-over",
+    effects: a.effects,
+    groupPath: build.kvLayers[idx]?.groupPath ?? [],
+    // Novo flag — editor le pra decidir se aplica Fabric.Shadow ou nao.
+    pixelsIncludeEffects: a.pixelsIncludeEffects,
+  }))
+  // Sincroniza posicoes a partir dos kvLayers (mesmo idx → mesmo asset).
+  for (let i = 0; i < apiAssets.length && i < build.kvLayers.length; i++) {
+    const kvl = build.kvLayers[i]
+    apiAssets[i].posX = kvl.posX
+    apiAssets[i].posY = kvl.posY
+    apiAssets[i].width = kvl.width
+    apiAssets[i].height = kvl.height
+  }
+
+  fd.append("assets", JSON.stringify(apiAssets))
+  fd.append("canvasWidth", String(build.width))
+  fd.append("canvasHeight", String(build.height))
+  fd.append("bgColor", build.bgColor)
+  fd.append("fontsRequired", JSON.stringify(build.requiredFonts))
+
+  // Upload imagens com indices estaveis (idx i no array = imageIndex i no asset).
+  for (let i = 0; i < build.imageBlobs.length; i++) {
+    const blob = build.imageBlobs[i]
+    fd.append("images", blob, `image-${i}.png`)
+  }
+
+  // PSD master: so manda se nao for muito grande (evita stall do edge / 413).
+  if (file.size > skipMasterThreshold) {
+    fd.append("skipMaster", "1")
+    fd.append("psdName", file.name)
+  } else {
+    fd.append("psd", file, file.name)
+  }
+
+  let res: Response
+  try {
+    res = await fetch(`/api/campaigns/${campaignId}/import-psd`, {
+      method: "POST",
+      body: fd,
+    })
+  } catch (e: any) {
+    return { ok: false, error: `Falha no fetch: ${e?.message ?? e}`, warnings, requiredFonts: build.requiredFonts }
+  }
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "")
+    return {
+      ok: false,
+      error: `HTTP ${res.status}: ${txt}`,
+      warnings,
+      requiredFonts: build.requiredFonts,
+    }
+  }
+
+  const durationMs = Math.round(performance.now() - t0)
+  options.onProgress?.(`Import concluido em ${durationMs}ms`)
+  return {
+    ok: true,
+    stats: {
+      assets: build.assets.length,
+      layers: build.kvLayers.length,
+      imageBlobs: build.imageBlobs.length,
+      durationMs,
+    },
+    warnings,
+    requiredFonts: build.requiredFonts,
+  }
+}

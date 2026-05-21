@@ -3833,7 +3833,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               scaleX: img.scaleX ?? 1, scaleY: img.scaleY ?? 1,
             }
           }
-          applyFabricEffects(img, psdEffects, Shadow)
+          // F12: pixelsIncludeEffects=true (Smart Objects) → effects ja estao
+          // no pixel raster do canvas (PS rasterizou com layer styles). NAO
+          // aplica Fabric.Shadow extra senao DOBRA. Pra rasters cruos (default),
+          // aplica normalmente.
+          const pixelsBaked = (asset as any).pixelsIncludeEffects === true
+          if (!pixelsBaked) applyFabricEffects(img, psdEffects, Shadow)
           fc.add(img)
           fc.requestRenderAll()
           return

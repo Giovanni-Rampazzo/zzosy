@@ -43,6 +43,12 @@ export interface CampaignBuild {
   height: number
   /** Background color derivada (composite background do PSD). */
   bgColor: string
+  /**
+   * Familias de fontes referenciadas em text layers, normalizadas (sem
+   * sufixos de variable font). UI checa via document.fonts.check pra
+   * alertar fontes faltando.
+   */
+  requiredFonts: string[]
   /** Warnings nao-fatais propagados pra UI. */
   warnings: BuildWarning[]
 }
@@ -132,6 +138,7 @@ export function buildCampaignFromPsd(doc: PsdDocument): CampaignBuild {
     layers: [],
     blobs: [],
     warnings: [],
+    fonts: new Set<string>(),
     nextTempId: 0,
     zIndex: 0,
   }
@@ -145,6 +152,7 @@ export function buildCampaignFromPsd(doc: PsdDocument): CampaignBuild {
     width: doc.width,
     height: doc.height,
     bgColor: deriveBgColor(doc),
+    requiredFonts: Array.from(ctx.fonts).sort(),
     warnings: ctx.warnings,
   }
 }
@@ -158,6 +166,7 @@ interface BuildContext {
   layers: BuiltLayer[]
   blobs: Blob[]
   warnings: BuildWarning[]
+  fonts: Set<string>
   nextTempId: number
   zIndex: number
 }
@@ -211,6 +220,11 @@ function walkLayers(layers: PsdLayer[], parentPath: string[], ctx: BuildContext)
 function emitTextLayer(l: PsdTextLayer, parentPath: string[], ctx: BuildContext) {
   const tempId = nextTempId(ctx)
   const spans: TextSpan[] = buildTextSpans(l)
+  // Acumula fontes pra UI fazer check de availability + missing-fonts modal.
+  ctx.fonts.add(l.defaultStyle.fontFamily)
+  for (const run of l.styleRuns) {
+    if (run.style.fontFamily) ctx.fonts.add(run.style.fontFamily)
+  }
 
   // lastOverride: snapshot do estilo "default" pra render rapido + per-char
   // styles indexados por linha (compativel com o que o editor consome hoje).
