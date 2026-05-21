@@ -27,12 +27,12 @@ function Logo({ small = false }: { small?: boolean }) {
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────
 const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: "⬜" },
-  { label: "Campanhas", href: "/campaigns", icon: "📁" },
-  { label: "Editor", href: "/editor", icon: "✏️" },
-  { label: "Peças", href: "/pieces", icon: "🖼" },
-  { label: "Planos", href: "/plans", icon: "💳" },
-  { label: "Assinatura", href: "/dashboard/billing", icon: "💎" },
+  { label: "Dashboard", href: "/dashboard" },
+  { label: "Campanhas", href: "/campaigns" },
+  { label: "Editor", href: "/editor" },
+  { label: "Peças", href: "/pieces" },
+  { label: "Planos", href: "/plans" },
+  { label: "Assinatura", href: "/dashboard/billing" },
 ];
 
 function Sidebar({ active }: { active: string }) {
@@ -73,7 +73,6 @@ function Sidebar({ active }: { active: string }) {
               fontFamily: "'DM Sans', sans-serif",
             }}
           >
-            <span style={{ fontSize: "1rem" }}>{item.icon}</span>
             {item.label}
           </a>
         ))}

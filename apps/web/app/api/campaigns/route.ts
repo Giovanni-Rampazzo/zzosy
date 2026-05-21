@@ -11,7 +11,8 @@ export async function POST(req: Request) {
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const tenantId = (session.user as any).tenantId
     const { name, clientId, code } = await req.json()
-    console.log("[CAMPAIGN-CREATE] start", { tenantId, name, clientId, code, userEmail: (session.user as any).email })
+    // Loga so IDs — userEmail/name eram PII (audit L3).
+    console.log("[CAMPAIGN-CREATE] start", { tenantId, clientId })
 
     if (!name || !clientId) return NextResponse.json({ error: "name e clientId obrigatórios" }, { status: 400 })
 

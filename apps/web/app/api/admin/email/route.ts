@@ -23,7 +23,8 @@ export async function POST(req: Request) {
   }
 
   // TODO: integrar com Resend/SendGrid
-  console.log("📧 Enviar e-mail para:", recipients, { subject, message });
+  // Nao logar payload (subject/message + emails) — PII.
+  console.log("📧 Email queued:", { count: recipients.length, hasSubject: !!subject });
 
   return NextResponse.json({ success: true, sent: recipients.length });
 }
