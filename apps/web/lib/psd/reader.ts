@@ -581,7 +581,10 @@ function readEffects(l: AgPsdLayer): PsdLayerEffects {
   if (fx.stroke?.[0]) out.stroke = readStrokeEffect(fx.stroke[0])
   if (fx.solidFill?.[0]) out.colorOverlay = readColorOverlay(fx.solidFill[0])
   if (fx.gradientOverlay?.[0]) out.gradientOverlay = readGradientOverlay(fx.gradientOverlay[0])
-  // satin, bevel, patternOverlay implementados na Fase 5
+  // F12.13 Fase 5: satin + bevel + patternOverlay
+  if (fx.satin?.[0]) out.satin = readSatin(fx.satin[0])
+  if (fx.bevel?.[0]) out.bevel = readBevel(fx.bevel[0])
+  // patternOverlay: pattern bytes precisam decodificacao (Fase 5 + Fase 4)
   return out
 }
 
@@ -639,6 +642,49 @@ function readGradientOverlay(g: any): PsdGradientOverlayEffect {
     angle: typeof g.angle === "number" ? g.angle : 90,
     scale: typeof g.scale === "number" ? g.scale : 1,
     reverse: g.reverse === true,
+  }
+}
+
+function readSatin(s: any): import("./types").PsdSatinEffect {
+  return {
+    enabled: s.enabled !== false,
+    color: parseHexColor(s.color, "#000000"),
+    opacity: typeof s.opacity === "number" ? s.opacity : 0.5,
+    angle: typeof s.angle === "number" ? s.angle : 19,
+    distance: typeof s.distance === "number" ? s.distance : 11,
+    size: typeof s.size === "number" ? s.size : 14,
+    blendMode: mapBlendMode(s.blendMode ?? "multiply"),
+    invert: s.invert === true,
+  }
+}
+
+function readBevel(b: any): import("./types").PsdBevelEffect {
+  const styleMap: Record<string, "innerBevel" | "outerBevel" | "emboss" | "pillowEmboss" | "strokeEmboss"> = {
+    "innerBevel": "innerBevel",
+    "outerBevel": "outerBevel",
+    "emboss": "emboss",
+    "pillowEmboss": "pillowEmboss",
+    "strokeEmboss": "strokeEmboss",
+  }
+  const techniqueMap: Record<string, "smooth" | "chiselHard" | "chiselSoft"> = {
+    "softMatte": "smooth",
+    "chiselHard": "chiselHard",
+    "chiselSoft": "chiselSoft",
+  }
+  return {
+    enabled: b.enabled !== false,
+    style: styleMap[b.style] ?? "innerBevel",
+    technique: techniqueMap[b.technique] ?? "smooth",
+    depth: typeof b.depth === "number" ? b.depth : 100,
+    direction: b.direction === "down" ? "down" : "up",
+    size: typeof b.size === "number" ? b.size : 5,
+    soften: typeof b.soften === "number" ? b.soften : 0,
+    highlightColor: parseHexColor(b.highlightColor, "#ffffff"),
+    highlightBlendMode: mapBlendMode(b.highlightBlendMode ?? "screen"),
+    highlightOpacity: typeof b.highlightOpacity === "number" ? b.highlightOpacity : 0.75,
+    shadowColor: parseHexColor(b.shadowColor, "#000000"),
+    shadowBlendMode: mapBlendMode(b.shadowBlendMode ?? "multiply"),
+    shadowOpacity: typeof b.shadowOpacity === "number" ? b.shadowOpacity : 0.75,
   }
 }
 

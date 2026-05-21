@@ -3591,26 +3591,67 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   //  - innerShadow, innerGlow, bevel, satin, patternOverlay
   //  Esses exigem offscreen comp custom; ficam preservados pra round-trip ao
   //  re-exportar pro Photoshop (designer vê o efeito ao re-abrir o PSD).
+  /**
+   * Compose effect color with its own opacity into rgba string.
+   * F12.14: cada effect tem opacity propria; precisa multiplicar com cor
+   * hex pra Fabric.Shadow color aplicar visualmente. Antes "rgba(0,0,0,0.5)"
+   * era hardcoded — agora respeita effect.opacity do PSD.
+   */
+  function effectColorWithOpacity(color: string | undefined, opacity: number | undefined, fallback: string): string {
+    const op = typeof opacity === "number" ? Math.max(0, Math.min(1, opacity)) : 1
+    if (!color) return fallback
+    // Color hex sem alpha (#rrggbb) → adiciona alpha
+    const m = /^#([0-9a-f]{6})$/i.exec(color)
+    if (m) {
+      const r = parseInt(m[1].slice(0, 2), 16)
+      const g = parseInt(m[1].slice(2, 4), 16)
+      const b = parseInt(m[1].slice(4, 6), 16)
+      return `rgba(${r}, ${g}, ${b}, ${op})`
+    }
+    // Color rgba(...) com alpha existente → multiplica
+    const rgba = /^rgba\(([^)]+)\)$/i.exec(color)
+    if (rgba) {
+      const parts = rgba[1].split(",").map(s => s.trim())
+      if (parts.length === 4) {
+        const a = parseFloat(parts[3]) * op
+        return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${a})`
+      }
+    }
+    return color
+  }
+
   function applyFabricEffects(obj: any, effects: any, ShadowClass: any) {
     if (!effects) return
+    // F12.14: dropShadow + outerGlow agora respeitam opacity per-effect via
+    // rgba() composto. Antes hardcoded "0.5" no fallback ignorava o valor.
     if (effects.dropShadow) {
       const d = effects.dropShadow
+      // Adobe angle eh em graus: 0=direita, 90=baixo. Distance + angle viram offsetX/Y.
+      const angleRad = ((d.angle ?? 120) * Math.PI) / 180
+      const dist = d.distance ?? 5
+      const offsetX = Math.cos(angleRad) * dist
+      const offsetY = Math.sin(angleRad) * dist
       obj.set("shadow", new ShadowClass({
-        color: d.color ?? "rgba(0,0,0,0.5)",
-        offsetX: d.offsetX ?? 0,
-        offsetY: d.offsetY ?? 0,
+        color: effectColorWithOpacity(d.color, d.opacity, "rgba(0,0,0,0.5)"),
+        offsetX,
+        offsetY,
         blur: d.blur ?? 5,
       }))
     } else if (effects.outerGlow) {
       const g = effects.outerGlow
       obj.set("shadow", new ShadowClass({
-        color: g.color ?? "rgba(255,255,255,0.5)",
+        color: effectColorWithOpacity(g.color, g.opacity, "rgba(255,255,255,0.5)"),
         offsetX: 0, offsetY: 0,
         blur: g.blur ?? 5,
       }))
     }
     if (effects.stroke && effects.stroke.color) {
-      obj.set("stroke", effects.stroke.color)
+      // F12.14: stroke effect agora respeita opacity (se diferente de 1)
+      // via rgba composto. Sem isso opacity era ignorado.
+      const c = typeof effects.stroke.opacity === "number" && effects.stroke.opacity < 1
+        ? effectColorWithOpacity(effects.stroke.color, effects.stroke.opacity, effects.stroke.color)
+        : effects.stroke.color
+      obj.set("stroke", c)
       obj.set("strokeWidth", effects.stroke.width ?? 1)
     }
     // Color Overlay: substitui o fill por uma cor sólida.

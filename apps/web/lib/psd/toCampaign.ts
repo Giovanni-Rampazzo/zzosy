@@ -28,7 +28,9 @@ import type {
   PsdMaskData,
   PsdImageData,
   PsdBBox,
+  PsdBlendMode,
 } from "./types"
+import { blendModeToCanvas } from "./blendModes"
 
 // ────────────────────────────────────────────────────────────────────
 // Output shapes (compativel com modelo do editor)
@@ -552,45 +554,9 @@ function deriveBgColor(doc: PsdDocument): string {
   return searchBgColor(doc.layers) ?? "#ffffff"
 }
 
-/**
- * Mapeia PsdBlendMode pro globalCompositeOperation do canvas/Fabric.
- *
- * Modes que canvas spec nao suporta nativo (vividLight, pinLight, hardMix,
- * subtract, divide) viram "normal" por enquanto + warning futuro do editor.
- * Fase 5 implementa via shader/pixel manipulation.
- */
-function blendModeToCss(mode: import("./types").PsdBlendMode): string {
-  const m: Record<string, string> = {
-    normal: "source-over",
-    dissolve: "source-over", // canvas spec nao suporta — ficaria custom shader
-    darken: "darken",
-    multiply: "multiply",
-    colorBurn: "color-burn",
-    linearBurn: "multiply", // aproximacao — Fase 5
-    darkerColor: "darken",  // aproximacao — Fase 5
-    lighten: "lighten",
-    screen: "screen",
-    colorDodge: "color-dodge",
-    linearDodge: "lighter",
-    lighterColor: "lighten", // aproximacao
-    overlay: "overlay",
-    softLight: "soft-light",
-    hardLight: "hard-light",
-    vividLight: "overlay",   // aproximacao — Fase 5
-    linearLight: "overlay",  // aproximacao — Fase 5
-    pinLight: "overlay",     // aproximacao — Fase 5
-    hardMix: "overlay",      // aproximacao — Fase 5
-    difference: "difference",
-    exclusion: "exclusion",
-    subtract: "difference",  // aproximacao — Fase 5
-    divide: "difference",    // aproximacao — Fase 5
-    hue: "hue",
-    saturation: "saturation",
-    color: "color",
-    luminosity: "luminosity",
-    passThrough: "source-over",
-  }
-  return m[mode] ?? "source-over"
+/** Wrapper pra blendModeToCanvas em blendModes.ts (Fase 5). */
+function blendModeToCss(mode: PsdBlendMode): string {
+  return blendModeToCanvas(mode)
 }
 
 /**
