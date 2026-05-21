@@ -3768,6 +3768,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           fill: fillProp,
           stroke: strokeProp,
           strokeWidth,
+          // strokeUniform mantem espessura constante em qualquer zoom/scale
+          // (comportamento PSD). Sem isso, ao escalar o objeto a borda fica
+          // mais grossa OU mais fina dependendo do scale — quebra o visual.
+          strokeUniform: true,
           fillRule: parsedShape.fillRule ?? "nonzero",
           ...psdExtraProps,
         })
@@ -9766,7 +9770,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const currentStrokeWidth = (selected as any).strokeWidth ?? 0
             function setShapeProp(key: "fill" | "stroke" | "strokeWidth", val: any) {
               if (!fc || !selected) return
+              // Compensacao Photoshop-center: ao mudar strokeWidth, ajusta
+              // left/top pra metade do delta em cada lado. Sem isso, Fabric
+              // mantem o anchor top-left fixo e o bbox cresce pra direita+
+              // baixo (path inside shifta visualmente). Com compensacao, o
+              // path stays no mesmo lugar visual — comportamento Adobe-fiel.
+              if (key === "strokeWidth") {
+                const oldW = (selected as any).strokeWidth ?? 0
+                const newW = Number(val) || 0
+                const delta = (newW - oldW) / 2
+                if (delta !== 0) {
+                  ;(selected as any).set({
+                    left: ((selected as any).left ?? 0) - delta,
+                    top: ((selected as any).top ?? 0) - delta,
+                  })
+                }
+              }
               ;(selected as any).set(key, val)
+              // strokeUniform: true mantem espessura constante em qualquer
+              // zoom/scale (comportamento PSD). Sem isso, stroke escala com
+              // a transformacao da layer — quebrar ao redimensionar.
+              if (key === "strokeWidth" || key === "stroke") {
+                ;(selected as any).set("strokeUniform", true)
+              }
+              ;(selected as any).setCoords?.() // recalc bbox + handles
               ;(selected as any).dirty = true
               fc.requestRenderAll()
               setSelectedTick(t => t + 1)
