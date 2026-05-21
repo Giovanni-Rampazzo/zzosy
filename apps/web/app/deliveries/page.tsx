@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { RowThumb } from "@/components/ui/RowThumb"
+import { Button } from "@/components/ui/Button"
 
 interface Delivery {
   id: string
@@ -99,11 +100,10 @@ export default function DeliveriesPage() {
                         Download
                       </a>
                     )}
-                    <button onClick={(e) => handleDelete(d.id, e.altKey)}
-                      title="Option/Alt+click pra apagar sem confirmação"
-                      style={{ padding: "6px 12px", border: "1px solid #fecaca", borderRadius: 4, background: "#fef2f2", cursor: "pointer", fontSize: 12, color: "#dc2626" }}>
+                    <Button variant="danger" size="sm" onClick={(e) => handleDelete(d.id, e.altKey)}
+                      title="Option/Alt+click pra apagar sem confirmação">
                       Apagar
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}

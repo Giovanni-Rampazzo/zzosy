@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
 
 const PLANS = ["FREE","STARTER","PRO","AGENCY","ENTERPRISE"];
 const planColors: Record<string,string> = { FREE:"#E5E5E5", STARTER:"#4285F4", PRO:"#F5C400", AGENCY:"#34A853", ENTERPRISE:"#111" };
@@ -45,7 +46,7 @@ export default function AdminPage() {
     setEmailSending(true); setEmailResult(null);
     const res = await fetch("/api/admin/email", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:emailTo, plan:emailPlan, subject:emailSubject, message:emailMessage }) });
     const data = await res.json();
-    setEmailResult(`✅ E-mail enviado para ${data.sent} usuário(s)`);
+    setEmailResult(`E-mail enviado para ${data.sent} usuário(s)`);
     setEmailSending(false);
   };
 
@@ -64,7 +65,7 @@ export default function AdminPage() {
       {/* Header */}
       <div style={{ background:"#111", color:"#FFF", padding:"0 40px", display:"flex", alignItems:"center", justifyContent:"space-between", height:"56px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:"24px" }}>
-          <span style={{ fontWeight:900, fontSize:"1.1rem", letterSpacing:"-0.03em" }}>ZZYSY Admin</span>
+          <span style={{ fontWeight:900, fontSize:"1.1rem", letterSpacing:"-0.03em" }}>ZZOSY Admin</span>
           {(["overview","users","email"] as const).map(t=>(
             <button key={t} onClick={()=>setTab(t)} style={{ background:"none", border:"none", color:tab===t?"#F5C400":"rgba(255,255,255,0.5)", fontWeight:tab===t?700:400, fontSize:"0.875rem", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", padding:"4px 0", borderBottom:tab===t?"2px solid #F5C400":"2px solid transparent" }}>
               {t==="overview"?"Visão Geral":t==="users"?"Usuários":"E-mail"}
@@ -129,14 +130,14 @@ export default function AdminPage() {
         {tab==="users" && (
           <div>
             <div style={{ display:"flex", gap:"12px", marginBottom:"20px", flexWrap:"wrap" }}>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Buscar por nome ou e-mail"
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nome ou e-mail"
                 style={{ flex:1, minWidth:"200px", padding:"10px 14px", border:"1.5px solid #E5E5E5", borderRadius:"8px", fontSize:"0.875rem", fontFamily:"'DM Sans',sans-serif", outline:"none" }}
                 onFocus={e=>e.target.style.borderColor="#111"} onBlur={e=>e.target.style.borderColor="#E5E5E5"} />
               <select value={planFilter} onChange={e=>setPlanFilter(e.target.value)} style={{ padding:"10px 14px", border:"1.5px solid #E5E5E5", borderRadius:"8px", fontSize:"0.875rem", fontFamily:"'DM Sans',sans-serif", outline:"none", background:"#FFF", cursor:"pointer" }}>
                 <option value="">Todos os planos</option>
                 {PLANS.map(p=><option key={p} value={p}>{p}</option>)}
               </select>
-              <button onClick={exportCSV} style={{ padding:"10px 18px", background:"#111", color:"#FFF", border:"none", borderRadius:"8px", fontSize:"0.875rem", fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>↓ Exportar CSV</button>
+              <Button variant="dark" size="md" onClick={exportCSV}>↓ Exportar CSV</Button>
             </div>
 
             {loadingUsers ? <div style={{ color:"#999" }}>Carregando...</div> : (
@@ -168,10 +169,9 @@ export default function AdminPage() {
                         </td>
                         <td style={{ padding:"12px 16px", color:"#888", fontSize:"0.8rem" }}>{new Date(u.createdAt).toLocaleDateString("pt-BR")}</td>
                         <td style={{ padding:"12px 16px" }}>
-                          <button onClick={()=>updateUser(u.id,{blocked:!u.blocked})}
-                            style={{ padding:"5px 12px", border:`1px solid ${u.blocked?"#34A853":"#E53935"}`, borderRadius:"6px", background:"transparent", color:u.blocked?"#34A853":"#E53935", fontSize:"0.78rem", fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                          <Button variant={u.blocked ? "success" : "danger"} size="sm" onClick={()=>updateUser(u.id,{blocked:!u.blocked})}>
                             {u.blocked?"Desbloquear":"Bloquear"}
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -215,10 +215,9 @@ export default function AdminPage() {
                   onFocus={e=>e.target.style.borderColor="#111"} onBlur={e=>e.target.style.borderColor="#E5E5E5"} />
               </div>
               {emailResult&&<div style={{ background:"#DCFCE7", color:"#16A34A", padding:"10px 14px", borderRadius:"8px", fontSize:"0.875rem", fontWeight:600 }}>{emailResult}</div>}
-              <button onClick={sendEmail} disabled={emailSending||!emailSubject||!emailMessage}
-                style={{ padding:"12px", background:emailSubject&&emailMessage?"#111":"#CCC", color:"#FFF", border:"none", borderRadius:"8px", fontSize:"0.875rem", fontWeight:700, cursor:emailSubject&&emailMessage?"pointer":"not-allowed", fontFamily:"'DM Sans',sans-serif" }}>
+              <Button variant="dark" size="md" onClick={sendEmail} disabled={emailSending||!emailSubject||!emailMessage} loading={emailSending}>
                 {emailSending?"Enviando...":"Enviar e-mail"}
-              </button>
+              </Button>
             </div>
             <p style={{ fontSize:"0.78rem", color:"#AAA", marginTop:"12px" }}>⚠️ Integração com Resend/SendGrid pendente. Por enquanto registra no console.</p>
           </div>
