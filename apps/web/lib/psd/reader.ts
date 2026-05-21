@@ -16,7 +16,25 @@
  * Esse módulo é a ÚNICA fronteira com ag-psd no novo pipeline. Quando ag-psd
  * tiver bug ou limitação, é aqui que documentamos + decidimos workaround.
  */
-import { readPsd, type Psd, type Layer as AgPsdLayer } from "ag-psd"
+import { readPsd, initializeCanvas, type Psd, type Layer as AgPsdLayer } from "ag-psd"
+
+// CRITICO (browser): sem initializeCanvas, ag-psd nao rasteriza layers —
+// l.canvas fica null em IMAGE/SmartObject/Shape, toCampaign skipa com
+// "empty-canvas" → assets sumindo silencioso (Rectangle 1-4, PA, PONTA
+// VERDE, Vector Smart Objects). O PsdImporter legacy chamava isso (linha
+// 1326); o pipeline novo esqueceu. Rodamos no module load — idempotente
+// (ag-psd ignora chamadas subsequentes).
+//
+// SSR (node sem document) eh skipado; initializeCanvas eh client-only.
+if (typeof document !== "undefined" && typeof initializeCanvas === "function") {
+  // ag-psd v18: signature mudou. Apenas createCanvas eh obrigatorio; demais
+  // (createCanvasFromData, createImageData) usam defaults DOM corretos.
+  initializeCanvas((w: number, h: number) => {
+    const c = document.createElement("canvas")
+    c.width = w; c.height = h
+    return c
+  })
+}
 import { normalizePsdFontToGoogle, extractFontWeight } from "../google-fonts"
 import type {
   PsdDocument,
