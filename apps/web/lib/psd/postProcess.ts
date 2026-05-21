@@ -15,10 +15,20 @@ import type { PsdDocument, PsdLayer, PsdSmartObjectLayer, PsdBBox } from "./type
 // Wrapper SO Detection
 // ────────────────────────────────────────────────────────────────────
 
-const WRAPPER_COVERAGE_THRESHOLD = 0.40 // cobre >= 40% do canvas
+// Heuristica wrapper afinada apos caso Sicredi (commit 0ada9fb seguinte):
+// PA (PDF 44KB — barras verdes do design) e ALY01784 (JPG 28MB — foto) estavam
+// sendo marcados como wrappers e auto-hidden, removendo elementos visuais
+// criticos. O detector agora exige formato PSB/PSD (composite Photoshop
+// aninhado) + threshold mais alto + mais layers contidos.
+const WRAPPER_COVERAGE_THRESHOLD = 0.70 // cobre >= 70% do canvas (era 40)
 const WRAPPER_OVERLAP_THRESHOLD = 0.5   // outros layers com >= 50% bbox dentro
-const WRAPPER_OVERLAPPING_COUNT = 2      // pelo menos 2 layers acima sobrepondo
+const WRAPPER_OVERLAPPING_COUNT = 3      // pelo menos 3 layers acima sobrepondo (era 2)
 const WRAPPER_MIN_AREA = 100              // ignora layers minusculos no count
+
+// Formatos que PODEM ser wrapper. PDF/AI/JPG/PNG sao design elements unicos
+// (vetor isolado ou foto), nao composites — nunca contem o design todo.
+// PSB/PSD sao Photoshop nested files que tipicamente sim contem o design.
+const WRAPPER_ELIGIBLE_FORMATS = new Set(["psb", "psd"])
 
 /**
  * Detecta Smart Objects "wrapper" — placedLayers grandes que contem o
@@ -63,6 +73,15 @@ export function detectWrapperSmartObjects(doc: PsdDocument): { detected: string[
     const so = layer as PsdSmartObjectLayer
     const area = bboxArea(so.bbox)
     if (area < canvasArea * WRAPPER_COVERAGE_THRESHOLD) continue
+
+    // Filtro de formato: so PSB/PSD pode ser wrapper. PDF/AI/JPG/PNG sao
+    // sempre design elements (vector graphic ou photo), nunca composites.
+    if (so.content.kind === "embedded") {
+      if (!WRAPPER_ELIGIBLE_FORMATS.has(so.content.format)) continue
+    } else {
+      // Linked/unknown: assume nao-wrapper pra ser seguro.
+      continue
+    }
 
     // Conta layers ACIMA (idx > i na flat) com bbox CONTIDO no SO
     let overlapping = 0
