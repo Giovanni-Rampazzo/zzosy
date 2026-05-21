@@ -9755,6 +9755,143 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           </div>
             )
           })()
+        ) : selected.type === "path" ? (
+          /* SHAPE editor (Fabric.Path) — fill + stroke + stroke-width editaveis.
+             Mantem o path vetorial vivo (sem rasterizar), preservando edicao
+             Photoshop-like. Sincroniza com Fabric via .set + renderAll. */
+          (() => {
+            const fc = fabricRef.current
+            const currentFill = typeof selected.fill === "string" ? selected.fill : "#000000"
+            const currentStroke = typeof selected.stroke === "string" ? selected.stroke : ""
+            const currentStrokeWidth = (selected as any).strokeWidth ?? 0
+            function setShapeProp(key: "fill" | "stroke" | "strokeWidth", val: any) {
+              if (!fc || !selected) return
+              ;(selected as any).set(key, val)
+              ;(selected as any).dirty = true
+              fc.requestRenderAll()
+              setSelectedTick(t => t + 1)
+              isDirtyRef.current = true
+              setIsDirty(true)
+              if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+              doSave()
+            }
+            return (
+              <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{(selected as any).__assetLabel ?? "Shape"}</div>
+
+                {/* CAMADA — blend + opacidade (paridade com outros tipos). */}
+                <div>
+                  <div style={secS}>Camada</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6 }}>
+                    <select
+                      value={(selected as any).globalCompositeOperation ?? "source-over"}
+                      onChange={e => changeObjectBlendMode(e.target.value)}
+                      style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20 }}
+                    >
+                      <option value="source-over">Normal</option>
+                      <option value="multiply">Multiply</option>
+                      <option value="screen">Screen</option>
+                      <option value="overlay">Overlay</option>
+                      <option value="darken">Darken</option>
+                      <option value="lighten">Lighten</option>
+                    </select>
+                    <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                      <input type="number" min={0} max={100} step={1}
+                        value={Math.round(((selected as any).opacity ?? 1) * 100)}
+                        onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
+                        style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }} />
+                      <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* FILL — cor solida (com brand colors + swatches default). */}
+                <div>
+                  <div style={secS}>Preenchimento</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <label style={{ width: 36, height: 36, borderRadius: 6, background: currentFill || "transparent", border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                      <input type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(currentFill) ? currentFill : "#000000"}
+                        onChange={e => setShapeProp("fill", e.target.value)}
+                        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }} />
+                    </label>
+                    <input type="text"
+                      value={currentFill}
+                      onChange={e => {
+                        const v = e.target.value
+                        if (/^#[0-9a-fA-F]{6}$/.test(v) || v === "transparent") setShapeProp("fill", v)
+                      }}
+                      placeholder="#RRGGBB"
+                      style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }} />
+                    <button type="button"
+                      onClick={() => setShapeProp("fill", "")}
+                      title="Sem fill (transparente)"
+                      style={{ ...inpS, width: 36, cursor: "pointer", padding: 0 }}>∅</button>
+                  </div>
+                  {brandColors.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                        {brandColors.map((bc, i) => (
+                          <div key={`fill-bc-${i}`} onClick={() => setShapeProp("fill", bc.hex)}
+                            title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
+                            style={{ width: 26, height: 26, borderRadius: 5, background: bc.hex, cursor: "pointer", border: currentFill.toLowerCase() === bc.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {SWATCHES.map(c => (
+                      <div key={`fill-sw-${c}`} onClick={() => setShapeProp("fill", c)}
+                        style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: currentFill.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* STROKE — cor + espessura. width=0 esconde stroke. */}
+                <div>
+                  <div style={secS}>Stroke</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <label style={{ width: 36, height: 36, borderRadius: 6, background: currentStroke || "transparent", border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                      <input type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(currentStroke) ? currentStroke : "#000000"}
+                        onChange={e => {
+                          setShapeProp("stroke", e.target.value)
+                          if (currentStrokeWidth === 0) setShapeProp("strokeWidth", 1)
+                        }}
+                        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }} />
+                    </label>
+                    <input type="text"
+                      value={currentStroke}
+                      onChange={e => {
+                        const v = e.target.value
+                        if (/^#[0-9a-fA-F]{6}$/.test(v) || v === "") setShapeProp("stroke", v)
+                      }}
+                      placeholder="#RRGGBB"
+                      style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }} />
+                    <button type="button"
+                      onClick={() => { setShapeProp("stroke", ""); setShapeProp("strokeWidth", 0) }}
+                      title="Sem stroke"
+                      style={{ ...inpS, width: 36, cursor: "pointer", padding: 0 }}>∅</button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center" }}>
+                    <input type="range" min={0} max={50} step={1}
+                      value={currentStrokeWidth}
+                      onChange={e => setShapeProp("strokeWidth", Number(e.target.value))}
+                      style={{ width: "100%" }} />
+                    <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                      <input type="number" min={0} max={500} step={1}
+                        value={currentStrokeWidth}
+                        onChange={e => setShapeProp("strokeWidth", Number(e.target.value) || 0)}
+                        style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }} />
+                      <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>px</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })()
         ) : (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{selected.__assetLabel ?? "Elemento"}</div>
