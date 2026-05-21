@@ -32,6 +32,7 @@ export async function GET(req: Request, ctx: Ctx) {
       client: true,
       assets: { orderBy: { order: "asc" }, include: { smartObject: true } },
       keyVision: true,
+      _count: { select: { pieces: true } },
     },
   })
   if (!campaign) return NextResponse.json({ error: "Not found" }, { status: 404 })

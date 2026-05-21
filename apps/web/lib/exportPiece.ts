@@ -6,6 +6,47 @@ import { getPostScriptName } from "@/lib/fonts"
 
 export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
 
+// Bake raster mask no bitmap pro pipeline de export (PSD/PNG/JPG/PDF).
+// Mesma logica do composeRasterMaskIntoImage do editor: converte coords da
+// mask (canvas-space) pra image-natural-space dividindo por scale, depois
+// usa destination-in pra recortar pixels.
+async function bakeRasterMaskExport(
+  sourceImg: HTMLImageElement,
+  maskRaster: { dataUrl: string; posX: number; posY: number; width: number; height: number },
+  assetPosX: number,
+  assetPosY: number,
+  assetW: number,
+  assetH: number,
+  inverted: boolean,
+  scaleX: number = 1,
+  scaleY: number = 1,
+): Promise<HTMLCanvasElement | null> {
+  if (typeof document === "undefined") return null
+  const maskImg = await new Promise<HTMLImageElement | null>((resolve) => {
+    const im = new Image()
+    im.crossOrigin = "anonymous"
+    im.onload = () => resolve(im)
+    im.onerror = () => resolve(null)
+    im.src = maskRaster.dataUrl
+  })
+  if (!maskImg) return null
+  const canvas = document.createElement("canvas")
+  canvas.width = assetW; canvas.height = assetH
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return null
+  ctx.drawImage(sourceImg, 0, 0, assetW, assetH)
+  ctx.globalCompositeOperation = inverted ? "destination-out" : "destination-in"
+  const ratioX = scaleX !== 0 ? 1 / scaleX : 1
+  const ratioY = scaleY !== 0 ? 1 / scaleY : 1
+  const maskOffsetX = (maskRaster.posX - assetPosX) * ratioX
+  const maskOffsetY = (maskRaster.posY - assetPosY) * ratioY
+  const maskW = maskRaster.width * ratioX
+  const maskH = maskRaster.height * ratioY
+  ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskW, maskH)
+  ctx.globalCompositeOperation = "source-over"
+  return canvas
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
@@ -191,6 +232,18 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
   const el = document.createElement("canvas")
   el.width = W; el.height = H
   const fc = new StaticCanvas(el, { width: W, height: H, enableRetinaScaling: false, backgroundColor: fallbackBg })
+  // Pareia com KeyVisionEditor: o editor define fc.clipPath = pageRect (commit
+  // 9968ddc) escondendo o que sai da pagina. Sem o mesmo clip no export, layers
+  // overflow visiveis no PNG/JPG/PSD divergem do que o user ve (audit H2).
+  try {
+    const Rect = (fabric as any).Rect
+    if (Rect) {
+      ;(fc as any).clipPath = new Rect({
+        left: 0, top: 0, width: W, height: H,
+        absolutePositioned: true, selectable: false, evented: false,
+      })
+    }
+  } catch {}
 
   // V2: layers + assets
   if (data?.version === 2 && Array.isArray(data?.layers)) {
@@ -289,10 +342,34 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
           ;(t as any).set("styles", finalStyles)
           if ((t as any).initDimensions) (t as any).initDimensions()
         }
+        // Anti-overwrap: PSD media o textbox com sub-pixel precision do Photoshop.
+        // No browser, font metrics podem variar centesimos de pixel e fazer um
+        // texto que cabia em N linhas no PSD quebrar pra N+1. KeyVisionEditor
+        // ja faz esse autofit no addAssetToCanvas; PRECISA bater AQUI tb pra
+        // que o thumb gerado off-screen tenha o MESMO layout que o editor
+        // mostra. Sem isso, preview vinha com texto quebrado em 2 linhas mas
+        // editor abria em 1 linha (autofit so rodava la).
+        try {
+          const fullText: string = (t as any).text ?? ""
+          const expectedLines = (fullText.match(/\n/g)?.length ?? 0) + 1
+          let attempts = 0
+          while (((t as any)._textLines?.length ?? 0) > expectedLines && attempts < 3) {
+            const currentWidth = (t as any).width ?? Math.max(layer.width ?? 400, 100)
+            ;(t as any).set("width", Math.ceil(currentWidth * 1.05))
+            if ((t as any).initDimensions) (t as any).initDimensions()
+            attempts++
+          }
+        } catch { /* tolera erro: thumb sai com wrap original */ }
         ;(t as any).__assetId = asset.id
         ;(t as any).__assetLabel = asset.label
         if (layer.mask) (t as any).__maskData = layer.mask
         if (layerEffects) (t as any).__psdEffects = layerEffects
+        // groupPath: hierarquia de folders do PSD original. Sem isso o export
+        // PSD (nestByGroupPath) caia em "raiz" e perdia toda a estrutura de
+        // grupos — designer abria no Photoshop e via layers achatados.
+        if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
+          ;(t as any).__groupPath = layer.groupPath
+        }
         fc.add(t)
       } else if (asset.type === "IMAGE") {
         if (asset.imageUrl) {
@@ -337,15 +414,43 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             const img = await new Promise<any>((resolve, reject) => {
               const ie = new window.Image()
               ie.crossOrigin = "anonymous"
-              ie.onload = () => resolve(new FabricImage(ie, {
-                left: layer.posX, top: layer.posY,
-                scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1,
-                angle: layer.rotation ?? 0,
-                opacity: layerOpacity,
-                globalCompositeOperation: layerBlend,
-                ...(fabricStroke ?? {}),
-                ...(fabricShadow ? { shadow: fabricShadow } : {}),
-              }))
+              ie.onload = async () => {
+                const sxBake = layer.scaleX ?? 1
+                const syBake = layer.scaleY ?? 1
+                // Bake da raster mask no bitmap, igual o editor faz. Sem isso,
+                // a renderizacao pra preview/composite/PDF/JPG/PNG sai com a
+                // IMAGEM INTEIRA (sem recorte), em vez do que a mask deveria
+                // revelar. Photoshop tambem recebe o canvas raster bakeado +
+                // o layer.mask original em paralelo (round-trip), entao o PSD
+                // exportado fica visualmente correto E editavel.
+                let source: HTMLImageElement | HTMLCanvasElement = ie
+                let maskBaked = false
+                if (layer?.mask?.type === "raster" && layer.mask.enabled !== false && layer.mask.raster?.dataUrl) {
+                  try {
+                    const baked = await bakeRasterMaskExport(
+                      ie, layer.mask.raster,
+                      layer.posX ?? 0, layer.posY ?? 0,
+                      ie.naturalWidth || ie.width || 1,
+                      ie.naturalHeight || ie.height || 1,
+                      !!layer.mask.inverted, sxBake, syBake,
+                    )
+                    if (baked) { source = baked; maskBaked = true }
+                  } catch (e) { console.warn("[export-mask-bake] fail:", asset.label, e) }
+                }
+                const fImg = new FabricImage(source, {
+                  left: layer.posX, top: layer.posY,
+                  scaleX: sxBake, scaleY: syBake,
+                  angle: layer.rotation ?? 0,
+                  opacity: layerOpacity,
+                  globalCompositeOperation: layerBlend,
+                  ...(fabricStroke ?? {}),
+                  ...(fabricShadow ? { shadow: fabricShadow } : {}),
+                })
+                // Marca pro export PSD nao re-aplicar a mask (evita dupla mask:
+                // canvas baked + mask ag-psd = Photoshop corta a interseccao).
+                if (maskBaked) (fImg as any).__maskAlreadyBaked = true
+                resolve(fImg)
+              }
               ie.onerror = reject
               ie.src = imgSrc
             })
@@ -354,6 +459,10 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             // Preserva mask do layer pro export PSD reproduzi-la no arquivo.
             if (layer.mask) (img as any).__maskData = layer.mask
             if (layerEffects) (img as any).__psdEffects = layerEffects
+            // groupPath: hierarquia de folders do PSD (round-trip).
+            if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
+              ;(img as any).__groupPath = layer.groupPath
+            }
             fc.add(img)
           } catch (e) { console.warn("img load fail:", asset.label, e) }
         } else {
@@ -1353,9 +1462,15 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       if ((obj as any).__isBg) continue
       const maskData = (obj as any).__maskData
       const psdLayer = psdLayers[psdLayerIdx]
+      const maskAlreadyBaked = (obj as any).__maskAlreadyBaked === true
       if (maskData && psdLayer) {
         const agpsdMask = await maskToAgPsd(maskData)
-        if (agpsdMask.mask) psdLayer.mask = agpsdMask.mask
+        // Raster mask: se o canvas do layer ja tem a mask bakeada (caso comum
+        // — buildPieceCanvas faz isso pra que o composite/preview saia correto),
+        // pular essa mask aqui evita DUPLA aplicacao no Photoshop. Sintoma:
+        // PSD aberto cortava a interseccao da mask consigo mesma — quase nada
+        // visivel. Vector/clipping nao sao bakeados, entao continuam passando.
+        if (agpsdMask.mask && !maskAlreadyBaked) psdLayer.mask = agpsdMask.mask
         if (agpsdMask.vectorMask) psdLayer.vectorMask = normalizeVectorMaskCoords(agpsdMask.vectorMask, W, H)
         if (agpsdMask.clipping) psdLayer.clipping = true
       }
@@ -1592,8 +1707,17 @@ export async function buildDeliveryZip(
         const folderPath = `${mediaFolder}/${fmt.toUpperCase()}`
         const fileName = `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`
         zip.file(`${folderPath}/${fileName}`, buf)
-      } catch (e) {
-        console.error("Falha exportar", piece.name, fmt, e)
+      } catch (e: any) {
+        // Loga stack inteiro pra identificar a origem real (catch generico
+        // sozinho perde info do throw original). Sem isso o user ve so
+        // "Cannot read properties of undefined (reading '1')" sem saber
+        // qual layer/asset causou.
+        console.error("Falha exportar", piece.name, fmt, {
+          message: e?.message,
+          stack: e?.stack,
+          pieceId: (piece as any).id,
+          pieceData: typeof piece.data === "string" ? "<string>" : Object.keys(piece.data ?? {}),
+        })
       }
     }
   }

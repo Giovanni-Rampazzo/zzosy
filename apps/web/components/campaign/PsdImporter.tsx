@@ -42,9 +42,12 @@ type RawMaskRef = { kind: "raster" | "vector"; data: any }
 function computeLeafUnionBbox(layer: any): { minX: number; minY: number; maxX: number; maxY: number } | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   function walk(l: any, parentHidden = false) {
-    if (parentHidden || l.hidden === true) return
+    const hidden = parentHidden || l.hidden === true
+    if (hidden) return
     if (l.children?.length) {
-      for (const c of l.children) walk(c, false)
+      // Propaga parentHidden=hidden em vez de hardcodar false — sub-folders
+      // hidden nao devem contribuir pra uniao (audit H6).
+      for (const c of l.children) walk(c, hidden)
       return
     }
     const l_ = l.left ?? 0, t_ = l.top ?? 0
@@ -107,7 +110,22 @@ function collectAllLayers(
   for (let i = 0; i < layers.length; i++) {
     const layer = layers[i]
     const effectiveHidden = parentHidden || layer.hidden === true
-    if (effectiveHidden) continue // SKIP filho de folder hidden
+    // Layers hidden ainda podem servir como BASE de clipping chain (Adobe usa
+    // a silhueta da base mesmo quando ela esta hidden). Antes o `continue`
+    // imediato fazia clipBaseInThisFolder ficar com sibling errado, ou o
+    // clipping fallback pra placeholder vazio (audit H5). Tratamos hidden assim:
+    //   - Folder: ainda atualiza clipBase + recurse pros filhos so se nao for
+    //     a base (mas precisamos do bbox/composite mesmo). Mais simples: pula
+    //     o recurse mas mantem clipBase.
+    //   - Leaf: nao adiciona em result, mas atualiza clipBase se for nao-clipping/
+    //     nao-adjustment, pra preservar a chain.
+    if (effectiveHidden) {
+      // Hidden layer ainda pode ser clipping base — atualiza referencia.
+      if (!layer.clipping && !layer.adjustment) {
+        clipBaseInThisFolder = layer
+      }
+      continue
+    }
 
     if (layer.children?.length) {
       let folderMask: RawMaskRef | null = inheritedRawMask

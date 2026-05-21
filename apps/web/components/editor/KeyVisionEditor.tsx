@@ -523,6 +523,49 @@ function textboxToSpans(obj: any): TextSpan[] {
   return spans
 }
 
+// Migra pieces antigas salvas com styles "flat" — { 0: { globalCharIdx: ... } } —
+// pro novo schema indexado por LINHA — { lineIdx: { charInLine: ... } }.
+// Bug corrigido em 25839ad: Fabric Textbox usa estrutura por linha; antes
+// empilhavamos todos os chars em styles[0], entao Textbox dropava silenciosamente
+// chars de linha 1+ (audit H10). Pieces salvas antes do commit ficaram com flat
+// no banco e abriram quebradas. Esta funcao detecta + converte na hora do load.
+function migrateFlatStylesToLineIndexed(
+  text: string | undefined | null,
+  styles: any
+): any {
+  if (!styles || typeof styles !== "object") return styles
+  const keys = Object.keys(styles)
+  // Heuristica: so 1 key "0" + texto tem \n + algum charIdx > tamanho da 1a linha.
+  if (keys.length !== 1 || keys[0] !== "0") return styles
+  if (!text || !text.includes("\n")) return styles
+  const flat = styles["0"]
+  if (!flat || typeof flat !== "object") return styles
+  const lines = String(text).split("\n")
+  const firstLineLen = lines[0].length
+  const charKeys = Object.keys(flat).map(k => Number(k)).filter(Number.isFinite)
+  const hasBeyondFirstLine = charKeys.some(k => k >= firstLineLen)
+  if (!hasBeyondFirstLine) return styles // de fato so linha 0 — ja correto
+  const result: Record<number, Record<number, any>> = {}
+  for (const k of charKeys) {
+    let acc = 0
+    for (let i = 0; i < lines.length; i++) {
+      const lineLen = lines[i].length
+      if (k < acc + lineLen) {
+        if (!result[i]) result[i] = {}
+        result[i][k - acc] = flat[k]
+        break
+      }
+      acc += lineLen + 1 // +1 pro \n
+      if (i === lines.length - 1) {
+        // overflow — joga no fim da ultima linha
+        if (!result[i]) result[i] = {}
+        result[i][Math.max(0, k - (acc - 1))] = flat[k]
+      }
+    }
+  }
+  return result
+}
+
 // Inverso: converte TextSpan[] em props para criar Textbox + styles per-char
 function spansToTextboxData(spans: TextSpan[]) {
   if (!spans.length) return { text: "", styles: {}, defaultStyle: {} }
@@ -837,6 +880,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
   const isApplyingHistory = useRef(false)
+  // Gera um seq incrementado a cada applySnapshot — usado pelos rebakes de
+  // raster mask pra detectar undo rapido (Cmd+Z duas vezes em <100ms). Se um
+  // rebake async terminar e o seq mudou, ele aborta antes de setar _element
+  // (evita race entre 2 rebakes do mesmo objeto — audit H1).
+  const applySnapshotSeq = useRef(0)
   const isInitialized = useRef(false)
   // Blob URLs criados via createObjectURL (SVG patcher e similares) precisam
   // ser revogados explicitamente — o GC do browser NAO libera blob URLs
@@ -2569,7 +2617,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   syncLineHeightFromLeading(created)
                 }
                 if (layer.overrides.styles !== undefined) {
-                  created.set("styles", layer.overrides.styles)
+                  const migrated = migrateFlatStylesToLineIndexed(
+                    (created as any).text ?? layer.text ?? "",
+                    layer.overrides.styles
+                  )
+                  created.set("styles", migrated)
                   if (created.initDimensions) created.initDimensions()
                 }
                 ;(created as any).__pieceLayerIdx = sorted.indexOf(layer)
@@ -2946,6 +2998,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const fc = fabricRef.current
     if (!fc) return false
     isApplyingHistory.current = true
+    // Incrementa seq pra invalidar rebakes assincronos em voo (H1).
+    const mySeq = ++applySnapshotSeq.current
     // Cancela qualquer save pendente IMEDIATAMENTE — antes do loadFromJSON disparar
     // eventos que poderiam re-agendar saves em estado transitorio.
     clearTimeout(saveTimer.current)
@@ -3124,9 +3178,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   !!src.__maskData.inverted,
                   obj.scaleX ?? 1, obj.scaleY ?? 1,
                 )
-                if (composed) {
-                  // Substitui o element do FabricImage pelo canvas baked.
-                  // setElement reconfigura sem perder filters/etc.
+                // Aborta se outro applySnapshot disparou enquanto isto estava
+                // em voo — escrever _element agora sobrescreve rebake mais novo (H1).
+                if (mySeq !== applySnapshotSeq.current) {
+                  srvLog("undo-MASK-REBAKE-STALE", { label: (obj as any).__assetLabel })
+                } else if (composed) {
                   if (typeof (obj as any).setElement === "function") {
                     ;(obj as any).setElement(composed)
                   } else {
@@ -4694,13 +4750,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             ...psdProps,
           })
           if (overrides.styles) {
+            // Migra legacy flat → line-indexed (audit H10) antes de escalar.
+            const migratedStyles = migrateFlatStylesToLineIndexed(text || asset.label, overrides.styles)
             // styles per-char tem fontSize na escala da peca; precisa re-escalar
             // pelo offscreen scale antes de aplicar.
             const scaledStyles: any = {}
-            for (const lineKey of Object.keys(overrides.styles)) {
+            for (const lineKey of Object.keys(migratedStyles)) {
               scaledStyles[lineKey] = {}
-              for (const colKey of Object.keys(overrides.styles[lineKey])) {
-                const cs = { ...overrides.styles[lineKey][colKey] }
+              for (const colKey of Object.keys(migratedStyles[lineKey])) {
+                const cs = { ...migratedStyles[lineKey][colKey] }
                 if (typeof cs.fontSize === "number") cs.fontSize = cs.fontSize * scale
                 scaledStyles[lineKey][colKey] = cs
               }
@@ -5271,6 +5329,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fd = new FormData()
         fd.append("thumbnail", blob, "kv-thumb.png")
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+        // Broadcast pro /presentation e /pieces refrescarem sem esperar polling
+        // de 6s (audit H7). saveNow inlinava o upload sem chamar uploadMatrixThumb
+        // — listeners ficavam stale.
+        try {
+          if (typeof BroadcastChannel !== "undefined") {
+            const bc = new BroadcastChannel("zzosy-campaigns")
+            bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
+            bc.close()
+          }
+        } catch {}
       } catch (e) { console.warn("KV thumb upload failed:", e) }
     }
     isDirtyRef.current = false
@@ -6341,6 +6409,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fd = new FormData()
         fd.append("thumbnail", blob, "kv-thumb.png")
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+        try {
+          if (typeof BroadcastChannel !== "undefined") {
+            const bc = new BroadcastChannel("zzosy-campaigns")
+            bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
+            bc.close()
+          }
+        } catch {}
       } catch (e) { console.warn("KV thumb upload failed:", e) }
       isDirtyRef.current = false
       setIsDirty(false)

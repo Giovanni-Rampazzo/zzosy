@@ -6,35 +6,19 @@ import TopNav from "@/components/TopNav"
 import { PsdImporter } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
+import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
+import {
+  BrandPresetKey, BrandPreset, BrandTypography,
+  PRESET_LABELS, PRESET_ORDER, DEFAULT_TYPOGRAPHY, normalizeTypography,
+} from "@/lib/brandTypography"
 
 interface CustomFontFile { url: string; weight: number; style: "normal" | "italic"; fileName: string }
 interface BrandColor { hex: string; name?: string | null; role?: string }
-type BrandPresetKey = "titulo" | "subtitulo" | "body" | "legenda"
-interface BrandPreset { fontWeight: number; fontSize: number }
-type BrandTypography = Record<BrandPresetKey, BrandPreset>
 
-const PRESET_LABELS: Record<BrandPresetKey, string> = {
-  titulo: "Título",
-  subtitulo: "Subtítulo",
-  body: "Corpo de texto",
-  legenda: "Legenda",
-}
-const PRESET_ORDER: BrandPresetKey[] = ["titulo", "subtitulo", "body", "legenda"]
-const DEFAULT_TYPOGRAPHY: BrandTypography = {
-  titulo:    { fontWeight: 700, fontSize: 80 },
-  subtitulo: { fontWeight: 600, fontSize: 48 },
-  body:      { fontWeight: 400, fontSize: 24 },
-  legenda:   { fontWeight: 400, fontSize: 16 },
-}
 function getPreset(client: any, key: BrandPresetKey): BrandPreset {
-  const t = client?.brandTypography
-  const r = t?.[key]
-  return {
-    fontWeight: Number.isFinite(r?.fontWeight) ? r.fontWeight : DEFAULT_TYPOGRAPHY[key].fontWeight,
-    fontSize:   Number.isFinite(r?.fontSize)   ? r.fontSize   : DEFAULT_TYPOGRAPHY[key].fontSize,
-  }
+  return normalizeTypography(client?.brandTypography ?? {})[key]
 }
 
 interface Asset {
@@ -52,6 +36,7 @@ interface Campaign {
   client: {
     id: string
     name: string
+    logoUrl?: string | null
     brandFont?: string | null
     brandColors?: BrandColor[] | null
     brandTypography?: BrandTypography | null
@@ -90,11 +75,38 @@ export default function CampaignAssetsPage() {
 
   async function addTextAsset(preset: BrandPresetKey = "body") {
     const defaultText = PRESET_LABELS[preset]
-    const usedFont = (campaign?.client?.brandFont || "Arial")
-    const { fontWeight, fontSize } = getPreset(campaign?.client, preset)
+    const presetData = getPreset(campaign?.client, preset)
+    const { fontWeight, fontSize, leadingPt, charSpacing } = presetData
+    // Fonte do preset > fonte da marca > Arial. Permite Titulo numa fonte e
+    // Body em outra (Adobe-style paragraph styles).
+    const usedFont = presetData.fontFamily ?? campaign?.client?.brandFont ?? "Arial"
     const span = {
       text: defaultText,
-      style: { color: "#111111", fontSize, fontWeight: String(fontWeight), fontFamily: usedFont },
+      // fontWeight como NUMERO (consistente com PSD imports que tambem agora
+      // gravam numero via extractFontWeight). Fabric aceita ambos, mas mistura
+      // string/number complica comparacoes em outros pontos do sistema.
+      style: { color: "#111111", fontSize, fontWeight, fontFamily: usedFont },
+    }
+    // lastOverride: snapshot tipografico pra propagacao server-side.
+    // brandPresetSnapshot guarda os valores EXATOS do preset (sem resolver
+    // fallback pra brandFont). Se preset.fontFamily eh undefined, snapshot
+    // tambem fica undefined — assim a propagacao consegue detectar "ainda
+    // original" comparando os valores do preset diretamente. Se snapshot
+    // tivesse fontFamily=usedFont (resolvido), nunca bateria com preset
+    // que tem fontFamily=undefined → propagacao parava de funcionar.
+    const lastOverride: any = {
+      fontFamily: usedFont,
+      fontSize,
+      fontWeight,
+      fill: "#111111",
+      leadingPt,
+      charSpacing,
+      brandPresetKey: preset,
+      brandPresetSnapshot: {
+        fontWeight, fontSize, leadingPt, charSpacing,
+        // Preserva o `undefined` quando o preset nao tem fontFamily explicito.
+        ...(presetData.fontFamily ? { fontFamily: presetData.fontFamily } : {}),
+      },
     }
     const res = await fetch(`/api/campaigns/${id}/assets`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -103,6 +115,7 @@ export default function CampaignAssetsPage() {
         label: defaultText,
         value: defaultText,
         content: [span],
+        lastOverride,
       })
     })
     if (res.ok) {
@@ -338,11 +351,16 @@ export default function CampaignAssetsPage() {
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
 
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display:"flex", alignItems:"center", gap: 8 }}>
+            <ClientLogoBadge
+              client={{ id: campaign.client.id, name: campaign.client.name, logoUrl: campaign.client.logoUrl }}
+              size={24}
+              radius={4}
+            />
             <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
               {campaign.client.name}
             </span>
-            {" / "}
+            <span>/</span>
             <span style={{ cursor: "pointer" }} onClick={() => router.push(`/campaigns/${id}`)}>
               {campaign.name}
             </span>
@@ -355,21 +373,23 @@ export default function CampaignAssetsPage() {
           </h1>
         </div>
 
-        {/* Sub-nav contextual da campanha. Linha 1: ← Cliente + Peças (amarelo).
-            Linha 2 (actions): + Texto + Imagem + Importar PSD + Editar Matriz. */}
+        {/* Sub-nav contextual da campanha. Navegacao no topo (Cliente, Campanha,
+            Assets, KV, Peças, Apresentação). Linha 2 (actions) tem APENAS
+            acoes que MODIFICAM dados: + Texto / + Imagem / Importar PSD.
+            Removido "Editar Matriz" — duplicado com botao "KV" da navegacao. */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative", marginBottom: 4 }}>
           <CampaignSubnav
             campaignId={id}
             clientId={campaign.client?.id}
+            clientName={campaign.client?.name}
             activeTab="assets"
+            hasAssets={campaign.assets.length > 0}
+            hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
             actions={
               <>
                 <AddTextMenu onPick={addTextAsset} />
                 <Button variant="secondary" size="md" onClick={() => newImageInputRef.current?.click()}>+ Imagem</Button>
                 <PsdImporter campaignId={id} onImported={load} />
-                {campaign.assets.length > 0 && (
-                  <Button variant="primary" size="md" onClick={() => router.push(`/editor?campaignId=${id}`)}>Editar Matriz (KV)</Button>
-                )}
               </>
             }
           />
@@ -548,7 +568,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
           <img src={asset.imageUrl} alt={asset.label}
             style={{ width: "100%", height: "100%", objectFit: "contain" }} />
         ) : (
-          <div style={{ color: "#ccc", fontSize: 28 }}>🖼</div>
+          <div style={{ color: "#ccc", fontSize: 11 }}>Sem imagem</div>
         )}
       </div>
 
