@@ -873,7 +873,60 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
   return runs
 }
 
+// Wrapper que mantem a mesma logica de fetch piece+assets que o legacy.
+// Sem ela, cada caller precisaria duplicar o "se id=kv-* busca da campanha,
+// senao busca da peca" — vital pro KV pseudo-piece e steps virtuais.
+async function exportPSDBlobV2Wrapper(pieceLite: { id?: string; name: string; data: any; width: number; height: number; __virtualStepOriginalId?: string }): Promise<Blob> {
+  const { exportPiecePsdV2 } = await import("@/lib/psd/exportPiecePsd")
+  let piece: any = pieceLite
+  let assets: Asset[] = []
+  if (pieceLite.id) {
+    if (pieceLite.id.startsWith("kv-")) {
+      const campaignId = pieceLite.id.slice(3)
+      const r = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+      if (r.ok) {
+        const camp = await r.json()
+        if (Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
+      }
+    } else if (pieceLite.__virtualStepOriginalId) {
+      const r = await fetch(`/api/pieces/${pieceLite.id}`, { cache: "no-store" })
+      if (r.ok) {
+        const p = await r.json()
+        const cres = await fetch(`/api/campaigns/${p.campaignId}`, { cache: "no-store" })
+        if (cres.ok) {
+          const camp = await cres.json()
+          if (Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
+        }
+      }
+    } else {
+      const fetched = await fetchPieceWithAssets(pieceLite.id)
+      piece = fetched.piece
+      assets = fetched.assets
+    }
+  }
+  const result = await exportPiecePsdV2({ piece, assets })
+  if (result.warnings.length > 0) {
+    console.log(`[psd-export-v2] ${result.warnings.length} warnings, ${(result.byteLength / 1024).toFixed(1)}KB PSD gerado`)
+    for (const w of result.warnings.slice(0, 5)) console.warn(`  [${w.kind}] ${w.layerName}: ${w.message}`)
+  }
+  return result.blob
+}
+
 export async function exportPSDBlob(pieceLite: { id?: string; name: string; data: any; width: number; height: number; __virtualStepOriginalId?: string }): Promise<Blob> {
+  // Fase 8: opt-in pro export v2 (fromEditor + writer da nova arquitetura PSD).
+  // Default ainda eh legacy ate dogfooding completo. Forca v2 via:
+  //   localStorage["zzosy:psdExport"] = "v2"
+  // Quando v2 estabilizar, vira default e o codigo legacy abaixo eh removido.
+  const useV2 = typeof localStorage !== "undefined" && localStorage.getItem("zzosy:psdExport") === "v2"
+  if (useV2) {
+    try {
+      return await exportPSDBlobV2Wrapper(pieceLite)
+    } catch (e: any) {
+      console.warn("[psd-export-v2] falhou, caindo no legacy:", e?.message ?? e)
+      // Cai no caminho legacy abaixo
+    }
+  }
+
   let piece: any = pieceLite
   let assets: Asset[] = []
   if (pieceLite.id) {
