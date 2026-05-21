@@ -508,9 +508,14 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
               : (shape.stroke?.color ?? undefined)
             const strokeW = overrides.strokeWidth !== undefined ? overrides.strokeWidth
               : (shape.stroke?.width ?? 0)
+            // posX/posY SEMPRE do layer (estado salvo pelo user). pathBbox eh
+            // posicao PSD original e SEMPRE tem valor → o fallback antigo
+            // (`pathBbox?.left ?? layer.posX`) NUNCA acionava layer.posX,
+            // entao SHAPE no export saia sempre na posicao do PSD,
+            // ignorando moves/scales do user. Mesmo bug que o load tinha.
             const p = new Path(shape.path, {
-              left: shape.pathBbox?.left ?? layer.posX,
-              top: shape.pathBbox?.top ?? layer.posY,
+              left: layer.posX ?? shape.pathBbox?.left ?? 0,
+              top: layer.posY ?? shape.pathBbox?.top ?? 0,
               fill: fillProp,
               stroke: strokeProp,
               strokeWidth: strokeW,
@@ -524,6 +529,7 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             })
             ;(p as any).__assetId = asset.id
             ;(p as any).__assetLabel = asset.label
+            ;(p as any).__isShape = true
             if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
               ;(p as any).__groupPath = layer.groupPath
             }

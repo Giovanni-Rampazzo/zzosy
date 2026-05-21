@@ -300,6 +300,38 @@ function buildShapeLayer(l: EditorLayer, asset: EditorAsset): PsdShapeLayer {
   const bbox = computeBBox(l)
   // SHAPE asset content = JSON { path, pathBbox, fill, stroke, fillRule }
   const content = parseShapeContent(asset.content)
+  // Overrides do editor (fill/stroke/strokeWidth) tem PRIORIDADE sobre o
+  // content original do asset. Sem isso, o export v2 ignorava todas as
+  // edicoes de cor/espessura do user e exportava as cores do PSD original.
+  const ov = l.overrides ?? {}
+  const baseFill = content.fill ?? { kind: "solid", color: "#000000" }
+  const baseStroke = content.stroke ?? null
+  const fill: PsdShapeLayer["fill"] = ov.fill !== undefined && ov.fill !== ""
+    ? { kind: "solid", color: ov.fill }
+    : baseFill
+  let stroke: PsdShapeLayer["stroke"] = baseStroke
+  if (ov.stroke !== undefined || ov.strokeWidth !== undefined) {
+    // Reconstroi stroke quando user editou — mantem props nao-editaveis do
+    // original (position, cap, join, dash) e sobrescreve color/width.
+    const newColor: string = ov.stroke !== undefined && ov.stroke !== ""
+      ? ov.stroke
+      : (baseStroke?.color ?? "#000000")
+    const newWidth: number = ov.strokeWidth !== undefined
+      ? ov.strokeWidth
+      : (baseStroke?.width ?? 1)
+    if (newWidth > 0 && newColor) {
+      stroke = {
+        width: newWidth,
+        color: newColor,
+        position: baseStroke?.position ?? "outside",
+        cap: baseStroke?.cap ?? "butt",
+        join: baseStroke?.join ?? "miter",
+        dash: baseStroke?.dash,
+      }
+    } else {
+      stroke = null
+    }
+  }
   return {
     type: "shape",
     id: l.assetId,
@@ -315,8 +347,8 @@ function buildShapeLayer(l: EditorLayer, asset: EditorAsset): PsdShapeLayer {
     clipping: false,
     path: content.path,
     pathBbox: content.pathBbox ?? bbox,
-    fill: content.fill ?? { kind: "solid", color: "#000000" },
-    stroke: content.stroke ?? null,
+    fill,
+    stroke,
     fillRule: content.fillRule ?? "nonzero",
   }
 }
