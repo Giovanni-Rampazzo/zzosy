@@ -1593,21 +1593,27 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
             ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
             __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
+            // "combine" = path puro (sem boolean ops). "subtract" subtrai do
+            // composite e deixaria o shape invisivel.
             vectorMask: {
-              paths: [{ operation: "subtract", knots, open: false }],
+              paths: [{ operation: "combine", knots, open: false }],
             },
           }
           if (fillStr) {
             psdLayer.vectorFill = { type: "color", color: hexToAgPsdRgb(fillStr) }
           }
           if (strokeStr && strokeW > 0) {
+            // ag-psd usa aliases curtos: 'butt'/'round'/'square' (LineCapType),
+            // 'miter'/'round'/'bevel' (LineJoinType), 'inside'/'center'/'outside'
+            // (LineAlignment). NAO as chaves PSD raw "strokeStyle*". Falha
+            // antes do fix: "Invalid value for enum: 'strokeStyleButtCap'".
             psdLayer.vectorStroke = {
               strokeEnabled: true,
               fillEnabled: true,
               lineWidth: { value: strokeW, units: "Pixels" },
-              lineAlignment: "strokeStyleAlignOutside",
-              lineCapType: "strokeStyleButtCap",
-              lineJoinType: "strokeStyleMiterJoin",
+              lineAlignment: "outside",
+              lineCapType: "butt",
+              lineJoinType: "miter",
               content: { type: "color", color: hexToAgPsdRgb(strokeStr) },
             }
           }
