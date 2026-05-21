@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
+import { apiErrors } from "@/lib/apiError";
 
 export const dynamic = "force-dynamic"
 
@@ -14,9 +15,9 @@ async function checkSuperAdmin(email: string) {
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.email) return apiErrors.unauthorized();
   const me = await checkSuperAdmin(session.user.email);
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!me) return apiErrors.forbidden();
   const search = req.nextUrl.searchParams.get("search") ?? "";
   const users = await prisma.user.findMany({
     where: search ? { OR: [{ name: { contains: search } }, { email: { contains: search } }] } : {},
@@ -28,15 +29,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.email) return apiErrors.unauthorized();
   const me = await checkSuperAdmin(session.user.email);
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!me) return apiErrors.forbidden();
   try {
     const { name, email, password, role, tenantId } = await req.json();
-    if (!email || !password) return NextResponse.json({ error: "email e password obrigatorios" }, { status: 400 });
-    if (password.length < 8) return NextResponse.json({ error: "Senha minima 8 caracteres" }, { status: 400 });
+    if (!email || !password) return apiErrors.badRequest("email e password obrigatórios");
+    if (password.length < 8) return apiErrors.badRequest("Senha mínima 8 caracteres");
     const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) return NextResponse.json({ error: "Email ja cadastrado" }, { status: 400 });
+    if (exists) return apiErrors.badRequest("E-mail já cadastrado");
     const hashed = await bcrypt.hash(password, 10);
     // tenantId default = mesmo tenant do admin que esta criando
     const finalTenantId = tenantId || me.tenantId;
@@ -52,20 +53,22 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(user);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "Erro ao criar usuario" }, { status: 400 });
+    // Nao retorna e.message ao client — pode vazar info interna.
+    console.error("[admin/users POST] failed:", e?.message ?? e);
+    return apiErrors.badRequest("Erro ao criar usuário");
   }
 }
 
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.email) return apiErrors.unauthorized();
   const me = await checkSuperAdmin(session.user.email);
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!me) return apiErrors.forbidden();
   const { id, role, blocked, password, name } = await req.json();
-  if (!id) return NextResponse.json({ error: "id obrigatorio" }, { status: 400 });
+  if (!id) return apiErrors.badRequest("id obrigatório");
   // Nao deixa o admin alterar a propria conta por aqui (evita auto-bloqueio/auto-rebaixamento)
   if (id === me.id && (blocked === true || (role && role !== me.role))) {
-    return NextResponse.json({ error: "Nao pode alterar role/blocked da propria conta" }, { status: 400 });
+    return apiErrors.badRequest("Não pode alterar role/blocked da própria conta");
   }
   const data: any = {};
   if (role !== undefined) data.role = role;
@@ -73,7 +76,7 @@ export async function PATCH(req: Request) {
   if (name !== undefined) data.name = name;
   if (password !== undefined) {
     if (typeof password !== "string" || password.length < 8) {
-      return NextResponse.json({ error: "Senha minima 8 caracteres" }, { status: 400 });
+      return apiErrors.badRequest("Senha mínima 8 caracteres");
     }
     data.password = await bcrypt.hash(password, 10);
   }

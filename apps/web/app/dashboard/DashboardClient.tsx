@@ -4,6 +4,7 @@ import { colors } from "@/lib/theme";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { Button } from "@/components/ui/Button";
 
 // ─── LOGO ────────────────────────────────────────────────────────
 function Logo({ small = false }: { small?: boolean }) {
@@ -275,17 +276,7 @@ export default function DashboardClient({ user, campaigns: initialCampaigns, tot
               Olá, {(user as any)?.name || "Admin"} 👋
             </p>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              padding: "11px 20px", background: colors.text, color: colors.primaryText,
-              border: "none", borderRadius: "8px", fontSize: "0.875rem",
-              fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-            }}
-          >
-            + Nova campanha
-          </button>
+          <Button variant="dark" size="md" onClick={() => setShowModal(true)}>+ Nova campanha</Button>
         </div>
 
         {/* Stats */}
@@ -309,16 +300,7 @@ export default function DashboardClient({ user, campaigns: initialCampaigns, tot
             <p style={{ fontSize: "0.95rem", color: "#AAAAAA", margin: "0 0 16px" }}>
               Nenhuma campanha ainda.
             </p>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                padding: "10px 20px", background: colors.text, color: colors.primaryText,
-                border: "none", borderRadius: "8px", fontSize: "0.875rem",
-                fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
-              }}
-            >
-              Criar primeira campanha
-            </button>
+            <Button variant="dark" size="md" onClick={() => setShowModal(true)}>Criar primeira campanha</Button>
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" }}>

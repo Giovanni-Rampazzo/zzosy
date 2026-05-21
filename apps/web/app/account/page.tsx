@@ -174,7 +174,7 @@ export default function AccountPage() {
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <Button variant="secondary" onClick={() => logoInputRef.current?.click()}>Escolher arquivo</Button>
                 {brand.brandLogoUrl && (
-                  <button onClick={() => setBrand(b => ({...b, brandLogoUrl: null}))} style={{fontSize:11,color:"#dc2626",background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left"}}>Remover</button>
+                  <Button variant="link" size="sm" onClick={() => setBrand(b => ({...b, brandLogoUrl: null}))} style={{color:"#dc2626",padding:0,height:"auto"}}>Remover</Button>
                 )}
               </div>
               <input
@@ -202,7 +202,7 @@ export default function AccountPage() {
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
                 <Button variant="secondary" onClick={() => secondaryInputRef.current?.click()}>Escolher arquivo</Button>
                 {brand.brandSecondaryLogoUrl && (
-                  <button onClick={() => setBrand(b => ({...b, brandSecondaryLogoUrl: null}))} style={{fontSize:11,color:"#dc2626",background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left"}}>Remover</button>
+                  <Button variant="link" size="sm" onClick={() => setBrand(b => ({...b, brandSecondaryLogoUrl: null}))} style={{color:"#dc2626",padding:0,height:"auto"}}>Remover</Button>
                 )}
               </div>
               <input

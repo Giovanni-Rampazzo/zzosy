@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { apiErrors } from "@/lib/apiError";
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    if (!session?.user?.email) return apiErrors.unauthorized();
     const me = await prisma.user.findUnique({ where: { email: session.user.email } });
-    if (!me || me.role !== "SUPER_ADMIN") return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+    if (!me || me.role !== "SUPER_ADMIN") return apiErrors.forbidden();
 
     const [totalUsers, totalCampaigns, totalPieces, recentUsers] = await Promise.all([
       prisma.user.count(),
@@ -21,6 +22,7 @@ export async function GET() {
 
     return NextResponse.json({ totalUsers, totalCampaigns, totalPieces, mrr: 0, paying: 0, usersByPlan: [], recentUsers });
   } catch(e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error("[admin/metrics] failed:", e?.message ?? e);
+    return apiErrors.internal();
   }
 }

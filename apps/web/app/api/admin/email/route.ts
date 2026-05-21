@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { apiErrors } from "@/lib/apiError";
 
 export const dynamic = "force-dynamic"
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  if (!session?.user?.email) return apiErrors.unauthorized();
   const me = await prisma.user.findUnique({ where: { email: session.user.email } });
-  if (me?.role !== "SUPER_ADMIN") return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+  if (me?.role !== "SUPER_ADMIN") return apiErrors.forbidden();
 
   const { to, subject, message, plan } = await req.json();
 

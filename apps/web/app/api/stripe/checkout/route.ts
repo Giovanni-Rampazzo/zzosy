@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { apiErrors } from "@/lib/apiError";
 
 export const dynamic = "force-dynamic"
 
@@ -16,15 +17,11 @@ const PRICE_IDS: Record<string, string> = {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-    }
+    if (!session?.user?.email) return apiErrors.unauthorized();
 
     const { planId } = await req.json();
     const priceId = PRICE_IDS[planId];
-    if (!priceId) {
-      return NextResponse.json({ error: "Plano inválido" }, { status: 400 });
-    }
+    if (!priceId) return apiErrors.badRequest("Plano inválido");
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -38,7 +35,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: checkout.url });
   } catch (err: any) {
-    console.error("Stripe error:", err);
-    return NextResponse.json({ error: err.message ?? "Erro interno" }, { status: 500 });
+    console.error("Stripe error:", err?.message ?? err);
+    // Nao retorna err.message — Stripe pode incluir detalhes sensiveis.
+    return apiErrors.internal();
   }
 }

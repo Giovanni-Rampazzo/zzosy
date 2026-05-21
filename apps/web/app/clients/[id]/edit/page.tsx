@@ -2,16 +2,17 @@
 /**
  * /clients/[id]/edit
  *
- * Pagina de edicao do cliente. Mantida como rota separada (e nao modal)
- * porque eventualmente vai virar dashboard rico do cliente (metricas,
- * historico, configs).
+ * Pagina de edicao de DADOS do cliente (metadata). Identidade visual (cores,
+ * fontes, tipografia) mora em /clients/[id]/design-system pra evitar
+ * duplicacao de logica + race condition de auto-save (audit F7.1).
  *
  * Contem:
  *  - Slot de logo (upload, trocar, apagar) com AUTO-SAVE — toda mudanca
  *    no logo dispara PATCH imediato, sem precisar clicar Salvar.
  *  - Form de campos texto (name, contact, email, phone, address) com
- *    Salvar/Cancelar fixados no TOPO do card (alinhados a direita).
- *  - Zona de perigo: apagar cliente com confirmacao dupla.
+ *    Salvar/Cancelar fixados no TOPO do card.
+ *  - Link "Abrir Design System" pra a pagina dedicada de brand.
+ *  - ClientSettingsCard (taxonomia) + Zona de perigo (delete).
  *
  * Upload de logo: /api/upload (base64 data URL). Aceita PNG/JPG/SVG/WEBP
  * ate 5MB. Coluna no banco e LONGTEXT (4GB).
@@ -224,55 +225,13 @@ export default function EditClientPage() {
     return res.ok
   }
 
-  // AUTO-SAVE da identidade visual: debounced 600ms.
-  // brandFirstLoadRef evita disparar PATCH no carregamento inicial dos dados.
-  useEffect(() => {
-    if (loading) return
-    if (brandFirstLoadRef.current) { brandFirstLoadRef.current = false; return }
-
-    const handle = setTimeout(async () => {
-      setSavingBrand(true)
-      const ok = await patchClient({
-        brandFont: brandFont || null,
-        brandColors: brandColors as any,
-        brandTypography: brandTypography as any,
-        customFontFiles: customFontFiles.length > 0 ? customFontFiles as any : null,
-      })
-      setSavingBrand(false)
-      if (ok) {
-        setBrandSavedAt(Date.now())
-        setTimeout(() => setBrandSavedAt(null), 2000)
-        // Avisa outros componentes abertos (editor de peça, etc) que o brand
-        // do cliente mudou pra refetch sem precisar de reload manual.
-        try { window.dispatchEvent(new CustomEvent("zzosy:client-brand-updated", { detail: { clientId: id } })) } catch {}
-        // Cascateia mudança em todas peças do cliente: atualiza piece.data
-        // resolvendo brand refs + regenera thumbs. Roda em background sem
-        // bloquear UI; usuário vê progresso via state cascadeProgress.
-        // forceRender=true: regenera thumbs mesmo quando cor nao mudou (caso
-        // tipico: user trocou brandFont — server propaga via propagateBrand-
-        // Typography, mas thumb-da-peca fica stale ate user abrir o editor.
-        // Sem forceRender, cascade pula re-render porque resolveBrandRefs nao
-        // detecta mudanca (refs sao so de cor).
-        ;(async () => {
-          try {
-            const { cascadeBrandUpdate } = await import("@/lib/cascadeBrandUpdate")
-            setCascadeProgress({ total: 0, done: 0 })
-            const touched = await cascadeBrandUpdate(id, brandColors, (p) => {
-              setCascadeProgress({ total: p.total, done: p.done })
-            }, true)
-            setCascadeProgress({ total: 0, done: 0, touched: touched.length })
-            setTimeout(() => setCascadeProgress(null), 4000)
-          } catch (e) {
-            console.warn("[brand-cascade] erro:", e)
-            setCascadeProgress(null)
-          }
-        })()
-      } else {
-        setError("Falha ao salvar identidade visual.")
-      }
-    }, 600)
-    return () => clearTimeout(handle)
-  }, [brandFont, brandColors, brandTypography, customFontFiles, loading])
+  // F7.1 (audit M5): auto-save de brandFont/brandColors/brandTypography/
+  // customFontFiles removido daqui — esses campos NAO sao editaveis no /edit
+  // (so logo + dados de contato sao). Toda a edicao de identidade visual
+  // mora em /clients/[id]/design-system. Antes, o effect rodava em duplicata
+  // com o /design-system criando race condition em quem deixava as duas abas
+  // abertas. State permanece pra preservar o load do client e evitar reescrita
+  // por accident — mas o effect que disparava PATCH foi removido.
 
   function updatePreset(key: BrandPresetKey, patch: Partial<BrandPreset>) {
     setBrandTypography(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }))
