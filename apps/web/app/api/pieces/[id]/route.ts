@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { appendToTaxonomy } from "@/lib/taxonomy"
 import { PIECE_STATUS_LIST } from "@/lib/pieceStatus"
 import { stampPiece } from "@/lib/stampPiece"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -27,11 +28,11 @@ async function findPieceForTenant(id: string, tenantId: string) {
 
 export async function GET(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
   const piece = await findPieceForTenant(id, tenantId)
-  if (!piece) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!piece) return apiErrors.notFound()
   // Stampa imageUrl + steps com ?v=updatedAt — antes detalhe servia URL raw e
   // browser cacheava thumb stale (audit F2.2). Lista (/api/pieces) ja fazia.
   return NextResponse.json(stampPiece(piece))
@@ -39,11 +40,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
   const existing = await findPieceForTenant(id, tenantId)
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!existing) return apiErrors.notFound()
   const body = await req.json()
   // Whitelist: so deixa passar fields conhecidos. Bloqueia tentativa de
   // mexer em campaignId, createdAt, FKs internas via PATCH.
@@ -89,11 +90,11 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
   const existing = await findPieceForTenant(id, tenantId)
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!existing) return apiErrors.notFound()
   await prisma.piece.delete({ where: { id } })
   return NextResponse.json({ ok: true })
 }

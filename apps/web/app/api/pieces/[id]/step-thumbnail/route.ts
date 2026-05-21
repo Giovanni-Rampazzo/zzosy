@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic"
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const { id } = await params
   const { searchParams } = new URL(req.url)
   const indexStr = searchParams.get("index")
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const piece = await prisma.piece.findFirst({
     where: { id, campaign: { client: { tenantId } } },
   })
-  if (!piece) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!piece) return apiErrors.notFound()
 
   // Recebe o arquivo via FormData (campo "thumbnail")
   const formData = await req.formData()
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // snapshot velho. Aqui queremos apenas adicionar imageUrl/thumbnailUrl
   // ao step especifico, NAO sobrescrever layers/bgColor.
   const fresh = await prisma.piece.findUnique({ where: { id } })
-  if (!fresh) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!fresh) return apiErrors.notFound()
   const data: any = fresh.data ? JSON.parse(fresh.data) : {}
   if (!Array.isArray(data.steps)) data.steps = []
   while (data.steps.length <= index) data.steps.push({ layers: [], bgColor: data.bgColor ?? "#ffffff" })

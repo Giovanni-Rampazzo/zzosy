@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -11,7 +12,7 @@ export const runtime = "nodejs"
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const { searchParams } = new URL(req.url)
   const campaignId = searchParams.get("campaignId")
   const deliveries = await prisma.delivery.findMany({
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
 // Salva o ZIP no servidor + cria registro Delivery + marca peças como ENTREGUE
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
 
   const fd = await req.formData()
   const zipFile = fd.get("zip") as File | null

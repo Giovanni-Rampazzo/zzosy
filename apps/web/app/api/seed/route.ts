@@ -43,7 +43,14 @@ export async function POST() {
   if (existing > 0) return NextResponse.json({ message: "Já populado", count: existing })
 
   await prisma.mediaFormat.createMany({
-    data: DEFAULT_FORMATS.map(f => ({ ...f, isDefault: true, category: f.category as any }))
+    // F8.3: schema exige `name` (mesmo derivado). Antes faltava esse field e TS
+    // reclamava em build. Usa `${vehicle} ${format}` como label legivel default.
+    data: DEFAULT_FORMATS.map(f => ({
+      ...f,
+      name: `${f.vehicle} ${f.format}`.trim(),
+      isDefault: true,
+      category: f.category as any,
+    }))
   })
 
   return NextResponse.json({ ok: true, count: DEFAULT_FORMATS.length })

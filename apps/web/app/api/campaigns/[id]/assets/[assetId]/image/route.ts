@@ -7,6 +7,7 @@ import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { maybeSanitizeImage } from "@/lib/svgSanitize"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -17,7 +18,7 @@ export const maxDuration = 30
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any).tenantId
 
     const { id, assetId } = await ctx.params
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       where: { id: assetId, campaignId: id, campaign: { client: { tenantId } } },
       select: { id: true },
     })
-    if (!exists) return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (!exists) return apiErrors.notFound()
 
     const formData = await req.formData()
     const file = formData.get("image") as File

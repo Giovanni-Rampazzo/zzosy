@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -14,7 +15,7 @@ const CLIENT_CREATE_FIELDS = new Set([
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
 
   const clients = await prisma.client.findMany({
@@ -28,7 +29,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any).tenantId
 
     // Valida que o tenant existe (sessao velha aponta pra tenant deletado)

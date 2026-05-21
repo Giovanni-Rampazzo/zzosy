@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { copyFile, mkdir, readdir, stat } from "fs/promises"
 import { existsSync } from "fs"
 import path from "path"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -27,7 +28,7 @@ type Ctx = { params: Promise<{ id: string }> }
  */
 export async function POST(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const { id: oldId } = await ctx.params
   const tenantId = (session.user as any).tenantId
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       pieces: true,
     },
   })
-  if (!original) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!original) return apiErrors.notFound()
 
   // Reservar id da nova campanha (cuid gerado depois pelo Prisma).
   // Estratégia mais simples: criar a campanha vazia primeiro pra ter o id,

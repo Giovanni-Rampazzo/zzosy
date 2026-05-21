@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { NextResponse } from "next/server"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -14,9 +15,9 @@ async function checkSuperAdmin(email: string) {
 
 export async function DELETE(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session?.user?.email) return apiErrors.unauthorized()
   const me = await checkSuperAdmin(session.user.email)
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!me) return apiErrors.forbidden()
   const { id } = await ctx.params
   if (id === me.id) return NextResponse.json({ error: "Nao pode deletar a propria conta" }, { status: 400 })
   await prisma.user.delete({ where: { id } })

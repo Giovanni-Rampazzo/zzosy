@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { normalizeTypography } from "@/lib/brandTypography"
 import { propagateBrandTypography } from "@/lib/brandTypographyPropagate"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -11,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> }
 
 export async function GET(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const { id } = await ctx.params
   const tenantId = (session.user as any).tenantId
   const client = await prisma.client.findFirst({
@@ -26,17 +27,17 @@ export async function GET(req: Request, ctx: Ctx) {
       },
     },
   })
-  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!client) return apiErrors.notFound()
   return NextResponse.json(client)
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const { id } = await ctx.params
   const tenantId = (session.user as any).tenantId
   const client = await prisma.client.findFirst({ where: { id, tenantId } })
-  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!client) return apiErrors.notFound()
   const body = await req.json()
   const data: any = {}
   for (const k of ["name", "contact", "email", "phone", "address", "brandLogoUrl", "brandFont", "brandColors", "brandTypography", "customFontFiles"]) {
@@ -74,11 +75,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
 export async function DELETE(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const { id } = await ctx.params
   const tenantId = (session.user as any).tenantId
   const client = await prisma.client.findFirst({ where: { id, tenantId } })
-  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!client) return apiErrors.notFound()
   await prisma.client.delete({ where: { id } })
   return NextResponse.json({ ok: true })
 }

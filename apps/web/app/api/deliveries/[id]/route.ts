@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { unlink } from "fs/promises"
 import path from "path"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -11,7 +12,7 @@ type Ctx = { params: Promise<{ id: string }> }
 
 export async function GET(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
   const delivery = await prisma.delivery.findFirst({
@@ -22,17 +23,17 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       pieces: { include: { piece: { select: { id: true, name: true, imageUrl: true, status: true } } } },
     },
   })
-  if (!delivery) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!delivery) return apiErrors.notFound()
   return NextResponse.json(delivery)
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
   const delivery = await prisma.delivery.findFirst({ where: { id, campaign: { client: { tenantId } } } })
-  if (!delivery) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!delivery) return apiErrors.notFound()
 
   // Apagar arquivo fisico (best-effort)
   if (delivery.zipUrl) {

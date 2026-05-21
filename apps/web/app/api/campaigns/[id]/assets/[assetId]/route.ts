@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { migrateStyles } from "@/lib/migrateStyles"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -66,11 +67,11 @@ function migrateOverrideText(oldOverrideText: string, newAssetCleanText: string)
 
 export async function PUT(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id: campaignId, assetId } = await ctx.params
   const oldAsset = await findAssetForTenant(assetId, campaignId, tenantId)
-  if (!oldAsset) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!oldAsset) return apiErrors.notFound()
   const body = await req.json()
 
   const oldText = spansToText(parseContent(oldAsset?.content))
@@ -206,11 +207,11 @@ export async function PUT(req: Request, ctx: Ctx) {
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id: campaignId, assetId } = await ctx.params
   const existing = await findAssetForTenant(assetId, campaignId, tenantId)
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!existing) return apiErrors.notFound()
   const body = await req.json()
   // Whitelist (audit P1.10) — antes era spread raw, qualquer field passava.
   const data: any = {}
@@ -223,11 +224,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
 export async function DELETE(req: Request, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id: campaignId, assetId } = await ctx.params
   const existing = await findAssetForTenant(assetId, campaignId, tenantId)
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!existing) return apiErrors.notFound()
 
   // Cascade delete: tira o asset E todas as layers (matriz + peças) que o referenciam.
   // Tudo numa transação atômica para evitar layers órfãs.

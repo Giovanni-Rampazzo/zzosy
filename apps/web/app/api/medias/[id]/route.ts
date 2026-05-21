@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { toPx, Unit } from "@/lib/unitConversion"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -22,11 +23,11 @@ async function findEditableMedia(id: string, tenantId: string) {
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await params
   const existing = await findEditableMedia(id, tenantId)
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!existing) return apiErrors.notFound()
   const body = await req.json()
 
   const data: any = {}
@@ -57,11 +58,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await params
   const existing = await findEditableMedia(id, tenantId)
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!existing) return apiErrors.notFound()
   await prisma.mediaFormat.delete({ where: { id } })
   return NextResponse.json({ ok: true })
 }

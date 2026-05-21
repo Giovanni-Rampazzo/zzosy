@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -13,12 +14,12 @@ type Ctx = { params: Promise<{ id: string }> }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
   // Audit P1.5: scope cross-tenant antes de aceitar upload.
   const ok = await prisma.campaign.findFirst({ where: { id, client: { tenantId } }, select: { id: true } })
-  if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!ok) return apiErrors.notFound()
 
   const formData = await req.formData()
   const file = formData.get("thumbnail") as File | null

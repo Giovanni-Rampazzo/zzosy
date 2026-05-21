@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { NextRequest } from "next/server"
+import { apiErrors } from "@/lib/apiError"
 
 export const dynamic = "force-dynamic"
 
@@ -26,10 +27,10 @@ async function assertCampaignInTenant(campaignId: string, tenantId: string): Pro
 
 export async function GET(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
-  if (!(await assertCampaignInTenant(id, tenantId))) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!(await assertCampaignInTenant(id, tenantId))) return apiErrors.notFound()
   const kv = await prisma.keyVision.findUnique({ where: { campaignId: id } })
   if (!kv) return NextResponse.json(null)
   return NextResponse.json({ ...kv, data: parseJson(kv.data), layers: parseJson(kv.layers) })
@@ -37,10 +38,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
 export async function PUT(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const { id } = await ctx.params
-  if (!(await assertCampaignInTenant(id, tenantId))) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!(await assertCampaignInTenant(id, tenantId))) return apiErrors.notFound()
   const body = await req.json()
   const bgColor = body.bgColor ?? "#ffffff"
   const newLayers = Array.isArray(body.layers) ? body.layers : []
