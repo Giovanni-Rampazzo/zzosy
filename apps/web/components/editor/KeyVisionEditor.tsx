@@ -9527,7 +9527,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             style={{
               width: "100%",
               background: "transparent",
-              border: "2px solid #a855f7",
+              border: "1px solid #a855f7",
               borderRadius: 6,
               padding: "10px 14px",
               fontSize: 12,
