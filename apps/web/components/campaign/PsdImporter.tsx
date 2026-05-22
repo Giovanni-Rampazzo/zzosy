@@ -1785,6 +1785,12 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
             opacity: psdOpacity,
             blendMode: psdBlend,
             effects: psdEffects,
+            // Preserva 'lnsr' (Layer Name Source) do PSD original — controla
+            // se PS auto-renomeia o layer ao editar texto. Sem isso, re-export
+            // sempre forca 'srct' e quebra layers nomeados manualmente.
+            nameSource: typeof (layer as any).nameSource === "string"
+              ? (layer as any).nameSource
+              : undefined,
             groupPath: groupPath.length > 0 ? groupPath : undefined,
           })
         } else if (layer.canvas || ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke))) {

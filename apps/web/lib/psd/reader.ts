@@ -246,6 +246,14 @@ function readText(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) =>
   // ja foram escalados acima. O transform raw nao eh mais necessario.
   const transform: PsdTransform2D = IDENTITY_TRANSFORM
 
+  // Preserva 'lnsr' (Layer Name Source) do PSD original. PS usa pra decidir
+  // se auto-renomeia layer ao editar texto: 'srct'=auto-rename, 'lyr '=manual.
+  // Round-trip: re-export reusa o valor original. Sem isso, ZZOSY forcaria
+  // 'srct' e quebraria layers que o user nomeou manualmente.
+  const nameSource = typeof (l as any).nameSource === "string"
+    ? (l as any).nameSource
+    : undefined
+
   return {
     ...readCommon(l, parentPath),
     type: "text",
@@ -254,6 +262,7 @@ function readText(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) =>
     defaultStyle: defStyle,
     paragraph,
     transform,
+    ...(nameSource ? { nameSource } : {}),
   }
 }
 
@@ -675,6 +684,9 @@ function readVectorStroke(vs: any): import("./types").PsdStroke | null {
     cap: capMap[vs.lineCapType] ?? "butt",
     join: joinMap[vs.lineJoinType] ?? "miter",
     dash: Array.isArray(vs.lineDashSet) ? vs.lineDashSet.map((u: any) => readUnitsValue(u, 0)) : undefined,
+    // PSD original tinha vectorStroke (Shape Layer nativo). Re-export deve
+    // preservar como vectorStroke em vez de cair em effects.stroke (Layer Style).
+    isNativeVectorStroke: true,
   }
 }
 

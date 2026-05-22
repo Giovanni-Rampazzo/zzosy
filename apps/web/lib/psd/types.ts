@@ -111,6 +111,15 @@ export interface PsdTextLayer extends PsdLayerCommon {
    * de texto via Free Transform. Default = identity.
    */
   transform: PsdTransform2D
+  /**
+   * Tag 'lnsr' do PSD — controla se o PS auto-renomeia o layer quando user
+   * edita o texto:
+   *   'srct' (source) — nome vem do conteudo → PS atualiza ao editar
+   *   'lyr '          — nome manual           → PS NAO mexe mais
+   * Undefined no import = manter default no export ('srct').
+   * Round-trip: PSD importado com 'lyr ' eh re-exportado como 'lyr '.
+   */
+  nameSource?: string
 }
 
 export interface PsdTextStyleRun {
@@ -203,6 +212,14 @@ export interface PsdStroke {
   join: "miter" | "round" | "bevel"
   /** Dash pattern (array de gaps + fills em pontos). */
   dash?: number[]
+  /**
+   * Flag round-trip: stroke veio do PSD original como `vectorStroke`
+   * (Shape Layer nativo do PS), nao como Layer Style. Re-export deve
+   * preservar a forma vetorial nativa (editavel via Properties Panel
+   * no PS) em vez de cair em effects.stroke[]. Default false = stroke
+   * foi gerado/editado no ZZOSY, vai como effects.stroke.
+   */
+  isNativeVectorStroke?: boolean
 }
 
 // ── SMART OBJECT ─────────────────────────────────────────────────────

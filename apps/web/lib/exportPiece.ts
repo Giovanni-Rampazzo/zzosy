@@ -3,6 +3,13 @@
 // Suporta peca v2 (layers + assets) e v1 (canvasData legacy)
 
 import { getPostScriptName } from "@/lib/fonts"
+import {
+  psdPx,
+  hexToAgPsdRgb as hexToAgPsdRgbShared,
+  extractAlphaFromColor,
+  fabricBlendToPsd,
+  fabricOpacityToPsd,
+} from "@/lib/psd/psdHelpers"
 
 export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
 
@@ -84,22 +91,29 @@ function buildFileName(campaignName: string | undefined, piece: { name: string; 
   return [camp, midia, dims, stepPart].filter(Boolean).join("_")
 }
 
-// Inverso do psdBlendToCanvas do PsdImporter: canvas globalCompositeOperation
-// → blendMode nativo do PSD (string com espaços). Pra preservar opacidade/blend
-// na round-trip ZZOSY → PSD → Photoshop.
-function canvasBlendToPsd(bm: string | undefined): string | undefined {
-  if (!bm || bm === "source-over") return undefined
-  const m: Record<string, string> = {
-    "multiply": "multiply", "screen": "screen", "overlay": "overlay",
-    "darken": "darken", "lighten": "lighten",
-    "color-dodge": "color dodge", "color-burn": "color burn",
-    "hard-light": "hard light", "soft-light": "soft light",
-    "difference": "difference", "exclusion": "exclusion",
-    "hue": "hue", "saturation": "saturation",
-    "color": "color", "luminosity": "luminosity",
-    "lighter": "linear dodge",
+// canvasBlendToPsd movido para `lib/psd/psdHelpers.fabricBlendToPsd`.
+
+/**
+ * Spread comum aplicado a TODA layer pushed pro ag-psd (TEXT/SHAPE/Smart
+ * Object/IMAGE). Centraliza opacity/blendMode/effects/__groupPath em vez
+ * de repetir o padrao em 4 sites. Sem isso, adicionar um novo field
+ * round-trip exige tocar todas as branches (drift garantido — ja aconteceu).
+ *
+ * Use sempre como `...commonAgPsdLayerFields(obj, ..., ..., ...)`.
+ */
+function commonAgPsdLayerFields(
+  obj: any,
+  opacity: number | undefined,
+  blend: string | undefined,
+  effects: any | undefined,
+): Record<string, unknown> {
+  return {
+    ...(opacity !== undefined ? { opacity } : {}),
+    ...(blend ? { blendMode: blend } : {}),
+    ...(effects ? { effects } : {}),
+    // anotacao temporaria: removida antes do writePsd na fase de nesting.
+    __groupPath: Array.isArray((obj as any)?.__groupPath) ? (obj as any).__groupPath : undefined,
   }
-  return m[bm] ?? undefined
 }
 
 // Renderiza todos os BG layers (BgLayerData[]) num CanvasRenderingContext2D.
@@ -300,38 +314,11 @@ function svgPathToAgPsdKnots(
   }))
 }
 
-/** hex "#RRGGBB" → ag-psd { r, g, b } (0-255 each). Tolerant: aceita rgba/rgb
- *  strings tambem (extrai so rgb, ignora alpha). */
-function hexToAgPsdRgb(c: string): { r: number; g: number; b: number } {
-  if (typeof c !== "string") return { r: 0, g: 0, b: 0 }
-  const s = c.trim()
-  const hex6 = /^#?([0-9a-fA-F]{6})$/.exec(s)
-  if (hex6) {
-    const n = parseInt(hex6[1], 16)
-    return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
-  }
-  const hex8 = /^#?([0-9a-fA-F]{6})[0-9a-fA-F]{2}$/.exec(s)
-  if (hex8) {
-    const n = parseInt(hex8[1], 16)
-    return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
-  }
-  const rgba = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(s)
-  if (rgba) {
-    return { r: parseInt(rgba[1], 10), g: parseInt(rgba[2], 10), b: parseInt(rgba[3], 10) }
-  }
-  return { r: 0, g: 0, b: 0 }
-}
-
-/** Extrai alpha 0-1 de "#hex"/"#hexAA"/"rgba(...)". Default 1 quando opaco. */
-function extractAlpha(c: string): number {
-  if (typeof c !== "string") return 1
-  const s = c.trim()
-  const hex8 = /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})$/.exec(s)
-  if (hex8) return Math.round((parseInt(hex8[1], 16) / 255) * 1000) / 1000
-  const rgba = /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)$/i.exec(s)
-  if (rgba) return Math.max(0, Math.min(1, parseFloat(rgba[1])))
-  return 1
-}
+// hexToAgPsdRgb + extractAlpha movidos para `lib/psd/psdHelpers`.
+// Re-export locais com nomes antigos para evitar churn (caminhos legacy seguem
+// usando `hexToAgPsdRgb` / `extractAlpha`).
+const hexToAgPsdRgb = hexToAgPsdRgbShared
+const extractAlpha = extractAlphaFromColor
 
 // Constroi o canvas Fabric da peca a partir de layers + assets
 export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any> {
@@ -488,6 +475,11 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
         ;(t as any).__assetLabel = asset.label
         if (layer.mask) (t as any).__maskData = layer.mask
         if (layerEffects) (t as any).__psdEffects = layerEffects
+        // nameSource ('lnsr') preservado do PSD original. Round-trip: PSD
+        // importado com 'lyr ' (nome manual) volta a sair como 'lyr '.
+        if (typeof (layer as any).nameSource === "string") {
+          ;(t as any).__psdNameSource = (layer as any).nameSource
+        }
         // groupPath: hierarquia de folders do PSD original. Sem isso o export
         // PSD (nestByGroupPath) caia em "raiz" e perdia toda a estrutura de
         // grupos — designer abria no Photoshop e via layers achatados.
@@ -1093,11 +1085,16 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
     const fontSize = (cs?.fontSize ?? textbox.fontSize ?? 48) * scale
     const fontFamily = cs?.fontFamily ?? textbox.fontFamily ?? "Arial"
     const fontWeight = cs?.fontWeight ?? textbox.fontWeight ?? "normal"
-    const styleKey = `${fill}|${fontSize}|${fontFamily}|${fontWeight}`
+    // Per-char italic: antes so o defaultStyle saia com fauxItalic; chars
+    // marcados como italico individualmente perdiam o estilo no PSD. Reader
+    // ja le `fauxItalic` per-run em mapCharStylePartial.
+    const fontStyle = cs?.fontStyle ?? (textbox as any).fontStyle ?? "normal"
+    const styleKey = `${fill}|${fontSize}|${fontFamily}|${fontWeight}|${fontStyle}`
     if (styleKey !== prevStyleKey) {
       if (runLength > 0 && runStyle) runs.push({ length: runLength, style: runStyle })
       const isBold = (fontWeight === "bold" || fontWeight === 700)
       const ps = toPSFont(fontFamily, isBold)
+      const isItalic = fontStyle === "italic"
       // Leading em px: usa leadingPt explicito da peca/matriz se setado,
       // senao deriva de lineHeight*fontSize. Sem isso, Photoshop usa leading
       // default da fonte (que pode ser muito diferente do que o user ve).
@@ -1114,6 +1111,7 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
         fontSize: Math.round(fontSize),
         fillColor: parseColor(fill),
         fauxBold: ps.fauxBold,
+        fauxItalic: isItalic,
         autoLeading: false,
         leading,
         tracking,
@@ -1346,22 +1344,29 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   //  - kind "image"   → fallback raster (Pattern Fill ainda nao mapeado).
   // Ordem: BG[0] no fundo → primeiro pushed; assets vem em seguida no topo.
   // Convencao ag-psd writer: ordem do push() = ordem visual (primeiro=fundo).
-  function hexToPsdColor(hex: string): { r: number; g: number; b: number } {
-    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex ?? "")
-    if (!m) return { r: 255, g: 255, b: 255 }
-    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) }
-  }
+  // hexToPsdColor → usa o helper central. Mantem nome local pra nao churnar
+  // todas as chamadas neste escopo.
+  const hexToPsdColor = hexToAgPsdRgbShared
   const bgLayersArr: any[] = bgLayersFromData(data)
   for (let i = 0; i < bgLayersArr.length; i++) {
     const bl = bgLayersArr[i]
     if (!bl || bl.hidden) continue
     const layerName = i === 0 ? "Background" : `Background ${i + 1}`
+    // Opacity SEMPRE setada nos bg layers (mesmo 1.0 → 255) — diferente de
+    // object layers onde fabricOpacityToPsd retorna undefined em opacity=1.
+    // Bg layers sao Fill Layers (solid/gradient/pattern) e ag-psd precisa
+    // do opacity byte explicito pra elas saiarem corretamente no PS.
     const opacityByte = Math.max(0, Math.min(255, Math.round((typeof bl.opacity === "number" ? bl.opacity : 1) * 255)))
+    // BlendMode do bg layer (bgLayers tem `blendMode` no schema, em canvas
+    // globalCompositeOperation format). Propaga via helper central pra
+    // PSD nativo. undefined em "source-over" (default).
+    const bgBlend = fabricBlendToPsd(bl.blendMode)
     if (bl.kind === "solid") {
       psdLayers.push({
         name: layerName,
         top: 0, left: 0, bottom: H, right: W,
         opacity: opacityByte,
+        ...(bgBlend ? { blendMode: bgBlend } : {}),
         vectorFill: { type: "color", color: hexToPsdColor(bl.color) },
       })
     } else if (bl.kind === "gradient") {
@@ -1374,6 +1379,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         name: layerName,
         top: 0, left: 0, bottom: H, right: W,
         opacity: opacityByte,
+        ...(bgBlend ? { blendMode: bgBlend } : {}),
         vectorFill: {
           type: "solid",
           name: "Custom",
@@ -1401,6 +1407,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         name: layerName,
         top: 0, left: 0, bottom: H, right: W,
         opacity: opacityByte,
+        ...(bgBlend ? { blendMode: bgBlend } : {}),
         canvas: bgCanvas,
       })
     }
@@ -1420,11 +1427,9 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     const h = Math.max(1, bottom - top)
     let name = (obj as any).__assetLabel ?? obj.type ?? "Layer"
     // Opacity/blendMode do Fabric → PSD nativo (round-trip completo).
-    // PSD opacity = 0..255; defaults (1.0 e source-over) omitidos pra não inflar JSON.
-    const psdLayerOpacity = typeof obj.opacity === "number" && obj.opacity < 1
-      ? Math.max(0, Math.min(255, Math.round(obj.opacity * 255)))
-      : undefined
-    const psdLayerBlend = canvasBlendToPsd(obj.globalCompositeOperation)
+    // Centralizados em `lib/psd/psdHelpers`. Defaults omitidos (undefined).
+    const psdLayerOpacity = fabricOpacityToPsd(obj.opacity)
+    const psdLayerBlend = fabricBlendToPsd(obj.globalCompositeOperation)
     // PSD layer effects round-trip completo. Converte schema ZZOSY → ag-psd.
     // Inclui: dropShadow, innerShadow, outerGlow, innerGlow, stroke,
     //         colorOverlay (solidFill), gradientOverlay, bevel, satin,
@@ -1440,10 +1445,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         return d > 0 ? (Math.atan2(dy, -dx) * 180 / Math.PI) : fallback
       }
       // ag-psd UnitsValue helper — distance/size/etc precisam vir como
-      // {value, units} object. Numero cru faz writePsd throw "Invalid value:
-      // N (key: distance) (should have value and units)" e o export todo
-      // falha (user reportou 2026-05-22: "psd nao mantem effects no layer").
-      const px = (n: number) => ({ value: n, units: "Pixels" as const })
+      // {value, units} object. Centralizado em `lib/psd/psdHelpers.psdPx`.
+      const px = psdPx
       if (fx.dropShadow) {
         const d = fx.dropShadow
         const dx = d.offsetX ?? 0, dy = d.offsetY ?? 0
@@ -1635,19 +1638,16 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           : fontSize * defLineH
       )
       const defTracking = fabricCharSpacingToPsTracking(obj.charSpacing)
+      // nameSource preservado do PSD original quando importado (ex: 'lyr ' =
+      // nome manual). Sem __psdNameSource, default 'srct' = PS auto-renomeia
+      // o layer ao editar o texto (padrao Adobe). Ver project_psd_lnsr_namesource.
+      const textNameSource = (obj as any).__psdNameSource ?? "srct"
       psdLayers.push({
         name,
-        // 'srct' = nome vem do conteudo do texto → PS auto-renomeia o layer
-        // quando user edita o texto (padrao Adobe). Sem isso, ag-psd default
-        // emite 'lyr ' (manual) e PS trata como nome fixo.
-        nameSource: "srct",
+        nameSource: textNameSource,
         top, left, bottom, right,
         canvas: layerCanvas,
-        ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
-        ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
-        ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
-        // anotação temporária: removida antes do writePsd na fase de nesting.
-        __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
+        ...commonAgPsdLayerFields(obj, psdLayerOpacity, psdLayerBlend, psdLayerEffects),
         text: {
           text: fullText,
           transform: [1, 0, 0, 1, left, top + fontSize],
@@ -1748,10 +1748,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           const psdLayer: any = {
             name,
             top, left, bottom, right,
-            ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
-            ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
-            ...(effectsForLayer ? { effects: effectsForLayer } : {}),
-            __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
+            ...commonAgPsdLayerFields(obj, psdLayerOpacity, psdLayerBlend, effectsForLayer),
             // "combine" = path puro (sem boolean ops). "subtract" subtrai do
             // composite e deixaria o shape invisivel.
             vectorMask: {
@@ -1806,10 +1803,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
               : 0
             if (keyType > 0) {
               // ag-psd unitsValue() REQUIRES `{value, units}` object — nao
-              // aceita numero cru. keyOriginShapeBoundingBox + keyOriginRRectRadii
-              // todos os fields precisam vir wrapped. Sem isso ag-psd throw
-              // "Invalid value: N (should have value and units)".
-              const px = (n: number) => ({ value: n, units: "Pixels" as const })
+              // aceita numero cru. Centralizado em `lib/psd/psdHelpers.psdPx`.
+              const px = psdPx
               const item: any = {
                 keyOriginType: keyType,
                 keyOriginResolution: 72,
@@ -1877,10 +1872,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             name,
             top, left, bottom, right,
             canvas: layerCanvas,
-            ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
-            ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
-            ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
-            __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
+            ...commonAgPsdLayerFields(obj, psdLayerOpacity, psdLayerBlend, psdLayerEffects),
             placedLayer: {
               id: linked.guid,
               type: "raster",
@@ -1904,10 +1896,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       // Fallback: imagem raster comum (PNG/JPG ou SVG que nao deu pra embeddar)
       psdLayers.push({
         name, top, left, bottom, right, canvas: layerCanvas,
-        ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
-        ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
-        ...(psdLayerEffects ? { effects: psdLayerEffects } : {}),
-        __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
+        ...commonAgPsdLayerFields(obj, psdLayerOpacity, psdLayerBlend, psdLayerEffects),
       })
     }
   }

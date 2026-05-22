@@ -1781,7 +1781,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const cloned: any = await (active as any).clone([
               "__assetId", "__assetLabel", "__isImage", "__maskData",
               "__embedded", "imageDataUrl", "__hidden", "__locked",
-              "__fillBrandIdx", "__psdEffects", "__groupPath", "leadingPt",
+              "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "leadingPt",
             ])
             if (!cloned || !fc) return
             cloned.set({ left: (active.left ?? 0) + 30, top: (active.top ?? 0) + 30 })
@@ -3012,7 +3012,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -3185,7 +3185,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (orphans.length > 0) {
         console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
-      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -3379,6 +3379,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (typeof src.__fillBrandIdx === "number") obj.__fillBrandIdx = src.__fillBrandIdx
         // PSD layer effects (dropShadow/stroke/outerGlow) — round-trip
         if (src.__psdEffects && typeof src.__psdEffects === "object") obj.__psdEffects = src.__psdEffects
+        // PSD 'lnsr' (nameSource) — controla auto-rename de text layer no PS
+        if (typeof src.__psdNameSource === "string") obj.__psdNameSource = src.__psdNameSource
         // groupPath: hierarquia de folders do PSD preservada
         if (Array.isArray(src.__groupPath) && src.__groupPath.length > 0) obj.__groupPath = src.__groupPath
         // Restaurar styles per-char em textboxes. SEMPRE restaura (mesmo se

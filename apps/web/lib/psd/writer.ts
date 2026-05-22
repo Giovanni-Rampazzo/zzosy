@@ -144,7 +144,14 @@ function textToAgPsd(l: PsdTextLayer): any {
   // ag-psd Layer.text shape:
   //   { text: string, style: CharStyle (default), styleRuns: [{ length, style }],
   //     paragraphStyle: { justification, ... }, transform: matrix }
+  //
+  // nameSource ('lnsr' tag): PS usa pra auto-renomear layers ao editar texto.
+  //  - 'srct' = "source" = nome vem do conteudo → PS atualiza ao editar
+  //  - 'lyr ' = "layer"  = manual              → PS NAO mexe
+  // Default 'srct' = comportamento Adobe esperado. Preserva valor do import
+  // quando definido (ex: PSD original com nome manual).
   return {
+    nameSource: l.nameSource ?? "srct",
     text: {
       text: l.text,
       style: charStyleToAgPsd(l.defaultStyle),
@@ -265,18 +272,46 @@ function shapeToAgPsd(l: PsdShapeLayer, warn: (w: WriteWarning) => void): any {
     })
     return {}
   }
-  warn({
-    kind: "format-fallback",
-    layerName: l.name,
-    message: "Shape exportado sem vectorFill/vectorStroke original (round-trip parcial). Reabra no PS pra editar paths.",
-  })
-  // Emite raster fallback se o reader manteve uma imagem do shape; senao
-  // PS desenha so a vector mask + cor solida default.
-  return {
-    vectorFill: l.fill?.kind === "solid"
-      ? { type: "color", color: hexToRgb(l.fill.color) }
-      : undefined,
+  const out: any = {}
+  if (l.fill?.kind === "solid") {
+    out.vectorFill = { type: "color", color: hexToRgb(l.fill.color) }
   }
+  // VECTOR STROKE NATIVO — quando reader marcou `isNativeVectorStroke=true`
+  // (PSD original tinha Shape Layer com stroke vetorial), preserva como
+  // vectorStroke nativo do PS (editavel via Properties Panel). Caso
+  // contrario stroke cai em effects.stroke (Layer Style), pra evitar dupla
+  // emissao.
+  if (l.stroke && l.stroke.isNativeVectorStroke) {
+    const hasFill = !!out.vectorFill
+    out.vectorStroke = {
+      strokeEnabled: true,
+      fillEnabled: hasFill,
+      lineWidth: { value: l.stroke.width, units: "Pixels" as const },
+      lineDashOffset: { value: 0, units: "Pixels" as const },
+      lineCapType: l.stroke.cap === "round" ? "round" as const
+        : l.stroke.cap === "square" ? "square" as const
+        : "butt" as const,
+      lineJoinType: l.stroke.join === "round" ? "round" as const
+        : l.stroke.join === "bevel" ? "bevel" as const
+        : "miter" as const,
+      lineAlignment: l.stroke.position as "inside" | "center" | "outside",
+      miterLimit: 100,
+      strokeAdjust: false,
+      scaleLock: false,
+      blendMode: "normal" as const,
+      opacity: 1,
+      content: { type: "color" as const, color: hexToRgb(l.stroke.color) },
+      resolution: 72,
+    }
+  }
+  if (!out.vectorFill && !out.vectorStroke) {
+    warn({
+      kind: "format-fallback",
+      layerName: l.name,
+      message: "Shape exportado sem vectorFill/vectorStroke original (round-trip parcial). Reabra no PS pra editar paths.",
+    })
+  }
+  return out
 }
 
 // ────────────────────────────────────────────────────────────────────
