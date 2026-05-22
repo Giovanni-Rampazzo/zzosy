@@ -268,12 +268,30 @@ export default function PresentationPage() {
     if (!campaign) return
     setExporting(true)
     try {
+      // SEMPRE refetch antes do export pra pegar pieces frescas com steps
+      // populados — pieces no state podiam ser de carga inicial onde steps
+      // ainda nao tinham sido regeneradas/uploadadas (user reportou steps
+      // sumindo no PPT).
+      let piecesForPPT = orderedPieces
+      try {
+        const r = await fetch(`/api/pieces?campaignId=${campaign.id}`, { cache: "no-store" })
+        if (r.ok) {
+          const fresh: any[] = await r.json()
+          const byId = new Map(fresh.map(p => [p.id, p]))
+          piecesForPPT = orderedPieces.map(p => (byId.get(p.id) as Piece) ?? p)
+        }
+      } catch { /* segue com lista atual */ }
+      console.log("[exportPPTX] pre-ensure pieces:", piecesForPPT.map(p => ({
+        id: p.id, name: p.name,
+        stepsLen: Array.isArray(p.steps) ? p.steps.length : 0,
+        stepsImgUrls: Array.isArray(p.steps) ? p.steps.map(s => s.imageUrl ?? "null") : [],
+      })))
       // Garante que steps de peças multi-step tenham thumb gerado antes do
       // PPT. Sem isso, peças que o usuário nunca abriu no editor saíam como
-      // "(sem preview)" no slide (autoGen do editor só roda na abertura).
+      // "(sem preview)" no slide.
       const { ensureStepThumbsForPieces } = await import("@/lib/ensureStepThumbs")
       const touched = await ensureStepThumbsForPieces(
-        orderedPieces.map(p => ({ id: p.id, campaignId: campaign.id, steps: p.steps })),
+        piecesForPPT.map(p => ({ id: p.id, campaignId: campaign.id, steps: p.steps })),
         async (cid) => {
           const r = await fetch(`/api/campaigns/${cid}`, { cache: "no-store" })
           if (!r.ok) return []
@@ -281,9 +299,8 @@ export default function PresentationPage() {
           return Array.isArray(c?.assets) ? c.assets : []
         },
       )
-      // Se algum thumb foi regenerado, refetch a lista de peças pra pegar
-      // os novos step.imageUrl antes do export.
-      let piecesForPPT = orderedPieces
+      console.log("[exportPPTX] ensureStepThumbs touched:", touched)
+      // Refetch DE NOVO depois do ensure pra pegar imageUrls recem-geradas.
       if (touched.length > 0) {
         try {
           const r = await fetch(`/api/pieces?campaignId=${campaign.id}`, { cache: "no-store" })
@@ -294,6 +311,11 @@ export default function PresentationPage() {
           }
         } catch { /* segue com lista atual */ }
       }
+      console.log("[exportPPTX] FINAL pieces passadas pra generatePresentation:", piecesForPPT.map(p => ({
+        id: p.id, name: p.name,
+        stepsLen: Array.isArray(p.steps) ? p.steps.length : 0,
+        stepsImgUrls: Array.isArray(p.steps) ? p.steps.map(s => s.imageUrl ?? "null") : [],
+      })))
 
       const { generateCampaignPresentation } = await import("@/lib/generatePresentation")
       await generateCampaignPresentation({
