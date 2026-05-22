@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { FontPicker, WeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
+import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { MaskPanel } from "./MaskPanel"
 import { ColorSwatchPicker } from "./ColorSwatchPicker"
 import { MaskThumb } from "./MaskThumb"
@@ -1124,6 +1125,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [confirmExit, setConfirmExit] = useState<null | (() => void)>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPieces, setExportPieces] = useState<any[]>([])
+  // Ref pro componente PsdImporter (renderizado hidden no fim do JSX) — chamado
+  // via button "Importar PSD" da topbar. Componente gerencia file picker + upload
+  // + redirect; aqui so disparamos importFile programaticamente.
+  const psdImporterRef = useRef<PsdImporterHandle | null>(null)
   const [layers, setLayers] = useState<any[]>([])
   const [editingLayerAssetId, setEditingLayerAssetId] = useState<string | null>(null)
   // Mask focus mode: o assetId do layer cuja mask esta sendo editada via
@@ -8268,27 +8273,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
           {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
         </button>
-        <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>{isPieceMode && piece ? piece.name : campaign.name}</span>
-        {/* Indicador de estado de save — explicita pro user antes do clique:
-            "Não salvo" laranja = clicar Voltar pergunta antes de sair.
-            "Salvo" cinza  = clicar Voltar vai direto.
-            Sem isso, o comportamento "pergunta vs nao pergunta" parecia
-            aleatorio porque o auto-save de 800ms muda isDirty no meio. */}
-        <span
-          title={isDirty || saving
-            ? "Há alterações não salvas — clique Salvar"
-            : "Tudo salvo"}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            fontSize: 11, marginLeft: 8,
-            color: isDirty || saving ? "#f59e0b" : "#4ade80",
-          }}>
-          <span style={{
-            display: "inline-block", width: 7, height: 7, borderRadius: "50%",
-            background: isDirty || saving ? "#f59e0b" : "#4ade80",
-          }} />
-          {saving ? "Salvando…" : isDirty ? "Não salvo" : "Salvo"}
-        </span>
+        {/* Nome + indicador "Salvo"/"Não salvo" removidos da topbar a pedido
+            do user (2026-05-22) — info redundante; estado salvo continua
+            refletido pelo proprio botao Salvar (disabled quando nada mudou). */}
         {/* Botao SALVAR manual. Editor nao salva mais automatico — user precisa
             clicar pra persistir. Disabled quando nada mudou OU ja esta salvando. */}
         <button
@@ -8408,10 +8395,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           </div>
         )}
         <div style={{ flex: 1 }} />
-        {/* "Salvando..." removido daqui — agora o indicador "Salvo / Não salvo /
-            Salvando" fica ao lado do botao Voltar (linha ~6993) — UM lugar so. */}
-        <span style={{ fontSize: 11, color: "#555" }}>{canvasW} × {canvasH}</span>
-        {/* Acoes secundarias alinhadas a direita: Assets sempre, Legendas so em modo peca */}
+        {/* Resolução {canvasW} × {canvasH} removida a pedido do user (2026-05-22) —
+            info ruidosa na topbar. Undo/Redo botoes tambem removidos (atalhos
+            Cmd+Z / Cmd+Shift+Z continuam funcionando). */}
+        {/* Acoes secundarias alinhadas a direita: Importar PSD / Assets / Legendas */}
+        <label
+          title="Importar PSD pra esta campanha (substitui Key Vision atual)"
+          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer", color: "#aaa", userSelect: "none" }}
+        >
+          {psdImporterRef.current?.isLoading() ? "Importando…" : "Importar PSD"}
+          <input
+            type="file"
+            accept=".psd"
+            style={{ display: "none" }}
+            onChange={async (e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ""
+              if (!f) return
+              if (psdImporterRef.current?.isLoading()) return
+              // Pergunta se ha mudancas pendentes antes de substituir KV.
+              const doImport = async () => {
+                try { await psdImporterRef.current?.importFile(f) }
+                catch (err) { console.error("[Importar PSD] falhou:", err) }
+              }
+              if (isDirtyRef.current) setConfirmExit(() => doImport)
+              else doImport()
+            }}
+          />
+        </label>
         <button onClick={() => {
           const go = () => router.push(`/campaigns/${campaignId}/assets`)
           // Pergunta SO se tem mudancas pendentes — sem perguntar a toa.
@@ -8432,18 +8443,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             Legendas
           </button>
         )}
-        <button
-          onClick={undo}
-          title="Desfazer (Cmd+Z)"
-          disabled={undoStack.current.length < 2}
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: undoStack.current.length < 2 ? "not-allowed" : "pointer", color: undoStack.current.length < 2 ? "#444" : "#aaa", opacity: undoStack.current.length < 2 ? 0.5 : 1 }}
-        >↶</button>
-        <button
-          onClick={redo}
-          title="Refazer (Cmd+Shift+Z)"
-          disabled={redoStack.current.length === 0}
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: redoStack.current.length === 0 ? "not-allowed" : "pointer", color: redoStack.current.length === 0 ? "#444" : "#aaa", opacity: redoStack.current.length === 0 ? 0.5 : 1 }}
-        >↷</button>
         <button
           onClick={async () => {
             // Salvar antes de exportar
@@ -8545,18 +8544,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         {!isPieceMode && (
           <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>Gerar Peças</button>
         )}
-        {/* Undo / Redo — 30 estados no stack. Atalhos: Cmd/Ctrl+Z (undo),
-            Cmd/Ctrl+Shift+Z ou Cmd/Ctrl+Y (redo). */}
-        <button onClick={undo} disabled={undoStack.current.length < 2}
-          title="Desfazer (Cmd+Z)"
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontWeight: 600, fontSize: 14, cursor: undoStack.current.length < 2 ? "not-allowed" : "pointer", color: undoStack.current.length < 2 ? "#444" : "#aaa", marginLeft: 4 }}>
-          ↶
-        </button>
-        <button onClick={redo} disabled={redoStack.current.length === 0}
-          title="Refazer (Cmd+Shift+Z)"
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", fontWeight: 600, fontSize: 14, cursor: redoStack.current.length === 0 ? "not-allowed" : "pointer", color: redoStack.current.length === 0 ? "#444" : "#aaa" }}>
-          ↷
-        </button>
+        {/* Undo/Redo botoes removidos da topbar (2026-05-22) — atalhos
+            Cmd+Z / Cmd+Shift+Z continuam funcionando. */}
       </div>
 
       <div style={{ position: "fixed", top: TH, left: layersPanelWidth, right: propsPanelWidth, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
@@ -10529,6 +10518,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       )}
 
       {modal && <GeneratePiecesModal campaignId={campaignId} fabricRef={fabricRef} onClose={() => setModal(false)} onGenerated={() => { setModal(false); router.push(`/pieces?campaignId=${campaignId}`) }} />}
+
+      {/* PsdImporter renderizado escondido — usado pelo botao "Importar PSD"
+          da topbar via ref.importFile(file). Sem isso, teriamos que duplicar
+          toda a logica de upload + assets + smart objects do PsdImporter. */}
+      <div style={{ position: "absolute", width: 0, height: 0, overflow: "hidden", visibility: "hidden", pointerEvents: "none" }}>
+        <PsdImporter
+          ref={psdImporterRef}
+          campaignId={campaignId}
+          onImported={() => {
+            // Recarrega o editor com a nova KV. window.location forca full reload
+            // (App Router fetch revalida o `/api/campaigns/:id` + KV).
+            if (typeof window !== "undefined") window.location.reload()
+          }}
+        />
+      </div>
 
       {/* Banner de fontes ausentes — aparece quando uma fonte usada por algum
           asset NAO esta disponivel no browser (Google Fonts 404 silencioso ou
