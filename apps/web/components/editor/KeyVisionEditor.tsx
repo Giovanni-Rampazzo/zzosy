@@ -2418,48 +2418,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         setSelectedTick(t => t + 1)
       })
 
-      // === SHAPE parametric scaling — "SNAP-ON-RELEASE" pattern ===
-      // Durante o drag (object:scaling), DEIXA o Fabric escalar normalmente
-      // (path coords sao escaladas — cantos distorcem temporariamente).
-      // Tentamos recomputar mid-drag inicialmente, mas resetar scaleX=1
-      // dentro do handler causava feedback loop com a Fabric (Fabric continua
-      // aplicando delta de mouse sobre scaleX recem-resetado → cresce sem
-      // controle, stroke aparecia em so 2 lados, etc).
+      // SHAPE parametric scaling — DESABILITADO temporariamente.
+      // Tentativa anterior (172217b/171121b): recompute path com cornerRadius
+      // absoluto apos scale. Causava estados quebrados:
+      //   - mid-drag: feedback loop com Fabric resetando scaleX=1
+      //   - on-release: __pathBbox crescia descontroladamente em scales
+      //     repetidos, slider de cornerRadius permitia valores 400+ que
+      //     transformavam o shape em circulo degenerado
+      // User reportou ambos. Path scaling volta ao comportamento Fabric padrao
+      // (cantos distorcem em scale nao-uniforme — mesmo que PS Path). Slider
+      // de raio em Properties Panel continua funcionando: recomputa o path
+      // assumindo bbox FIXO (nao muda durante scale, so via raio slider).
       //
-      // Em object:modified (mouse release) recomputamos UMA vez com as
-      // dimensoes finais — snap pro estado correto Live Shape. cornerRadius
-      // fica em px absolutos no estado final (que eh o unico que importa
-      // pro user e pro save).
-      const recomputeShapeParametric = (obj: any) => {
-        const kind = obj?.__shapeKind as ShapeKind | undefined
-        if (!kind) return false  // shape generico (PSD path arbitrario) — deixa Fabric escalar
-        const bb = obj.__pathBbox
-        if (!bb) return false
-        const origW = Math.max(1, (bb.right ?? 400) - (bb.left ?? 0))
-        const origH = Math.max(1, (bb.bottom ?? 300) - (bb.top ?? 0))
-        const sX = obj.scaleX ?? 1
-        const sY = obj.scaleY ?? 1
-        if (Math.abs(sX - 1) < 0.001 && Math.abs(sY - 1) < 0.001) return false
-        const newW = Math.max(1, origW * sX)
-        const newH = Math.max(1, origH * sY)
-        const cornerR = typeof obj.__cornerRadius === "number" ? obj.__cornerRadius : undefined
-        const newPath = buildShapePath(kind, newW, newH, cornerR)
-        applyShapePathInPlace(obj, newPath)
-        // Reset scale + atualiza bbox logica pra novos W/H.
-        obj.set({ scaleX: 1, scaleY: 1 })
-        obj.__pathBbox = { left: 0, top: 0, right: newW, bottom: newH }
-        return true
-      }
-      fc.on("object:modified" as any, (e: any) => {
-        if (!alive) return
-        const obj = e?.target
-        if (!obj) return
-        const isShape = obj.__isShape === true || obj.type === "path" || obj.type === "Path"
-        if (!isShape) return
-        if (recomputeShapeParametric(obj)) {
-          fc.requestRenderAll()
-        }
-      })
+      // TODO: re-implementar parametric scaling com cuidado — provavelmente
+      // precisa de Fabric.Rect custom + handles especiais como o PS Live
+      // Shape, em vez de hookar object:modified que tem race conditions.
 
       // Ao SOLTAR o mouse apos arrastar lateral, consolida scaleX em width pra que o save
       // grave o estado limpo (scaleX=1, width final). Sem isso, scaleX!=1 ficaria salvo e
@@ -10229,15 +10202,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const currentStrokeWidth = (selected as any).strokeWidth ?? 0
             const shapeKind = (selected as any).__shapeKind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
             const currentCornerRadius = (selected as any).__cornerRadius ?? 20
-            const pathBbox = (selected as any).__pathBbox ?? { left: 0, top: 0, right: 400, bottom: 300 }
-            const bboxW = (pathBbox.right ?? 400) - (pathBbox.left ?? 0)
-            const bboxH = (pathBbox.bottom ?? 300) - (pathBbox.top ?? 0)
+            // Dimensoes do shape: PRIORIDADE pro path interno (__pathBbox).
+            // Antes usavamos so __pathBbox que ficava stale apos scaling. Agora
+            // verificamos tambem obj.width/height (live Fabric path dims).
+            const pathBboxRaw = (selected as any).__pathBbox ?? { left: 0, top: 0, right: 400, bottom: 300 }
+            const bboxW = Math.max(1, (selected as any).width ?? ((pathBboxRaw.right ?? 400) - (pathBboxRaw.left ?? 0)))
+            const bboxH = Math.max(1, (selected as any).height ?? ((pathBboxRaw.bottom ?? 300) - (pathBboxRaw.top ?? 0)))
+            const maxRadius = Math.floor(Math.min(bboxW, bboxH) / 2)
             function setCornerRadius(r: number) {
               if (!fc || !selected) return
-              // buildShapePath: fonte unica de verdade (lib/shapePaths.ts).
-              const newPath = buildShapePath("roundedRect", bboxW, bboxH, r)
+              // Clamp HARD pra evitar shape degenerado (circulo quando r >= min/2).
+              // O input HTML max eh "soft" — user pode digitar valor maior.
+              const clamped = Math.max(0, Math.min(r, maxRadius))
+              const newPath = buildShapePath("roundedRect", bboxW, bboxH, clamped)
               applyShapePathInPlace(selected, newPath)
-              ;(selected as any).__cornerRadius = r
+              ;(selected as any).__cornerRadius = clamped
               fc.requestRenderAll()
               setSelectedTick(t => t + 1)
               isDirtyRef.current = true
@@ -10376,18 +10355,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     <div style={secS}>Raio do canto</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center" }}>
                       <input type="range"
-                        min={0}
-                        max={Math.floor(Math.min(bboxW, bboxH) / 2)}
-                        step={1}
-                        value={currentCornerRadius}
+                        min={0} max={maxRadius} step={1}
+                        value={Math.min(currentCornerRadius, maxRadius)}
                         onChange={e => setCornerRadius(Number(e.target.value))}
                         style={{ width: "100%" }} />
                       <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
                         <input type="number"
-                          min={0}
-                          max={Math.floor(Math.min(bboxW, bboxH) / 2)}
-                          step={1}
-                          value={currentCornerRadius}
+                          min={0} max={maxRadius} step={1}
+                          value={Math.min(currentCornerRadius, maxRadius)}
                           onChange={e => setCornerRadius(Number(e.target.value) || 0)}
                           style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }} />
                         <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>px</span>
