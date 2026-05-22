@@ -8405,6 +8405,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   const overrides: any = {}
                   if (isText) {
                     overrides.content = o.text
+                    overrides.text = o.text  // alias usado pelo export pra preferir live text
                     if (o.fill) overrides.fill = o.fill
                     if (o.fontSize) overrides.fontSize = o.fontSize
                     if (o.fontFamily) overrides.fontFamily = o.fontFamily
@@ -8413,6 +8414,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     if (o.textAlign) overrides.textAlign = o.textAlign
                     if (o.lineHeight !== undefined) overrides.lineHeight = o.lineHeight
                     if ((o as any).leadingPt !== undefined) overrides.leadingPt = (o as any).leadingPt
+                    if (o.charSpacing !== undefined) overrides.charSpacing = o.charSpacing
+                    // CRITICO: per-char styles (cores/fontSize/fontFamily individuais).
+                    // Antes este path nao serializava `styles`, e o PSD exportado da
+                    // MATRIZ saia com texto monocromo / tamanho uniforme — perdendo
+                    // todo o trabalho per-char (user reportou 2026-05-22).
+                    if (o.styles && Object.keys(o.styles).length > 0) {
+                      overrides.styles = o.styles
+                    }
+                    if (typeof (o as any).__fillBrandIdx === "number") {
+                      overrides.fillBrandIdx = (o as any).__fillBrandIdx
+                    }
                   }
                   // Propriedades de round-trip PSD (blendMode/opacity/effects/mask/
                   // groupPath/hidden/locked) precisam vir DO OBJETO FABRIC pro
