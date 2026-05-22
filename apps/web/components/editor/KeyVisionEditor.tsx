@@ -5,6 +5,7 @@ import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { FontPicker, WeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { MaskPanel } from "./MaskPanel"
+import { ColorSwatchPicker } from "./ColorSwatchPicker"
 import { ExportAssetButtons } from "./ExportAssetButtons"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { normalizeName } from "@/lib/normalize"
@@ -9197,72 +9198,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </div>
               )
             })()}
-            {/* SOLID: color picker + hex + swatches */}
+            {/* SOLID: ColorSwatchPicker (Figma-style — swatch + popup) */}
             {(() => {
               const layer = bgLayersRef.current[currentBgIdx()]
               if (layer?.kind !== "solid") return null
+              const bgStr = typeof bgColor === "string" ? bgColor : "#ffffff"
+              const activeBrand = layer?.colorBrandIdx
               return (
-                <>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                    <label style={{ width: 36, height: 36, borderRadius: 6, background: bgColor, border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                      <input
-                        type="color"
-                        value={/^#[0-9a-fA-F]{6}$/.test(bgColor) ? bgColor : "#ffffff"}
-                        onChange={e => changeBg(e.target.value)}
-                        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }}
-                      />
-                    </label>
-                    <input
-                      type="text"
-                      value={bgHexInput}
-                      onChange={e => {
-                        const v = e.target.value
-                        setBgHexInput(v)
-                        if (/^#[0-9a-fA-F]{6}$/.test(v)) changeBg(v)
-                      }}
-                      onBlur={() => {
-                        if (!/^#[0-9a-fA-F]{6}$/.test(bgHexInput)) setBgHexInput(typeof bgColor === "string" ? bgColor : "#ffffff")
-                      }}
-                      placeholder="#RRGGBB"
-                      style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
-                    />
-                  </div>
-                  {/* Library de cores do cliente (BrandColors) — no topo */}
-                  {brandColors.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                        {brandColors.map((bc, i) => {
-                          const currentBgLayer = bgLayersRef.current[currentBgIdx()]
-                          const activeByRef = currentBgLayer?.kind === "solid" && currentBgLayer.colorBrandIdx === i
-                          // Defensiva contra bgColor nao-string (BG gradient/image)
-                          const bgStr = typeof bgColor === "string" ? bgColor : ""
-                          const activeByHex = !activeByRef && bgStr.toLowerCase() === bc.hex.toLowerCase()
-                          return (
-                            <div key={`${bc.hex}-${i}`} onClick={() => changeBg(bc.hex, i)}
-                              title={bc.name ? `${bc.name} (${bc.hex}) — vincula à marca` : `${bc.hex} — vincula à marca`}
-                              style={{ width: 26, height: 26, borderRadius: 5, background: bc.hex, cursor: "pointer", border: (activeByRef || activeByHex) ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                          )
-                        })}
-                      </div>
-                    </>
-                  )}
-                  {brandColors.length > 0 && (
-                    <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
-                  )}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-                    {SWATCHES.map(c => {
-                      // bgColor pode vir como objeto/undefined em pecas com
-                      // bgLayer gradient/image (kind != "solid"). Defensiva
-                      // pra evitar crash do .toLowerCase() — comparacao
-                      // simplesmente fica falsa quando nao ha cor solida.
-                      const bgStr = typeof bgColor === "string" ? bgColor : ""
-                      return (
-                      <div key={c} onClick={() => changeBg(c)}
-                        style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: bgStr.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                    )})}
-                  </div>
-                </>
+                <div style={{ marginBottom: 14 }}>
+                  <ColorSwatchPicker
+                    value={bgStr}
+                    onChange={(hex, brandIdx) => changeBg(hex, brandIdx)}
+                    brandColors={brandColors as any}
+                    defaultSwatches={SWATCHES}
+                    activeBrandIdx={typeof activeBrand === "number" ? activeBrand : undefined}
+                  />
+                </div>
               )
             })()}
             {/* GRADIENT: stops + angulo (se linear) */}
@@ -9788,62 +9739,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             </div>
             <div>
               <div style={secS}>Cor {mixedFill && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múltiplas)</span>}</div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                <label style={{
-                  width: 36, height: 36, borderRadius: 6,
-                  backgroundImage: mixedFill ? "linear-gradient(135deg, #aaa 25%, #ccc 25%, #ccc 50%, #aaa 50%, #aaa 75%, #ccc 75%)" : "none",
-                  backgroundColor: mixedFill ? undefined : effectiveFill,
-                  backgroundSize: mixedFill ? "8px 8px" : undefined,
-                  border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden",
-                }}>
-                  <input
-                    type="color"
-                    value={effectiveFill.length === 7 ? effectiveFill : "#111111"}
-                    onChange={e => applyStyle("fill", e.target.value)}
-                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }}
-                  />
-                </label>
-                <input
-                  type="text"
-                  value={mixedFill ? "" : hexInput}
-                  placeholder={mixedFill ? "—" : "#RRGGBB"}
-                  onChange={e => {
-                    const v = e.target.value
-                    setHexInput(v)
-                    if (/^#[0-9a-fA-F]{6}$/.test(v)) applyStyle("fill", v)
-                  }}
-                  onBlur={() => {
-                    if (!/^#[0-9a-fA-F]{6}$/.test(hexInput)) setHexInput(selected.fill ?? "#111111")
-                  }}
-                  style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }}
-                />
-              </div>
-              {/* Library de cores do cliente — no topo, antes da paleta padrão. Usa
-                  __fillBrandIdx pra rastrear quando o fill vincula a uma cor da marca
-                  (assim updates de brand color refletem nos layers automaticamente). */}
-              {brandColors.length > 0 && (
-                <>
-                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Cores da marca</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                    {brandColors.map((bc, i) => {
-                      const activeByRef = (selected as any).__fillBrandIdx === i
-                      const activeByHex = !activeByRef && (selected.fill ?? "").toLowerCase() === bc.hex.toLowerCase()
-                      return (
-                        <div key={`${bc.hex}-${i}`} onClick={() => applyStyle("fill", bc.hex, i)}
-                          title={bc.name ? `${bc.name} (${bc.hex}) — vincula à marca` : `${bc.hex} — vincula à marca`}
-                          style={{ width: 24, height: 24, borderRadius: 4, background: bc.hex, cursor: "pointer", border: (activeByRef || activeByHex) ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                      )
-                    })}
-                  </div>
-                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
-                </>
-              )}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {SWATCHES.map(c => (
-                  <div key={c} onClick={() => applyStyle("fill", c)}
-                    style={{ width: 24, height: 24, borderRadius: 4, background: c, cursor: "pointer", border: (selected.fill ?? "").toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                ))}
-              </div>
+              <ColorSwatchPicker
+                value={mixedFill ? "" : (effectiveFill || "")}
+                onChange={(hex, brandIdx) => applyStyle("fill", hex, brandIdx)}
+                brandColors={brandColors as any}
+                defaultSwatches={SWATCHES}
+                activeBrandIdx={typeof (selected as any).__fillBrandIdx === "number" ? (selected as any).__fillBrandIdx : undefined}
+              />
             </div>
 
             {/* ===== MÁSCARA (Photoshop-style) ===== */}
@@ -9933,75 +9835,36 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   </div>
                 </div>
 
-                {/* FILL — cor solida (com brand colors + swatches default). */}
+                {/* FILL — ColorSwatchPicker Figma-style */}
                 <div>
                   <div style={secS}>Preenchimento</div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                    <label style={{ width: 36, height: 36, borderRadius: 6, background: currentFill || "transparent", border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                      <input type="color"
-                        value={/^#[0-9a-fA-F]{6}$/.test(currentFill) ? currentFill : "#000000"}
-                        onChange={e => setShapeProp("fill", e.target.value)}
-                        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }} />
-                    </label>
-                    <input type="text"
-                      value={currentFill}
-                      onChange={e => {
-                        const v = e.target.value
-                        if (/^#[0-9a-fA-F]{6}$/.test(v) || v === "transparent") setShapeProp("fill", v)
-                      }}
-                      placeholder="#RRGGBB"
-                      style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }} />
-                    <button type="button"
-                      onClick={() => setShapeProp("fill", "")}
-                      title="Sem fill (transparente)"
-                      style={{ ...inpS, width: 36, cursor: "pointer", padding: 0 }}>∅</button>
-                  </div>
-                  {brandColors.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Marca</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                        {brandColors.map((bc, i) => (
-                          <div key={`fill-bc-${i}`} onClick={() => setShapeProp("fill", bc.hex)}
-                            title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
-                            style={{ width: 26, height: 26, borderRadius: 5, background: bc.hex, cursor: "pointer", border: currentFill.toLowerCase() === bc.hex.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>Padrão</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {SWATCHES.map(c => (
-                      <div key={`fill-sw-${c}`} onClick={() => setShapeProp("fill", c)}
-                        style={{ width: 26, height: 26, borderRadius: 5, background: c, cursor: "pointer", border: currentFill.toLowerCase() === c.toLowerCase() ? "2px solid #F5C400" : "2px solid #2a2a2a" }} />
-                    ))}
-                  </div>
+                  <ColorSwatchPicker
+                    value={currentFill}
+                    onChange={(hex) => setShapeProp("fill", hex)}
+                    brandColors={brandColors as any}
+                    defaultSwatches={SWATCHES}
+                    allowEmpty
+                  />
                 </div>
 
-                {/* STROKE — cor + espessura. width=0 esconde stroke. */}
+                {/* STROKE — cor (ColorSwatchPicker) + espessura. */}
                 <div>
                   <div style={secS}>Stroke</div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                    <label style={{ width: 36, height: 36, borderRadius: 6, background: currentStroke || "transparent", border: "1px solid #333", flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                      <input type="color"
-                        value={/^#[0-9a-fA-F]{6}$/.test(currentStroke) ? currentStroke : "#000000"}
-                        onChange={e => {
-                          setShapeProp("stroke", e.target.value)
-                          if (currentStrokeWidth === 0) setShapeProp("strokeWidth", 1)
-                        }}
-                        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }} />
-                    </label>
-                    <input type="text"
+                    <ColorSwatchPicker
                       value={currentStroke}
-                      onChange={e => {
-                        const v = e.target.value
-                        if (/^#[0-9a-fA-F]{6}$/.test(v) || v === "") setShapeProp("stroke", v)
+                      onChange={(hex) => {
+                        setShapeProp("stroke", hex)
+                        // Setar stroke com width=0 deixa ele invisivel — auto-applica 1px
+                        // pra user ver o stroke imediatamente.
+                        if (hex && currentStrokeWidth === 0) setShapeProp("strokeWidth", 1)
+                        // Limpar stroke (∅) zera width tambem.
+                        if (!hex) setShapeProp("strokeWidth", 0)
                       }}
-                      placeholder="#RRGGBB"
-                      style={{ ...inpS, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase" }} />
-                    <button type="button"
-                      onClick={() => { setShapeProp("stroke", ""); setShapeProp("strokeWidth", 0) }}
-                      title="Sem stroke"
-                      style={{ ...inpS, width: 36, cursor: "pointer", padding: 0 }}>∅</button>
+                      brandColors={brandColors as any}
+                      defaultSwatches={SWATCHES}
+                      allowEmpty
+                    />
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center" }}>
                     <input type="range" min={0} max={50} step={1}
