@@ -400,71 +400,123 @@ function readShape(l: AgPsdLayer, parentPath: string[], _warn: (w: ReadWarning) 
 
 /**
  * Reconstroi path SVG a partir de vectorOrigination (vogk) do PS.
- * Suporta hoje: keyOriginType === 2 (rounded rectangle) com radii per-canto.
- * Retorna null pra outros tipos — caller cai no vectorMask.paths normal.
  *
- * Live Shape (Shape Tool com corner radius) guarda raios em
- * keyOriginRRectRadii e o bounding rect em keyOriginShapeBoundingBox.
- * Reconstruimos um path Bezier com curvas reais nos cantos.
+ * keyOriginType valores (Adobe PSD spec):
+ *   1 = Rectangle (sharp — fallback pro vectorMask path)
+ *   2 = Rounded Rectangle (com radii per-canto)
+ *   4 = Line
+ *   5 = Ellipse / Circle
+ *   outros = polygon/custom shape (sem suporte — fallback pro vectorMask)
+ *
+ * Live Shape (Shape Tool) guarda esses metadados separados de
+ * vectorMask.paths (que ja tem a bounding box em coords sharp). Sem ler vogk,
+ * formas perdem suas propriedades vetoriais nativas no round-trip.
+ *
+ * Cubic-bezier aproxima arcos com constante K=0.5522847498 (4*(sqrt(2)-1)/3).
  */
+const K_BEZIER = 0.5522847498
+
 function tryReadVogkPath(vogk: any): string | null {
   if (!vogk?.keyDescriptorList?.length) return null
   const item = vogk.keyDescriptorList[0]
-  // keyOriginType === 2 eh rounded rectangle (1=rect simples, 5=ellipse, etc).
-  if (item.keyOriginType !== 2) return null
+  const type = item.keyOriginType
   const bb = item.keyOriginShapeBoundingBox
-  const radii = item.keyOriginRRectRadii
-  if (!bb || !radii) return null
-  const left = bb.left, top = bb.top
-  const right = bb.right, bottom = bb.bottom
+  if (!bb) return null
+  const left = bb.left, top = bb.top, right = bb.right, bottom = bb.bottom
   const w = right - left, h = bottom - top
   if (w <= 0 || h <= 0) return null
-  // Radii limitados a metade do menor lado (PS faz o mesmo — radii > w/2
-  // viram cantos circulares = w/2). Cada canto pode ter raio diferente.
+
+  if (type === 2) return roundedRectPath(left, top, right, bottom, item.keyOriginRRectRadii)
+  if (type === 5) return ellipsePath(left, top, right, bottom)
+  if (type === 4) return linePath(left, top, right, bottom, item.keyOriginBoxCorners)
+  // type 1 (sharp rect) OU desconhecido: deixa o caller usar vectorMask
+  // — vectorMask ja entrega a bbox correta em coords sharp pra esses casos.
+  return null
+}
+
+/**
+ * Rounded Rectangle (keyOriginType=2) com radii independentes por canto.
+ * Constroi path Bezier: M → L → C → L → C → L → C → L → C → Z (8 knots max).
+ */
+function roundedRectPath(left: number, top: number, right: number, bottom: number, radii: any): string | null {
+  if (!radii) return null
+  const w = right - left, h = bottom - top
   const max = Math.min(w, h) / 2
   const rTL = Math.min(radii.topLeft ?? 0, max)
   const rTR = Math.min(radii.topRight ?? 0, max)
   const rBR = Math.min(radii.bottomRight ?? 0, max)
   const rBL = Math.min(radii.bottomLeft ?? 0, max)
-  // K = constante magica pra aproximar quarter circle com cubic Bezier.
-  // Off-curve cp distance = r * K do anchor pro proximo cp.
-  const K = 0.5522847498
-  // Constroi path Bezier com 8 knots (2 por canto: start + end de cada arco)
-  // mais linhas retas entre eles. Formato compativel com bezierPathToSvg.
   const cmds: string[] = []
   const fmt = (n: number) => n.toFixed(2)
-  // Comeca top-left, indo clockwise
   cmds.push(`M ${fmt(left + rTL)} ${fmt(top)}`)
-  // Aresta top → top-right
   if (rTR > 0) {
     cmds.push(`L ${fmt(right - rTR)} ${fmt(top)}`)
-    cmds.push(`C ${fmt(right - rTR + rTR * K)} ${fmt(top)}, ${fmt(right)} ${fmt(top + rTR - rTR * K)}, ${fmt(right)} ${fmt(top + rTR)}`)
-  } else {
-    cmds.push(`L ${fmt(right)} ${fmt(top)}`)
-  }
-  // Aresta right → bottom-right
+    cmds.push(`C ${fmt(right - rTR + rTR * K_BEZIER)} ${fmt(top)}, ${fmt(right)} ${fmt(top + rTR - rTR * K_BEZIER)}, ${fmt(right)} ${fmt(top + rTR)}`)
+  } else cmds.push(`L ${fmt(right)} ${fmt(top)}`)
   if (rBR > 0) {
     cmds.push(`L ${fmt(right)} ${fmt(bottom - rBR)}`)
-    cmds.push(`C ${fmt(right)} ${fmt(bottom - rBR + rBR * K)}, ${fmt(right - rBR + rBR * K)} ${fmt(bottom)}, ${fmt(right - rBR)} ${fmt(bottom)}`)
-  } else {
-    cmds.push(`L ${fmt(right)} ${fmt(bottom)}`)
-  }
-  // Aresta bottom → bottom-left
+    cmds.push(`C ${fmt(right)} ${fmt(bottom - rBR + rBR * K_BEZIER)}, ${fmt(right - rBR + rBR * K_BEZIER)} ${fmt(bottom)}, ${fmt(right - rBR)} ${fmt(bottom)}`)
+  } else cmds.push(`L ${fmt(right)} ${fmt(bottom)}`)
   if (rBL > 0) {
     cmds.push(`L ${fmt(left + rBL)} ${fmt(bottom)}`)
-    cmds.push(`C ${fmt(left + rBL - rBL * K)} ${fmt(bottom)}, ${fmt(left)} ${fmt(bottom - rBL + rBL * K)}, ${fmt(left)} ${fmt(bottom - rBL)}`)
-  } else {
-    cmds.push(`L ${fmt(left)} ${fmt(bottom)}`)
-  }
-  // Aresta left → top-left
+    cmds.push(`C ${fmt(left + rBL - rBL * K_BEZIER)} ${fmt(bottom)}, ${fmt(left)} ${fmt(bottom - rBL + rBL * K_BEZIER)}, ${fmt(left)} ${fmt(bottom - rBL)}`)
+  } else cmds.push(`L ${fmt(left)} ${fmt(bottom)}`)
   if (rTL > 0) {
     cmds.push(`L ${fmt(left)} ${fmt(top + rTL)}`)
-    cmds.push(`C ${fmt(left)} ${fmt(top + rTL - rTL * K)}, ${fmt(left + rTL - rTL * K)} ${fmt(top)}, ${fmt(left + rTL)} ${fmt(top)}`)
-  } else {
-    cmds.push(`L ${fmt(left)} ${fmt(top)}`)
-  }
+    cmds.push(`C ${fmt(left)} ${fmt(top + rTL - rTL * K_BEZIER)}, ${fmt(left + rTL - rTL * K_BEZIER)} ${fmt(top)}, ${fmt(left + rTL)} ${fmt(top)}`)
+  } else cmds.push(`L ${fmt(left)} ${fmt(top)}`)
   cmds.push("Z")
   return cmds.join(" ")
+}
+
+/**
+ * Ellipse / Circle (keyOriginType=5). 4 quarter arcs nos compass points
+ * (N → E → S → W) aproximados com cubic Bezier. Funciona pra elipse
+ * (rx != ry) e circulo (rx === ry). PS armazena via bbox; rx = w/2, ry = h/2.
+ */
+function ellipsePath(left: number, top: number, right: number, bottom: number): string {
+  const cx = (left + right) / 2
+  const cy = (top + bottom) / 2
+  const rx = (right - left) / 2
+  const ry = (bottom - top) / 2
+  const dx = rx * K_BEZIER
+  const dy = ry * K_BEZIER
+  const fmt = (n: number) => n.toFixed(2)
+  // Path clockwise comecando no top (N). 4 cubic Bezier curves.
+  return [
+    `M ${fmt(cx)} ${fmt(top)}`,
+    `C ${fmt(cx + dx)} ${fmt(top)}, ${fmt(right)} ${fmt(cy - dy)}, ${fmt(right)} ${fmt(cy)}`,
+    `C ${fmt(right)} ${fmt(cy + dy)}, ${fmt(cx + dx)} ${fmt(bottom)}, ${fmt(cx)} ${fmt(bottom)}`,
+    `C ${fmt(cx - dx)} ${fmt(bottom)}, ${fmt(left)} ${fmt(cy + dy)}, ${fmt(left)} ${fmt(cy)}`,
+    `C ${fmt(left)} ${fmt(cy - dy)}, ${fmt(cx - dx)} ${fmt(top)}, ${fmt(cx)} ${fmt(top)}`,
+    "Z",
+  ].join(" ")
+}
+
+/**
+ * Line (keyOriginType=4). PS armazena via keyOriginBoxCorners (4 cantos do
+ * retangulo da linha grossa). Aproximamos pegando o eixo central — primeiro
+ * e terceiro corner do retangulo geralmente sao os endpoints diagonais.
+ * Fallback: diagonal do bbox.
+ */
+function linePath(left: number, top: number, right: number, bottom: number, corners: any): string {
+  const fmt = (n: number) => n.toFixed(2)
+  // keyOriginBoxCorners eh array de 4 pontos {x,y} formando o retangulo da
+  // linha (PS desenha linhas como retangulos rotacionados). Endpoints da
+  // linha = midpoints das duas arestas curtas. Sem corners: usa diagonal.
+  if (Array.isArray(corners) && corners.length === 4) {
+    // Endpoints = midpoint(c0,c1) e midpoint(c2,c3) OU midpoint(c0,c3) e
+    // midpoint(c1,c2). Pegamos o par que da a maior distancia.
+    const c = corners
+    const mid = (a: any, b: any) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+    const distSq = (a: any, b: any) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+    const a1 = mid(c[0], c[1]), a2 = mid(c[2], c[3])
+    const b1 = mid(c[0], c[3]), b2 = mid(c[1], c[2])
+    const pa = distSq(a1, a2), pb = distSq(b1, b2)
+    const [p1, p2] = pa > pb ? [a1, a2] : [b1, b2]
+    return `M ${fmt(p1.x)} ${fmt(p1.y)} L ${fmt(p2.x)} ${fmt(p2.y)}`
+  }
+  return `M ${fmt(left)} ${fmt(top)} L ${fmt(right)} ${fmt(bottom)}`
 }
 
 /**
