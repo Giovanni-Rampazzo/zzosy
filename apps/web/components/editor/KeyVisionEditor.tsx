@@ -749,6 +749,46 @@ function serializeShapeOverrides(o: any): Record<string, any> {
 }
 
 /**
+ * FONTE UNICA DE VERDADE pra propagar metadados PSD do Fabric obj pro
+ * objeto `layer` JSON serializado. Era duplicado em 4 sites do save
+ * (PIECE/MATRIX/2x step) — cada vez que um novo metadado PSD entrava
+ * (effects → nameSource → ...), tinha que tocar os 4 ou criava drift.
+ *
+ * Mutates `layer` setando os fields se o Fabric obj tem o equivalente
+ * __psdXxx. Convencao: defaults (opacity=1, blendMode=source-over) sao
+ * OMITIDOS pra nao inflar o JSON do DB.
+ *
+ * NOTA: srvLog de "mask ausente" fica FORA do helper (so o site MATRIX
+ * quer esse warning — outros saves convivem com mask ausente sem alarme).
+ */
+function applyPsdLayerMetadata(o: any, layer: any): void {
+  // Visibilidade + lock (eye/cadeado do PS). Antes era propagado so em 2 dos
+  // 4 sites — sweep agora garante consistencia em todos os saves.
+  if (o.__hidden === true) layer.hidden = true
+  if (o.__locked === true) layer.locked = true
+  // Mask (raster/vector/clipping). Sem srvLog aqui — caller decide se loga.
+  if ((o as any).__maskData) layer.mask = (o as any).__maskData
+  // Opacity (0..1) + blendMode (canvas globalCompositeOperation). Defaults
+  // (1 e "source-over") omitidos.
+  if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
+  if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
+    layer.blendMode = o.globalCompositeOperation
+  }
+  // Layer effects (drop shadow / stroke / outer glow) — round-trip PSD.
+  if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
+    layer.effects = (o as any).__psdEffects
+  }
+  // 'lnsr' (Layer Name Source) — controla se PS auto-renomeia text layer.
+  if (typeof (o as any).__psdNameSource === "string") {
+    layer.nameSource = (o as any).__psdNameSource
+  }
+  // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
+  if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
+    layer.groupPath = (o as any).__groupPath
+  }
+}
+
+/**
  * Pre-compoe uma raster mask DENTRO de uma imagem fonte. Fabric v6 renderiza
  * Image clipPath como silhueta solida (fill=black) — ignora alpha do PNG da
  * mask. A unica forma de obter alpha-mask real eh aplicar a mascara no
@@ -5651,31 +5691,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             width: Math.round(o.width ?? 400), height: Math.round(o.height ?? 100),
             overrides: {},
           }
-          // Mascara: preservada via __maskData (anotacao guardada no objeto Fabric).
-          // Fabric nao serializa nosso LayerMask original (so o clipPath aplicado),
-          // entao mantemos o objeto LayerMask anexado pro round-trip do save.
-          if ((o as any).__maskData) {
-            layer.mask = (o as any).__maskData
-          }
-          // Visibilidade/lock + props PSD (opacity/blendMode/effects/groupPath)
-          // preservados pra round-trip. Sem esses campos aqui, "Salvar e sair"
-          // destruia toda a config do PSD.
-          if (o.__hidden === true) layer.hidden = true
-          if (o.__locked === true) layer.locked = true
-          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
-          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
-            layer.blendMode = o.globalCompositeOperation
-          }
-          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
-            layer.effects = (o as any).__psdEffects
-          }
-          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
-          if (typeof (o as any).__psdNameSource === "string") {
-            layer.nameSource = (o as any).__psdNameSource
-          }
-          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
-            layer.groupPath = (o as any).__groupPath
-          }
+          // Metadados PSD (mask/hidden/locked/opacity/blendMode/effects/
+          // nameSource/groupPath) via helper centralizado. Era duplicado em
+          // 4 sites — qualquer novo metadato PSD entra so no helper agora.
+          applyPsdLayerMetadata(o, layer)
           if (o.type === "textbox" || o.type === "i-text") {
             // PECA: caracteres (asset.content) continuam vindo do asset, MAS quebras
             // de linha (\n) e edicoes locais ficam em overrides per-instancia.
@@ -5782,44 +5801,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
             overrides: {},
           }
-          if (o.__hidden === true) layer.hidden = true
-          if (o.__locked === true) layer.locked = true
-          // Mascara (raster/vector/clipping) preservada via __maskData.
-          // Sem isso, auto-save da matriz logo apos import do PSD APAGAVA as
-          // masks que vieram do PSD (Background, Pa, escudo): client serializava
-          // sem mask e o PUT /key-vision sobrescrevia o banco com layers
-          // sem mask. Espelha o save da peca (linha ~2476).
-          if ((o as any).__maskData) {
-            layer.mask = (o as any).__maskData
-          } else {
-            // Diagnostico: layer sem __maskData. Pode ser legitimo (asset sem mask
-            // no PSD) OU bug (mask foi perdida no load). srvLog ajuda a distinguir.
+          // Metadados PSD via helper centralizado. MATRIZ tambem loga warning
+          // quando mask vem ausente (era o bug do auto-save apagando masks
+          // do PSD logo apos import).
+          if (!(o as any).__maskData) {
             srvLog("save-MATRIX-no-mask", {
               assetLabel: (o as any).__assetLabel ?? "?",
               type: o.type,
               hasClipPath: !!o.clipPath,
             })
           }
-          // Opacity (0..1) e blendMode (canvas globalCompositeOperation) por
-          // layer (round-trip PSD). Defaults omitidos pra não inflar JSON.
-          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
-          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
-            layer.blendMode = o.globalCompositeOperation
-          }
-          // PSD layer effects (drop shadow / stroke / outer glow) preservados
-          // em __psdEffects pra round-trip ZZOSY ↔ PSD.
-          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
-            layer.effects = (o as any).__psdEffects
-          }
-          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
-          // Sem isso, primeiro save sobrescrevia o valor salvo pelo import-psd.
-          if (typeof (o as any).__psdNameSource === "string") {
-            layer.nameSource = (o as any).__psdNameSource
-          }
-          // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
-          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
-            layer.groupPath = (o as any).__groupPath
-          }
+          applyPsdLayerMetadata(o, layer)
           // DEBUG: log do que tah indo pra matriz
           console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "label:", o.__assetLabel, "fill:", o.fill, "stroke:", o.stroke, "strokeWidth:", o.strokeWidth, "psdEffects:", o.__psdEffects, "__hidden:", o.__hidden, "__locked:", o.__locked)
           // Espelha a logica do modo PECA: salva overrides per-instancia (fill,
@@ -6693,30 +6685,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               }
             }
           }
-          // Mascara (raster/vector/clipping) preservada via __maskData.
-          // Round-trip do PSD ate o re-export sem perder a mascara.
-          if ((o as any).__maskData) {
-            layer.mask = (o as any).__maskData
-          }
-          // Opacity/blendMode por layer (round-trip PSD). Defaults omitidos.
-          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
-          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
-            layer.blendMode = o.globalCompositeOperation
-          }
-          // PSD layer effects (drop shadow / stroke / outer glow) preservados
-          // em __psdEffects pra round-trip ZZOSY ↔ PSD.
-          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
-            layer.effects = (o as any).__psdEffects
-          }
-          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
-          // Sem isso, primeiro save sobrescrevia o valor salvo pelo import-psd.
-          if (typeof (o as any).__psdNameSource === "string") {
-            layer.nameSource = (o as any).__psdNameSource
-          }
-          // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
-          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
-            layer.groupPath = (o as any).__groupPath
-          }
+          // Metadados PSD (mask/hidden/locked/opacity/blendMode/effects/
+          // nameSource/groupPath) via helper centralizado. Antes este site NAO
+          // propagava __hidden/__locked (drift sutil) — agora alinhado com
+          // PIECE/MATRIX saves.
+          applyPsdLayerMetadata(o, layer)
           // Captura overrides para textos via helper centralizado
           if (o.type === "textbox" || o.type === "i-text") {
             Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
@@ -6840,31 +6813,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
             overrides: {},
           }
-          // Mascara preservada via __maskData. Mesmo bug do SAVE-MATRIX:
-          // sem isso, este auto-save (que dispara logo apos import do PSD via
-          // dirty trigger) sobrescrevia o banco perdendo as masks do PSD.
-          if ((o as any).__maskData) {
-            layer.mask = (o as any).__maskData
-          }
-          // Opacity/blendMode por layer (round-trip PSD). Defaults omitidos.
-          if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
-          if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
-            layer.blendMode = o.globalCompositeOperation
-          }
-          // PSD layer effects (drop shadow / stroke / outer glow) preservados
-          // em __psdEffects pra round-trip ZZOSY ↔ PSD.
-          if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
-            layer.effects = (o as any).__psdEffects
-          }
-          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
-          // Sem isso, primeiro save sobrescrevia o valor salvo pelo import-psd.
-          if (typeof (o as any).__psdNameSource === "string") {
-            layer.nameSource = (o as any).__psdNameSource
-          }
-          // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
-          if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
-            layer.groupPath = (o as any).__groupPath
-          }
+          // Metadados PSD (mask/hidden/locked/opacity/blendMode/effects/
+          // nameSource/groupPath) via helper centralizado. Antes este site
+          // (doSave matriz, dispara logo apos import via dirty trigger) NAO
+          // propagava __hidden/__locked — agora alinhado com PIECE/MATRIX.
+          applyPsdLayerMetadata(o, layer)
           // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
           // Matriz: caracteres vem do asset. Helper centralizado captura tudo.
           if (o.type === "textbox" || o.type === "i-text") {
