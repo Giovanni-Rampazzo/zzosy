@@ -1636,7 +1636,12 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       )
       const defTracking = fabricCharSpacingToPsTracking(obj.charSpacing)
       psdLayers.push({
-        name, top, left, bottom, right,
+        name,
+        // 'srct' = nome vem do conteudo do texto → PS auto-renomeia o layer
+        // quando user edita o texto (padrao Adobe). Sem isso, ag-psd default
+        // emite 'lyr ' (manual) e PS trata como nome fixo.
+        nameSource: "srct",
+        top, left, bottom, right,
         canvas: layerCanvas,
         ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
         ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
