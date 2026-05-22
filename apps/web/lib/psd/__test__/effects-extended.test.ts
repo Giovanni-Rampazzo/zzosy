@@ -1,16 +1,23 @@
 /**
  * effects-extended.test.ts — valida que writer V2 emite gradientOverlay,
- * satin, bevel (antes ignorados em silencio).
+ * satin, bevel E que reader V2 le de volta corretamente (round-trip MODEL
+ * via readPsdDocument, nao so readPsd raw).
  *
- * Auditoria reportou: "Effects gradientOverlay/satin/bevel — read but
- * never written" (writer.ts:365 comentario antigo).
+ * V1 deste teste so usava readPsd raw — passava com bug do reader que
+ * tratava bevel/satin como array (`fx.bevel?.[0]`) quando ag-psd retorna
+ * single object. Bug pre-existente silencioso ate 2026-05-22.
+ *
+ * Cobertura aqui: writePsdDocument → readPsdDocument retorna modelo
+ * canonical com TODOS os campos preservados (style com espacos, strength→
+ * depth, angle/altitude).
  *
  * Uso: npx tsx lib/psd/__test__/effects-extended.test.ts
  */
-import { readPsd, initializeCanvas } from "ag-psd"
+import { initializeCanvas } from "ag-psd"
 import { createCanvas } from "@napi-rs/canvas"
 import { writePsdDocument } from "../writer"
-import type { PsdDocument, PsdShapeLayer } from "../types"
+import { readPsdDocument } from "../reader"
+import type { PsdDocument, PsdShapeLayer, PsdLayerEffects } from "../types"
 
 initializeCanvas(createCanvas as any)
 
@@ -33,7 +40,7 @@ const baseShape: Omit<PsdShapeLayer, "effects"> = {
   fillRule: "nonzero",
 }
 
-function makeDoc(effects: PsdShapeLayer["effects"]): PsdDocument {
+function makeDoc(effects: PsdLayerEffects): PsdDocument {
   return {
     width: 800,
     height: 600,
@@ -46,8 +53,21 @@ function makeDoc(effects: PsdShapeLayer["effects"]): PsdDocument {
   }
 }
 
-console.log("Step 1: gradientOverlay roundtrip")
-const doc1 = makeDoc({
+function roundtripEffects(effects: PsdLayerEffects): PsdLayerEffects {
+  const r = writePsdDocument(makeDoc(effects))
+  const d = readPsdDocument(r.bytes, { includeImageData: false, includeComposite: false })
+  return (d.document.layers[0] as any).effects
+}
+
+let fail = 0
+function expect(name: string, got: unknown, expected: unknown): void {
+  const ok = JSON.stringify(got) === JSON.stringify(expected)
+  console.log(`  ${ok ? "✓" : "✗"} ${name}: expected=${JSON.stringify(expected)} got=${JSON.stringify(got)}`)
+  if (!ok) fail++
+}
+
+console.log("Step 1: gradientOverlay roundtrip (model→PSD→model)")
+const gradFx: PsdLayerEffects = {
   gradientOverlay: {
     enabled: true,
     gradient: {
@@ -63,22 +83,22 @@ const doc1 = makeDoc({
     scale: 100,
     reverse: false,
   },
-})
-const r1 = writePsdDocument(doc1)
-const p1: any = readPsd(r1.bytes)
-const go = p1.children?.[0]?.effects?.gradientOverlay
-if (!go || !Array.isArray(go) || go.length === 0) {
-  console.error(`  ✗ gradientOverlay ausente no PSD final: ${JSON.stringify(p1.children?.[0]?.effects)}`)
-  process.exit(1)
 }
-const go0 = go[0]
-console.log(`  ✓ gradientOverlay: type=${go0.type} angle=${go0.angle} opacity=${go0.opacity}`)
-console.log(`  ✓ colorStops: ${go0.gradient?.colorStops?.length} stops`)
-if (!go0.enabled) { console.error("  ✗ disabled"); process.exit(1) }
-if (go0.gradient?.colorStops?.length !== 2) { console.error("  ✗ stops mismatch"); process.exit(1) }
+const re1 = roundtripEffects(gradFx)
+console.log(`  go presente: ${!!re1.gradientOverlay}`)
+if (!re1.gradientOverlay) { console.error("  ✗ gradientOverlay PERDIDO no readPsdDocument"); fail++ }
+else {
+  expect("kind", re1.gradientOverlay.gradient.kind, "linear")
+  expect("angle", re1.gradientOverlay.angle, 45)
+  expect("scale", re1.gradientOverlay.scale, 100)
+  expect("opacity", re1.gradientOverlay.opacity, 0.8)
+  expect("blendMode", re1.gradientOverlay.blendMode, "multiply")
+  expect("stops.length", re1.gradientOverlay.gradient.stops.length, 2)
+  expect("stop[0].color", re1.gradientOverlay.gradient.stops[0].color, "#ff0000")
+}
 
 console.log("\nStep 2: satin roundtrip")
-const doc2 = makeDoc({
+const satFx: PsdLayerEffects = {
   satin: {
     enabled: true,
     color: "#330011",
@@ -89,24 +109,28 @@ const doc2 = makeDoc({
     blendMode: "multiply",
     invert: true,
   },
-})
-const r2 = writePsdDocument(doc2)
-const p2: any = readPsd(r2.bytes)
-const sa = p2.children?.[0]?.effects?.satin
-if (!sa) { console.error("  ✗ satin ausente"); process.exit(1) }
-console.log(`  ✓ satin: color=rgb(${sa.color?.r},${sa.color?.g},${sa.color?.b}) angle=${sa.angle}`)
-console.log(`  ✓ distance=${JSON.stringify(sa.distance)} size=${JSON.stringify(sa.size)} invert=${sa.invert}`)
-if (!sa.enabled) { console.error("  ✗ disabled"); process.exit(1) }
-if (sa.invert !== true) { console.error("  ✗ invert nao preservado"); process.exit(1) }
+}
+const re2 = roundtripEffects(satFx)
+console.log(`  satin presente: ${!!re2.satin}`)
+if (!re2.satin) { console.error("  ✗ satin PERDIDO no readPsdDocument"); fail++ }
+else {
+  expect("color", re2.satin.color, "#330011")
+  expect("opacity", re2.satin.opacity, 0.5)
+  expect("angle", re2.satin.angle, 19)
+  expect("distance", re2.satin.distance, 11)
+  expect("size", re2.satin.size, 14)
+  expect("invert", re2.satin.invert, true)
+  expect("blendMode", re2.satin.blendMode, "multiply")
+}
 
-console.log("\nStep 3: bevel roundtrip")
-const doc3 = makeDoc({
+console.log("\nStep 3: bevel roundtrip COMPLETO (style espaco, technique espaco, depth, angle, altitude)")
+const bevFx: PsdLayerEffects = {
   bevel: {
     enabled: true,
-    style: "innerBevel",
+    style: "outerBevel",
     technique: "chiselHard",
     depth: 200,
-    direction: "up",
+    direction: "down",
     size: 8,
     soften: 2,
     highlightColor: "#FFFFFF",
@@ -115,18 +139,56 @@ const doc3 = makeDoc({
     shadowColor: "#000000",
     shadowBlendMode: "multiply",
     shadowOpacity: 0.75,
+    angle: 90,
+    altitude: 45,
   },
-})
-const r3 = writePsdDocument(doc3)
-const p3: any = readPsd(r3.bytes)
-const bv = p3.children?.[0]?.effects?.bevel
-if (!bv) { console.error("  ✗ bevel ausente"); process.exit(1) }
-console.log(`  ✓ bevel: style=${bv.style} technique=${bv.technique} direction=${bv.direction}`)
-console.log(`  ✓ size=${JSON.stringify(bv.size)} soften=${JSON.stringify(bv.soften)}`)
-console.log(`  ✓ highlight: ${bv.highlightBlendMode} opacity=${bv.highlightOpacity}`)
-console.log(`  ✓ shadow: ${bv.shadowBlendMode} opacity=${bv.shadowOpacity}`)
-if (!bv.enabled) { console.error("  ✗ disabled"); process.exit(1) }
-if (bv.style !== "inner bevel") { console.error(`  ✗ style esperado 'inner bevel', got '${bv.style}'`); process.exit(1) }
-if (bv.technique !== "chisel hard") { console.error(`  ✗ technique esperado 'chisel hard', got '${bv.technique}'`); process.exit(1) }
+}
+const re3 = roundtripEffects(bevFx)
+console.log(`  bevel presente: ${!!re3.bevel}`)
+if (!re3.bevel) { console.error("  ✗ bevel PERDIDO no readPsdDocument"); fail++ }
+else {
+  expect("style", re3.bevel.style, "outerBevel")
+  expect("technique", re3.bevel.technique, "chiselHard")
+  expect("depth", re3.bevel.depth, 200)
+  expect("direction", re3.bevel.direction, "down")
+  expect("size", re3.bevel.size, 8)
+  expect("soften", re3.bevel.soften, 2)
+  expect("highlightOpacity", re3.bevel.highlightOpacity, 0.75)
+  expect("shadowOpacity", re3.bevel.shadowOpacity, 0.75)
+  expect("angle", re3.bevel.angle, 90)
+  expect("altitude", re3.bevel.altitude, 45)
+}
 
-console.log("\n✓ EXTENDED EFFECTS V2 OK — gradientOverlay/satin/bevel roundtrip funcionando")
+console.log("\nStep 4: outerGlow + innerGlow tambem agora roundtrip (bug pre-existente)")
+const glowFx: PsdLayerEffects = {
+  outerGlow: {
+    enabled: true,
+    color: "#FF6432",
+    opacity: 0.5,
+    blur: 20,
+    spread: 0,
+    blendMode: "screen",
+    source: "edge",
+  },
+  innerGlow: {
+    enabled: true,
+    color: "#FFFF00",
+    opacity: 0.6,
+    blur: 15,
+    spread: 0,
+    blendMode: "screen",
+  },
+}
+const re4 = roundtripEffects(glowFx)
+console.log(`  outerGlow presente: ${!!re4.outerGlow}`)
+console.log(`  innerGlow presente: ${!!re4.innerGlow}`)
+if (!re4.outerGlow) { console.error("  ✗ outerGlow PERDIDO"); fail++ }
+if (!re4.innerGlow) { console.error("  ✗ innerGlow PERDIDO"); fail++ }
+if (re4.outerGlow) expect("outerGlow.color", re4.outerGlow.color, "#ff6432")
+if (re4.innerGlow) expect("innerGlow.color", re4.innerGlow.color, "#ffff00")
+
+if (fail > 0) {
+  console.error(`\n✗ ${fail} asserts falharam`)
+  process.exit(1)
+}
+console.log("\n✓ EXTENDED EFFECTS V2 OK — gradientOverlay/satin/bevel/outerGlow/innerGlow roundtrip via readPsdDocument")

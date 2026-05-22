@@ -792,19 +792,29 @@ function vectorMaskToSvgPath(vm: any): string {
 // Effects (layer styles)
 // ────────────────────────────────────────────────────────────────────
 
+// ag-psd retorna alguns effects como ARRAY (dropShadow, innerShadow, stroke,
+// solidFill, gradientOverlay) e outros como SINGLE OBJECT (outerGlow, innerGlow,
+// bevel, satin, patternOverlay). Reader defensivo: aceita ambos.
+//   Sem isso, fx.outerGlow?.[0] em single object retornava undefined sempre →
+//   readPsdDocument NUNCA lia outerGlow/innerGlow/bevel/satin (bug pre-existente
+//   silencioso até 2026-05-22).
+function takeFirstFx<T>(v: T | T[] | undefined): T | undefined {
+  if (v == null) return undefined
+  return Array.isArray(v) ? v[0] : v
+}
+
 function readEffects(l: AgPsdLayer): PsdLayerEffects {
   const fx = (l.effects ?? {}) as any
   const out: PsdLayerEffects = {}
-  if (fx.dropShadow?.[0]) out.dropShadow = readShadow(fx.dropShadow[0])
-  if (fx.innerShadow?.[0]) out.innerShadow = readShadow(fx.innerShadow[0])
-  if (fx.outerGlow?.[0]) out.outerGlow = readGlow(fx.outerGlow[0], "outer")
-  if (fx.innerGlow?.[0]) out.innerGlow = readGlow(fx.innerGlow[0], "inner")
-  if (fx.stroke?.[0]) out.stroke = readStrokeEffect(fx.stroke[0])
-  if (fx.solidFill?.[0]) out.colorOverlay = readColorOverlay(fx.solidFill[0])
-  if (fx.gradientOverlay?.[0]) out.gradientOverlay = readGradientOverlay(fx.gradientOverlay[0])
-  // F12.13 Fase 5: satin + bevel + patternOverlay
-  if (fx.satin?.[0]) out.satin = readSatin(fx.satin[0])
-  if (fx.bevel?.[0]) out.bevel = readBevel(fx.bevel[0])
+  const ds = takeFirstFx(fx.dropShadow); if (ds) out.dropShadow = readShadow(ds)
+  const is = takeFirstFx(fx.innerShadow); if (is) out.innerShadow = readShadow(is)
+  const og = takeFirstFx(fx.outerGlow); if (og) out.outerGlow = readGlow(og, "outer")
+  const ig = takeFirstFx(fx.innerGlow); if (ig) out.innerGlow = readGlow(ig, "inner")
+  const sk = takeFirstFx(fx.stroke); if (sk) out.stroke = readStrokeEffect(sk)
+  const sf = takeFirstFx(fx.solidFill); if (sf) out.colorOverlay = readColorOverlay(sf)
+  const go = takeFirstFx(fx.gradientOverlay); if (go) out.gradientOverlay = readGradientOverlay(go)
+  const sa = takeFirstFx(fx.satin); if (sa) out.satin = readSatin(sa)
+  const bv = takeFirstFx(fx.bevel); if (bv) out.bevel = readBevel(bv)
   // patternOverlay: pattern bytes precisam decodificacao (Fase 5 + Fase 4)
   return out
 }
@@ -880,42 +890,78 @@ function readSatin(s: any): import("./types").PsdSatinEffect {
 }
 
 function readBevel(b: any): import("./types").PsdBevelEffect {
+  // ag-psd retorna style/technique com ESPACOS (e.g., 'inner bevel', 'chisel hard').
+  // Suportamos AMBOS — camelCase (legacy) E com espacos (ag-psd real). Bug
+  // pre-existente: styleMap procurava so 'innerBevel' → fallback sempre.
   const styleMap: Record<string, "innerBevel" | "outerBevel" | "emboss" | "pillowEmboss" | "strokeEmboss"> = {
-    "innerBevel": "innerBevel",
-    "outerBevel": "outerBevel",
+    "innerBevel": "innerBevel", "inner bevel": "innerBevel",
+    "outerBevel": "outerBevel", "outer bevel": "outerBevel",
     "emboss": "emboss",
-    "pillowEmboss": "pillowEmboss",
-    "strokeEmboss": "strokeEmboss",
+    "pillowEmboss": "pillowEmboss", "pillow emboss": "pillowEmboss",
+    "strokeEmboss": "strokeEmboss", "stroke emboss": "strokeEmboss",
   }
   const techniqueMap: Record<string, "smooth" | "chiselHard" | "chiselSoft"> = {
-    "softMatte": "smooth",
-    "chiselHard": "chiselHard",
-    "chiselSoft": "chiselSoft",
+    "softMatte": "smooth", "smooth": "smooth",
+    "chiselHard": "chiselHard", "chisel hard": "chiselHard",
+    "chiselSoft": "chiselSoft", "chisel soft": "chiselSoft",
   }
+  // ag-psd LayerEffectBevel campo eh `strength`, NAO `depth`. Reader anterior
+  // procurava `b.depth` sempre fallback 100. Unwrap UnitsValue em size/soften
+  // (ag-psd as vezes retorna numero, as vezes {value, units}).
+  const unwrap = (v: any, fallback: number) =>
+    typeof v === "number" ? v
+    : (v && typeof v.value === "number") ? v.value
+    : fallback
   return {
     enabled: b.enabled !== false,
     style: styleMap[b.style] ?? "innerBevel",
     technique: techniqueMap[b.technique] ?? "smooth",
-    depth: typeof b.depth === "number" ? b.depth : 100,
+    depth: typeof b.strength === "number" ? b.strength : (typeof b.depth === "number" ? b.depth : 100),
     direction: b.direction === "down" ? "down" : "up",
-    size: typeof b.size === "number" ? b.size : 5,
-    soften: typeof b.soften === "number" ? b.soften : 0,
+    size: unwrap(b.size, 5),
+    soften: unwrap(b.soften, 0),
     highlightColor: parseHexColor(b.highlightColor, "#ffffff"),
     highlightBlendMode: mapBlendMode(b.highlightBlendMode ?? "screen"),
     highlightOpacity: typeof b.highlightOpacity === "number" ? b.highlightOpacity : 0.75,
     shadowColor: parseHexColor(b.shadowColor, "#000000"),
     shadowBlendMode: mapBlendMode(b.shadowBlendMode ?? "multiply"),
     shadowOpacity: typeof b.shadowOpacity === "number" ? b.shadowOpacity : 0.75,
+    angle: typeof b.angle === "number" ? b.angle : 120,
+    altitude: typeof b.altitude === "number" ? b.altitude : 30,
   }
 }
 
 function parseGradient(g: any): PsdGradient {
   if (!g) return { kind: "linear", stops: [] }
-  const stops = Array.isArray(g.stops) ? g.stops.map((s: any) => ({
-    position: typeof s.location === "number" ? s.location : 0,
-    color: parseHexColor(s.color, "#000000"),
-    opacity: typeof s.opacity === "number" ? s.opacity : 1,
-  })) : []
+  // ag-psd retorna `colorStops` (cor + location) E `opacityStops` (opacity +
+  // location) como ARRAYS SEPARADOS. Versoes antigas/simples usam `stops`
+  // direto. Reader aceita os 3 formatos.
+  let stops: PsdGradient["stops"] = []
+  if (Array.isArray(g.colorStops)) {
+    const opacityByLocation = new Map<number, number>()
+    if (Array.isArray(g.opacityStops)) {
+      for (const os of g.opacityStops) {
+        const loc = typeof os.location === "number" ? os.location : 0
+        // ag-psd guarda opacity 0-100 nas opacityStops (Adobe convention)
+        const op = typeof os.opacity === "number" ? os.opacity / 100 : 1
+        opacityByLocation.set(loc, op)
+      }
+    }
+    stops = g.colorStops.map((s: any) => {
+      const position = typeof s.location === "number" ? s.location : 0
+      return {
+        position,
+        color: parseHexColor(s.color, "#000000"),
+        opacity: opacityByLocation.get(position) ?? 1,
+      }
+    })
+  } else if (Array.isArray(g.stops)) {
+    stops = g.stops.map((s: any) => ({
+      position: typeof s.location === "number" ? s.location : 0,
+      color: parseHexColor(s.color, "#000000"),
+      opacity: typeof s.opacity === "number" ? s.opacity : 1,
+    }))
+  }
   const kindMap: Record<string, PsdGradient["kind"]> = {
     linear: "linear",
     radial: "radial",

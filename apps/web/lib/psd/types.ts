@@ -425,6 +425,10 @@ export interface PsdBevelEffect {
   shadowColor: string
   shadowBlendMode: PsdBlendMode
   shadowOpacity: number
+  /** Light source direction (PS slider). 0-360. Default 120. */
+  angle?: number
+  /** Light source altitude. 0-90 (degrees). Default 30. */
+  altitude?: number
 }
 
 // ────────────────────────────────────────────────────────────────────

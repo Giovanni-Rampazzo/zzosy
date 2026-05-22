@@ -382,11 +382,18 @@ function maskToAgPsd(mask: PsdMaskData, warn: (w: WriteWarning) => void, layerNa
 // ────────────────────────────────────────────────────────────────────
 
 function effectsToAgPsd(fx: PsdLayerEffects): any {
+  // ag-psd shape — alguns campos sao ARRAY (LayerEffect___[]), outros sao
+  // SINGLE objeto. Confirmar na agpsd psd.d.ts antes de adicionar effect novo.
+  //   ARRAYS:  dropShadow, innerShadow, solidFill, stroke, gradientOverlay
+  //   SINGLES: outerGlow, innerGlow, bevel, satin, patternOverlay
+  // Emitir como o tipo errado faz ag-psd writePsd OUTPUTAR o effect VAZIO ({})
+  // (sem campos). Bug pre-existente: outerGlow/innerGlow embrulhados em array
+  // sumiam silenciosamente.
   const out: any = {}
   if (fx.dropShadow) out.dropShadow = [shadowToAgPsd(fx.dropShadow)]
   if (fx.innerShadow) out.innerShadow = [shadowToAgPsd(fx.innerShadow)]
-  if (fx.outerGlow) out.outerGlow = [glowToAgPsd(fx.outerGlow, "outer")]
-  if (fx.innerGlow) out.innerGlow = [glowToAgPsd(fx.innerGlow, "inner")]
+  if (fx.outerGlow) out.outerGlow = glowToAgPsd(fx.outerGlow, "outer")
+  if (fx.innerGlow) out.innerGlow = glowToAgPsd(fx.innerGlow, "inner")
   if (fx.stroke) out.stroke = [strokeEffectToAgPsd(fx.stroke)]
   if (fx.colorOverlay) out.solidFill = [colorOverlayToAgPsd(fx.colorOverlay)]
   if (fx.gradientOverlay) out.gradientOverlay = [gradientOverlayToAgPsd(fx.gradientOverlay)]
@@ -522,8 +529,8 @@ function bevelToAgPsd(b: PsdBevelEffect): any {
     shadowColor: hexToRgb(b.shadowColor),
     shadowBlendMode: blendModeToAgPsd(b.shadowBlendMode),
     shadowOpacity: b.shadowOpacity,
-    angle: 120,
-    altitude: 30,
+    angle: typeof b.angle === "number" ? b.angle : 120,
+    altitude: typeof b.altitude === "number" ? b.altitude : 30,
     useGlobalLight: false,
   }
 }
