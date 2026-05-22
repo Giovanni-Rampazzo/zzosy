@@ -2795,6 +2795,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Marca init concluido — saves sao liberados a partir daqui. Antes disso, salvar
       // poderia gravar layers: [] (canvas ainda nao tinha objetos carregados).
       isInitialized.current = true
+
+      // Re-aplica clipping masks salvas (mask.type === "clipping") agora que
+      // todos os objetos estao no canvas. applyMaskToFabric so anota
+      // __clippingMask=true; o clipPath real depende do layer abaixo, entao
+      // precisa rodar APOS todos os objects loaded (z-order completo).
+      try {
+        const objs = fc.getObjects().filter((o: any) =>
+          (o as any).__maskData?.type === "clipping" && (o as any).__maskData?.enabled !== false
+        )
+        for (const o of objs) {
+          await applyClippingMaskNative(fc, o)
+        }
+        if (objs.length > 0) fc.requestRenderAll()
+      } catch (e) { console.warn("[init] re-apply clipping masks falhou:", e) }
       // RE-MEASURE textboxes se uma fonte chegou DEPOIS do init: o load pre-
       // request todas as fontes, mas se alguma demorou pra chegar no momento
       // de criar o Textbox, ele foi medido com fallback (Arial) — letras
@@ -4776,6 +4790,55 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const obj = fc?.getActiveObject()
     if (!fc || !obj) return
     await applyMaskAndPersist(obj, { type: "clipping", enabled: true, clipping: true })
+    // Aplica o clip de fato: o layer ABAIXO (Photoshop clipping mask = clipa
+    // pelo layer imediatamente abaixo). applyMaskToFabric.ts so anota
+    // __clippingMask = true (sem render); aqui resolvemos visualmente.
+    await applyClippingMaskNative(fc, obj)
+    fc.requestRenderAll()
+    isDirtyRef.current = true
+    setIsDirty(true)
+    if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+    doSave()
+  }
+
+  /**
+   * Aplica clipPath nativo de Fabric usando o silhouette do layer ABAIXO
+   * (PSD clipping mask). Detecta base via fc.getObjects() — proximo layer
+   * com __assetId (skipa bg/bleed overlay) anterior ao obj atual.
+   *
+   * Pra que o clip mostre apenas onde o base tem pixels:
+   *   - SHAPE base: clona Fabric.Path (mesmo path/fill/stroke)
+   *   - IMAGE base: clona Fabric.Image absolutePositioned
+   *   - TEXT base: clona Textbox
+   * Cria clone com absolutePositioned: true. Fabric clipPath assim renderiza
+   * em coords absolutas do canvas (mesma posicao do base original).
+   */
+  async function applyClippingMaskNative(fc: any, obj: any) {
+    const all = fc.getObjects().filter((o: any) =>
+      !o.__isBg && !o.__isBleedOverlay && !o.__isStrokeGhost
+    )
+    const idx = all.indexOf(obj)
+    if (idx <= 0) {
+      // Sem layer abaixo — nada pra clipar. Remove clipPath previo.
+      obj.clipPath = null
+      return
+    }
+    const base = all[idx - 1]
+    if (!base) { obj.clipPath = null; return }
+    try {
+      // Clone Fabric do base — mantem mesma geometria pra usar como clipPath.
+      // clone() eh assincrono em Fabric v7 (retorna Promise).
+      const baseClone = await base.clone()
+      ;(baseClone as any).absolutePositioned = true
+      // ClipPath nao precisa de fill/stroke pra clipar — so a silhouette
+      // (alpha) eh usada. Mas se for IMAGE/TEXT, mantemos como esta —
+      // Fabric usa o alpha do bitmap.
+      obj.clipPath = baseClone
+      obj.dirty = true
+    } catch (e) {
+      console.warn("[clipping-mask] falha ao clonar base:", e)
+      obj.clipPath = null
+    }
   }
 
   // Cria vector mask retangular (Reveal All do Photoshop: caixa = todo bounding box,
