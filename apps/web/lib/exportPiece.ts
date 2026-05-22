@@ -1593,17 +1593,24 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           // Layer Style Stroke renderiza identico no PS e o user edita via
           // "Layer Style → Stroke" — alternativa Adobe-aceitavel.
           //
-          // PRIORIDADE: estado VIVO do Fabric (obj.stroke + strokeWidth) eh a
-          // FONTE DA VERDADE. Se user removeu o stroke no painel
-          // (strokeWidth=0 ou stroke=""), o effect tem que sair JUNTO — antes
-          // o psdLayerEffects.stroke original do PSD ficava encalhado e o
-          // export continuava com o stroke mesmo apos remover no editor.
-          const userRemovedStroke = !strokeStr || strokeW === 0
+          // Stroke handling: estado VIVO do Fabric tem prioridade. Quando user
+          // explicitamente removeu (strokeWidth EXATAMENTE 0 + stroke vazio),
+          // delete o effect antigo do PSD pra nao encalhar. Conservador —
+          // strokeWidth undefined/null NAO conta como removido (pode ser load
+          // intermediario antes do applyFabricEffects rodar).
+          const userRemovedStroke = (typeof obj.strokeWidth === "number" && obj.strokeWidth === 0)
+            && (obj.stroke === "" || obj.stroke === null)
           let effectsWithStroke: any = psdLayerEffects ? { ...psdLayerEffects } : undefined
           if (userRemovedStroke && effectsWithStroke?.stroke) {
             delete effectsWithStroke.stroke
             if (Object.keys(effectsWithStroke).length === 0) effectsWithStroke = undefined
           }
+          console.log("[shape-export]", name, {
+            fill: fillStr, stroke: strokeStr, strokeW,
+            userRemovedStroke,
+            psdEffects: psdLayerEffects ? Object.keys(psdLayerEffects) : null,
+            finalEffects: effectsWithStroke ? Object.keys(effectsWithStroke) : null,
+          })
           if (strokeStr && strokeW > 0) {
             const strokeFx = {
               enabled: true,
