@@ -385,6 +385,31 @@ export default function CampaignAssetsPage() {
     })()
   }
 
+  /**
+   * Atualiza content do SHAPE asset (fill/stroke/strokeWidth). PATCH no
+   * endpoint /assets/[assetId]. Estado local atualizado otimisticamente pra
+   * preview ja refletir antes da resposta. Regen thumbs em background.
+   */
+  async function updateAssetShape(assetId: string, newShape: any) {
+    setSavingMap(m => ({ ...m, [assetId]: true }))
+    // Optimistic update — UI ja mostra novo content antes do PATCH voltar.
+    setCampaign(c => c ? {
+      ...c,
+      assets: c.assets.map(a => a.id === assetId
+        ? { ...a, content: JSON.stringify(newShape) } as any
+        : a)
+    } : c)
+    const res = await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: JSON.stringify(newShape) }),
+    })
+    if (res.ok) {
+      regeneratePieceThumbsForAsset(id, assetId).catch(e => console.warn("regen thumbs:", e))
+      regenerateKVThumb(id).catch(e => console.warn("regen KV thumb:", e))
+    }
+    setSavingMap(m => ({ ...m, [assetId]: false }))
+  }
+
   async function uploadAssetImage(assetId: string, file: File) {
     setSavingMap(m => ({ ...m, [assetId]: true }))
     const fd = new FormData()
@@ -510,7 +535,9 @@ export default function CampaignAssetsPage() {
           (() => {
             // Agrupa por tipo: textos primeiro, imagens depois (mantendo order interno)
             const texts = sortedAssets.filter(a => a.type === "TEXT")
-            const images = sortedAssets.filter(a => a.type !== "TEXT")
+            const shapes = sortedAssets.filter(a => a.type === "SHAPE")
+            // IMAGENS = tudo que sobra (IMAGE + tipos desconhecidos pra compat).
+            const images = sortedAssets.filter(a => a.type !== "TEXT" && a.type !== "SHAPE")
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 {texts.length > 0 && (
@@ -522,7 +549,23 @@ export default function CampaignAssetsPage() {
                     onTextChange={updateAssetText}
                     onLabelChange={updateAssetLabel}
                     onImageUpload={uploadAssetImage}
+                    onShapeChange={updateAssetShape}
                     onDelete={deleteAsset}
+                    brandColors={brandColors}
+                  />
+                )}
+                {shapes.length > 0 && (
+                  <AssetSection
+                    title="Formas"
+                    count={shapes.length}
+                    assets={shapes}
+                    savingMap={savingMap}
+                    onTextChange={updateAssetText}
+                    onLabelChange={updateAssetLabel}
+                    onImageUpload={uploadAssetImage}
+                    onShapeChange={updateAssetShape}
+                    onDelete={deleteAsset}
+                    brandColors={brandColors}
                   />
                 )}
                 {images.length > 0 && (
@@ -534,7 +577,9 @@ export default function CampaignAssetsPage() {
                     onTextChange={updateAssetText}
                     onLabelChange={updateAssetLabel}
                     onImageUpload={uploadAssetImage}
+                    onShapeChange={updateAssetShape}
                     onDelete={deleteAsset}
+                    brandColors={brandColors}
                   />
                 )}
               </div>
@@ -555,10 +600,12 @@ interface SectionProps {
   onTextChange: (assetId: string, newText: string) => void
   onLabelChange: (assetId: string, newLabel: string) => Promise<void>
   onImageUpload: (assetId: string, file: File) => Promise<void>
+  onShapeChange?: (assetId: string, newShape: any) => Promise<void>
   onDelete: (assetId: string, label: string, skipConfirm?: boolean) => Promise<void>
+  brandColors?: BrandColor[]
 }
 
-function AssetSection({ title, count, assets, savingMap, onTextChange, onLabelChange, onImageUpload, onDelete }: SectionProps) {
+function AssetSection({ title, count, assets, savingMap, onTextChange, onLabelChange, onImageUpload, onShapeChange, onDelete, brandColors }: SectionProps) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10, paddingLeft: 4 }}>
@@ -575,7 +622,9 @@ function AssetSection({ title, count, assets, savingMap, onTextChange, onLabelCh
             onTextChange={onTextChange}
             onLabelChange={onLabelChange}
             onImageUpload={onImageUpload}
+            onShapeChange={onShapeChange}
             onDelete={onDelete}
+            brandColors={brandColors}
           />
         ))}
       </div>
@@ -591,19 +640,22 @@ interface RowProps {
   onTextChange: (assetId: string, newText: string) => void
   onLabelChange: (assetId: string, newLabel: string) => Promise<void>
   onImageUpload: (assetId: string, file: File) => Promise<void>
+  onShapeChange?: (assetId: string, newShape: any) => Promise<void>
   onDelete: (assetId: string, label: string, skipConfirm?: boolean) => Promise<void>
+  brandColors?: BrandColor[]
 }
 
 /**
- * Renderiza preview SVG inline pra SHAPE asset. content tem o path SVG +
- * fill + stroke. Bbox: pathBbox vira viewBox do SVG → escala caber no
- * 180×120 do thumb. Sem isso, SHAPEs apareciam como "Sem imagem".
+ * Renderiza preview SVG inline pra SHAPE asset. Lê do `shape` prop quando
+ * fornecido (preview real-time durante edicao) ou parsea de asset.content.
  */
-function ShapePreview({ asset }: { asset: any }) {
-  let shape: any = null
-  try {
-    shape = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
-  } catch {}
+function ShapePreview({ asset, shape: shapeOverride }: { asset?: any; shape?: any }) {
+  let shape: any = shapeOverride
+  if (!shape && asset) {
+    try {
+      shape = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+    } catch {}
+  }
   if (!shape?.path) return <div style={{ color: "#ccc", fontSize: 11 }}>Forma invalida</div>
   const bb = shape.pathBbox ?? { left: 0, top: 0, right: 400, bottom: 300 }
   const w = Math.max(1, bb.right - bb.left)
@@ -629,9 +681,118 @@ function ShapePreview({ asset }: { asset: any }) {
   )
 }
 
-function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onDelete }: RowProps) {
+/**
+ * Editor inline pra SHAPE assets — fill (color picker + hex + brand swatches),
+ * stroke color + width. Preview re-renderiza em tempo real conforme user
+ * digita/clica. PATCH dispara debounced (300ms) pra nao sobrecarregar o banco.
+ */
+function ShapeInlineEditor({
+  asset,
+  brandColors,
+  onPreviewChange,
+  onCommit,
+}: {
+  asset: any
+  brandColors: BrandColor[]
+  onPreviewChange: (shape: any) => void
+  onCommit: (shape: any) => Promise<void>
+}) {
+  const parsed = (() => {
+    try { return typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content } catch { return null }
+  })()
+  const [fill, setFill] = useState(parsed?.fill?.kind === "solid" ? parsed.fill.color : "#000000")
+  const [stroke, setStroke] = useState(parsed?.stroke?.color ?? "")
+  const [strokeW, setStrokeW] = useState(parsed?.stroke?.width ?? 0)
+  const saveTimer = useRef<any>(null)
+
+  // Constroi shape atualizado pra preview + commit. Mantem path/pathBbox/fillRule
+  // originais — so muda fill/stroke (props editaveis).
+  function buildShape(f: string, s: string, sw: number) {
+    return {
+      ...parsed,
+      fill: { kind: "solid", color: f },
+      stroke: s && sw > 0 ? {
+        color: s, width: sw,
+        position: parsed?.stroke?.position ?? "outside",
+        cap: parsed?.stroke?.cap ?? "butt",
+        join: parsed?.stroke?.join ?? "miter",
+      } : null,
+    }
+  }
+
+  function update(f: string, s: string, sw: number) {
+    setFill(f); setStroke(s); setStrokeW(sw)
+    const newShape = buildShape(f, s, sw)
+    onPreviewChange(newShape)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    // Debounce 300ms — typing rapido nao spamma o banco. Commit acontece
+    // quando usuario para de mexer.
+    saveTimer.current = setTimeout(() => { onCommit(newShape).catch(() => {}) }, 300)
+  }
+
+  const sec = { fontSize: 10, fontWeight: 700 as const, textTransform: "uppercase" as const, letterSpacing: "0.6px", color: "#888", marginBottom: 4 }
+  const inp = { width: "100%", fontSize: 12, padding: "5px 8px", borderRadius: 4, border: "1px solid #E0E0E0", outline: "none", fontFamily: "inherit" } as React.CSSProperties
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "8px 0" }}>
+      {/* Fill */}
+      <div>
+        <div style={sec}>Preenchimento</div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(fill) ? fill : "#000000"}
+            onChange={e => update(e.target.value, stroke, strokeW)}
+            style={{ width: 36, height: 32, border: "1px solid #E0E0E0", borderRadius: 4, cursor: "pointer", padding: 0 }} />
+          <input type="text" value={fill}
+            onChange={e => { const v = e.target.value; if (/^#[0-9a-fA-F]{6}$/.test(v)) update(v, stroke, strokeW); setFill(v) }}
+            placeholder="#RRGGBB"
+            style={{ ...inp, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase", flex: 1 }} />
+        </div>
+        {brandColors.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+            {brandColors.map((bc, i) => (
+              <div key={`f-${i}`} onClick={() => update(bc.hex, stroke, strokeW)}
+                title={bc.name ?? bc.hex}
+                style={{ width: 22, height: 22, borderRadius: 4, background: bc.hex, cursor: "pointer",
+                  border: fill.toLowerCase() === bc.hex.toLowerCase() ? "2px solid #F5C400" : "1px solid #E0E0E0" }} />
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Stroke */}
+      <div>
+        <div style={sec}>Stroke</div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+          <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(stroke) ? stroke : "#000000"}
+            onChange={e => update(fill, e.target.value, strokeW === 0 ? 1 : strokeW)}
+            style={{ width: 36, height: 32, border: "1px solid #E0E0E0", borderRadius: 4, cursor: "pointer", padding: 0 }} />
+          <input type="text" value={stroke}
+            onChange={e => { const v = e.target.value; if (/^#[0-9a-fA-F]{6}$/.test(v) || v === "") update(fill, v, strokeW); setStroke(v) }}
+            placeholder="(sem stroke)"
+            style={{ ...inp, fontFamily: "monospace", fontSize: 13, textTransform: "uppercase", flex: 1 }} />
+          <button type="button" onClick={() => update(fill, "", 0)} title="Sem stroke"
+            style={{ ...inp, width: 32, cursor: "pointer", padding: 0, textAlign: "center" }}>∅</button>
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="range" min={0} max={50} step={1} value={strokeW}
+            onChange={e => update(fill, stroke, Number(e.target.value))}
+            style={{ flex: 1 }} />
+          <input type="number" min={0} max={500} step={1} value={strokeW}
+            onChange={e => update(fill, stroke, Number(e.target.value) || 0)}
+            style={{ ...inp, width: 70, textAlign: "right" }} />
+          <span style={{ fontSize: 10, color: "#666" }}>px</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onShapeChange, onDelete, brandColors = [] }: RowProps) {
   const isText = asset.type === "TEXT"
   const isShape = asset.type === "SHAPE"
+  // Preview override: durante edicao do SHAPE, mostra o shape do editor em
+  // tempo real (em vez do que esta salvo). Reset apos commit/load.
+  const [previewShape, setPreviewShape] = useState<any | null>(null)
+  useEffect(() => { setPreviewShape(null) }, [asset.content])
   const text = isText ? getText(asset) : ""
   // Edit local (uncontrolled visualmente — só salva ao clicar "Salvar").
   // Evita auto-save com debounce que disparava migrate em texto intermediário
@@ -676,7 +837,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             {text || <span style={{ color: "#bbb" }}>(vazio)</span>}
           </div>
         ) : isShape ? (
-          <ShapePreview asset={asset} />
+          <ShapePreview asset={asset} shape={previewShape ?? undefined} />
         ) : asset.imageUrl ? (
           <img src={asset.imageUrl} alt={asset.label}
             style={{ width: "100%", height: "100%", objectFit: "contain" }} />
@@ -724,6 +885,15 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
               </Button>
             </div>
           </div>
+        ) : isShape ? (
+          <ShapeInlineEditor asset={asset} brandColors={brandColors}
+            onPreviewChange={(s) => setPreviewShape(s)}
+            onCommit={async (s) => {
+              if (onShapeChange) await onShapeChange(asset.id, s)
+              // Reset previewShape — proximo render usa o asset.content fresco do banco.
+              setPreviewShape(null)
+            }}
+          />
         ) : (
           <div>
             <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }}>
