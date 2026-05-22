@@ -10289,9 +10289,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     opacity={Math.round(currentStrokeAlpha * 100)}
                     onOpacityChange={pct => setStrokeAlpha(pct)}
                   />
-                  {/* Espessura — slider + numero, mesmo grid pattern usado em
-                      outros number fields do editor (paddingRight: 22). */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center", marginTop: 8 }}>
+                  {/* Espessura — slider + numero. Grid `1fr 92px` + gap 6 padronizado
+                      com CAMADA pra alinhamento visual consistente do right column. */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6, alignItems: "center", marginTop: 8 }}>
                     <input type="range" min={0} max={50} step={1}
                       value={currentStrokeWidth}
                       onChange={e => setShapeProp("strokeWidth", Number(e.target.value))}
@@ -10308,11 +10308,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
                 {/* CANTO ARREDONDADO — so renderiza pra shapes do tipo roundedRect.
                     Recomputa o path SVG mantendo a bbox original, ajustando os
-                    bezier dos 4 cantos com novo raio. */}
+                    bezier dos 4 cantos com novo raio. Mesmo grid pattern. */}
                 {shapeKind === "roundedRect" && (
                   <div>
                     <div style={secS}>Raio do canto</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6, alignItems: "center" }}>
                       <input type="range"
                         min={0} max={maxRadius} step={1}
                         value={Math.min(currentCornerRadius, maxRadius)}
