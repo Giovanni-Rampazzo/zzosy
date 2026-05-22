@@ -2023,6 +2023,32 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       fc.on("object:modified", (e: any) => { syncMaskToObj(e?.target) })
       fc.on("object:modified", () => { if (alive) doSave() })
+      // Quando o BASE de uma clipping mask se move/escala/transforma, o
+      // clipPath dos layers ACIMA fica defasado (clipPath eh clone, nao
+      // referencia). Re-clona o base pra eles atualizarem visualmente.
+      // Photoshop: clipping mask sempre acompanha o base — mesmo behavior.
+      fc.on("object:modified", async (e: any) => {
+        if (!alive || !fc) return
+        const modified = e?.target
+        if (!modified || modified.__isBg || modified.__isBleedOverlay || modified.__isStrokeGhost) return
+        const all = fc.getObjects().filter((o: any) =>
+          !o.__isBg && !o.__isBleedOverlay && !o.__isStrokeGhost
+        )
+        const baseIdx = all.indexOf(modified)
+        if (baseIdx === -1) return
+        // Itera layers acima do modified — pode ter chain de clippings.
+        for (let i = baseIdx + 1; i < all.length; i++) {
+          const above: any = all[i]
+          const maskData = above?.__maskData
+          if (maskData?.type === "clipping" && maskData?.enabled !== false) {
+            await applyClippingMaskNative(fc, above)
+          } else {
+            // Para no primeiro layer SEM clipping — chain quebrada (Adobe).
+            break
+          }
+        }
+        fc.requestRenderAll()
+      })
       // SAFE-AREA SNAP: ao mover texto, snap suave em padding mínimo lateral
       // (~30-50px proporcional ao canvas, escalado pelo maior eixo). Photoshop
       // smart guides. Soft snap: cede quando user "puxa" pra fora alem de
@@ -4891,6 +4917,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (!obj?.__maskData) return
     const mask = { ...(obj as any).__maskData, enabled: !(obj as any).__maskData.enabled }
     await applyMaskAndPersist(obj, mask)
+    // Clipping mask: applyMaskToFabricObject so trata raster/vector enabled.
+    // Clipping eh feito pelo applyClippingMaskNative (depende do layer abaixo).
+    // Aqui precisa sincronizar: enabled=true → re-aplica; false → remove clipPath
+    // mas preserva __maskData pra round-trip.
+    if (mask.type === "clipping") {
+      const fc = fabricRef.current
+      if (!fc) return
+      if (mask.enabled === false) {
+        obj.clipPath = null
+        obj.dirty = true
+      } else {
+        await applyClippingMaskNative(fc, obj)
+      }
+      fc.requestRenderAll()
+    }
   }
 
   async function toggleMaskInverted(obj: any) {
