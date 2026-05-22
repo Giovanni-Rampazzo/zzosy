@@ -9669,7 +9669,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     value={Math.round(((selected as any).opacity ?? 1) * 100)}
                     onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
                     title="Opacidade (0-100%)"
-                    style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }}
+                    style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }}
                   />
                   <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
                 </div>
@@ -9963,7 +9963,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       <input type="number" min={0} max={100} step={1}
                         value={Math.round(((selected as any).opacity ?? 1) * 100)}
                         onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
-                        style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }} />
+                        style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }} />
                       <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
                     </div>
                   </div>
@@ -10011,7 +10011,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       <input type="number" min={0} max={500} step={1}
                         value={currentStrokeWidth}
                         onChange={e => setShapeProp("strokeWidth", Number(e.target.value) || 0)}
-                        style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }} />
+                        style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }} />
                       <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>px</span>
                     </div>
                   </div>
@@ -10057,7 +10057,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     value={Math.round(((selected as any).opacity ?? 1) * 100)}
                     onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
                     title="Opacidade (0-100%)"
-                    style={{ ...inpS, textAlign: "right", paddingRight: 4, width: "100%" }}
+                    style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }}
                   />
                   <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
                 </div>
