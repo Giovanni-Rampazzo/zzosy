@@ -1591,9 +1591,19 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           // ag-psd nao escreve vectorFill+vectorStroke juntos no mesmo layer
           // (handler SoCo so aciona se vectorStroke==undefined → fill some).
           // Layer Style Stroke renderiza identico no PS e o user edita via
-          // "Layer Style → Stroke" — alternativa Adobe-aceitavel. Combina
-          // com effects.stroke existente (psdLayerEffects) se houver.
-          let effectsWithStroke: any = psdLayerEffects ?? undefined
+          // "Layer Style → Stroke" — alternativa Adobe-aceitavel.
+          //
+          // PRIORIDADE: estado VIVO do Fabric (obj.stroke + strokeWidth) eh a
+          // FONTE DA VERDADE. Se user removeu o stroke no painel
+          // (strokeWidth=0 ou stroke=""), o effect tem que sair JUNTO — antes
+          // o psdLayerEffects.stroke original do PSD ficava encalhado e o
+          // export continuava com o stroke mesmo apos remover no editor.
+          const userRemovedStroke = !strokeStr || strokeW === 0
+          let effectsWithStroke: any = psdLayerEffects ? { ...psdLayerEffects } : undefined
+          if (userRemovedStroke && effectsWithStroke?.stroke) {
+            delete effectsWithStroke.stroke
+            if (Object.keys(effectsWithStroke).length === 0) effectsWithStroke = undefined
+          }
           if (strokeStr && strokeW > 0) {
             const strokeFx = {
               enabled: true,
