@@ -5669,6 +5669,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
             layer.effects = (o as any).__psdEffects
           }
+          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
+          if (typeof (o as any).__psdNameSource === "string") {
+            layer.nameSource = (o as any).__psdNameSource
+          }
           if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
             layer.groupPath = (o as any).__groupPath
           }
@@ -5806,6 +5810,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // em __psdEffects pra round-trip ZZOSY ↔ PSD.
           if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
             layer.effects = (o as any).__psdEffects
+          }
+          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
+          // Sem isso, primeiro save sobrescrevia o valor salvo pelo import-psd.
+          if (typeof (o as any).__psdNameSource === "string") {
+            layer.nameSource = (o as any).__psdNameSource
           }
           // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
           if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
@@ -6699,6 +6708,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
             layer.effects = (o as any).__psdEffects
           }
+          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
+          // Sem isso, primeiro save sobrescrevia o valor salvo pelo import-psd.
+          if (typeof (o as any).__psdNameSource === "string") {
+            layer.nameSource = (o as any).__psdNameSource
+          }
           // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
           if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
             layer.groupPath = (o as any).__groupPath
@@ -6841,6 +6855,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // em __psdEffects pra round-trip ZZOSY ↔ PSD.
           if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
             layer.effects = (o as any).__psdEffects
+          }
+          // 'lnsr' (nameSource) do PSD original — preserva auto-rename do PS.
+          // Sem isso, primeiro save sobrescrevia o valor salvo pelo import-psd.
+          if (typeof (o as any).__psdNameSource === "string") {
+            layer.nameSource = (o as any).__psdNameSource
           }
           // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
           if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {

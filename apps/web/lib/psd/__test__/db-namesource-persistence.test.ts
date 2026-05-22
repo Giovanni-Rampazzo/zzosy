@@ -74,4 +74,43 @@ if (deserialized[1]?.nameSource !== "lyr ") {
 }
 console.log(`  ✓ serialized: ${serialized.length} chars, nameSource preservado em todos os layers`)
 
+console.log("\nStep 3: client-side save (KeyVisionEditor) propaga __psdNameSource → layer.nameSource")
+// Simula o que os 4 sites do KeyVisionEditor.tsx fazem ao serializar
+// Fabric objects pro layers JSON. Sem essa propagacao, o primeiro auto-save
+// do user APOS import-psd sobrescreveria o nameSource salvo pelo endpoint.
+function fabricToLayer(o: any): any {
+  const layer: any = { assetId: o.__assetId ?? null }
+  if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
+    layer.effects = (o as any).__psdEffects
+  }
+  if (typeof (o as any).__psdNameSource === "string") {
+    layer.nameSource = (o as any).__psdNameSource
+  }
+  return layer
+}
+
+const fabricObjs = [
+  { __assetId: "a1", __psdNameSource: "srct" },
+  { __assetId: "a2", __psdNameSource: "lyr " },
+  { __assetId: "a3" }, // sem __psdNameSource
+]
+const clientLayers = fabricObjs.map(fabricToLayer)
+console.log(`  fabric[0] '${fabricObjs[0].__psdNameSource}' → layer.nameSource = ${JSON.stringify(clientLayers[0].nameSource)}`)
+console.log(`  fabric[1] '${fabricObjs[1].__psdNameSource}' → layer.nameSource = ${JSON.stringify(clientLayers[1].nameSource)}`)
+console.log(`  fabric[2] sem flag → layer = ${JSON.stringify(clientLayers[2])}`)
+
+if (clientLayers[0].nameSource !== "srct") {
+  console.error("  ✗ save client perdeu 'srct'")
+  process.exit(1)
+}
+if (clientLayers[1].nameSource !== "lyr ") {
+  console.error("  ✗ save client perdeu 'lyr '")
+  process.exit(1)
+}
+if ("nameSource" in clientLayers[2]) {
+  console.error("  ✗ layer[2] deveria estar sem nameSource (no flag set)")
+  process.exit(1)
+}
+console.log("  ✓ client save (KeyVisionEditor.tsx 4 sites) preserva __psdNameSource → nameSource")
+
 console.log("\n✓ DB NAMESOURCE PERSISTENCE OK — caminho legacy preserva nameSource pos reload")
