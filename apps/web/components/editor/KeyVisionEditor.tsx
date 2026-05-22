@@ -10253,7 +10253,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const setStrokeAlpha = (pct: number) => setShapeProp("stroke", combineHexAlpha(currentStrokeHex, Math.max(0, Math.min(1, pct / 100))))
             return (
               <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{(selected as any).__assetLabel ?? "Shape"}</div>
+                {/* Label do layer removido (2026-05-22) — redundante com o
+                    painel Layers que ja destaca o ativo. */}
 
                 {/* CAMADA — blend + opacidade (paridade com outros tipos). */}
                 <div>
@@ -10363,7 +10364,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           })()
         ) : (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{selected.__assetLabel ?? "Elemento"}</div>
+            {/* Label do layer removido (2026-05-22) — painel Layers ja indica
+                qual layer esta ativo, sem duplicar info aqui. */}
             {/* CAMADA — blend mode + opacidade (mesmo controle do painel de texto).
                 PSD-style: imagens, shapes e embedded layers tb suportam multiply/etc. */}
             <div>
