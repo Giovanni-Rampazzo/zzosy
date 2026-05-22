@@ -71,6 +71,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       effects?: any
       pixelsIncludeEffects?: boolean
       groupPath?: string[]
+      nameSource?: string
     }>
 
     const linkedMeta = linkedMetaJson ? JSON.parse(linkedMetaJson) as Array<{
@@ -248,6 +249,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       ...(assets[i].blendMode && assets[i].blendMode !== "source-over" ? { blendMode: assets[i].blendMode } : {}),
       // Layer effects (drop shadow, stroke, outer glow) extraídos do PSD.
       ...(assets[i].effects && Object.keys(assets[i].effects).length > 0 ? { effects: assets[i].effects } : {}),
+      // PSD 'lnsr' (Layer Name Source) — controla se PS auto-renomeia o
+      // layer ao editar texto. Preservado pra round-trip de PSDs importados
+      // com nome manual ('lyr '). Default = layer cai em 'srct' no re-export.
+      ...(typeof assets[i].nameSource === "string" ? { nameSource: assets[i].nameSource } : {}),
       // F12 (pipeline novo): flag indica se o canvas raster do asset JA contem
       // effects aplicados pelo PS (caso Smart Object). Quando true, editor NAO
       // adiciona Fabric.Shadow extra — evita doubling. Default false (raster cru).
