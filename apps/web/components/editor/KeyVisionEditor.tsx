@@ -2418,17 +2418,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         setSelectedTick(t => t + 1)
       })
 
-      // === SHAPE parametric scaling (Photoshop Live Shape pattern) ===
-      // Quando user scala um SHAPE com __shapeKind setado (rectangle/roundedRect/
-      // ellipse), em vez de deixar o Fabric.Path escalar as coords do path
-      // inteiro (distorce arcos quando scaleX != scaleY), RECOMPUTAMOS o path
-      // com novas dimensoes mantendo o cornerRadius ABSOLUTO. Isso replica o
-      // comportamento do PS Live Shape: o raio do canto fica em pixels reais,
-      // nao escala junto. Consolida scaleX/scaleY em width/height da bbox
-      // logica (__pathBbox).
+      // === SHAPE parametric scaling — "SNAP-ON-RELEASE" pattern ===
+      // Durante o drag (object:scaling), DEIXA o Fabric escalar normalmente
+      // (path coords sao escaladas — cantos distorcem temporariamente).
+      // Tentamos recomputar mid-drag inicialmente, mas resetar scaleX=1
+      // dentro do handler causava feedback loop com a Fabric (Fabric continua
+      // aplicando delta de mouse sobre scaleX recem-resetado → cresce sem
+      // controle, stroke aparecia em so 2 lados, etc).
       //
-      // Roda em object:scaling (durante drag) pra preview ao vivo + em
-      // object:modified (drop) pra consolidar o estado final.
+      // Em object:modified (mouse release) recomputamos UMA vez com as
+      // dimensoes finais — snap pro estado correto Live Shape. cornerRadius
+      // fica em px absolutos no estado final (que eh o unico que importa
+      // pro user e pro save).
       const recomputeShapeParametric = (obj: any) => {
         const kind = obj?.__shapeKind as ShapeKind | undefined
         if (!kind) return false  // shape generico (PSD path arbitrario) — deixa Fabric escalar
@@ -2444,13 +2445,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const cornerR = typeof obj.__cornerRadius === "number" ? obj.__cornerRadius : undefined
         const newPath = buildShapePath(kind, newW, newH, cornerR)
         applyShapePathInPlace(obj, newPath)
-        // Reset scale + atualiza bbox logica pra novos W/H. Sem isso, save
-        // grava scaleX!=1 e load reaplica scale por cima do path ja recomputado.
+        // Reset scale + atualiza bbox logica pra novos W/H.
         obj.set({ scaleX: 1, scaleY: 1 })
         obj.__pathBbox = { left: 0, top: 0, right: newW, bottom: newH }
         return true
       }
-      fc.on("object:scaling" as any, (e: any) => {
+      fc.on("object:modified" as any, (e: any) => {
         if (!alive) return
         const obj = e?.target
         if (!obj) return
@@ -2459,14 +2459,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (recomputeShapeParametric(obj)) {
           fc.requestRenderAll()
         }
-      })
-      fc.on("object:modified" as any, (e: any) => {
-        if (!alive) return
-        const obj = e?.target
-        if (!obj) return
-        const isShape = obj.__isShape === true || obj.type === "path" || obj.type === "Path"
-        if (!isShape) return
-        recomputeShapeParametric(obj)  // consolida final state
       })
 
       // Ao SOLTAR o mouse apos arrastar lateral, consolida scaleX em width pra que o save
