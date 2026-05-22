@@ -84,30 +84,37 @@ export default function CampaignOverviewPage() {
   const [piecesDragOver, setPiecesDragOver] = useState(false)
 
   async function loadAll() {
-    console.log("[LOAD-ALL] disparou em", new Date().toISOString().slice(11, 19), "id=", id)
+    // Guard: id ainda nao resolvido pelo useParams. Acontece em transicao
+    // rapida (back/forward). Sair silenciosamente — proximo render dispara
+    // loadAll de novo com id correto.
+    if (!id) return
     const url = `/api/campaigns/${id}`
-    const cRes = await fetch(url, { cache: "no-store" })
-    console.log("[LOAD-ALL] fetch status:", cRes.status, "url:", url)
+    let cRes: Response
+    try { cRes = await fetch(url, { cache: "no-store" }) }
+    catch (e) { console.warn("[LOAD-ALL] fetch falhou:", e); setLoading(false); return }
     let c: any = null
     try {
       const text = await cRes.text()
       if (text) c = JSON.parse(text)
-      else console.error("[LOAD-ALL] body vazio. status:", cRes.status)
-    } catch (e) {
-      console.error("[LOAD-ALL] JSON parse falhou. status:", cRes.status, e)
-    }
-    console.log("[LOAD-ALL] campaign response:", c)
+    } catch { /* body vazio ou nao-JSON — c fica null, tratado abaixo */ }
     let p: any = []
     try {
       const pRes = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" })
       const ptxt = await pRes.text()
       p = ptxt ? JSON.parse(ptxt) : []
-    } catch (e) { console.error("[LOAD-ALL] pieces fetch falhou:", e) }
-    // Guard: se API retornou erro ({error: "..."}), nao seta no state pra evitar crash
+    } catch (e) { console.warn("[LOAD-ALL] pieces fetch falhou:", e) }
+    // Resposta valida = tem client.
     if (c && !c.error && c.client) {
       setCampaign(c)
     } else {
-      console.error("[LOAD-ALL] campaign response invalida ou sem client:", c)
+      // Resposta com erro esperado (401/404/etc) ou body vazio: nao polui
+      // console com error vermelho. Logado em warn pra debugar se precisar.
+      if (cRes.status !== 200) {
+        console.warn("[LOAD-ALL] campanha indisponivel — status", cRes.status, c?.error ?? "")
+      } else if (c && Object.keys(c).length > 0) {
+        // Status 200 mas body sem client: caso anomalo real.
+        console.warn("[LOAD-ALL] resposta 200 sem client:", c)
+      }
       setCampaign(null)
     }
     setPieces(Array.isArray(p) ? p : [])
