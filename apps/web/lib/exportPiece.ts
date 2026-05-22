@@ -91,8 +91,6 @@ function buildFileName(campaignName: string | undefined, piece: { name: string; 
   return [camp, midia, dims, stepPart].filter(Boolean).join("_")
 }
 
-// canvasBlendToPsd movido para `lib/psd/psdHelpers.fabricBlendToPsd`.
-
 /**
  * Spread comum aplicado a TODA layer pushed pro ag-psd (TEXT/SHAPE/Smart
  * Object/IMAGE). Centraliza opacity/blendMode/effects/__groupPath em vez
@@ -314,9 +312,6 @@ function svgPathToAgPsdKnots(
   }))
 }
 
-// hexToAgPsdRgb + extractAlpha movidos para `lib/psd/psdHelpers`.
-// Re-export locais com nomes antigos para evitar churn (caminhos legacy seguem
-// usando `hexToAgPsdRgb` / `extractAlpha`).
 const hexToAgPsdRgb = hexToAgPsdRgbShared
 const extractAlpha = extractAlphaFromColor
 
@@ -1344,8 +1339,6 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   //  - kind "image"   → fallback raster (Pattern Fill ainda nao mapeado).
   // Ordem: BG[0] no fundo → primeiro pushed; assets vem em seguida no topo.
   // Convencao ag-psd writer: ordem do push() = ordem visual (primeiro=fundo).
-  // hexToPsdColor → usa o helper central. Mantem nome local pra nao churnar
-  // todas as chamadas neste escopo.
   const hexToPsdColor = hexToAgPsdRgbShared
   const bgLayersArr: any[] = bgLayersFromData(data)
   for (let i = 0; i < bgLayersArr.length; i++) {
