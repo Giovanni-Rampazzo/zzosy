@@ -3232,10 +3232,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (src.__psdEffects && typeof src.__psdEffects === "object") obj.__psdEffects = src.__psdEffects
         // groupPath: hierarquia de folders do PSD preservada
         if (Array.isArray(src.__groupPath) && src.__groupPath.length > 0) obj.__groupPath = src.__groupPath
-        // Restaurar styles per-char em textboxes
-        if ((obj.type === "textbox" || obj.type === "i-text") && src.styles && Object.keys(src.styles).length > 0) {
-          obj.set("styles", src.styles)
+        // Restaurar styles per-char em textboxes. SEMPRE restaura (mesmo se
+        // src.styles for vazio) — antes pulava quando vazio, mas isso deixava
+        // obj.styles com o conteudo anterior (do estado pos-loadFromJSON) em
+        // vez de zerar. User reportou 2026-05-22: "undo desconfigura outro
+        // layer de texto, perdendo overrides de cor".
+        //
+        // Fix robusto:
+        //  - DEEP CLONE pra evitar reference sharing entre snap e canvas
+        //  - obj.styles = direct assign (set("styles", ...) pode passar por
+        //    paths internos de Fabric que normalizam/clobbam)
+        //  - dirty + _styleMap=null pra invalidar cache do Textbox
+        //  - initDimensions pra re-medir
+        if (obj.type === "textbox" || obj.type === "i-text") {
+          const srcStyles = src.styles ?? {}
+          // Deep clone (Fabric muta styles internamente em algumas ops)
+          const cloned = typeof structuredClone === "function"
+            ? structuredClone(srcStyles)
+            : JSON.parse(JSON.stringify(srcStyles))
+          ;(obj as any).styles = cloned
+          ;(obj as any).dirty = true
+          if ((obj as any)._styleMap) (obj as any)._styleMap = null
           if (obj.initDimensions) obj.initDimensions()
+          if (obj.setCoords) obj.setCoords()
         }
         // Restaurar mascara: clipPath reconstruido pelo loadFromJSON pode estar
         // quebrado (e.g. Image clipPath nao re-carrega o dataUrl). Re-aplicamos
