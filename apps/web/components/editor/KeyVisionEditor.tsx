@@ -2777,7 +2777,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       //  - __assetId: linkado a um CampaignAsset (peca gerada ou linkada do PSD)
       //  - __embedded: conteudo cru gravado no piece.data (peca importada PSD avulsa)
       // Limpar aqui evita que entrem no undoStack e causem desync no undo/redo.
-      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded && !o.__isStrokeGhost)
       if (orphans.length > 0) {
         editorLog("[INIT-CLEAN]", pieceId ? "peca" : "matriz", "tinha", orphans.length, "objetos orfaos no canvas. Removendo.")
         for (const orphan of orphans) fc.remove(orphan)
@@ -2941,7 +2941,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       //  2. Undo→applySnapshot tem health-cleanup de orphans-pos-restore.
       // Assim o undo stack mantem continuidade temporal — cada acao do user
       // entra na pilha mesmo que o canvas tenha um orfao transitorio.
-      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
+      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded && !o.__isStrokeGhost)
       if (orphans.length > 0) {
         console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
@@ -3215,7 +3215,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // de restauracao ficam no canvas; se realmente forem fantasma serao
       // limpos no proximo save (ja tem filtro la). Continuidade do undo
       // stack tem prioridade sobre limpeza imediata.
-      const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded)
+      const orphansAfterRestore = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded && !o.__isStrokeGhost)
       if (orphansAfterRestore.length > 0) {
         srvLog("undo-RESTORE-ORPHANS", { count: orphansAfterRestore.length, types: orphansAfterRestore.map((o: any) => o.type) })
       }
@@ -3823,6 +3823,37 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (psdEffects) (p as any).__psdEffects = psdEffects
         if (psdGroupPath) (p as any).__groupPath = psdGroupPath
         applyFabricEffects(p, psdEffects, Shadow)
+
+        // Render dual stroke: vectorStroke (no main p) + effects.stroke (ghost
+        // path atras). PS desenha os 2 simultaneos. Ghost = mesmo path, sem
+        // fill, com strokeWidth = main_stroke + effects_stroke (visual: o
+        // outer ring do ghost aparece em volta do main como segundo outline).
+        const effStroke = psdEffects?.stroke
+        const hasMainStroke = typeof p.stroke === "string" && p.stroke !== "" && (p.strokeWidth ?? 0) > 0
+        if (hasMainStroke && effStroke?.color && (effStroke.width ?? 0) > 0) {
+          // strokeWidth do ghost = main_strokeWidth + 2 * effect_strokeWidth.
+          // Como Fabric centraliza stroke no path, o ghost mais largo deixa
+          // exatamente effect_strokeWidth aparente alem do main (de cada lado).
+          // Posicionado ANTES do main no fc → renderiza atras → so o "anel"
+          // externo aparece (parte interna fica coberta pelo main com fill).
+          const ghostW = (p.strokeWidth ?? 1) + 2 * (effStroke.width ?? 1)
+          const ghost = new Path(parsedShape.path, {
+            left: posX, top: posY,
+            scaleX, scaleY, angle,
+            fill: "",
+            stroke: effStroke.color,
+            strokeWidth: ghostW,
+            strokeUniform: true,
+            fillRule: parsedShape.fillRule ?? "nonzero",
+            // NAO selecionavel — ghost segue o main via __assetId.
+            selectable: false,
+            evented: false,
+            excludeFromExport: true,
+          } as any)
+          ;(ghost as any).__assetId = asset.id
+          ;(ghost as any).__isStrokeGhost = true
+          fc.add(ghost)
+        }
         fc.add(p)
         fc.requestRenderAll()
         return
@@ -5194,6 +5225,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const newLayers = fc.getObjects()
         .filter((o: any) => {
           if (o.__isBg) return false
+          if ((o as any).__isStrokeGhost === true) return false
           if (!o.__assetId) {
             editorLog("[PIECE-SAVE-NOW] objeto sem __assetId BLOQUEADO:", {
               type: o.type, text: (o as any).text?.slice(0, 30),
@@ -5348,6 +5380,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const layersToSave: Layer[] = fc.getObjects()
         .filter((o: any) => {
           if (o.__isBg) return false
+          if ((o as any).__isStrokeGhost === true) return false
           // Bloqueia save de objetos sem __assetId — antes salvava com "" e o load
           // descartava silenciosamente, fazendo o canvas voltar vazio (bug grave de
           // perda de conteudo). Se acontecer, logamos pra detectar a causa-raiz.
@@ -5513,6 +5546,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const layers = fc.getObjects()
       .filter((o: any) => {
         if (o.__isBg) return false
+          if ((o as any).__isStrokeGhost === true) return false
         if (o.__isBleedOverlay) return false
         if (!o.__assetId && !o.__embedded) return false
         return true
@@ -6253,6 +6287,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const newLayers = fc.getObjects()
         .filter((o: any) => {
           if (o.__isBg) return false
+          if ((o as any).__isStrokeGhost === true) return false
           if (o.__isBleedOverlay) return false
           // Layer valido: __assetId (linkado) ou __embedded (PSD avulso importado).
           // Sem essas flags eh fantasma. Loga warning pra detectar caminhos
@@ -6454,6 +6489,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const layersToSave: any[] = fc.getObjects()
         .filter((o: any) => {
           if (o.__isBg) return false
+          if ((o as any).__isStrokeGhost === true) return false
           if (!o.__assetId) {
             editorLog("[SAVE-MATRIX-2] objeto sem __assetId ignorado:", o.type, { left: o.left, top: o.top })
             return false
