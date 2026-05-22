@@ -1831,13 +1831,24 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     }
     if (!(obj.type === "textbox" || obj.type === "i-text" || obj.type === "text")) {
       // === Imagem: detecta se eh Smart Object embeddavel ===
-      // Eh SO se: (a) asset preserva smart object de import, OU (b) eh SVG via imageUrl.
+      // Eh SO se:
+      //  (a) Fabric obj marcado como __isSmartObject (set no import preservando
+      //      origem PSD) — failsafe: prevalece mesmo se asset.smartObject sumiu
+      //      do DB por algum reload bug.
+      //  (b) asset preserva smart object de import (caminho normal).
+      //  (c) eh SVG via imageUrl (auto-embed pra SVGs adicionados ao asset).
       const assetId = (obj as any).__assetId as string | undefined
       const asset = assetId ? assetById.get(assetId) : undefined
-      const isSmartObjectCandidate = !!asset && (
+      const isMarkedSmartObject = (obj as any).__isSmartObject === true
+      const isSmartObjectCandidate = isMarkedSmartObject || (!!asset && (
         !!asset.smartObject ||
         (!!asset.imageUrl && /\.svg(\?|$)/i.test(asset.imageUrl))
-      )
+      ))
+      if (isMarkedSmartObject && !asset?.smartObject) {
+        console.warn("[PSD-SMART:fallback] obj marcado __isSmartObject mas asset.smartObject ausente — tentando reconstruir via __smartObject* fields:", {
+          name, guid: (obj as any).__smartObjectGuid, filePath: (obj as any).__smartObjectFilePath,
+        })
+      }
 
       // Sempre rasteriza pra usar como preview (Photoshop precisa do canvas mesmo
       // pra smart objects — eh o que ele mostra antes do double-click "abrir conteudo").
@@ -1850,9 +1861,27 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         lctx.drawImage(img, 0, 0, w, h)
       } catch (e) { console.warn("rasterize fail:", name, e) }
 
-      if (isSmartObjectCandidate && asset) {
+      if (isSmartObjectCandidate) {
         // SMART OBJECT EMBEDDED: vai como Smart Object no PSD.
-        const linked = await ensureLinkedSmartObject(asset)
+        // Failsafe: se asset.smartObject sumiu mas Fabric obj tem __isSmartObject
+        // com filePath, sintetiza um asset.smartObject temporario com base nas
+        // __smartObject* fields preservadas. Cobre o caso "Smart Object virou
+        // image raster apos reload" reportado pelo user em 2026-05-22.
+        const so = asset?.smartObject ?? (isMarkedSmartObject && typeof (obj as any).__smartObjectFilePath === "string" ? {
+          id: "synth",
+          guid: (obj as any).__smartObjectGuid ?? makeGuid(),
+          filePath: (obj as any).__smartObjectFilePath,
+          mime: (obj as any).__smartObjectMime ?? "application/octet-stream",
+          originalName: (obj as any).__smartObjectOriginalName ?? "smart-object",
+          width: null,
+          height: null,
+        } : null)
+        const syntheticAsset: Asset | null = asset ?? (so ? {
+          id: (obj as any).__assetId ?? "synth",
+          type: "IMAGE", label: name, value: null, imageUrl: null, content: null,
+          smartObject: so,
+        } : null)
+        const linked = syntheticAsset ? await ensureLinkedSmartObject(syntheticAsset) : null
         if (linked) {
           // Os 4 cantos do retangulo onde a imagem esta posicionada (em pixels do PSD).
           const transform = [

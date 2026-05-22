@@ -21,6 +21,12 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
 
   const isBg = selectedObj?.isBackground === true
   const isText = selectedObj?.type === "i-text" || selectedObj?.type === "IText" || selectedObj?.type === "textbox"
+  // Smart Object preservado do PSD original. Renderer ZZOSY mostra o preview
+  // raster (ag-psd composite) mas os bytes originais ficam intactos em
+  // SmartObjectFile pra round-trip ao re-exportar pro Photoshop.
+  const isSmartObject = (selectedObj as any)?.__isSmartObject === true
+  const soOriginalName = (selectedObj as any)?.__smartObjectOriginalName as string | undefined
+  const soMime = (selectedObj as any)?.__smartObjectMime as string | undefined
 
   useEffect(() => {
     if(!selectedObj) return
@@ -87,9 +93,33 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
         <div style={{fontSize:11,color:"#444",textAlign:"center",padding:"32px 12px"}}>
           Selecione um elemento
         </div>
+      ) : isSmartObject ? (
+        <div style={{padding:16,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:8}}>
+            <div style={{fontSize:14,lineHeight:1}}>{"◇"}</div>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#60a5fa",letterSpacing:"0.6px",textTransform:"uppercase"}}>Smart Object</div>
+              <div style={{fontSize:10,color:"#777",marginTop:2}}>Preservado do PSD original. Bytes intactos no re-export.</div>
+            </div>
+          </div>
+          {soOriginalName && (
+            <div style={{fontSize:10,color:"#888"}}>
+              <span style={{color:"#555"}}>Original:</span> {soOriginalName}
+            </div>
+          )}
+          {soMime && (
+            <div style={{fontSize:10,color:"#888"}}>
+              <span style={{color:"#555"}}>Formato:</span> {soMime}
+            </div>
+          )}
+          <div style={{fontSize:10,color:"#666",lineHeight:1.5,padding:"8px 10px",background:"#1a1a1a",borderRadius:6,marginTop:4}}>
+            Posicao, escala e effects sao editaveis. O conteudo original do
+            Smart Object eh preservado e re-exportado para o Photoshop.
+          </div>
+        </div>
       ) : isBg ? (
         <div style={{padding:16}}>
-          <div style={{...sec,color:"#F5C400",marginBottom:12}}>🎨 Background</div>
+          <div style={{...sec,color:"#F5C400",marginBottom:12}}>Background</div>
           <input type="color" value={fill}
             onChange={e=>{setFill(e.target.value);onBgColorChange?.(e.target.value)}}
             style={{width:"100%",height:52,cursor:"pointer",border:"none",borderRadius:8,padding:0,background:"transparent"}}/>
@@ -104,7 +134,7 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
         <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
           {isEditing && (
             <div style={{padding:8,background:"rgba(245,196,0,0.1)",borderRadius:6,border:"1px solid rgba(245,196,0,0.3)",fontSize:10,color:"#F5C400"}}>
-              ✏️ Selecione letras para mudar cor/tamanho individual
+              Selecione letras para mudar cor/tamanho individual
             </div>
           )}
 
@@ -151,7 +181,7 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
           </div>
 
           <div style={{padding:10,background:"#111",borderRadius:6,fontSize:10,color:"#555",lineHeight:1.5}}>
-            💡 Duplo clique = editar texto<br/>
+            Duplo clique = editar texto<br/>
             Enter = quebrar linha<br/>
             Selecionar letras = mudar cor individual
           </div>

@@ -32,6 +32,17 @@ interface Asset {
   id: string; type: string; label: string; value: string | null
   imageUrl: string | null; content: any
   lastOverride?: any
+  // Smart Object preservado do PSD original (round-trip ZZOSY ↔ Photoshop).
+  // null/undefined = asset eh IMAGE comum (PNG/JPG/SVG).
+  smartObject?: {
+    id: string
+    guid: string
+    filePath: string
+    mime: string
+    originalName: string
+    width: number | null
+    height: number | null
+  } | null
 }
 interface Layer {
   assetId: string; posX: number; posY: number
@@ -785,6 +796,13 @@ function applyPsdLayerMetadata(o: any, layer: any): void {
   // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
   if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
     layer.groupPath = (o as any).__groupPath
+  }
+  // Smart Object preservation: marca que este layer eh um SO originario do PSD.
+  // No re-export, exportPiece detecta via asset.smartObject — mas a flag aqui
+  // serve como fallback se a relacao asset→smartObject for perdida no DB.
+  if ((o as any).__isSmartObject === true) {
+    layer.isSmartObject = true
+    if (typeof (o as any).__smartObjectGuid === "string") layer.smartObjectGuid = (o as any).__smartObjectGuid
   }
 }
 
@@ -1821,7 +1839,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const cloned: any = await (active as any).clone([
               "__assetId", "__assetLabel", "__isImage", "__maskData",
               "__embedded", "imageDataUrl", "__hidden", "__locked",
-              "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "leadingPt",
+              "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "__isSmartObject", "__smartObjectGuid", "__smartObjectMime", "__smartObjectFilePath", "__smartObjectOriginalName", "leadingPt",
             ])
             if (!cloned || !fc) return
             cloned.set({ left: (active.left ?? 0) + 30, top: (active.top ?? 0) + 30 })
@@ -3052,7 +3070,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "__isSmartObject", "__smartObjectGuid", "__smartObjectMime", "__smartObjectFilePath", "__smartObjectOriginalName", "styles", "leadingPt", "lineHeight", "charSpacing"]))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -3225,7 +3243,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (orphans.length > 0) {
         console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
-      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "__isSmartObject", "__smartObjectGuid", "__smartObjectMime", "__smartObjectFilePath", "__smartObjectOriginalName", "styles", "leadingPt", "lineHeight", "charSpacing"]))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -3423,6 +3441,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (typeof src.__psdNameSource === "string") obj.__psdNameSource = src.__psdNameSource
         // groupPath: hierarquia de folders do PSD preservada
         if (Array.isArray(src.__groupPath) && src.__groupPath.length > 0) obj.__groupPath = src.__groupPath
+        // Smart Object metadata preservada — re-export emite placedLayer nativo
+        if (src.__isSmartObject === true) obj.__isSmartObject = true
+        if (typeof src.__smartObjectGuid === "string") obj.__smartObjectGuid = src.__smartObjectGuid
+        if (typeof src.__smartObjectMime === "string") obj.__smartObjectMime = src.__smartObjectMime
+        if (typeof src.__smartObjectFilePath === "string") obj.__smartObjectFilePath = src.__smartObjectFilePath
+        if (typeof src.__smartObjectOriginalName === "string") obj.__smartObjectOriginalName = src.__smartObjectOriginalName
         // Restaurar styles per-char em textboxes. SEMPRE restaura (mesmo se
         // src.styles for vazio) — antes pulava quando vazio, mas isso deixava
         // obj.styles com o conteudo anterior (do estado pos-loadFromJSON) em
@@ -4289,6 +4313,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // em re-renders/exports. Browser libera o blob no GC quando nada mais usa.
           ;(img as any).__assetId = asset.id
           ;(img as any).__assetLabel = asset.label
+          // Smart Object preservado do PSD original: marcamos pra render
+          // distinto (badge SO no Properties Panel) e pra GARANTIR que o
+          // re-export emita placedLayer nativo (nao rasterizado). Sem essa
+          // flag, asset.smartObject podia ser perdido em algum save→reload
+          // e o re-export caia em image raster.
+          if (asset.smartObject) {
+            ;(img as any).__isSmartObject = true
+            ;(img as any).__smartObjectGuid = asset.smartObject.guid
+            ;(img as any).__smartObjectMime = asset.smartObject.mime
+            ;(img as any).__smartObjectFilePath = asset.smartObject.filePath
+            ;(img as any).__smartObjectOriginalName = asset.smartObject.originalName
+          }
           if (psdEffects) (img as any).__psdEffects = psdEffects
           if (psdGroupPath) (img as any).__groupPath = psdGroupPath
           // Mask metadata: anota __maskData direto, sem depender de
