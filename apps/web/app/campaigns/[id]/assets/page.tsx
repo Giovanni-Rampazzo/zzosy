@@ -633,9 +633,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
   // outro user editou, refresh, etc).
   useEffect(() => { setLocalText(text) }, [text])
   const dirty = isText && localText !== text
-  // TEXT: linha unica enxuta — sem preview, label "Nome:" prefixado, conteudo
-  // + acoes inline. IMAGE/SHAPE: mantem preview a esquerda (visual ajuda
-  // a identificar).
+  // TEXT: linha unica enxuta — label + input + Salvar + Apagar.
   if (isText) {
     return (
       <div style={{
@@ -645,12 +643,9 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         padding: "8px 16px",
         borderBottom: isLast ? "none" : "1px solid #F0F0F0",
       }}>
-        {/* Nome do layer — prefixo "Nome:" deixa explicito */}
-        <div style={{ display: "flex", alignItems: "baseline", gap: 4, flexShrink: 0, minWidth: 0, maxWidth: 220 }}>
-          <span style={{ fontSize: 10, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Nome:</span>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
-          </div>
+        {/* Label do layer (editavel inline) */}
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#111", flexShrink: 0, minWidth: 0, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
         </div>
         {/* Input do texto — flex 1 pra ocupar espaco disponivel */}
         <input
@@ -661,11 +656,8 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) {
               e.preventDefault()
               onTextChange(asset.id, localText)
-            } else if (e.key === "Enter" && dirty) {
-              ;(e.target as HTMLInputElement).blur()
             }
           }}
-          onBlur={() => { if (dirty) onTextChange(asset.id, localText) }}
           placeholder="Conteúdo do texto"
           style={{
             flex: 1, minWidth: 0,
@@ -674,18 +666,11 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             fontSize: 13, color: "#111", fontFamily: "inherit", outline: "none",
           }}
         />
-        {/* Status de save discreto + acoes inline */}
-        <span style={{ fontSize: 10, color: saving ? "#F5C400" : dirty ? "#F5C400" : "#aaa", flexShrink: 0, minWidth: 40 }}>
-          {saving ? "Salvando…" : dirty ? "Não salvo" : "Salvo"}
-        </span>
-        <Button variant="secondary" size="sm" onClick={async () => {
-          const { exportAsset } = await import("@/lib/exportAsset")
-          try { await exportAsset(asset as any, "original") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
-        }} title="Baixar arquivo original do asset">Original</Button>
-        <Button variant="secondary" size="sm" onClick={async () => {
-          const { exportAsset } = await import("@/lib/exportAsset")
-          try { await exportAsset(asset as any, "psd") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
-        }} title="Baixar PSD com 1 layer (texto editavel ou imagem)">PSD</Button>
+        <Button variant="primary" size="sm" disabled={!dirty || saving}
+          onClick={() => onTextChange(asset.id, localText)}
+          title={saving ? "Salvando…" : dirty ? "Salvar alterações (Cmd+Enter)" : "Sem alterações"}>
+          {saving ? "Salvando…" : "Salvar"}
+        </Button>
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     )
@@ -728,11 +713,8 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             Salvando…
           </span>
         )}
-        <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-          <span style={{ fontSize: 10, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Nome:</span>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
-            <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
-          </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
+          <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
         </div>
         {isShape ? null : (
           <div>
@@ -745,16 +727,8 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         )}
       </div>
 
-      {/* Acoes */}
+      {/* Acoes — so Apagar (Original/PSD removidos a pedido do user 2026-05-22) */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end", gap: 6, flexWrap: "wrap" }}>
-        <Button variant="secondary" size="sm" onClick={async () => {
-          const { exportAsset } = await import("@/lib/exportAsset")
-          try { await exportAsset(asset as any, "original") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
-        }} title="Baixar arquivo original do asset">Original</Button>
-        <Button variant="secondary" size="sm" onClick={async () => {
-          const { exportAsset } = await import("@/lib/exportAsset")
-          try { await exportAsset(asset as any, "psd") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
-        }} title="Baixar PSD com 1 layer (texto editavel ou imagem)">PSD</Button>
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     </div>

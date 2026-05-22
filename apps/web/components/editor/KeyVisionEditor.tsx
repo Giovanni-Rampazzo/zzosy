@@ -7,7 +7,6 @@ import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { MaskPanel } from "./MaskPanel"
 import { ColorSwatchPicker } from "./ColorSwatchPicker"
 import { MaskThumb } from "./MaskThumb"
-import { ExportAssetButtons } from "./ExportAssetButtons"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { normalizeName } from "@/lib/normalize"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
@@ -9892,7 +9891,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 })()}
               </select>
             </div>
-            <ExportAssetButtons asset={(campaign?.assets ?? []).find(a => a.id === (selected as any).__assetId) as any} />
             <div>
               <div style={secS}>Fonte {mixedFontFamily && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múltiplas)</span>}</div>
               <FontPicker
@@ -10316,7 +10314,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 }
               </select>
             </div>
-            <ExportAssetButtons asset={(campaign?.assets ?? []).find(a => a.id === (selected as any).__assetId) as any} />
             <div style={{ color: "#444", fontSize: 11 }}>Mova e redimensione no canvas.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
               {[0.2, 0.4, 0.6, 0.8].map(pct => (
