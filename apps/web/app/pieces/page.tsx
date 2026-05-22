@@ -131,6 +131,24 @@ function PiecesContent() {
     }
   }, [campaignId])
 
+  // LAZY THUMB REGEN — peças sem imageUrl ganham preview em background.
+  // regeneratePieceThumb broadcasta piece-updated → lista refetch.
+  useEffect(() => {
+    if (pieces.length === 0) return
+    const missing = pieces.filter(p => !p.imageUrl).map(p => p.id)
+    if (missing.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
+      for (const pid of missing) {
+        if (cancelled) break
+        try { await regeneratePieceThumb(pid) }
+        catch (e) { console.warn("[lazy-regen]", pid, e) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [pieces])
+
   function toggleSelect(id: string) {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }

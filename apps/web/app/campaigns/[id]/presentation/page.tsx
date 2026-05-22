@@ -202,6 +202,25 @@ export default function PresentationPage() {
     }
   }, [id])
 
+  // LAZY THUMB REGEN — pieces sem imageUrl/thumbnailUrl ganham preview em
+  // background. regeneratePieceThumb broadcasta piece-updated → este listener
+  // refaz fetch e renderiza. Cobre pieces antigos gerados antes dos fixes.
+  useEffect(() => {
+    if (pieces.length === 0) return
+    const missing = pieces.filter((p: any) => !p.imageUrl && !p.thumbnailUrl).map((p: any) => p.id)
+    if (missing.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
+      for (const pid of missing) {
+        if (cancelled) break
+        try { await regeneratePieceThumb(pid) }
+        catch (e) { console.warn("[lazy-regen]", pid, e) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [pieces])
+
   // Scroll automatico pro slide indicado no hash (#piece-{id}).
   // Acontece DEPOIS de pieces serem renderizadas (loading=false), pois antes
   // o elemento alvo nao existe no DOM. requestAnimationFrame garante que o

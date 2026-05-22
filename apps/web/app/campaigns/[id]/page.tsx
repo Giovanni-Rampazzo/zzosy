@@ -117,6 +117,26 @@ export default function CampaignOverviewPage() {
 
   useEffect(() => { loadAll() }, [id])
 
+  // LAZY THUMB REGEN — pieces sem imageUrl (gerados antes do fix em bf5d007,
+  // ou casos onde GeneratePiecesModal teve fallback null) ganham thumb em
+  // background. regeneratePieceThumb le piece.data + assets offscreen e
+  // broadcasta piece-updated → grid refaz fetch e mostra preview.
+  useEffect(() => {
+    if (pieces.length === 0) return
+    const missing = pieces.filter(p => !p.imageUrl).map(p => p.id)
+    if (missing.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
+      for (const pid of missing) {
+        if (cancelled) break
+        try { await regeneratePieceThumb(pid) }
+        catch (e) { console.warn("[lazy-regen]", pid, e) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [pieces])
+
   // Sugestoes de codigo (datalist)
   useEffect(() => {
     fetch("/api/campaigns/codes", { cache: "no-store" })

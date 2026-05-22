@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/Button"
+import { regeneratePieceThumb } from "@/lib/regenerateThumbs"
 
 // Escala um SVG path d-string pra acompanhar resize. Aplica scale+offset em
 // pares (x,y) das coordenadas. Cobre os comandos absolutos gerados pelo
@@ -252,6 +253,9 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
     // pre-F10) tudo era silencioso — usuario via 3 peças geradas com 1
     // preview faltando e nao sabia o porque.
     const failures: string[] = []
+    // IDs de peças onde a thumb falhou ou nao foi confirmada — disparam regen
+    // offscreen como fallback (apos o loop principal, em background).
+    const createdIds: string[] = []
 
     // Le matriz: dimensoes + layers (do bg + objetos) com posicoes
     const bg = fc.getObjects().find((o: any) => o.__isBg)
@@ -402,11 +406,13 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
         continue
       }
 
-      // Gera thumbnail no tamanho/proporcao da peca
+      // Gera thumbnail no tamanho/proporcao da peca (rapido — usa o fc do editor).
+      // Se falhar, registramos no createdIds pra fallback regen offscreen embaixo.
       const thumb = await renderPieceThumb(fc, f.width, f.height, matrixW, matrixH)
       if (!thumb) {
-        console.warn(`[generate] thumbnail falhou pra "${f.vehicle} — ${f.format}" — peça criada sem preview`)
-        failures.push(`${f.vehicle} — ${f.format} (thumb null)`)
+        console.warn(`[generate] thumbnail falhou pra "${f.vehicle} — ${f.format}" — agendando regen offscreen`)
+        failures.push(`${f.vehicle} — ${f.format} (thumb null — tentando regen)`)
+        createdIds.push(piece.id) // sera regenerado offscreen
         continue
       }
       const fd = new FormData()
@@ -416,6 +422,16 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
         const txt = await thRes.text().catch(() => "")
         console.error(`[generate] upload thumb falhou pra "${f.vehicle} — ${f.format}":`, thRes.status, txt)
         failures.push(`${f.vehicle} — ${f.format} (upload thumb HTTP ${thRes.status})`)
+        createdIds.push(piece.id) // tenta fallback offscreen
+      } else {
+        // Broadcast pra outras abas/paginas pegarem o preview imediato.
+        try {
+          if (typeof BroadcastChannel !== "undefined") {
+            const bc = new BroadcastChannel("zzosy:pieces")
+            bc.postMessage({ type: "piece-updated", pieceId: piece.id, campaignId, ts: Date.now() })
+            bc.close()
+          }
+        } catch {}
       }
     }
 
@@ -425,6 +441,21 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
       alert(`Geração concluiu com ${failures.length} falha(s):\n\n${failures.join("\n")}\n\nVer browser console pra detalhes.`)
     }
     onGenerated()
+
+    // FALLBACK ASYNC: pra cada piece sem thumb (renderPieceThumb falhou OU
+    // upload HTTP falhou), roda regeneratePieceThumb offscreen em background.
+    // Esse helper le piece.data + assets do server e constroi o canvas
+    // headlessly — INDEPENDENTE do fc do editor. Garante que mesmo se o
+    // canvas live esta em estado ruim, a peca tem preview baseado nos dados
+    // persistidos. Cada regen ja broadcasta piece-updated.
+    if (createdIds.length > 0) {
+      ;(async () => {
+        for (const pid of createdIds) {
+          try { await regeneratePieceThumb(pid) }
+          catch (e) { console.warn("[generate] fallback regen falhou", pid, e) }
+        }
+      })()
+    }
   }
 
   // Agrupa formatos dinamicamente por valores unicos de category.
