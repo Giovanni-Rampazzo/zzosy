@@ -2023,10 +2023,37 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       fc.on("object:modified", (e: any) => { syncMaskToObj(e?.target) })
       fc.on("object:modified", () => { if (alive) doSave() })
-      // Quando o BASE de uma clipping mask se move/escala/transforma, o
-      // clipPath dos layers ACIMA fica defasado (clipPath eh clone, nao
-      // referencia). Re-clona o base pra eles atualizarem visualmente.
-      // Photoshop: clipping mask sempre acompanha o base — mesmo behavior.
+      // Clipping mask LIVE sync — Photoshop: clip sempre acompanha o base
+      // em tempo real conforme user move/escala/rota. Estrategia:
+      //   - object:moving/scaling/rotating (LIVE): sync APENAS transform
+      //     do clipPath existente (left/top/scale/angle) — fast path sem
+      //     re-clonar (clone() eh async + pesado, frame rate cai).
+      //   - object:modified (COMMIT): re-clona base completo (fill/path/
+      //     content podem ter mudado alem do transform).
+      function syncClippingMasksAboveLive(target: any) {
+        if (!target || target.__isBg || target.__isBleedOverlay || target.__isStrokeGhost) return
+        const all = fc.getObjects().filter((o: any) =>
+          !o.__isBg && !o.__isBleedOverlay && !o.__isStrokeGhost
+        )
+        const baseIdx = all.indexOf(target)
+        if (baseIdx === -1) return
+        for (let i = baseIdx + 1; i < all.length; i++) {
+          const above: any = all[i]
+          const maskData = above?.__maskData
+          if (maskData?.type === "clipping" && maskData?.enabled !== false && above.clipPath) {
+            above.clipPath.set({
+              left: target.left, top: target.top,
+              scaleX: target.scaleX, scaleY: target.scaleY,
+              angle: target.angle,
+            })
+            above.clipPath.setCoords?.()
+            above.dirty = true
+          } else break
+        }
+      }
+      fc.on("object:moving" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
+      fc.on("object:scaling" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
+      fc.on("object:rotating" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
       fc.on("object:modified", async (e: any) => {
         if (!alive || !fc) return
         const modified = e?.target
@@ -2036,16 +2063,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         )
         const baseIdx = all.indexOf(modified)
         if (baseIdx === -1) return
-        // Itera layers acima do modified — pode ter chain de clippings.
         for (let i = baseIdx + 1; i < all.length; i++) {
           const above: any = all[i]
           const maskData = above?.__maskData
           if (maskData?.type === "clipping" && maskData?.enabled !== false) {
             await applyClippingMaskNative(fc, above)
-          } else {
-            // Para no primeiro layer SEM clipping — chain quebrada (Adobe).
-            break
-          }
+          } else break
         }
         fc.requestRenderAll()
       })
@@ -4124,8 +4147,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (typeof liveHex === "string" && /^#[0-9a-fA-F]{6}$/.test(liveHex)) {
           if (liveHex.toLowerCase() !== String(effFill).toLowerCase()) {
             effFill = liveHex
-            isDirtyRef.current = true
-            setIsDirty(true)
+            // GUARD load-time: brand re-sync durante init NAO deve marcar
+            // dirty — usuario nao fez nada, nao mostrar prompt de save.
+            // Next save eventual (quando user interagir) inclui sync.
+            if (isInitialized.current) {
+              isDirtyRef.current = true
+              setIsDirty(true)
+            }
           }
         }
       }
@@ -4178,8 +4206,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
         if (perCharChanged) {
           effStyles = newPerCharStyles
-          isDirtyRef.current = true
-          setIsDirty(true)
+          // GUARD load-time: prune + brand re-sync during init nao deve
+          // marcar dirty — usuario nao fez nada.
+          if (isInitialized.current) {
+            isDirtyRef.current = true
+            setIsDirty(true)
+          }
         }
       }
 
