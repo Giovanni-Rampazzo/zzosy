@@ -13,6 +13,26 @@ function parseContent(raw: any): any[] {
   return []
 }
 
+// Broadcast helpers — notifica /campaigns/[id], /pieces, /presentation, etc
+// pra refetch IMEDIATO sem esperar polling/focus. Sem isso, regerar thumb
+// pelo /assets nao refletia em outras abas/paginas ja abertas.
+function broadcastPieceUpdated(pieceId: string, campaignId: string | undefined) {
+  try {
+    if (typeof BroadcastChannel === "undefined") return
+    const bc = new BroadcastChannel("zzosy:pieces")
+    bc.postMessage({ type: "piece-updated", pieceId, campaignId, ts: Date.now() })
+    bc.close()
+  } catch {}
+}
+function broadcastKvUpdated(campaignId: string) {
+  try {
+    if (typeof BroadcastChannel === "undefined") return
+    const bc = new BroadcastChannel("zzosy:campaigns")
+    bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
+    bc.close()
+  } catch {}
+}
+
 async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Promise<Blob | null> {
   const fabric = await import("fabric")
   const StaticCanvas = (fabric as any).StaticCanvas
@@ -34,6 +54,18 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
       const asset = assetMap[layer.assetId]
       if (!asset) continue
       const overrides = layer.overrides ?? {}
+      // PSD layer props: opacity + blendMode (canvas globalCompositeOperation).
+      // Sem isso, o thumb do KV (gerado via regenerateKVThumb) perdia
+      // multiply/screen/overlay → preview ficava diferente do editor que
+      // respeita esses. Sintoma reportado: layer em multiply aparece como
+      // imagem normal sobreposta no thumb da matriz.
+      const psdProps: any = {}
+      if (typeof layer.opacity === "number" && layer.opacity < 1 && layer.opacity >= 0.01) {
+        psdProps.opacity = layer.opacity
+      }
+      if (typeof layer.blendMode === "string" && layer.blendMode && layer.blendMode !== "source-over") {
+        psdProps.globalCompositeOperation = layer.blendMode
+      }
       if (asset.type === "TEXT") {
         const spans = parseContent(asset.content)
         const fullText = spans.length ? spans.map((s: any) => s.text).join("") : (asset.value ?? asset.label)
@@ -51,6 +83,7 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
           lineHeight: overrides.lineHeight ?? 1.16,
           textAlign: overrides.textAlign ?? "left",
           styles: overrides.styles ?? undefined,
+          ...psdProps,
         })
         fc.add(t)
       } else if (asset.type === "IMAGE" && asset.imageUrl) {
@@ -62,6 +95,7 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
               left: layer.posX, top: layer.posY,
               scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1,
               angle: layer.rotation ?? 0,
+              ...psdProps,
             }))
             ie.onerror = reject
             ie.src = asset.imageUrl!
@@ -74,7 +108,8 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
     await new Promise(r => setTimeout(r, 200))
 
     const thumbScale = Math.min(1600 / W, 1600 / H, 1)
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: thumbScale })
+    // PNG (nao JPEG) — preserva canal alpha em mascaras raster transparentes.
+    const dataUrl = fc.toDataURL({ format: "png", multiplier: thumbScale })
     fc.dispose()
     const res = await fetch(dataUrl)
     return await res.blob()
@@ -140,7 +175,10 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
       }
       // Se o step ativo NAO usa o asset (mas algum inativo usa), o thumb
       // principal continua igual — nao precisamos sobrescrever.
-      if (regeneratedSomething) continue
+      if (regeneratedSomething) {
+        broadcastPieceUpdated(piece.id, campaignId)
+        continue
+      }
     }
 
     // SINGLE-STEP (ou multi-step onde nenhum step usou o asset — improvavel):
@@ -155,12 +193,76 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
       const fd = new FormData()
       fd.append("thumbnail", blob, "thumb.jpg")
       await fetch(`/api/pieces/${piece.id}/thumbnail`, { method: "POST", body: fd })
+      broadcastPieceUpdated(piece.id, campaignId)
     } catch (e) {
       console.warn("regen falhou para peca", piece.id, e)
     }
   }
 }
 
+
+/**
+ * Regenera o thumbnail de UMA peca especifica (pelo id). Usado quando:
+ *   - peca eh DUPLICADA com troca de formato (server seta imageUrl=null
+ *     porque o thumb antigo nao bate com novas dimensoes)
+ *   - peca eh criada via API e precisa de preview imediato sem o user abrir
+ *     o editor
+ * Roda no client em background — busca a peca + assets, renderiza headlessly
+ * via Fabric StaticCanvas, e faz upload pro endpoint de thumbnail.
+ */
+export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
+  try {
+    const pieceRes = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
+    if (!pieceRes.ok) return false
+    const piece = await pieceRes.json()
+    const campaignId = piece?.campaignId
+    if (!campaignId) return false
+    const campRes = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+    if (!campRes.ok) return false
+    const camp = await campRes.json()
+    const assets: Asset[] = Array.isArray(camp?.assets) ? camp.assets : []
+    const pdata = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
+    if (!pdata) return false
+    // Multi-step: usa o step ATIVO pro thumb principal; tambem gera step thumbs.
+    const steps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
+    const activeIdx = typeof pdata.activeStepIndex === "number" ? pdata.activeStepIndex : 0
+    const W = pdata.width ?? 1080
+    const H = pdata.height ?? 1080
+    let mainBlob: Blob | null = null
+    if (steps.length >= 2) {
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i]
+        if (!step) continue
+        const pseudoStep = {
+          version: 2,
+          width: W, height: H,
+          bgColor: step.bgColor ?? pdata.bgColor ?? "#ffffff",
+          layers: Array.isArray(step.layers) ? step.layers : [],
+        }
+        const blob = await buildThumbnailFromPieceData(pseudoStep, assets)
+        if (!blob) continue
+        const fd = new FormData()
+        fd.append("thumbnail", blob, `step${i}.png`)
+        try { await fetch(`/api/pieces/${pieceId}/step-thumbnail?index=${i}`, { method: "POST", body: fd }) }
+        catch { /* segue */ }
+        if (i === activeIdx) mainBlob = blob
+      }
+    } else {
+      mainBlob = await buildThumbnailFromPieceData(pdata, assets)
+    }
+    if (mainBlob) {
+      const fd = new FormData()
+      fd.append("thumbnail", mainBlob, "thumb.png")
+      const r = await fetch(`/api/pieces/${pieceId}/thumbnail`, { method: "POST", body: fd })
+      if (!r.ok) return false
+      broadcastPieceUpdated(pieceId, campaignId)
+    }
+    return !!mainBlob
+  } catch (e) {
+    console.warn("[regeneratePieceThumb] falhou:", pieceId, e)
+    return false
+  }
+}
 
 // Regenera o thumbnail do KV (matriz) a partir dos assets atuais.
 // Usa-se a mesma logica de buildThumbnailFromPieceData mas para o keyVision.
@@ -196,6 +298,7 @@ export async function regenerateKVThumb(campaignId: string): Promise<void> {
     const fd = new FormData()
     fd.append("thumbnail", blob, "kv-thumb.jpg")
     await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
+    broadcastKvUpdated(campaignId)
   } catch (e) {
     console.warn("regen KV thumb falhou:", e)
   }
