@@ -9511,20 +9511,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }}
         />
         <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Propriedades</div>
-        {/* Atalho Assets — botao fixo no topo do Properties Panel pra navegar
-            pra pagina de assets desta campanha. Antes ficava na topbar; movido
-            pra ca pra reduzir poluicao visual da top bar (2026-05-22). */}
+        {/* Atalho Assets — botao DIFERENCIAL do ZZOSY (sem analogo direto em
+            outros softwares de design). Stroke roxo + fill transparente +
+            UPPERCASE pra destaque visual maximo no topo do Properties Panel.
+            User pediu 2026-05-22: "Ele e um botao diferencial se relacionado
+            aos outros softwares.. Entao vamos dar super destaque para ele". */}
         <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a2a2a" }}>
           <button onClick={() => {
             const go = () => router.push(`/campaigns/${campaignId}/assets`)
             if (isDirtyRef.current) setConfirmExit(() => go)
             else go()
-          }} style={{
-            width: "100%",
-            background: "transparent", border: "1px solid #333", borderRadius: 6,
-            padding: "8px 12px", fontSize: 13, cursor: "pointer", color: "#aaa",
-            textAlign: "left",
           }}
+            onMouseEnter={(e) => { (e.currentTarget.style.background = "rgba(168,85,247,0.12)") }}
+            onMouseLeave={(e) => { (e.currentTarget.style.background = "transparent") }}
+            style={{
+              width: "100%",
+              background: "transparent",
+              border: "2px solid #a855f7",
+              borderRadius: 6,
+              padding: "10px 14px",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              color: "#a855f7",
+              textTransform: "uppercase",
+              letterSpacing: "1.5px",
+              textAlign: "center",
+              transition: "background 0.15s ease",
+            }}
             title="Ir para a pagina de assets desta campanha">
             Assets
           </button>
