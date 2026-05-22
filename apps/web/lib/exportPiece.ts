@@ -615,6 +615,11 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
               ;(p as any).__groupPath = layer.groupPath
             }
+            // Mask metadata: __maskData preservado pra export PSD escrever
+            // raster/vector/clipping no layer. Sem isso, mask criada no
+            // editor sumia no export PSD/PNG. Mesmo pattern TEXT/IMAGE
+            // (linhas 464, 559) — antes faltava no SHAPE.
+            if (layer.mask) (p as any).__maskData = layer.mask
             fc.add(p)
           }
         } catch (e) { console.warn("[shape-export] falha:", asset.label, e) }
