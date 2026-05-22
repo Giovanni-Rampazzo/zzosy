@@ -321,7 +321,7 @@ function PiecesContent() {
           }
         />
         {/* Filtro por status */}
-        <div className="flex flex-wrap gap-2 mb-3">
+        <div className="flex flex-wrap gap-2 mb-2">
           <FilterPill
             active={statusFilter === "ALL"}
             onClick={() => setStatusFilter("ALL")}
@@ -350,7 +350,7 @@ function PiecesContent() {
 
         {/* Filtro por categoria — so aparece se ha mais de 1 categoria */}
         {allCategories.length > 1 && (
-          <div className="flex flex-wrap gap-2 mb-5 items-center">
+          <div className="flex flex-wrap gap-2 mb-3 items-center">
             <span className="text-xs text-[#555] uppercase tracking-wider font-bold mr-1">Categoria:</span>
             <FilterPill
               active={categoryFilter === "ALL"}
@@ -453,21 +453,21 @@ function PiecesContent() {
                       const arrow = !active ? "" : sort.dir === "asc" ? " ↑" : " ↓"
                       return (
                         <th onClick={() => setSort(toggleSort(sort, col))}
-                          className={`text-left text-xs font-semibold uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0] cursor-pointer select-none ${active ? "text-[#111]" : "text-[#888888]"}`}>
+                          className={`text-left text-xs font-semibold uppercase tracking-wide px-4 py-2 border-b border-[#E0E0E0] cursor-pointer select-none ${active ? "text-[#111]" : "text-[#888888]"}`}>
                           {label}{arrow}
                         </th>
                       )
                     }
                     return (
                       <>
-                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]"></th>
-                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-2 py-3 border-b border-[#E0E0E0]"></th>
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-2 border-b border-[#E0E0E0]"></th>
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-2 py-2 border-b border-[#E0E0E0]"></th>
                         <SortHeader col="name" label="Nome" />
                         <SortHeader col="format" label="Formato" />
                         <SortHeader col="size" label="Dimensões" />
-                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]">DPI</th>
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-2 border-b border-[#E0E0E0]">DPI</th>
                         <SortHeader col="status" label="Status" />
-                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-3 border-b border-[#E0E0E0]"></th>
+                        <th className="text-left text-xs font-semibold text-[#888888] uppercase tracking-wide px-4 py-2 border-b border-[#E0E0E0]"></th>
                       </>
                     )
                   })()}
@@ -476,24 +476,24 @@ function PiecesContent() {
               <tbody>
                 {filtered.map((p) => (
                   <tr key={p.id} className="border-b border-[#f0f0f0] last:border-0 hover:bg-[#fafafa]">
-                    <td className="px-4 py-3 w-8">
+                    <td className="px-4 py-1.5 w-8">
                       <div onClick={() => toggleSelect(p.id)} className={`w-5 h-5 rounded cursor-pointer flex items-center justify-center ${isSelected(p.id) ? "bg-[#F5C400]" : "bg-white border border-[#E0E0E0]"}`}>
                         {isSelected(p.id) && <span className="text-white text-sm font-bold leading-none">✓</span>}
                       </div>
                     </td>
-                    <td className="px-2 py-2 w-16 cursor-pointer" onClick={() => router.push(`/pieces/${p.id}`)}>
-                      <RowThumb src={p.imageUrl ? `${p.imageUrl}?t=${new Date(p.updatedAt ?? Date.now()).getTime()}` : null} alt={p.name} fallbackText={p.format} />
+                    <td className="px-2 py-1 w-12 cursor-pointer" onClick={() => router.push(`/pieces/${p.id}`)}>
+                      <RowThumb src={p.imageUrl ? `${p.imageUrl}?t=${new Date(p.updatedAt ?? Date.now()).getTime()}` : null} alt={p.name} fallbackText={p.format} size={36} rounded={4} />
                     </td>
-                    <td className="px-4 py-3 font-semibold text-sm" onClick={e => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
+                    <td className="px-4 py-1.5 font-semibold text-sm" onClick={e => e.stopPropagation()}><EditableText value={p.name} variant="inline" onSave={async (newName) => {
                       const res = await fetch(`/api/pieces/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) })
                       if (!res.ok) throw new Error()
                       setPieces(prev => prev.map(x => x.id === p.id ? { ...x, name: newName } : x))
                     }} /></td>
-                    <td className="px-4 py-3 text-sm text-[#888888]">{p.format}</td>
-                    <td className="px-4 py-3 text-sm text-[#888888]">{p.width}×{p.height}</td>
-                    <td className="px-4 py-3 text-sm text-[#888888]">{p.dpi}</td>
-                    <td className="px-4 py-3"><StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} /></td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-1.5 text-sm text-[#888888]">{p.format}</td>
+                    <td className="px-4 py-1.5 text-sm text-[#888888]">{p.width}×{p.height}</td>
+                    <td className="px-4 py-1.5 text-sm text-[#888888]">{p.dpi}</td>
+                    <td className="px-4 py-1.5"><StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} /></td>
+                    <td className="px-4 py-1.5 text-right">
                       <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                         <Button variant="view" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button>
                         <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça">Duplicar</Button>

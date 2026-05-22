@@ -28,7 +28,7 @@ export function PageHeader({ title, subtitle, count, actions, className, style }
         alignItems: subtitle ? "flex-start" : "center",
         justifyContent: "space-between",
         gap: 16,
-        marginBottom: 18,
+        marginBottom: 12,
         ...style,
       }}
     >

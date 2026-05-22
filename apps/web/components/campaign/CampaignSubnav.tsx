@@ -61,7 +61,7 @@ export function CampaignSubnav({ campaignId, actions, inlineActions, activeTab, 
     <div style={{
       display: "flex", alignItems: "center", gap: 24,
       borderBottom: "1px solid #E5E5E5",
-      marginBottom: 24,
+      marginBottom: 16,
       paddingBottom: 0,
     }}>
       {/* Tabs — esquerda */}
