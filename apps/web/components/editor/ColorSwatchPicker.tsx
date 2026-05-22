@@ -105,11 +105,13 @@ export function ColorSwatchPicker({
     : undefined
 
   const popupS: React.CSSProperties = {
-    // Anchor direita + largura FIXA (nao 100% do parent) pra nao herdar
-    // container narrow (ex: flex row do STROKE section). Width fixed
-    // evita overflow inconsistente em diferentes contextos do panel.
-    position: "absolute", top: "calc(100% + 6px)", right: 0, left: "auto",
-    width: 240, padding: 0,
+    // Popup preenche a LARGURA do container do swatch (left: 0 + right: 0).
+    // Antes era width: 240 fixo + right:0 — em painel resizable estreito o
+    // popup overflowava pra esquerda alem do panel, cortando os labels
+    // "CORES DA MARCA" / "PADRÃO". Min 200 garante usabilidade em panels
+    // muito apertados (corre verticalmente se precisar).
+    position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0,
+    minWidth: 200, padding: 0,
     background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
     zIndex: 1000,
