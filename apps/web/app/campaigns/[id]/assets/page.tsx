@@ -139,6 +139,80 @@ export default function CampaignAssetsPage() {
     }
   }
 
+  /**
+   * Cria um SHAPE asset com path vetorial pre-definido. Suporta:
+   *   rectangle      → retangulo sharp 400×300
+   *   roundedRect    → retangulo cantos arredondados r=20
+   *   ellipse        → elipse 400×300 (4 arcos Bezier)
+   *
+   * Path em coords absolutas comecando em (0,0). Fabric.Path normaliza
+   * internamente e usa left/top do layer pra posicionar.
+   * Fill default = primeira brand color (ou cinza neutro). Sem stroke.
+   * Editor expoe controles fill/stroke/strokeWidth no painel direito.
+   */
+  async function addShapeAsset(kind: "rectangle" | "roundedRect" | "ellipse") {
+    const W = 400, H = 300
+    const K = 0.5522847498
+    let path = ""
+    let label = ""
+    if (kind === "rectangle") {
+      label = "Retangulo"
+      path = `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
+    } else if (kind === "roundedRect") {
+      label = "Retangulo Arredondado"
+      const r = 20
+      path = [
+        `M ${r} 0`,
+        `L ${W - r} 0`,
+        `C ${W - r + r * K} 0, ${W} ${r - r * K}, ${W} ${r}`,
+        `L ${W} ${H - r}`,
+        `C ${W} ${H - r + r * K}, ${W - r + r * K} ${H}, ${W - r} ${H}`,
+        `L ${r} ${H}`,
+        `C ${r - r * K} ${H}, 0 ${H - r + r * K}, 0 ${H - r}`,
+        `L 0 ${r}`,
+        `C 0 ${r - r * K}, ${r - r * K} 0, ${r} 0`,
+        "Z",
+      ].join(" ")
+    } else {
+      label = "Elipse"
+      const cx = W / 2, cy = H / 2, rx = W / 2, ry = H / 2
+      const dx = rx * K, dy = ry * K
+      path = [
+        `M ${cx} 0`,
+        `C ${cx + dx} 0, ${W} ${cy - dy}, ${W} ${cy}`,
+        `C ${W} ${cy + dy}, ${cx + dx} ${H}, ${cx} ${H}`,
+        `C ${cx - dx} ${H}, 0 ${cy + dy}, 0 ${cy}`,
+        `C 0 ${cy - dy}, ${cx - dx} 0, ${cx} 0`,
+        "Z",
+      ].join(" ")
+    }
+    // Fill default: primeira brand color do cliente, ou cinza neutro.
+    const defaultFill = brandColors[0]?.hex ?? "#4d4d4f"
+    const shape = {
+      path,
+      pathBbox: { left: 0, top: 0, right: W, bottom: H },
+      fill: { kind: "solid", color: defaultFill },
+      stroke: null,
+      fillRule: "nonzero",
+    }
+    const res = await fetch(`/api/campaigns/${id}/assets`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "SHAPE",
+        label,
+        // SHAPE: o endpoint armazena `shape` como content JSON
+        // (lib/exportPiece + KeyVisionEditor leem de asset.content).
+        content: shape,
+      }),
+    })
+    if (res.ok) {
+      await load()
+      regenerateKVThumb(id).catch(() => {})
+    } else {
+      alert("Falha ao criar asset de forma")
+    }
+  }
+
   async function deleteAsset(assetId: string, label: string, skipConfirm = false) {
     if (!skipConfirm && !confirm(`Apagar "${label}"? Será removido também das peças e da matriz.`)) return
     const res = await fetch(`/api/campaigns/${id}/assets/${assetId}`, { method: "DELETE" })
@@ -389,6 +463,7 @@ export default function CampaignAssetsPage() {
               <>
                 <AddTextMenu onPick={addTextAsset} />
                 <Button variant="secondary" size="md" onClick={() => newImageInputRef.current?.click()}>+ Imagem</Button>
+                <AddShapeMenu onPick={addShapeAsset} />
                 <PsdImporter campaignId={id} onImported={load} />
               </>
             }
@@ -642,6 +717,59 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
  * Dropdown menu pra criar texto com 1 dos 4 presets tipograficos.
  * Click no botao abre menu com Titulo / Subtitulo / Corpo / Legenda.
  */
+/**
+ * Dropdown analogo a + Texto, mas pra SHAPE. Permite criar rectangle,
+ * roundedRect ou ellipse direto pelo painel (sem precisar importar PSD).
+ */
+function AddShapeMenu({ onPick }: { onPick: (kind: "rectangle" | "roundedRect" | "ellipse") => void }) {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onClick)
+    return () => document.removeEventListener("mousedown", onClick)
+  }, [open])
+  const items: { kind: "rectangle" | "roundedRect" | "ellipse"; label: string }[] = [
+    { kind: "rectangle", label: "Retangulo" },
+    { kind: "roundedRect", label: "Retangulo arredondado" },
+    { kind: "ellipse", label: "Elipse" },
+  ]
+  return (
+    <div ref={wrapperRef} style={{ position: "relative" }}>
+      <Button variant="secondary" size="md" onClick={() => setOpen(o => !o)}>+ Forma ▾</Button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0,
+          background: "white", border: "1px solid #E0E0E0", borderRadius: 8,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          minWidth: 220, zIndex: 50, padding: 4,
+        }}>
+          {items.map(it => (
+            <button
+              key={it.kind}
+              type="button"
+              onClick={() => { onPick(it.kind); setOpen(false) }}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                padding: "8px 12px", background: "transparent",
+                border: "none", borderRadius: 6, cursor: "pointer",
+                fontSize: 13, fontFamily: "inherit", color: "#111",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#F5F5F5" }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+            >
+              + {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AddTextMenu({ onPick }: { onPick: (preset: BrandPresetKey) => void }) {
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
