@@ -9212,6 +9212,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     brandColors={brandColors as any}
                     defaultSwatches={SWATCHES}
                     activeBrandIdx={typeof activeBrand === "number" ? activeBrand : undefined}
+                    opacity={(bgOpacity ?? 1) * 100}
+                    onOpacityChange={pct => changeBgOpacity(pct / 100)}
                   />
                 </div>
               )
@@ -9326,20 +9328,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </>
               )
             })()}
-            {/* Opacity (sempre, igual painel de Layers do Photoshop) */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888", marginBottom: 10 }}>
-              <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Opacity</span>
-              <input
-                type="range" min={0} max={100} step={1}
-                value={Math.round(bgOpacity * 100)}
-                onChange={e => changeBgOpacity(Number(e.target.value) / 100)}
-                style={{ flex: 1 }}
-              />
-              <span style={{ width: 36, textAlign: "right", color: "#bbb", fontFamily: "monospace" }}>{Math.round(bgOpacity * 100)}%</span>
-            </div>
-            {/* As secoes "Marca" + "Padrão" ja sao renderizadas mais acima
-                (linha ~6270, dentro do bloco do hex input). Tinha duplicacao
-                aqui vinda de merge de 2026-05-17 — removida. */}
+            {/* Opacity agora vive INLINE na linha do ColorSwatchPicker (Figma-style).
+                Slider standalone removido. */}
             {/* BlendMode + Mask (BG-5) — controles avancados de PSD pro layer de BG */}
             {(() => {
               const layer = bgLayersRef.current[currentBgIdx()]
@@ -9745,6 +9735,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 brandColors={brandColors as any}
                 defaultSwatches={SWATCHES}
                 activeBrandIdx={typeof (selected as any).__fillBrandIdx === "number" ? (selected as any).__fillBrandIdx : undefined}
+                opacity={((selected as any).opacity ?? 1) * 100}
+                onOpacityChange={pct => changeObjectOpacity(pct / 100)}
               />
             </div>
 
@@ -9844,6 +9836,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     brandColors={brandColors as any}
                     defaultSwatches={SWATCHES}
                     allowEmpty
+                    opacity={((selected as any).opacity ?? 1) * 100}
+                    onOpacityChange={pct => changeObjectOpacity(pct / 100)}
                   />
                 </div>
 

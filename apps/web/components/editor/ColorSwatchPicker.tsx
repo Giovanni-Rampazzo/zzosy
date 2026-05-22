@@ -34,8 +34,13 @@ interface Props {
   defaultSwatches: string[]
   activeBrandIdx?: number
   allowEmpty?: boolean
+  /** Tamanho do swatch trigger (default 24 — Figma-style enxuto). */
   size?: number
   title?: string
+  /** Opacidade 0-100. Quando definido + onOpacityChange tambem, renderiza
+   *  field de opacity inline na mesma linha (Figma-style). */
+  opacity?: number
+  onOpacityChange?: (pct: number) => void
 }
 
 export function ColorSwatchPicker({
@@ -45,13 +50,16 @@ export function ColorSwatchPicker({
   defaultSwatches,
   activeBrandIdx,
   allowEmpty = false,
-  size = 36,
+  size = 24,
   title,
+  opacity,
+  onOpacityChange,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [hex, setHex] = useState(value)
   const rootRef = useRef<HTMLDivElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
+  const showOpacity = typeof opacity === "number" && !!onOpacityChange
 
   // Sync externo (value muda fora) → atualiza hex local.
   useEffect(() => { setHex(value) }, [value])
@@ -89,45 +97,89 @@ export function ColorSwatchPicker({
 
   const popupS: React.CSSProperties = {
     position: "absolute", top: "calc(100% + 6px)", left: 0,
-    minWidth: 240, padding: 12,
+    minWidth: 260, padding: 0,
     background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
     zIndex: 1000,
-    display: "flex", flexDirection: "column", gap: 10,
+    display: "flex", flexDirection: "column",
+    maxHeight: 360, overflow: "hidden",
   }
-  const labelS: React.CSSProperties = {
-    fontSize: 10, fontWeight: 700 as const, textTransform: "uppercase" as const,
-    letterSpacing: "0.5px", color: "#888", marginBottom: 4,
+  const groupLabelS: React.CSSProperties = {
+    fontSize: 9, fontWeight: 700 as const, textTransform: "uppercase" as const,
+    letterSpacing: "0.6px", color: "#666",
+    padding: "10px 12px 6px",
   }
-  const inputS: React.CSSProperties = {
-    width: "100%", background: "#111", border: "1px solid #2a2a2a", color: "white",
-    fontSize: 12, padding: "5px 8px", borderRadius: 4, fontFamily: "monospace",
-    outline: "none", textTransform: "uppercase",
+  const itemS: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 10, padding: "6px 12px",
+    cursor: "pointer", background: "transparent", border: "none",
+    color: "white", fontFamily: "inherit", textAlign: "left", width: "100%",
+  }
+  const inlineInpS: React.CSSProperties = {
+    background: "transparent", border: "none", color: "white",
+    fontSize: 12, padding: 0, fontFamily: "monospace",
+    outline: "none", textTransform: "uppercase", flex: 1, minWidth: 0,
   }
 
   return (
-    <div ref={rootRef} style={{ position: "relative", display: "inline-block" }}>
-      {/* Trigger swatch */}
-      <button
-        type="button"
-        title={title ?? (value || "Sem cor")}
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: size, height: size, borderRadius: 6,
-          background: emptyChecker ?? swatchBg,
-          backgroundSize: emptyChecker ? "8px 8px" : undefined,
-          border: "1px solid #2a2a2a", cursor: "pointer", padding: 0,
-          outline: open ? "2px solid #F5C400" : "none", outlineOffset: 1,
-        }}
-      />
+    <div ref={rootRef} style={{ position: "relative" }}>
+      {/* Inline row: swatch + hex + opacity (Figma-style enxuto) */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 0,
+        background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6,
+        padding: "4px 6px", height: 32,
+      }}>
+        {/* Trigger swatch — click abre popup */}
+        <button
+          type="button"
+          title={title ?? (value || "Sem cor")}
+          onClick={() => setOpen(o => !o)}
+          style={{
+            width: size, height: size, borderRadius: 4,
+            background: emptyChecker ?? swatchBg,
+            backgroundSize: emptyChecker ? "8px 8px" : undefined,
+            border: "1px solid #2a2a2a", cursor: "pointer", padding: 0, flexShrink: 0,
+            marginRight: 8,
+            outline: open ? "2px solid #F5C400" : "none", outlineOffset: 1,
+          }}
+        />
+        {/* Hex input inline (sem borda; o container ja tem) */}
+        <input
+          type="text"
+          value={hex}
+          placeholder={allowEmpty && !hex ? "—" : "#RRGGBB"}
+          onChange={e => {
+            const v = e.target.value
+            setHex(v)
+            if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(v, undefined)
+          }}
+          onBlur={() => {
+            if (!/^#[0-9a-fA-F]{6}$/.test(hex)) setHex(value)
+          }}
+          style={inlineInpS}
+        />
+        {/* Opacity field (opcional — so renderiza quando opacity + onOpacityChange) */}
+        {showOpacity && (
+          <>
+            <div style={{ width: 1, height: 18, background: "#2a2a2a", marginRight: 6 }} />
+            <input
+              type="number" min={0} max={100} step={1}
+              value={Math.round(opacity!)}
+              onChange={e => onOpacityChange!(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+              title="Opacidade %"
+              style={{ ...inlineInpS, width: 36, flex: "0 0 36px", textAlign: "right", fontFamily: "inherit" }}
+            />
+            <span style={{ fontSize: 11, color: "#666", marginLeft: 2 }}>%</span>
+          </>
+        )}
+      </div>
 
-      {/* Popup */}
+      {/* Popup — lista de cores estilo Figma */}
       {open && (
         <div ref={popupRef} style={popupS} onMouseDown={e => e.stopPropagation()}>
-          {/* Hex + native picker */}
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {/* Header: native color + hex + ∅ */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #2a2a2a" }}>
             <label style={{
-              width: 32, height: 32, borderRadius: 4,
+              width: 28, height: 28, borderRadius: 4,
               background: /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : "#000000",
               border: "1px solid #2a2a2a", cursor: "pointer",
               position: "relative", overflow: "hidden", flexShrink: 0,
@@ -143,65 +195,73 @@ export function ColorSwatchPicker({
                 setHex(v)
                 if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(v, undefined)
               }}
-              onBlur={() => {
-                if (!/^#[0-9a-fA-F]{6}$/.test(hex)) setHex(value)
-              }}
-              style={inputS} />
+              style={{
+                flex: 1, background: "#111", border: "1px solid #2a2a2a", color: "white",
+                fontSize: 12, padding: "5px 8px", borderRadius: 4, fontFamily: "monospace",
+                outline: "none", textTransform: "uppercase",
+              }} />
             {allowEmpty && (
               <button type="button" title="Sem cor"
                 onClick={() => { setHex(""); onChange("", undefined); setOpen(false) }}
                 style={{
-                  width: 32, height: 32, padding: 0, cursor: "pointer",
+                  width: 28, height: 28, padding: 0, cursor: "pointer",
                   background: "#111", border: "1px solid #2a2a2a", color: "#aaa",
                   borderRadius: 4, fontSize: 14, lineHeight: 1, fontFamily: "inherit",
                 }}>∅</button>
             )}
           </div>
 
-          {/* Brand colors */}
-          {brandColors.length > 0 && (
-            <div>
-              <div style={labelS}>Cores da marca</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {/* List scrollavel */}
+          <div style={{ overflowY: "auto" }}>
+            {brandColors.length > 0 && (
+              <>
+                <div style={groupLabelS}>Cores da marca</div>
                 {brandColors.map((bc, i) => {
                   const activeByRef = activeBrandIdx === i
                   const activeByHex = !activeByRef && value.toLowerCase() === bc.hex.toLowerCase()
                   const active = activeByRef || activeByHex
                   return (
                     <button key={`bc-${i}-${bc.hex}`} type="button"
-                      title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
                       onClick={() => { onChange(bc.hex, i); setOpen(false) }}
-                      style={{
-                        width: 26, height: 26, borderRadius: 5, background: bc.hex,
-                        cursor: "pointer", padding: 0,
-                        border: active ? "2px solid #F5C400" : "2px solid #2a2a2a",
-                      }} />
+                      style={{ ...itemS, background: active ? "#252525" : "transparent" }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#2a2a2a" : "#1f1f1f" }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#252525" : "transparent" }}
+                    >
+                      <div style={{ width: 20, height: 20, borderRadius: 3, background: bc.hex, border: "1px solid #2a2a2a", flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
+                        {bc.name || "—"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textTransform: "uppercase" }}>
+                        {bc.hex}
+                      </div>
+                    </button>
                   )
                 })}
-              </div>
-            </div>
-          )}
-
-          {/* Default swatches */}
-          {defaultSwatches.length > 0 && (
-            <div>
-              <div style={labelS}>Padrão</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              </>
+            )}
+            {defaultSwatches.length > 0 && (
+              <>
+                <div style={groupLabelS}>Padrão</div>
                 {defaultSwatches.map(c => {
                   const active = value.toLowerCase() === c.toLowerCase()
                   return (
-                    <button key={`def-${c}`} type="button" title={c}
+                    <button key={`def-${c}`} type="button"
                       onClick={() => { onChange(c, undefined); setOpen(false) }}
-                      style={{
-                        width: 26, height: 26, borderRadius: 5, background: c,
-                        cursor: "pointer", padding: 0,
-                        border: active ? "2px solid #F5C400" : "2px solid #2a2a2a",
-                      }} />
+                      style={{ ...itemS, background: active ? "#252525" : "transparent" }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#2a2a2a" : "#1f1f1f" }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#252525" : "transparent" }}
+                    >
+                      <div style={{ width: 20, height: 20, borderRadius: 3, background: c, border: "1px solid #2a2a2a", flexShrink: 0 }} />
+                      <div style={{ flex: 1, fontSize: 12, color: "#aaa" }}>—</div>
+                      <div style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textTransform: "uppercase" }}>
+                        {c}
+                      </div>
+                    </button>
                   )
                 })}
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
