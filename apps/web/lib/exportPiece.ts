@@ -676,6 +676,13 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
               ;(p as any).__groupPath = layer.groupPath
             }
+            // PSD layer effects (drop shadow, layer style stroke, outer glow,
+            // color overlay, gradient overlay, bevel, satin) — round-trip
+            // preservado via __psdEffects. Antes a branch SHAPE NAO propagava
+            // esse campo do layer pro Fabric.Path → export PSD lia obj
+            // .__psdEffects=undefined → effects sumiam. Mesma logica TEXT
+            // (linha 490) + IMAGE (linha 585). User reportou 2026-05-22.
+            if (layerEffects) (p as any).__psdEffects = layerEffects
             // Mask metadata: __maskData preservado pra export PSD escrever
             // raster/vector/clipping no layer. Sem isso, mask criada no
             // editor sumia no export PSD/PNG. Mesmo pattern TEXT/IMAGE
@@ -1432,6 +1439,11 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         const d = Math.hypot(dx, dy)
         return d > 0 ? (Math.atan2(dy, -dx) * 180 / Math.PI) : fallback
       }
+      // ag-psd UnitsValue helper — distance/size/etc precisam vir como
+      // {value, units} object. Numero cru faz writePsd throw "Invalid value:
+      // N (key: distance) (should have value and units)" e o export todo
+      // falha (user reportou 2026-05-22: "psd nao mantem effects no layer").
+      const px = (n: number) => ({ value: n, units: "Pixels" as const })
       if (fx.dropShadow) {
         const d = fx.dropShadow
         const dx = d.offsetX ?? 0, dy = d.offsetY ?? 0
@@ -1440,8 +1452,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           color: hexToPsdColor(d.color ?? "#000000"),
           opacity: d.opacity ?? 0.75,
           angle: angleFromOffsets(dx, dy, 120),
-          distance: Math.round(Math.hypot(dx, dy)),
-          size: d.blur ?? 5,
+          distance: px(Math.round(Math.hypot(dx, dy))),
+          size: px(d.blur ?? 5),
           blendMode: d.blendMode ?? "multiply",
           useGlobalLight: false,
         }]
@@ -1454,9 +1466,9 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           color: hexToPsdColor(i.color ?? "#000000"),
           opacity: i.opacity ?? 0.75,
           angle: angleFromOffsets(dx, dy, 120),
-          distance: Math.round(Math.hypot(dx, dy)),
-          size: i.blur ?? 5,
-          choke: i.choke ?? 0,
+          distance: px(Math.round(Math.hypot(dx, dy))),
+          size: px(i.blur ?? 5),
+          choke: px(i.choke ?? 0),
           blendMode: i.blendMode ?? "multiply",
           useGlobalLight: false,
         }]
@@ -1466,8 +1478,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           enabled: true,
           color: hexToPsdColor(fx.outerGlow.color ?? "#ffffff"),
           opacity: fx.outerGlow.opacity ?? 0.5,
-          size: fx.outerGlow.blur ?? 5,
-          choke: fx.outerGlow.choke ?? 0,
+          size: px(fx.outerGlow.blur ?? 5),
+          choke: px(fx.outerGlow.choke ?? 0),
           blendMode: fx.outerGlow.blendMode ?? "screen",
         }
       }
@@ -1476,8 +1488,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           enabled: true,
           color: hexToPsdColor(fx.innerGlow.color ?? "#ffffff"),
           opacity: fx.innerGlow.opacity ?? 0.5,
-          size: fx.innerGlow.blur ?? 5,
-          choke: fx.innerGlow.choke ?? 0,
+          size: px(fx.innerGlow.blur ?? 5),
+          choke: px(fx.innerGlow.choke ?? 0),
           source: fx.innerGlow.source ?? "edge",
           blendMode: fx.innerGlow.blendMode ?? "screen",
         }
@@ -1487,7 +1499,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           enabled: true,
           position: fx.stroke.position ?? "outside",
           fillColor: { color: hexToPsdColor(fx.stroke.color ?? "#000000") },
-          size: fx.stroke.width ?? 1,
+          size: px(fx.stroke.width ?? 1),
           opacity: fx.stroke.opacity ?? 1,
           blendMode: fx.stroke.blendMode ?? "normal",
         }]
@@ -1537,7 +1549,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           enabled: true,
           style: b.style ?? "inner bevel",
           direction: b.direction ?? "up",
-          size: b.size ?? 5,
+          size: px(b.size ?? 5),
           angle: b.angle ?? 120,
           altitude: b.altitude ?? 30,
           highlightColor: hexToPsdColor(b.highlightColor ?? "#ffffff"),
@@ -1547,7 +1559,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           shadowOpacity: b.shadowOpacity ?? 0.75,
           shadowBlendMode: b.shadowBlendMode ?? "multiply",
           strength: b.strength ?? 100,
-          soften: b.soften ?? 0,
+          soften: px(b.soften ?? 0),
           useGlobalLight: false,
         }
       }
@@ -1557,8 +1569,8 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           color: hexToPsdColor(fx.satin.color ?? "#000000"),
           opacity: fx.satin.opacity ?? 0.5,
           angle: fx.satin.angle ?? 19,
-          distance: fx.satin.distance ?? 11,
-          size: fx.satin.size ?? 14,
+          distance: px(fx.satin.distance ?? 11),
+          size: px(fx.satin.size ?? 14),
           invert: fx.satin.invert === true,
           blendMode: fx.satin.blendMode ?? "multiply",
         }
