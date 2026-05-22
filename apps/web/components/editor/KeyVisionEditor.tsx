@@ -730,18 +730,19 @@ function serializeShapeOverrides(o: any): Record<string, any> {
   if (typeof o.stroke === "string") ov.stroke = o.stroke
   if (typeof o.strokeWidth === "number") ov.strokeWidth = o.strokeWidth
   // cornerRadius: usado pelo Properties Panel pra slider de raio (roundedRect).
-  // Persiste o valor live pro reload mostrar o mesmo raio.
   if (typeof o.__cornerRadius === "number") ov.cornerRadius = o.__cornerRadius
-  // bboxW/bboxH: dimensoes LOGICAS atualizadas pelo scaling hook parametric.
-  // Sem isso, reload usaria asset.content.pathBbox (W/H originais) e o resize
-  // seria perdido. Cuidado: so persiste quando shape eh parametric (kind set).
+  // bboxW/bboxH: dimensoes EFFECTIVE (path internal * scale). Multiplicar pelo
+  // scale eh CRITICO — sem isso o save captura bbox cru e o user perdia o
+  // resize que fez na canvas (user reportou export 3x menor que editor).
   if (o.__shapeKind && o.__pathBbox) {
     const bb = o.__pathBbox
     const W = (bb.right ?? 0) - (bb.left ?? 0)
     const H = (bb.bottom ?? 0) - (bb.top ?? 0)
+    const sX = typeof o.scaleX === "number" ? o.scaleX : 1
+    const sY = typeof o.scaleY === "number" ? o.scaleY : 1
     if (W > 0 && H > 0) {
-      ov.bboxW = W
-      ov.bboxH = H
+      ov.bboxW = W * sX
+      ov.bboxH = H * sY
     }
   }
   return ov
@@ -4044,25 +4045,42 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fillProp = layerOv.fill !== undefined ? layerOv.fill : baseFill
         const strokeProp = layerOv.stroke !== undefined ? layerOv.stroke : baseStroke
         const strokeWidth = layerOv.strokeWidth !== undefined ? layerOv.strokeWidth : baseStrokeW
-        // Effective bbox W/H + cornerRadius — overrides ganham prioridade.
+        // Effective bbox W/H — pra parametric, MULTIPLICA pelo layer.scaleX/Y
+        // a menos que ja exista override explicito. Sem isso, shape salvo com
+        // scale != 1 reabria com path no tamanho original e scale aplicado
+        // visualmente — assimetrico (path internal 400 mas visible 800), que
+        // depois confundia o export PSD (3x menor que editor).
+        const isParametric = !!parsedShape.kind
         let effBboxW = 0, effBboxH = 0
         if (parsedShape.pathBbox) {
           effBboxW = (parsedShape.pathBbox.right ?? 400) - (parsedShape.pathBbox.left ?? 0)
           effBboxH = (parsedShape.pathBbox.bottom ?? 300) - (parsedShape.pathBbox.top ?? 0)
         }
-        if (typeof layerOv.bboxW === "number" && layerOv.bboxW > 0) effBboxW = layerOv.bboxW
-        if (typeof layerOv.bboxH === "number" && layerOv.bboxH > 0) effBboxH = layerOv.bboxH
+        if (typeof layerOv.bboxW === "number" && layerOv.bboxW > 0) {
+          effBboxW = layerOv.bboxW  // override absoluto do scaling hook
+        } else if (isParametric) {
+          effBboxW = effBboxW * scaleX  // bake scale no path
+        }
+        if (typeof layerOv.bboxH === "number" && layerOv.bboxH > 0) {
+          effBboxH = layerOv.bboxH
+        } else if (isParametric) {
+          effBboxH = effBboxH * scaleY
+        }
         const effCornerR_load = typeof layerOv.cornerRadius === "number"
           ? layerOv.cornerRadius
           : (typeof parsedShape.cornerRadius === "number" ? parsedShape.cornerRadius : 0)
-        const isParametric = !!parsedShape.kind && effBboxW > 0 && effBboxH > 0
+        const isParametricFinal = isParametric && effBboxW > 0 && effBboxH > 0
         // Recomputa path com cornerRadius override se shape eh parametric.
-        const pathStr: string = isParametric
+        const pathStr: string = isParametricFinal
           ? buildShapePath(parsedShape.kind as ShapeKind, effBboxW, effBboxH, effCornerR_load)
           : parsedShape.path
         const p = new Path(pathStr, {
           left: posX, top: posY,
-          scaleX, scaleY, angle,
+          // Path parametric ja tem dims absolutos (bake do scale acima),
+          // entao scaleX/scaleY = 1. Path nao-parametric mantem scale cru.
+          scaleX: isParametricFinal ? 1 : scaleX,
+          scaleY: isParametricFinal ? 1 : scaleY,
+          angle,
           fill: fillProp,
           stroke: strokeProp,
           strokeWidth,
@@ -4075,7 +4093,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ;(p as any).__isShape = true
         if (parsedShape.kind) (p as any).__shapeKind = parsedShape.kind
         if (effCornerR_load !== undefined) (p as any).__cornerRadius = effCornerR_load
-        if (isParametric) {
+        if (isParametricFinal) {
           ;(p as any).__pathBbox = { left: 0, top: 0, right: effBboxW, bottom: effBboxH }
         } else if (parsedShape.pathBbox) {
           ;(p as any).__pathBbox = parsedShape.pathBbox

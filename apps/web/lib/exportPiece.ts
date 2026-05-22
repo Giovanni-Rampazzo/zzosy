@@ -615,20 +615,34 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
               : (shape.stroke?.color ?? undefined)
             const strokeW = overrides.strokeWidth !== undefined ? overrides.strokeWidth
               : (shape.stroke?.width ?? 0)
-            // PARAMETRIC SHAPE: aplica overrides.cornerRadius e overrides.bboxW/H
-            // se shape tem kind setado (rectangle/roundedRect/ellipse). Recomputa
-            // o path com dimensoes/raio atualizados ANTES de criar Fabric.Path.
-            // Sem isso, export PSD/PNG saia com cornerRadius/dimensoes ANTIGOS
-            // do asset.content (perdia edicoes do user).
+            // PARAMETRIC SHAPE: recomputa path com dimensoes/raio efetivos.
+            // Effective W = bbox.W * layer.scaleX (a menos que ja exista override
+            // bboxW). Sem multiplicar pelo layer.scaleX, exports saiam 3x menores
+            // que o editor quando user escalava o shape (user reportou 2026-05-22).
+            //
+            // Apos recompute path tem dims absolutos → Fabric.Path NAO precisa
+            // de scaleX/Y (set como 1) → PSD vai com path no tamanho correto.
+            const shapeKind = (shape as any).kind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
+            const layerScaleX = layer.scaleX ?? 1
+            const layerScaleY = layer.scaleY ?? 1
             let pathD = shape.path
             let bboxW = shape.pathBbox ? ((shape.pathBbox.right ?? 0) - (shape.pathBbox.left ?? 0)) : 0
             let bboxH = shape.pathBbox ? ((shape.pathBbox.bottom ?? 0) - (shape.pathBbox.top ?? 0)) : 0
-            if (typeof overrides.bboxW === "number" && overrides.bboxW > 0) bboxW = overrides.bboxW
-            if (typeof overrides.bboxH === "number" && overrides.bboxH > 0) bboxH = overrides.bboxH
+            // Multiplica pelo layer scale SE nao ha override explicito (override
+            // ja vem com dims absolutos do scaling hook).
+            if (typeof overrides.bboxW === "number" && overrides.bboxW > 0) {
+              bboxW = overrides.bboxW
+            } else if (shapeKind) {
+              bboxW = bboxW * layerScaleX
+            }
+            if (typeof overrides.bboxH === "number" && overrides.bboxH > 0) {
+              bboxH = overrides.bboxH
+            } else if (shapeKind) {
+              bboxH = bboxH * layerScaleY
+            }
             const effCornerR = typeof overrides.cornerRadius === "number"
               ? overrides.cornerRadius
               : (typeof (shape as any).cornerRadius === "number" ? (shape as any).cornerRadius : 0)
-            const shapeKind = (shape as any).kind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
             if (shapeKind && bboxW > 0 && bboxH > 0) {
               const { buildShapePath } = await import("@/lib/shapePaths")
               pathD = buildShapePath(shapeKind, bboxW, bboxH, effCornerR)
@@ -641,10 +655,10 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
               strokeWidth: strokeW,
               strokeUniform: true,
               fillRule: shape.fillRule ?? "nonzero",
-              // Quando shape eh parametric e recomputamos o path, scale=1 (path
-              // ja tem dims novos). Se nao-parametric, mantem scale do layer.
-              scaleX: shapeKind ? 1 : (layer.scaleX ?? 1),
-              scaleY: shapeKind ? 1 : (layer.scaleY ?? 1),
+              // Path parametric ja tem dims absolutos (path D baked com bboxW*scaleX).
+              // Path nao-parametric mantem scale do layer pra escalar coords cru.
+              scaleX: shapeKind ? 1 : layerScaleX,
+              scaleY: shapeKind ? 1 : layerScaleY,
               angle: layer.rotation ?? 0,
               opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
               globalCompositeOperation: layer.blendMode ?? "source-over",
@@ -652,8 +666,8 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             ;(p as any).__assetId = asset.id
             ;(p as any).__assetLabel = asset.label
             ;(p as any).__isShape = true
-            // Propaga metadata parametric pra branch SHAPE do PSD export ler
-            // e emitir vectorOrigination (vogk) — PS abre como Live Shape.
+            // Propaga metadata parametric — branch SHAPE do PSD export le pra
+            // emitir vogk (Live Shape no PS).
             if (shapeKind) {
               ;(p as any).__shapeKind = shapeKind
               ;(p as any).__cornerRadius = effCornerR
