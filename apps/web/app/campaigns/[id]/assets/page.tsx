@@ -477,34 +477,6 @@ export default function CampaignAssetsPage() {
             onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
         </div>
 
-        {/* Cores da Marca — sempre visível quando o cliente tem alguma cor
-            cadastrada. Read-only aqui; pra editar, link pra /clients/[id]/edit. */}
-        {brandColors.length > 0 && (
-          <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "16px 20px", marginBottom: 24 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <h2 style={{ fontSize: 13, fontWeight: 700, margin: 0, color: "#111", textTransform: "uppercase", letterSpacing: 0.6 }}>Cores da Marca</h2>
-                <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>({brandColors.length})</span>
-              </div>
-              <button onClick={() => router.push(`/clients/${campaign.client.id}/edit`)}
-                style={{ background: "transparent", border: "1px solid #E0E0E0", borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer", color: "#666", fontFamily: "inherit", textTransform: "uppercase", letterSpacing: 0.4 }}
-                title="Editar cores da marca em /clients/[id]/edit">
-                Editar
-              </button>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-              {brandColors.map((bc, i) => (
-                <div key={`${bc.hex}-${i}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 64 }}>
-                  <div title={bc.name ? `${bc.name} (${bc.hex})` : bc.hex}
-                    style={{ width: 48, height: 48, borderRadius: 8, background: bc.hex, border: "1px solid #E0E0E0", cursor: "default" }} />
-                  <div style={{ fontSize: 11, color: "#444", fontWeight: 600, fontFamily: "monospace", textTransform: "uppercase" }}>{bc.hex}</div>
-                  {bc.name && <div style={{ fontSize: 10, color: "#888", textAlign: "center", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bc.name}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {campaign.assets.length === 0 ? (
           <div style={{ textAlign: "center", padding: "80px 0", color: "#888" }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>📂</div>
