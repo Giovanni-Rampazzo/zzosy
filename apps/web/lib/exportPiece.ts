@@ -300,12 +300,37 @@ function svgPathToAgPsdKnots(
   }))
 }
 
-/** hex "#RRGGBB" → ag-psd { r, g, b } (0-255 each). */
-function hexToAgPsdRgb(hex: string): { r: number; g: number; b: number } {
-  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex)
-  if (!m) return { r: 0, g: 0, b: 0 }
-  const n = parseInt(m[1], 16)
-  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+/** hex "#RRGGBB" → ag-psd { r, g, b } (0-255 each). Tolerant: aceita rgba/rgb
+ *  strings tambem (extrai so rgb, ignora alpha). */
+function hexToAgPsdRgb(c: string): { r: number; g: number; b: number } {
+  if (typeof c !== "string") return { r: 0, g: 0, b: 0 }
+  const s = c.trim()
+  const hex6 = /^#?([0-9a-fA-F]{6})$/.exec(s)
+  if (hex6) {
+    const n = parseInt(hex6[1], 16)
+    return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+  }
+  const hex8 = /^#?([0-9a-fA-F]{6})[0-9a-fA-F]{2}$/.exec(s)
+  if (hex8) {
+    const n = parseInt(hex8[1], 16)
+    return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+  }
+  const rgba = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(s)
+  if (rgba) {
+    return { r: parseInt(rgba[1], 10), g: parseInt(rgba[2], 10), b: parseInt(rgba[3], 10) }
+  }
+  return { r: 0, g: 0, b: 0 }
+}
+
+/** Extrai alpha 0-1 de "#hex"/"#hexAA"/"rgba(...)". Default 1 quando opaco. */
+function extractAlpha(c: string): number {
+  if (typeof c !== "string") return 1
+  const s = c.trim()
+  const hex8 = /^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})$/.exec(s)
+  if (hex8) return Math.round((parseInt(hex8[1], 16) / 255) * 1000) / 1000
+  const rgba = /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)$/i.exec(s)
+  if (rgba) return Math.max(0, Math.min(1, parseFloat(rgba[1])))
+  return 1
 }
 
 // Constroi o canvas Fabric da peca a partir de layers + assets
@@ -1656,13 +1681,16 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             finalEffects: effectsWithStroke ? Object.keys(effectsWithStroke) : null,
           })
           if (strokeStr && strokeW > 0) {
+            // SHAPE stroke pode vir como rgba(...) (opacity inline encodada
+            // no painel direito do editor desde 2026-05-22). hexToAgPsdRgb
+            // ja tolera rgba e extractAlpha pega o alpha → effect.opacity.
             const strokeFx = {
               enabled: true,
               position: "outside",
               size: { value: strokeW, units: "Pixels" },
               fillType: "color",
               color: hexToAgPsdRgb(strokeStr),
-              opacity: 1,
+              opacity: extractAlpha(strokeStr),
               blendMode: "normal",
             }
             effectsWithStroke = {
