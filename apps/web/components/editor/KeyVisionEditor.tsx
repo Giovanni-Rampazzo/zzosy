@@ -238,10 +238,13 @@ async function applyBgFillAsync(rect: any, layer: BgLayerData, w: number, h: num
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 // LW = LARGURA DEFAULT do painel de Layers (esquerda). Pode ser redimensionada
 // pelo user via drag handle na borda direita do painel — state layersPanelWidth.
-// PW = largura fixa do painel Properties (direita). TH/BH = top/bottom bar.
+// PW = LARGURA DEFAULT do painel Properties (direita). Tambem resizable — state
+// propsPanelWidth, drag handle na borda esquerda. TH/BH = top/bottom bar.
 const LW = 220, PW = 260, TH = 48, BH = 44
 const LW_MIN = 180, LW_MAX = 500
+const PW_MIN = 220, PW_MAX = 560
 const LW_STORAGE_KEY = "zzosy.editor.layersPanelWidth"
+const PW_STORAGE_KEY = "zzosy.editor.propsPanelWidth"
 const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
 
@@ -859,6 +862,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   }, [layersPanelWidth])
   // Drag em curso pra resize do painel — guarda mouseX inicial + width inicial.
   const layersResizeRef = useRef<{ startX: number; startW: number } | null>(null)
+  // Largura do painel Properties (direita) — resizable pelo user, mesmo padrao
+  // do layersPanelWidth. Persiste em localStorage.
+  const [propsPanelWidth, setPropsPanelWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return PW
+    try {
+      const saved = window.localStorage?.getItem(PW_STORAGE_KEY)
+      const n = saved ? parseInt(saved, 10) : NaN
+      return Number.isFinite(n) ? Math.max(PW_MIN, Math.min(PW_MAX, n)) : PW
+    } catch { return PW }
+  })
+  const propsPanelWidthRef = useRef(propsPanelWidth)
+  useEffect(() => {
+    propsPanelWidthRef.current = propsPanelWidth
+    try { window.localStorage?.setItem(PW_STORAGE_KEY, String(propsPanelWidth)) } catch {}
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("resize"))
+  }, [propsPanelWidth])
+  const propsResizeRef = useRef<{ startX: number; startW: number } | null>(null)
   // Estado do drag-and-drop no painel Layers (visualIndex sendo arrastado / sobre)
   const [dragLayerIdx, setDragLayerIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
@@ -1873,7 +1893,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // canvas DOM — sem essa area total, handles fora da peca eram cortados
       // pelas bordas. Margem visual entre canvas e paineis vem do estilo do
       // container, nao do tamanho do canvas.
-      const availW = window.innerWidth - layersPanelWidth - PW
+      const availW = window.innerWidth - layersPanelWidth - propsPanelWidth
       const availH = window.innerHeight - TH - BH
       // HANDLE_MARGIN: pixels reservados ao redor da peca para os handles de
       // selecao aparecerem (mesmo modelo Photoshop/Figma). Sem isso, peca
@@ -2451,7 +2471,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // captura essa closure nao re-roda quando layersPanelWidth muda.
           // Canvas DOM = area visivel total (ver init pra contexto). Margem
           // pros handles eh reservada no zoom calc, nao no tamanho do canvas.
-          const newAvailW = window.innerWidth - layersPanelWidthRef.current - PW
+          const newAvailW = window.innerWidth - layersPanelWidthRef.current - propsPanelWidthRef.current
           const newAvailH = window.innerHeight - TH - BH
           const fcRef = fabricRef.current
           ;(fabricRef as any).__canvasFullW = Math.max(1, newAvailW)
@@ -8087,7 +8107,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       `}</style>
       <div style={{
         position: "absolute",
-        left: layersPanelWidth, top: TH + BH, right: PW, bottom: 0,
+        left: layersPanelWidth, top: TH + BH, right: propsPanelWidth, bottom: 0,
         overflow: "hidden",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
@@ -8426,7 +8446,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         </button>
       </div>
 
-      <div style={{ position: "fixed", top: TH, left: layersPanelWidth, right: PW, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
+      <div style={{ position: "fixed", top: TH, left: layersPanelWidth, right: propsPanelWidth, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
         <span style={{ fontSize: 11, color: "#555", fontWeight: 600, flexShrink: 0 }}>Asset:</span>
         <select value={assetId} onChange={e => { setAssetId(e.target.value); assetIdRef.current = e.target.value }}
           style={{ background: "#222", color: "white", border: "1px solid #333", borderRadius: 4, padding: "4px 8px", fontSize: 12, maxWidth: 260 }}>
@@ -8676,8 +8696,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // o gap (top do row de baixo, bottom do row de cima).
             const gapMarginTop = isBelowGap ? 6 : 0
             const gapMarginBottom = isAboveGap ? 6 : 0
-            // Background pulse mais sutil nos rows adjacentes
-            const dropBg = isAdjacentToGap ? accentRgba(0.10) : isSel ? accentRgba(0.08) : "transparent"
+            // Background pulse mais sutil nos rows adjacentes.
+            // SELECAO: tint forte (22%) pra ser visivel em qualquer brand color
+            // — antes (8%) ficava invisivel quando o brand era claro/desaturado.
+            const dropBg = isAdjacentToGap ? accentRgba(0.10) : isSel ? accentRgba(0.22) : "transparent"
             // Linhas legadas (mantidas pra back-compat, mas com fallback p/ gap)
             const dragLineTop = false
             const dragLineBottom = false
@@ -8989,7 +9011,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   alignItems: "center", gap: 4,
                   padding: `8px 8px 8px ${12 + indent}px`,
                   cursor: "default",
-                  borderLeft: isSel ? `2px solid ${accentColor}` : "2px solid transparent",
+                  // Selecionado: borda 3px pra reforcar com qualquer brand color
+                  // (ex: dark green sobre #1a1a1a). Inset shadow tambem aplicado
+                  // abaixo via merge com magnifyShadow (evita clobber).
+                  borderLeft: isSel ? `3px solid ${accentColor}` : "3px solid transparent",
                   background: dropBg,
                   opacity: dragLayerIdx === i ? 0.3 : 1,
                   borderTop: dragLineTop ? `3px solid ${accentColor}` : "2px solid transparent",
@@ -9006,7 +9031,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   // ficando claro "vai cair NO MEIO desses dois".
                   transform: `scale(${magnifyScale})`,
                   transformOrigin: "left center",
-                  boxShadow: magnifyShadow,
+                  // Combina magnify shadow + selection inset glow (accent color)
+                  // pra que selecao seja visivel sob qualquer brand color.
+                  boxShadow: isSel
+                    ? `inset 0 0 0 1px ${accentRgba(0.45)}${magnifyShadow ? `, ${magnifyShadow}` : ""}`
+                    : magnifyShadow,
                   zIndex: magnifyZ,
                   position: "relative",
                   borderRadius: isAdjacentToGap ? 4 : 0,
@@ -9243,7 +9272,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   <span
                     title="Duplo clique para renomear"
                     onDoubleClick={e => { e.stopPropagation(); if (layerAssetId) setEditingLayerAssetId(layerAssetId) }}
-                    style={{ fontSize: 12, color: isSel ? accentColor : "#888", fontWeight: isSel ? 600 : 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
+                    style={{ fontSize: 12, color: isSel ? "#fff" : "#888", fontWeight: isSel ? 700 : 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
                   >{layer.label}</span>
                 )}
                 {/* Alpha channel thumbnail (Photoshop layer panel style) — so renderiza
@@ -9339,7 +9368,43 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             }}>Sair</button>
         </div>
       )}
-      <div style={{ ...pS, right: 0, width: PW, borderLeft: "1px solid #2a2a2a", paddingTop: TH }}>
+      <div style={{ ...pS, right: 0, width: propsPanelWidth, borderLeft: "1px solid #2a2a2a", paddingTop: TH }}>
+        {/* Drag handle de resize do painel Properties — borda ESQUERDA. Mesmo
+            padrao do layersPanelWidth (mirrored). */}
+        <div
+          onMouseDown={e => {
+            e.preventDefault()
+            propsResizeRef.current = { startX: e.clientX, startW: propsPanelWidth }
+            const onMove = (ev: MouseEvent) => {
+              const st = propsResizeRef.current
+              if (!st) return
+              const dx = ev.clientX - st.startX
+              // INVERSE: arrastando pra ESQUERDA aumenta a largura (borda esquerda)
+              const next = Math.max(PW_MIN, Math.min(PW_MAX, st.startW - dx))
+              setPropsPanelWidth(next)
+            }
+            const onUp = () => {
+              propsResizeRef.current = null
+              window.removeEventListener("mousemove", onMove)
+              window.removeEventListener("mouseup", onUp)
+              document.body.style.cursor = ""
+              document.body.style.userSelect = ""
+            }
+            window.addEventListener("mousemove", onMove)
+            window.addEventListener("mouseup", onUp)
+            document.body.style.cursor = "ew-resize"
+            document.body.style.userSelect = "none"
+          }}
+          onDoubleClick={() => setPropsPanelWidth(PW)}
+          title="Arraste pra redimensionar · duplo-clique pra resetar"
+          style={{
+            position: "absolute",
+            top: 0, left: -3, bottom: 0,
+            width: 6,
+            cursor: "ew-resize",
+            zIndex: 110,
+          }}
+        />
         <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Propriedades</div>
         {(!selected || (selected as any).__isBg) ? (
           <div style={{ padding: 16 }}>
@@ -10056,26 +10121,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   />
                 </div>
 
-                {/* STROKE — cor (ColorSwatchPicker) + espessura. */}
+                {/* STROKE — cor (ColorSwatchPicker com opacity inline, mesmo
+                    padrao Figma do FILL) + espessura abaixo. */}
                 <div>
                   <div style={secS}>Stroke</div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                    <ColorSwatchPicker
-                      value={currentStroke}
-                      onChange={(hex) => {
-                        setShapeProp("stroke", hex)
-                        // Setar stroke com width=0 deixa ele invisivel — auto-applica 1px
-                        // pra user ver o stroke imediatamente.
-                        if (hex && currentStrokeWidth === 0) setShapeProp("strokeWidth", 1)
-                        // Limpar stroke (∅) zera width tambem.
-                        if (!hex) setShapeProp("strokeWidth", 0)
-                      }}
-                      brandColors={brandColors as any}
-                      defaultSwatches={SWATCHES}
-                      allowEmpty
-                    />
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center" }}>
+                  <ColorSwatchPicker
+                    value={currentStroke}
+                    onChange={(hex) => {
+                      setShapeProp("stroke", hex)
+                      // Setar stroke com width=0 deixa ele invisivel — auto-applica 1px
+                      // pra user ver o stroke imediatamente.
+                      if (hex && currentStrokeWidth === 0) setShapeProp("strokeWidth", 1)
+                      // Limpar stroke (∅) zera width tambem.
+                      if (!hex) setShapeProp("strokeWidth", 0)
+                    }}
+                    brandColors={brandColors as any}
+                    defaultSwatches={SWATCHES}
+                    allowEmpty
+                    opacity={((selected as any).opacity ?? 1) * 100}
+                    onOpacityChange={pct => changeObjectOpacity(pct / 100)}
+                  />
+                  {/* Espessura — slider + numero, mesmo grid pattern usado em
+                      outros number fields do editor (paddingRight: 22). */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center", marginTop: 8 }}>
                     <input type="range" min={0} max={50} step={1}
                       value={currentStrokeWidth}
                       onChange={e => setShapeProp("strokeWidth", Number(e.target.value))}
