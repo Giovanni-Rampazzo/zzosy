@@ -105,10 +105,11 @@ export function ColorSwatchPicker({
     : undefined
 
   const popupS: React.CSSProperties = {
-    // Anchor a DIREITA (right: 0) em vez de left: 0 — pra popup nao
-    // overflow do painel direito (que ja eh estreito).
+    // Anchor direita + largura FIXA (nao 100% do parent) pra nao herdar
+    // container narrow (ex: flex row do STROKE section). Width fixed
+    // evita overflow inconsistente em diferentes contextos do panel.
     position: "absolute", top: "calc(100% + 6px)", right: 0, left: "auto",
-    width: "100%", minWidth: 240, padding: 0,
+    width: 240, padding: 0,
     background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
     zIndex: 1000,
