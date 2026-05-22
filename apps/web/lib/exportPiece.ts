@@ -1671,50 +1671,30 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           const fillStr: string = typeof obj.fill === "string" ? obj.fill : ""
           const strokeStr: string = typeof obj.stroke === "string" ? obj.stroke : ""
           const strokeW: number = obj.strokeWidth ?? 0
+          const hasFill = !!fillStr
+          const hasStroke = !!strokeStr && strokeW > 0
 
-          // CRITICO — limitacao do ag-psd writer SoCo:
-          //   addHandler('SoCo', target => target.vectorFill !== undefined
-          //     && target.vectorStroke === undefined  ← bloqueia quando ha stroke
-          //     && target.vectorFill.type === 'color')
+          // Limpa effects.stroke legacy de psdLayerEffects — agora usamos
+          // vectorStroke NATIVO (Shape Layer real do PS) em vez de Layer Style.
+          // User pediu explicitamente em 2026-05-22: "esta indo sem stroke
+          // (indo como effects) e nao e isso". PS rendera nativamente via
+          // vectorStroke + Properties Panel Shape.
           //
-          // Quando emitia vectorFill + vectorStroke juntos → SoCo era pulado
-          // pelo guard → fill data nunca escrita no PSD → fill sumia, so
-          // stroke aparecia. Por isso usamos Layer Style stroke (effects.stroke[])
-          // em vez de vectorStroke. Layer Style Stroke renderiza identico no PS
-          // e o user edita via "Layer Style → Stroke" — Adobe-aceitavel. Sem
-          // vectorStroke → SoCo handler aciona → vectorFill escrita normalmente.
-          //
-          // Quando user explicitamente removeu (strokeWidth=0 + stroke vazio),
-          // delete o effect antigo do PSD pra nao encalhar.
-          const userRemovedStroke = (typeof obj.strokeWidth === "number" && obj.strokeWidth === 0)
-            && (obj.stroke === "" || obj.stroke === null)
-          let effectsWithStroke: any = psdLayerEffects ? { ...psdLayerEffects } : undefined
-          if (userRemovedStroke && effectsWithStroke?.stroke) {
-            delete effectsWithStroke.stroke
-            if (Object.keys(effectsWithStroke).length === 0) effectsWithStroke = undefined
-          }
-          if (strokeStr && strokeW > 0) {
-            // SHAPE stroke pode vir como rgba(...) (opacity inline encodada
-            // no painel direito do editor desde 2026-05-22). hexToAgPsdRgb
-            // ja tolera rgba e extractAlpha pega o alpha → effect.opacity.
-            const strokeFx = {
-              enabled: true,
-              position: "outside",
-              size: { value: strokeW, units: "Pixels" },
-              fillType: "color",
-              color: hexToAgPsdRgb(strokeStr),
-              opacity: extractAlpha(strokeStr),
-              blendMode: "normal",
-            }
-            effectsWithStroke = {
-              ...(effectsWithStroke ?? {}),
-              stroke: [strokeFx],
-            }
+          // ag-psd v18: vectorFill + vectorStroke juntos sao escritos pelos
+          // handlers vscg (combined descriptor) + vstk (stroke style). SoCo
+          // eh skipped quando vectorStroke presente, mas vscg cobre o fill.
+          // Pre-condicao critica: vectorStroke.fillEnabled=true — sem isso
+          // PS ignora o vectorFill e renderiza so o stroke.
+          let effectsForLayer: any = psdLayerEffects ? { ...psdLayerEffects } : undefined
+          // Se tinha legacy effects.stroke do PSD import, remove pra nao
+          // double-stroke com nosso vectorStroke novo.
+          if (effectsForLayer?.stroke) {
+            delete effectsForLayer.stroke
+            if (Object.keys(effectsForLayer).length === 0) effectsForLayer = undefined
           }
           console.log("[shape-export]", name, {
             fill: fillStr, stroke: strokeStr, strokeW,
-            userRemovedStroke,
-            finalEffects: effectsWithStroke ? Object.keys(effectsWithStroke) : null,
+            hasFill, hasStroke,
           })
 
           const psdLayer: any = {
@@ -1722,7 +1702,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             top, left, bottom, right,
             ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
             ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
-            ...(effectsWithStroke ? { effects: effectsWithStroke } : {}),
+            ...(effectsForLayer ? { effects: effectsForLayer } : {}),
             __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
             // "combine" = path puro (sem boolean ops). "subtract" subtrai do
             // composite e deixaria o shape invisivel.
@@ -1730,8 +1710,29 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
               paths: [{ operation: "combine", knots, open: false }],
             },
           }
-          if (fillStr) {
+          if (hasFill) {
             psdLayer.vectorFill = { type: "color", color: hexToAgPsdRgb(fillStr) }
+          }
+          // VECTOR STROKE NATIVO — Shape Layer real, editavel via Properties
+          // Panel no PS (Stroke color + width + alignment). fillEnabled=hasFill
+          // CRITICO: sem isso PS ignora o vectorFill e renderiza so contorno.
+          if (hasStroke) {
+            psdLayer.vectorStroke = {
+              strokeEnabled: true,
+              fillEnabled: hasFill,
+              lineWidth: { value: strokeW, units: "Pixels" as const },
+              lineDashOffset: { value: 0, units: "Pixels" as const },
+              lineCapType: "butt" as const,
+              lineJoinType: "miter" as const,
+              lineAlignment: "center" as const,
+              miterLimit: 100,
+              strokeAdjust: false,
+              scaleLock: false,
+              blendMode: "normal" as const,
+              opacity: extractAlpha(strokeStr),
+              content: { type: "color" as const, color: hexToAgPsdRgb(strokeStr) },
+              resolution: 72,
+            }
           }
           // VECTOR ORIGINATION (vogk) — informa ao PS que este eh um Live Shape
           // parametric (Rectangle/Rounded Rectangle/Ellipse) em vez de path
