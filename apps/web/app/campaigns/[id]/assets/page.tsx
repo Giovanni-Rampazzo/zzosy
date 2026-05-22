@@ -633,7 +633,8 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
   // outro user editou, refresh, etc).
   useEffect(() => { setLocalText(text) }, [text])
   const dirty = isText && localText !== text
-  // TEXT: linha unica enxuta — label + input + Salvar + Apagar.
+  // TEXT: linha unica enxuta — input direto + Salvar + Apagar (sem label
+  // do layer na frente, a pedido do user 2026-05-22).
   if (isText) {
     return (
       <div style={{
@@ -643,10 +644,6 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         padding: "8px 16px",
         borderBottom: isLast ? "none" : "1px solid #F0F0F0",
       }}>
-        {/* Label do layer (editavel inline) */}
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#111", flexShrink: 0, minWidth: 0, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
-        </div>
         {/* Input do texto — flex 1 pra ocupar espaco disponivel */}
         <input
           type="text"
