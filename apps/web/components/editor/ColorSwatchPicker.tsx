@@ -173,7 +173,10 @@ export function ColorSwatchPicker({
           }}
           style={inlineInpS}
         />
-        {/* Opacity field (opcional — so renderiza quando opacity + onOpacityChange) */}
+        {/* Opacity field (opcional — so renderiza quando opacity + onOpacityChange).
+            Spinner arrows nativos VISIVEIS por preferencia global do user
+            (app/globals.css linha 16). Padding right generoso pra '100' nao
+            encostar nos arrows que aparecem no canto direito do input. */}
         {showOpacity && (
           <>
             <div style={{ width: 1, height: 18, background: "#2a2a2a", marginRight: 6 }} />
@@ -183,10 +186,11 @@ export function ColorSwatchPicker({
               onChange={e => onOpacityChange!(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
               title="Opacidade %"
               style={{
-                ...inlineInpS, width: 52, flex: "0 0 52px",
+                ...inlineInpS, width: 64, flex: "0 0 64px",
                 textAlign: "right", fontFamily: "inherit",
-                // Padding direita generoso pra spinner arrows respirarem
-                paddingRight: 12,
+                // Padding direita BEM generoso pra texto respirar do spinner.
+                // Spinner Chrome ocupa ~18px no canto direito do input.
+                paddingRight: 22,
               }}
             />
             <span style={{ fontSize: 11, color: "#666", marginLeft: 8, marginRight: 2 }}>%</span>
