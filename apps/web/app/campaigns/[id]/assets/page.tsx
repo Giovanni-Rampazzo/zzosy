@@ -13,6 +13,7 @@ import {
   BrandPresetKey, BrandPreset, BrandTypography,
   PRESET_LABELS, PRESET_ORDER, DEFAULT_TYPOGRAPHY, normalizeTypography,
 } from "@/lib/brandTypography"
+import { buildShapePath, type ShapeKind } from "@/lib/shapePaths"
 
 interface CustomFontFile { url: string; weight: number; style: "normal" | "italic"; fileName: string }
 interface BrandColor { hex: string; name?: string | null; role?: string }
@@ -150,44 +151,18 @@ export default function CampaignAssetsPage() {
    * Fill default = primeira brand color (ou cinza neutro). Sem stroke.
    * Editor expoe controles fill/stroke/strokeWidth no painel direito.
    */
-  async function addShapeAsset(kind: "rectangle" | "roundedRect" | "ellipse") {
+  async function addShapeAsset(kind: ShapeKind) {
     const W = 400, H = 300
-    const K = 0.5522847498
-    let path = ""
     let label = ""
     let cornerRadius: number | undefined = undefined
-    if (kind === "rectangle") {
-      label = "Retangulo"
-      path = `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
-    } else if (kind === "roundedRect") {
+    if (kind === "rectangle") label = "Retangulo"
+    else if (kind === "roundedRect") {
       label = "Retangulo Arredondado"
-      const r = 20
-      cornerRadius = r
-      path = [
-        `M ${r} 0`,
-        `L ${W - r} 0`,
-        `C ${W - r + r * K} 0, ${W} ${r - r * K}, ${W} ${r}`,
-        `L ${W} ${H - r}`,
-        `C ${W} ${H - r + r * K}, ${W - r + r * K} ${H}, ${W - r} ${H}`,
-        `L ${r} ${H}`,
-        `C ${r - r * K} ${H}, 0 ${H - r + r * K}, 0 ${H - r}`,
-        `L 0 ${r}`,
-        `C 0 ${r - r * K}, ${r - r * K} 0, ${r} 0`,
-        "Z",
-      ].join(" ")
-    } else {
-      label = "Elipse"
-      const cx = W / 2, cy = H / 2, rx = W / 2, ry = H / 2
-      const dx = rx * K, dy = ry * K
-      path = [
-        `M ${cx} 0`,
-        `C ${cx + dx} 0, ${W} ${cy - dy}, ${W} ${cy}`,
-        `C ${W} ${cy + dy}, ${cx + dx} ${H}, ${cx} ${H}`,
-        `C ${cx - dx} ${H}, 0 ${cy + dy}, 0 ${cy}`,
-        `C 0 ${cy - dy}, ${cx - dx} 0, ${cx} 0`,
-        "Z",
-      ].join(" ")
+      cornerRadius = 20
     }
+    else label = "Elipse"
+    // buildShapePath: fonte unica de verdade pra gerar paths (lib/shapePaths.ts).
+    const path = buildShapePath(kind, W, H, cornerRadius)
     // Fill default: primeira brand color do cliente, ou cinza neutro.
     const defaultFill = brandColors[0]?.hex ?? "#4d4d4f"
     // `kind` + `cornerRadius` metadata: permitem o Properties Panel mostrar

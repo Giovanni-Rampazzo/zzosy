@@ -11,6 +11,7 @@ import { migrateStyles } from "@/lib/migrateStyles"
 import { normalizeName } from "@/lib/normalize"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
+import { buildShapePath, type ShapeKind } from "@/lib/shapePaths"
 import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
@@ -655,6 +656,70 @@ function serializeTextboxOverrides(
 }
 
 /**
+ * Parser minimo de path SVG → formato interno do Fabric.Path
+ *   `[ ["M", x, y], ["L", x, y], ["C", x1, y1, x2, y2, x, y], ["Z"] ]`
+ *
+ * Suporta apenas os comandos usados em lib/shapePaths.ts: M, L, C, Z (uppercase
+ * absolutos). Pra geradores parametricos isso eh suficiente — paths importados
+ * de PSD podem ter outros comandos mas esses NAO sao recomputados aqui (o
+ * recompute so roda em shapes com __shapeKind setado, i.e., adicionadas via
+ * "+ Forma" ou Live Shapes PSD).
+ */
+function parseSimpleSvgPathToFabric(d: string): any[] {
+  const tokens = d.match(/[MLCZmlczMLCZ]|-?\d*\.?\d+(?:[eE][-+]?\d+)?/g) ?? []
+  const out: any[] = []
+  let i = 0
+  while (i < tokens.length) {
+    const cmd = tokens[i]
+    if (cmd === "M" || cmd === "L") {
+      out.push([cmd, Number(tokens[i + 1]), Number(tokens[i + 2])])
+      i += 3
+    } else if (cmd === "C") {
+      out.push([
+        cmd,
+        Number(tokens[i + 1]), Number(tokens[i + 2]),
+        Number(tokens[i + 3]), Number(tokens[i + 4]),
+        Number(tokens[i + 5]), Number(tokens[i + 6]),
+      ])
+      i += 7
+    } else if (cmd === "Z" || cmd === "z") {
+      out.push(["Z"])
+      i += 1
+    } else {
+      // Token nao reconhecido — pula pra evitar loop infinito
+      i += 1
+    }
+  }
+  return out
+}
+
+/**
+ * Substitui o `d` (path SVG) de um Fabric.Path EXISTENTE in-place.
+ * Reusa o objeto sem destrui-lo (preserva listeners, __assetId, selecao
+ * ativa). Fabric v7: obj.path eh array de comandos; precisa parsear o
+ * d string e atribuir. Depois marca dirty, recalcula bbox via
+ * _calcDimensions e setCoords pra handles atualizarem.
+ *
+ * Usado por: setCornerRadius (slider de raio) e scaling hook (parametric
+ * resize). Centralizado pra eliminar duplicacao + tratamento de erro.
+ */
+function applyShapePathInPlace(obj: any, newPathD: string): void {
+  try {
+    const parsed = parseSimpleSvgPathToFabric(newPathD)
+    if (!parsed || !parsed.length) return
+    obj.path = parsed
+    // _calcDimensions atualiza obj.width/height/pathOffset a partir do path.
+    // Sem isso, o bbox do Fabric ficaria nas dimensoes antigas → handles e
+    // mask referem-se a bbox stale.
+    if (typeof obj._calcDimensions === "function") obj._calcDimensions()
+    obj.dirty = true
+    if (obj.setCoords) obj.setCoords()
+  } catch (e) {
+    console.warn("[applyShapePathInPlace] falha:", e)
+  }
+}
+
+/**
  * FONTE UNICA DE VERDADE pra serializar overrides de SHAPE (Fabric.Path).
  * Mesmo pattern do serializeTextboxOverrides — evita drift.
  */
@@ -666,6 +731,18 @@ function serializeShapeOverrides(o: any): Record<string, any> {
   // cornerRadius: usado pelo Properties Panel pra slider de raio (roundedRect).
   // Persiste o valor live pro reload mostrar o mesmo raio.
   if (typeof o.__cornerRadius === "number") ov.cornerRadius = o.__cornerRadius
+  // bboxW/bboxH: dimensoes LOGICAS atualizadas pelo scaling hook parametric.
+  // Sem isso, reload usaria asset.content.pathBbox (W/H originais) e o resize
+  // seria perdido. Cuidado: so persiste quando shape eh parametric (kind set).
+  if (o.__shapeKind && o.__pathBbox) {
+    const bb = o.__pathBbox
+    const W = (bb.right ?? 0) - (bb.left ?? 0)
+    const H = (bb.bottom ?? 0) - (bb.top ?? 0)
+    if (W > 0 && H > 0) {
+      ov.bboxW = W
+      ov.bboxH = H
+    }
+  }
   return ov
 }
 
@@ -2341,6 +2418,57 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         setSelectedTick(t => t + 1)
       })
 
+      // === SHAPE parametric scaling (Photoshop Live Shape pattern) ===
+      // Quando user scala um SHAPE com __shapeKind setado (rectangle/roundedRect/
+      // ellipse), em vez de deixar o Fabric.Path escalar as coords do path
+      // inteiro (distorce arcos quando scaleX != scaleY), RECOMPUTAMOS o path
+      // com novas dimensoes mantendo o cornerRadius ABSOLUTO. Isso replica o
+      // comportamento do PS Live Shape: o raio do canto fica em pixels reais,
+      // nao escala junto. Consolida scaleX/scaleY em width/height da bbox
+      // logica (__pathBbox).
+      //
+      // Roda em object:scaling (durante drag) pra preview ao vivo + em
+      // object:modified (drop) pra consolidar o estado final.
+      const recomputeShapeParametric = (obj: any) => {
+        const kind = obj?.__shapeKind as ShapeKind | undefined
+        if (!kind) return false  // shape generico (PSD path arbitrario) — deixa Fabric escalar
+        const bb = obj.__pathBbox
+        if (!bb) return false
+        const origW = Math.max(1, (bb.right ?? 400) - (bb.left ?? 0))
+        const origH = Math.max(1, (bb.bottom ?? 300) - (bb.top ?? 0))
+        const sX = obj.scaleX ?? 1
+        const sY = obj.scaleY ?? 1
+        if (Math.abs(sX - 1) < 0.001 && Math.abs(sY - 1) < 0.001) return false
+        const newW = Math.max(1, origW * sX)
+        const newH = Math.max(1, origH * sY)
+        const cornerR = typeof obj.__cornerRadius === "number" ? obj.__cornerRadius : undefined
+        const newPath = buildShapePath(kind, newW, newH, cornerR)
+        applyShapePathInPlace(obj, newPath)
+        // Reset scale + atualiza bbox logica pra novos W/H. Sem isso, save
+        // grava scaleX!=1 e load reaplica scale por cima do path ja recomputado.
+        obj.set({ scaleX: 1, scaleY: 1 })
+        obj.__pathBbox = { left: 0, top: 0, right: newW, bottom: newH }
+        return true
+      }
+      fc.on("object:scaling" as any, (e: any) => {
+        if (!alive) return
+        const obj = e?.target
+        if (!obj) return
+        const isShape = obj.__isShape === true || obj.type === "path" || obj.type === "Path"
+        if (!isShape) return
+        if (recomputeShapeParametric(obj)) {
+          fc.requestRenderAll()
+        }
+      })
+      fc.on("object:modified" as any, (e: any) => {
+        if (!alive) return
+        const obj = e?.target
+        if (!obj) return
+        const isShape = obj.__isShape === true || obj.type === "path" || obj.type === "Path"
+        if (!isShape) return
+        recomputeShapeParametric(obj)  // consolida final state
+      })
+
       // Ao SOLTAR o mouse apos arrastar lateral, consolida scaleX em width pra que o save
       // grave o estado limpo (scaleX=1, width final). Sem isso, scaleX!=1 ficaria salvo e
       // ao recarregar o textbox apareceria com scale ainda aplicado.
@@ -3957,33 +4085,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fillProp = layerOv.fill !== undefined ? layerOv.fill : baseFill
         const strokeProp = layerOv.stroke !== undefined ? layerOv.stroke : baseStroke
         const strokeWidth = layerOv.strokeWidth !== undefined ? layerOv.strokeWidth : baseStrokeW
-        // cornerRadius override: se user mudou o raio na matriz, recomputa o
-        // path antes de criar o Fabric.Path. Sem isso, reload mostrava o raio
-        // original do asset.content (perdendo a edicao).
+        // PARAMETRIC SHAPE LOAD: se o asset eh parametric (kind set), recomputa
+        // o path com overrides:
+        //   - cornerRadius (raio personalizado pelo Properties Panel)
+        //   - bboxW/bboxH (dimensoes atualizadas pelo scaling hook)
+        // Caso contrario usa o path bruto do asset.content (PSD imports
+        // arbitrarios, etc).
         let pathStr: string = parsedShape.path
-        if (parsedShape.kind === "roundedRect"
-            && typeof layerOv.cornerRadius === "number"
-            && layerOv.cornerRadius !== parsedShape.cornerRadius
-            && parsedShape.pathBbox) {
-          const bb = parsedShape.pathBbox
-          const W = (bb.right ?? 400) - (bb.left ?? 0)
-          const H = (bb.bottom ?? 300) - (bb.top ?? 0)
-          const K = 0.5522847498
-          const r = Math.max(0, Math.min(layerOv.cornerRadius, Math.min(W, H) / 2))
-          pathStr = r === 0
-            ? `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
-            : [
-                `M ${r} 0`,
-                `L ${W - r} 0`,
-                `C ${W - r + r * K} 0, ${W} ${r - r * K}, ${W} ${r}`,
-                `L ${W} ${H - r}`,
-                `C ${W} ${H - r + r * K}, ${W - r + r * K} ${H}, ${W - r} ${H}`,
-                `L ${r} ${H}`,
-                `C ${r - r * K} ${H}, 0 ${H - r + r * K}, 0 ${H - r}`,
-                `L 0 ${r}`,
-                `C 0 ${r - r * K}, ${r - r * K} 0, ${r} 0`,
-                "Z",
-              ].join(" ")
+        let effBboxW = 0, effBboxH = 0
+        if (parsedShape.pathBbox) {
+          effBboxW = (parsedShape.pathBbox.right ?? 400) - (parsedShape.pathBbox.left ?? 0)
+          effBboxH = (parsedShape.pathBbox.bottom ?? 300) - (parsedShape.pathBbox.top ?? 0)
+        }
+        if (typeof layerOv.bboxW === "number" && layerOv.bboxW > 0) effBboxW = layerOv.bboxW
+        if (typeof layerOv.bboxH === "number" && layerOv.bboxH > 0) effBboxH = layerOv.bboxH
+        const effCornerR_load = typeof layerOv.cornerRadius === "number"
+          ? layerOv.cornerRadius
+          : (typeof parsedShape.cornerRadius === "number" ? parsedShape.cornerRadius : 0)
+        const isParametric = !!parsedShape.kind && effBboxW > 0 && effBboxH > 0
+        if (isParametric) {
+          pathStr = buildShapePath(parsedShape.kind as ShapeKind, effBboxW, effBboxH, effCornerR_load)
         }
         // DEBUG: trace de onde vem cada valor (overrides vs asset.content vs effects)
         console.log("[LOAD-SHAPE]", asset.label, {
@@ -4019,16 +4140,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // do Fabric.Path pode variar entre versoes ("path", "Path", null em
         // certos casos de toObject roundtrip); flag custom eh imune.
         ;(p as any).__isShape = true
-        // Shape kind/cornerRadius pra Properties Panel mostrar slider de raio
-        // (so renderiza quando kind === "roundedRect"). pathBbox preservado pra
-        // recomputar path quando raio mudar. Prioridade pro override:
+        // Shape kind/cornerRadius/pathBbox metadata pra parametric resize +
+        // Properties Panel. Prioridade pros overrides:
         //   layer.overrides.cornerRadius > asset.content.cornerRadius
+        //   layer.overrides.bboxW/H > asset.content.pathBbox dimensions
         if (parsedShape.kind) (p as any).__shapeKind = parsedShape.kind
-        const effCornerR = typeof layerOv.cornerRadius === "number"
-          ? layerOv.cornerRadius
-          : (typeof parsedShape.cornerRadius === "number" ? parsedShape.cornerRadius : undefined)
-        if (effCornerR !== undefined) (p as any).__cornerRadius = effCornerR
-        if (parsedShape.pathBbox) (p as any).__pathBbox = parsedShape.pathBbox
+        if (effCornerR_load !== undefined) (p as any).__cornerRadius = effCornerR_load
+        // __pathBbox SEMPRE em coords (0,0) → (W,H) — depois do recompute o
+        // path comeca em 0 e termina em effBboxW/H. Antes era pathBbox raw
+        // do asset, podia ter offset (left/top != 0).
+        if (isParametric) {
+          ;(p as any).__pathBbox = { left: 0, top: 0, right: effBboxW, bottom: effBboxH }
+        } else if (parsedShape.pathBbox) {
+          ;(p as any).__pathBbox = parsedShape.pathBbox
+        }
         if (psdEffects) (p as any).__psdEffects = psdEffects
         if (psdGroupPath) (p as any).__groupPath = psdGroupPath
         applyFabricEffects(p, psdEffects, Shadow)
@@ -10115,54 +10240,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const pathBbox = (selected as any).__pathBbox ?? { left: 0, top: 0, right: 400, bottom: 300 }
             const bboxW = (pathBbox.right ?? 400) - (pathBbox.left ?? 0)
             const bboxH = (pathBbox.bottom ?? 300) - (pathBbox.top ?? 0)
-            // Recomputa o path SVG do roundedRect com novo raio (mesma logica
-            // do addShapeAsset). Mantem pathBbox — so muda os corners.
-            function recomputeRoundedRectPath(r: number): string {
-              const K = 0.5522847498
-              const W = bboxW, H = bboxH
-              const rr = Math.max(0, Math.min(r, Math.min(W, H) / 2))
-              if (rr === 0) {
-                return `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
-              }
-              return [
-                `M ${rr} 0`,
-                `L ${W - rr} 0`,
-                `C ${W - rr + rr * K} 0, ${W} ${rr - rr * K}, ${W} ${rr}`,
-                `L ${W} ${H - rr}`,
-                `C ${W} ${H - rr + rr * K}, ${W - rr + rr * K} ${H}, ${W - rr} ${H}`,
-                `L ${rr} ${H}`,
-                `C ${rr - rr * K} ${H}, 0 ${H - rr + rr * K}, 0 ${H - rr}`,
-                `L 0 ${rr}`,
-                `C 0 ${rr - rr * K}, ${rr - rr * K} 0, ${rr} 0`,
-                "Z",
-              ].join(" ")
-            }
-            // setCornerRadius reconstroi o Fabric.Path com novo `d`. Como Fabric.Path
-            // nao aceita `path` setter direto (precisa recriar internamente o array
-            // de comandos), usamos uma abordagem indireta: dispara o re-parse via
-            // _setPath ou reconstroi o Path object inteiro.
             function setCornerRadius(r: number) {
               if (!fc || !selected) return
-              const newPath = recomputeRoundedRectPath(r)
-              // Reusa o Fabric.Path existente atualizando o array `path` interno.
-              // Fabric.Path parseia o `d` string via util parsePath quando criado;
-              // aqui chamamos util manualmente.
-              try {
-                const fabric: any = (window as any).fabric || require("fabric")
-                const util = fabric.util || (fabric as any).util
-                const parsed = util?.parsePath?.(newPath) ?? null
-                if (parsed) {
-                  ;(selected as any).path = parsed
-                  ;(selected as any).set("dirty", true)
-                  // Re-mede bbox + handles
-                  if ((selected as any).setBoundingBox) (selected as any).setBoundingBox(true)
-                  ;(selected as any).setCoords?.()
-                  fc.requestRenderAll()
-                }
-              } catch (e) {
-                console.warn("[corner-radius] reparse path fail:", e)
-              }
+              // buildShapePath: fonte unica de verdade (lib/shapePaths.ts).
+              const newPath = buildShapePath("roundedRect", bboxW, bboxH, r)
+              applyShapePathInPlace(selected, newPath)
               ;(selected as any).__cornerRadius = r
+              fc.requestRenderAll()
               setSelectedTick(t => t + 1)
               isDirtyRef.current = true
               setIsDirty(true)

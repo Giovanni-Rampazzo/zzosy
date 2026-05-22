@@ -615,12 +615,25 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
               : (shape.stroke?.color ?? undefined)
             const strokeW = overrides.strokeWidth !== undefined ? overrides.strokeWidth
               : (shape.stroke?.width ?? 0)
-            // posX/posY SEMPRE do layer (estado salvo pelo user). pathBbox eh
-            // posicao PSD original e SEMPRE tem valor → o fallback antigo
-            // (`pathBbox?.left ?? layer.posX`) NUNCA acionava layer.posX,
-            // entao SHAPE no export saia sempre na posicao do PSD,
-            // ignorando moves/scales do user. Mesmo bug que o load tinha.
-            const p = new Path(shape.path, {
+            // PARAMETRIC SHAPE: aplica overrides.cornerRadius e overrides.bboxW/H
+            // se shape tem kind setado (rectangle/roundedRect/ellipse). Recomputa
+            // o path com dimensoes/raio atualizados ANTES de criar Fabric.Path.
+            // Sem isso, export PSD/PNG saia com cornerRadius/dimensoes ANTIGOS
+            // do asset.content (perdia edicoes do user).
+            let pathD = shape.path
+            let bboxW = shape.pathBbox ? ((shape.pathBbox.right ?? 0) - (shape.pathBbox.left ?? 0)) : 0
+            let bboxH = shape.pathBbox ? ((shape.pathBbox.bottom ?? 0) - (shape.pathBbox.top ?? 0)) : 0
+            if (typeof overrides.bboxW === "number" && overrides.bboxW > 0) bboxW = overrides.bboxW
+            if (typeof overrides.bboxH === "number" && overrides.bboxH > 0) bboxH = overrides.bboxH
+            const effCornerR = typeof overrides.cornerRadius === "number"
+              ? overrides.cornerRadius
+              : (typeof (shape as any).cornerRadius === "number" ? (shape as any).cornerRadius : 0)
+            const shapeKind = (shape as any).kind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
+            if (shapeKind && bboxW > 0 && bboxH > 0) {
+              const { buildShapePath } = await import("@/lib/shapePaths")
+              pathD = buildShapePath(shapeKind, bboxW, bboxH, effCornerR)
+            }
+            const p = new Path(pathD, {
               left: layer.posX ?? shape.pathBbox?.left ?? 0,
               top: layer.posY ?? shape.pathBbox?.top ?? 0,
               fill: fillProp,
@@ -628,8 +641,10 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
               strokeWidth: strokeW,
               strokeUniform: true,
               fillRule: shape.fillRule ?? "nonzero",
-              scaleX: layer.scaleX ?? 1,
-              scaleY: layer.scaleY ?? 1,
+              // Quando shape eh parametric e recomputamos o path, scale=1 (path
+              // ja tem dims novos). Se nao-parametric, mantem scale do layer.
+              scaleX: shapeKind ? 1 : (layer.scaleX ?? 1),
+              scaleY: shapeKind ? 1 : (layer.scaleY ?? 1),
               angle: layer.rotation ?? 0,
               opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
               globalCompositeOperation: layer.blendMode ?? "source-over",
@@ -637,6 +652,13 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             ;(p as any).__assetId = asset.id
             ;(p as any).__assetLabel = asset.label
             ;(p as any).__isShape = true
+            // Propaga metadata parametric pra branch SHAPE do PSD export ler
+            // e emitir vectorOrigination (vogk) — PS abre como Live Shape.
+            if (shapeKind) {
+              ;(p as any).__shapeKind = shapeKind
+              ;(p as any).__cornerRadius = effCornerR
+              ;(p as any).__pathBbox = { left: 0, top: 0, right: bboxW, bottom: bboxH }
+            }
             if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
               ;(p as any).__groupPath = layer.groupPath
             }
@@ -1716,6 +1738,48 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           }
           if (fillStr) {
             psdLayer.vectorFill = { type: "color", color: hexToAgPsdRgb(fillStr) }
+          }
+          // VECTOR ORIGINATION (vogk) — informa ao PS que este eh um Live Shape
+          // parametric (Rectangle/Rounded Rectangle/Ellipse) em vez de path
+          // generico. PS mostra os handles especiais (raio do canto, etc) e
+          // preserva cornerRadius absoluto em scale. Sem isso, PS importa
+          // como "Path" e perde a parametricidade.
+          //
+          // keyOriginType: 1=Rect, 2=RoundedRect, 4=Line, 5=Ellipse.
+          // BBox em coords ABSOLUTAS do canvas (left/top/right/bottom da peca),
+          // nao relativas ao path. Compativel com como o reader (psd/reader.ts
+          // tryReadVogkPath) le esses campos.
+          const shapeKind = (obj as any).__shapeKind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
+          const shapeBbox = (obj as any).__pathBbox
+          if (shapeKind && shapeBbox) {
+            // Coords absolutas: layer left/top sao o offset do path (0,0) no canvas.
+            const absLeft = left
+            const absTop = top
+            const absRight = left + ((shapeBbox.right ?? 0) - (shapeBbox.left ?? 0))
+            const absBottom = top + ((shapeBbox.bottom ?? 0) - (shapeBbox.top ?? 0))
+            const keyType = shapeKind === "rectangle" ? 1
+              : shapeKind === "roundedRect" ? 2
+              : shapeKind === "ellipse" ? 5
+              : 0
+            if (keyType > 0) {
+              const item: any = {
+                keyOriginType: keyType,
+                keyOriginResolution: 72,
+                keyOriginShapeBoundingBox: {
+                  top: absTop, left: absLeft,
+                  bottom: absBottom, right: absRight,
+                },
+              }
+              if (keyType === 2) {
+                // Rounded rect: 4 radii (mesmo valor em todos os cantos —
+                // independente per-canto fica pra futuro).
+                const r = (obj as any).__cornerRadius ?? 0
+                item.keyOriginRRectRadii = {
+                  topLeft: r, topRight: r, bottomLeft: r, bottomRight: r,
+                }
+              }
+              psdLayer.vectorOrigination = { keyDescriptorList: [item] }
+            }
           }
           // NOTA: NAO emitir vectorStroke aqui — quebra o vectorFill (SoCo guard).
           // Stroke vai via effects.stroke[] acima.
