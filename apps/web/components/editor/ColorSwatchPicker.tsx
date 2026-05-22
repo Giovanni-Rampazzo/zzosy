@@ -169,13 +169,13 @@ export function ColorSwatchPicker({
               onChange={e => onOpacityChange!(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
               title="Opacidade %"
               style={{
-                ...inlineInpS, width: 44, flex: "0 0 44px",
+                ...inlineInpS, width: 52, flex: "0 0 52px",
                 textAlign: "right", fontFamily: "inherit",
-                // Padding right pra spinner arrows nao colarem no "%"
-                paddingRight: 6,
+                // Padding direita generoso pra spinner arrows respirarem
+                paddingRight: 12,
               }}
             />
-            <span style={{ fontSize: 11, color: "#666", marginLeft: 4 }}>%</span>
+            <span style={{ fontSize: 11, color: "#666", marginLeft: 8, marginRight: 2 }}>%</span>
           </>
         )}
       </div>
