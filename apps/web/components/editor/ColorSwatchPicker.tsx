@@ -186,11 +186,13 @@ export function ColorSwatchPicker({
               onChange={e => onOpacityChange!(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
               title="Opacidade %"
               style={{
-                ...inlineInpS, width: 64, flex: "0 0 64px",
-                textAlign: "right", fontFamily: "inherit",
-                // Padding direita BEM generoso pra texto respirar do spinner.
-                // Spinner Chrome ocupa ~18px no canto direito do input.
-                paddingRight: 22,
+                ...inlineInpS, width: 50, flex: "0 0 50px",
+                // Text alignment LEFT pra '100' ficar a esquerda do input.
+                // Spinner ocupa o lado direito. Sem text-align: right o
+                // numero NUNCA toca o spinner — sempre tem espaco visual
+                // natural entre texto curto e arrow buttons.
+                textAlign: "left", fontFamily: "inherit",
+                paddingLeft: 4,
               }}
             />
             <span style={{ fontSize: 11, color: "#666", marginLeft: 8, marginRight: 2 }}>%</span>
