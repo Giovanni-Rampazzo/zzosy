@@ -4318,6 +4318,35 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (attempts > 0) {
           editorLog("[autofit-text]", asset.label, `expanded ${attempts}x to fit ${expectedLines} lines (psd=${psdLines}, explicit=${explicitLines})`)
         }
+        // SHRINK-TO-CONTENT: depois de garantir que o text wrapping respeita
+        // expectedLines, encolhe o width pra HUGGAR o conteudo. Sem isso, um
+        // textbox importado do PSD com bbox de 1200px continua com 1200px de
+        // largura mesmo se o texto so usa 600px — handles ficam la longe,
+        // edicao no canvas vira pesadelo. Pattern Adobe/Figma: "Point Type"
+        // texto-tem-largura-do-conteudo.
+        try {
+          const lineCount = (t as any)._textLines?.length ?? 0
+          if (lineCount > 0 && lineCount === expectedLines) {
+            let maxLineW = 0
+            for (let i = 0; i < lineCount; i++) {
+              const lw = typeof (t as any).getLineWidth === "function"
+                ? (t as any).getLineWidth(i)
+                : 0
+              if (lw > maxLineW) maxLineW = lw
+            }
+            // Padding 8px pra cursor de edicao caber + arredondamento Photoshop.
+            // MIN 100 pra textboxes muito curtos (1-2 chars) nao virarem clickable
+            // alvo minusculo.
+            const targetW = Math.max(100, Math.ceil(maxLineW + 8))
+            const currentW = (t as any).width ?? 0
+            // So encolhe — nunca expande aqui (a expansao foi cuidada acima).
+            if (targetW < currentW * 0.95) {
+              ;(t as any).set("width", targetW)
+              if ((t as any).initDimensions) (t as any).initDimensions()
+              editorLog("[autofit-text]", asset.label, `shrunk ${currentW}→${targetW} pra hugger conteudo`)
+            }
+          }
+        } catch (e) { editorLog("[autofit-text-shrink] erro:", e) }
       } catch (e) { editorLog("[autofit-text] erro:", e) }
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
