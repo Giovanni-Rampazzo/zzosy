@@ -2418,44 +2418,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         setSelectedTick(t => t + 1)
       })
 
-      // === SHAPE Live Shape (Photoshop pattern) ===
-      // Pattern PS Live Shape: o raio do canto fica em pixels ABSOLUTOS,
-      // independente do scale. Como o shape eh Fabric.Rect com rx/ry nativos
-      // (substituicao de Fabric.Path), basta compensar rx/ry inversamente
-      // ao scale durante o drag, e resetar scale ao soltar.
+      // === SHAPE Live Shape — "snap-on-release" pattern ===
+      // Durante o drag deixa o Fabric.Rect/Ellipse escalar normalmente
+      // (rx/ry escalam junto, raio do canto distorce). Ao SOLTAR mouse,
+      // consolida: width *= scaleX, scaleX=1, rx volta ao valor absoluto.
       //
-      // FORMULA: visual_radius = rx * scaleX. Pra manter visual_radius = R
-      // constante quando scaleX muda → rx = R / scaleX. ry analogo.
+      // Tentativa anterior compensava rx/ry inversamente durante o drag
+      // (rx = R / scaleX). User reportou que isso interferia com
+      // strokeUniform (stroke escalava com box) e com o bg do canvas
+      // (saia do centro). Race conditions e cache invalidation entre
+      // o Fabric scale system e nossa mutacao mid-drag.
       //
-      // Durante o drag (object:scaling): atualiza rx/ry em cada frame pra
-      // compensar. Resultado: arcos circulares no display space, raio
-      // PIXEL-PERFECT preservado.
-      //
-      // No release (object:modified): consolida scale em width/height
-      // (atomico ja que Fabric nao volta a mudar scale depois do release).
-      // rx/ry voltam ao valor absoluto __cornerRadius.
+      // Trade-off: durante o drag os cantos distorcem temporariamente
+      // (mesmo que PS Path scale). Ao soltar, snap pro estado correto.
       const isLiveShape = (o: any) =>
         o && o.__isShape === true
         && (o.type === "rect" || o.type === "ellipse")
-        && typeof o.__cornerRadius === "number"
 
-      fc.on("object:scaling" as any, (e: any) => {
-        if (!alive) return
-        const obj = e?.target
-        if (!isLiveShape(obj)) return
-        const R = obj.__cornerRadius
-        const sX = Math.abs(obj.scaleX ?? 1) || 1
-        const sY = Math.abs(obj.scaleY ?? 1) || 1
-        if (obj.type === "rect") {
-          // Compensa rx/ry inversamente pra raio visual ficar constante.
-          obj.set({ rx: R / sX, ry: R / sY })
-          // dirty + objectCaching=false ja setado no load → re-render
-          // imediato sem cache stale.
-        }
-        // Ellipse: rx/ry sao os raios DA ELIPSE em si. Scale nao-uniforme
-        // distorce a elipse num oval, comportamento esperado (igual PS
-        // Live Shape Ellipse — nao tem corner radius pra preservar).
-      })
       fc.on("object:modified" as any, (e: any) => {
         if (!alive) return
         const obj = e?.target
@@ -2466,12 +2445,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (obj.type === "rect") {
           const newW = Math.max(1, (obj.width ?? 100) * sX)
           const newH = Math.max(1, (obj.height ?? 100) * sY)
-          const R = obj.__cornerRadius
+          const R = typeof obj.__cornerRadius === "number" ? obj.__cornerRadius : (obj.rx ?? 0)
+          // Clamp corner radius to fit new dimensions
+          const clampedR = Math.max(0, Math.min(R, Math.min(newW, newH) / 2))
           obj.set({
             width: newW, height: newH,
             scaleX: 1, scaleY: 1,
-            rx: R, ry: R,  // de volta ao valor absoluto
+            rx: clampedR, ry: clampedR,
           })
+          obj.__cornerRadius = clampedR
           obj.__pathBbox = { left: 0, top: 0, right: newW, bottom: newH }
         } else if (obj.type === "ellipse") {
           const newRx = (obj.rx ?? 50) * sX
