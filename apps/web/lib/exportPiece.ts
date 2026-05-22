@@ -905,6 +905,37 @@ const PS_FONTS: Record<string, { regular: string; bold?: string }> = {
   "Palatino":        { regular: "Palatino-Roman",    bold: "Palatino-Bold" },
   "Tahoma":          { regular: "Tahoma",            bold: "Tahoma-Bold" },
   "Helvetica Neue":  { regular: "HelveticaNeue",     bold: "HelveticaNeue-Bold" },
+  // Google Fonts comuns no ZZOSY — convencao padrao `{FamilyNoSpaces}-Regular`
+  // / `{FamilyNoSpaces}-Bold`. Esses sao os nomes que PS usa quando a fonte
+  // esta instalada localmente (via Google Fonts desktop ou similar).
+  "Caveat":          { regular: "Caveat-Regular",          bold: "Caveat-Bold" },
+  "Pacifico":        { regular: "Pacifico-Regular" },
+  "Dancing Script":  { regular: "DancingScript-Regular",   bold: "DancingScript-Bold" },
+  "Kalam":           { regular: "Kalam-Regular",           bold: "Kalam-Bold" },
+  "Roboto":          { regular: "Roboto-Regular",          bold: "Roboto-Bold" },
+  "Open Sans":       { regular: "OpenSans-Regular",        bold: "OpenSans-Bold" },
+  "Inter":           { regular: "Inter-Regular",           bold: "Inter-Bold" },
+  "Lato":            { regular: "Lato-Regular",            bold: "Lato-Bold" },
+  "Montserrat":      { regular: "Montserrat-Regular",      bold: "Montserrat-Bold" },
+  "Poppins":         { regular: "Poppins-Regular",         bold: "Poppins-Bold" },
+  "Nunito":          { regular: "Nunito-Regular",          bold: "Nunito-Bold" },
+  "Manrope":         { regular: "Manrope-Regular",         bold: "Manrope-Bold" },
+  "Work Sans":       { regular: "WorkSans-Regular",        bold: "WorkSans-Bold" },
+  "DM Sans":         { regular: "DMSans-Regular",          bold: "DMSans-Bold" },
+  "Exo 2":           { regular: "Exo2-Regular",            bold: "Exo2-Bold" },
+  "Playfair Display":{ regular: "PlayfairDisplay-Regular", bold: "PlayfairDisplay-Bold" },
+  "Merriweather":    { regular: "Merriweather-Regular",    bold: "Merriweather-Bold" },
+  "Source Sans 3":   { regular: "SourceSans3-Regular",     bold: "SourceSans3-Bold" },
+  "Source Serif 4":  { regular: "SourceSerif4-Regular",    bold: "SourceSerif4-Bold" },
+  "Oswald":          { regular: "Oswald-Regular",          bold: "Oswald-Bold" },
+  "Bebas Neue":      { regular: "BebasNeue-Regular" },
+  "Anton":           { regular: "Anton-Regular" },
+  "Archivo Black":   { regular: "ArchivoBlack-Regular" },
+  "Abril Fatface":   { regular: "AbrilFatface-Regular" },
+  "JetBrains Mono":  { regular: "JetBrainsMono-Regular",   bold: "JetBrainsMono-Bold" },
+  "Fira Code":       { regular: "FiraCode-Regular",        bold: "FiraCode-Bold" },
+  "IBM Plex Mono":   { regular: "IBMPlexMono-Regular",     bold: "IBMPlexMono-Bold" },
+  "Roboto Mono":     { regular: "RobotoMono-Regular",      bold: "RobotoMono-Bold" },
 }
 
 function toPSFont(family: string, isBold: boolean): { name: string; fauxBold: boolean } {
@@ -916,14 +947,22 @@ function toPSFont(family: string, isBold: boolean): { name: string; fauxBold: bo
     if (ps) return { name: ps, fauxBold: false }
   } catch { /* ignore */ }
 
-  // 2. Fallback: mapa de fontes do sistema (Arial, Times etc) — usado quando
-  //    Local Font Access nao foi inicializado ou a fonte foi salva apenas com
-  //    nome generico ("Arial", "Times New Roman").
+  // 2. Mapa de fontes conhecidas (sistema + Google Fonts comuns).
   const f = PS_FONTS[family]
-  if (!f) return { name: family, fauxBold: isBold }       // fonte desconhecida: passa direto
-  if (isBold && f.bold) return { name: f.bold, fauxBold: false }
-  if (isBold && !f.bold) return { name: f.regular, fauxBold: true } // sem variante bold: faux
-  return { name: f.regular, fauxBold: false }
+  if (f) {
+    if (isBold && f.bold) return { name: f.bold, fauxBold: false }
+    if (isBold && !f.bold) return { name: f.regular, fauxBold: true }
+    return { name: f.regular, fauxBold: false }
+  }
+
+  // 3. Fallback genérico pra Google Fonts ou famílias não-mapeadas: usa a
+  //    convenção comum `{FamilyNoSpaces}-Regular` / `{FamilyNoSpaces}-Bold`.
+  //    PS vai procurar por esse PostScript name; se a fonte estiver instalada
+  //    localmente vai casar; se nao, PS substitui pelo default (Myriad Pro).
+  //    Antes esse fallback retornava `family` cru (com espaços), que PS nem
+  //    sequer reconhecia como PostScript name e ja caia direto no Myriad Pro.
+  const compact = family.replace(/\s+/g, "")
+  return { name: `${compact}-${isBold ? "Bold" : "Regular"}`, fauxBold: false }
 }
 
 // Converte charSpacing do Fabric (1/1000 em — mesmo valor que letter-spacing CSS em em*1000?)
