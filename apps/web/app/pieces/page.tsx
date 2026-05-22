@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Suspense } from "react"
 import { PageShell } from "@/components/layout/PageShell"
@@ -14,6 +14,7 @@ import { RowThumb } from "@/components/ui/RowThumb"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
 import { PageHeader } from "@/components/ui/PageHeader"
+import { PsdPieceImporter, type PsdPieceImporterHandle } from "@/components/campaign/PsdPieceImporter"
 
 interface Piece {
   id: string
@@ -47,6 +48,12 @@ function PiecesContent() {
   const [campaignClientId, setCampaignClientId] = useState<string | undefined>(undefined)
   const [campaignClientName, setCampaignClientName] = useState<string | undefined>(undefined)
   const [campaignHasAssets, setCampaignHasAssets] = useState<boolean>(false)
+  // Assets da campanha pra suportar drag-drop de PSDs (PsdPieceImporter precisa).
+  const [campaignAssets, setCampaignAssets] = useState<Array<{ id: string; label: string | null; type: string; imageUrl?: string | null }>>([])
+  // Ref + estado pra drag-drop de PSDs nessa pagina (mesmo padrao de /campaigns/[id]).
+  const psdPieceImporterRef = useRef<PsdPieceImporterHandle>(null)
+  const [piecesDragOver, setPiecesDragOver] = useState(false)
+  const [psdImporting, setPsdImporting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -63,6 +70,7 @@ function PiecesContent() {
         setCampaignClientId(c?.client?.id ?? c?.clientId)
         setCampaignClientName(c?.client?.name)
         setCampaignHasAssets(Array.isArray(c?.assets) && c.assets.length > 0)
+        setCampaignAssets(Array.isArray(c?.assets) ? c.assets : [])
       }).catch(() => {})
     }
 
@@ -199,9 +207,90 @@ function PiecesContent() {
   }
   const groupedKeys = Object.keys(grouped).sort()
 
+  // Refetch helper para o PsdPieceImporter chamar apos importar.
+  async function reloadPieces() {
+    if (!campaignId) return
+    try {
+      const r = await fetch(`/api/pieces?campaignId=${campaignId}`, { cache: "no-store" })
+      if (r.ok) setPieces(await r.json())
+    } catch {}
+  }
+
   return (
     <PageShell>
-      <div className="p-8">
+      <div
+        className="p-8"
+        // Drag-drop de PSDs: cria uma peca nova por arquivo. Pattern espelhado
+        // de /campaigns/[id]/page.tsx (so funciona quando ha campaignId + assets).
+        onDragOver={e => {
+          if (!campaignId || !campaignHasAssets) return
+          const hasFile = Array.from(e.dataTransfer.types ?? []).includes("Files")
+          if (!hasFile) return
+          e.preventDefault()
+          if (!piecesDragOver) setPiecesDragOver(true)
+        }}
+        onDragLeave={e => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setPiecesDragOver(false)
+        }}
+        onDrop={async e => {
+          if (!campaignId) return
+          e.preventDefault()
+          setPiecesDragOver(false)
+          if (!campaignHasAssets) { alert("Importe a matriz (PSD) primeiro — peças precisam de assets pra linkar"); return }
+          const files = Array.from(e.dataTransfer.files).filter(f => /\.psd$/i.test(f.name))
+          if (files.length === 0) { alert("Arraste 1 ou mais arquivos .psd"); return }
+          try {
+            setPsdImporting(true)
+            await psdPieceImporterRef.current?.importFiles(files)
+          } finally {
+            setPsdImporting(false)
+            reloadPieces()
+          }
+        }}
+        style={{ position: "relative", minHeight: "calc(100vh - 64px)" }}
+      >
+        {/* Overlay visual durante drag-over de PSD */}
+        {piecesDragOver && (
+          <div style={{
+            position: "fixed", inset: 64, zIndex: 1000,
+            border: "3px dashed #F5C400", borderRadius: 12,
+            background: "rgba(245,196,0,0.08)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            pointerEvents: "none",
+          }}>
+            <div style={{
+              background: "#111", color: "#F5C400",
+              padding: "16px 24px", borderRadius: 8,
+              fontWeight: 700, fontSize: 16, letterSpacing: 0.5,
+            }}>
+              Solte o(s) PSD para importar como peça(s)
+            </div>
+          </div>
+        )}
+        {/* Overlay de progresso enquanto importa */}
+        {psdImporting && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 1100,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ background: "#fff", color: "#111", padding: "20px 28px", borderRadius: 10, fontWeight: 600 }}>
+              Importando PSD(s)…
+            </div>
+          </div>
+        )}
+        {/* PsdPieceImporter renderizado mas com UI propria escondida — o handle
+            via ref é o que importamos via drag-drop. */}
+        {campaignId && (
+          <div style={{ position: "absolute", left: -9999, top: -9999, visibility: "hidden" }}>
+            <PsdPieceImporter
+              ref={psdPieceImporterRef}
+              campaignId={campaignId}
+              campaignAssets={campaignAssets}
+              onImported={reloadPieces}
+            />
+          </div>
+        )}
         {campaignId && (
           <CampaignSubnav
             campaignId={campaignId}
