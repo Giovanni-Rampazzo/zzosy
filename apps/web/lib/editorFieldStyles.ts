@@ -33,12 +33,19 @@ export const inpS: CSSProperties = {
   outline: "none",
 }
 
-/** Number input variant — text-align right + paddingRight pra spinners
- *  nativos do browser nao colidirem com o numero exibido. */
+/** Number input variant — text-align LEFT pra numero curto ('100', '20') ficar
+ *  a esquerda do input, e spinner buttons do navegador aparecerem a direita
+ *  com espaco natural. Mesmo padrao do ColorSwatchPicker (Preenchimento/Stroke).
+ *
+ *  Antes era textAlign right + paddingRight 22, mas o user reportou 2026-05-22
+ *  que "Camada" tinha numero/setas colados e diferentes de "Preenchimento" —
+ *  inconsistencia visual entre as secoes do Properties Panel. Agora todos os
+ *  number inputs (Camada/Stroke width/Raio do canto/etc) tem visual identico. */
 export const numInpS: CSSProperties = {
   ...inpS,
-  textAlign: "right",
-  paddingRight: 22,
+  textAlign: "left",
+  paddingLeft: 4,
+  paddingRight: 4,
   width: "100%",
 }
 
@@ -63,16 +70,17 @@ export const numFieldGrid: CSSProperties = {
 }
 
 /** Container flex do lado direito do numFieldGrid — agrupa number input
- *  + label "%/px". gap 2 deixa o label perto mas com respiro. */
+ *  + label "%/px". gap 8 alinha com o ColorSwatchPicker (Preenchimento/Stroke)
+ *  pra label "%" ficar afastado do spinner do input, nao colado. */
 export const numFieldRight: CSSProperties = {
   display: "flex",
-  gap: 2,
+  gap: 8,
   alignItems: "center",
 }
 
-/** Label "%/px" do numFieldRight. Pequena, cinza, marginLeft pra respiro. */
+/** Label "%/px" do numFieldRight. Pequena, cinza. Sem marginLeft adicional —
+ *  gap do container ja afasta do input. fontSize 11 alinhado com ColorSwatchPicker. */
 export const numFieldUnit: CSSProperties = {
-  fontSize: 10,
+  fontSize: 11,
   color: "#666",
-  marginLeft: 2,
 }
