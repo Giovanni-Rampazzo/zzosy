@@ -1655,45 +1655,58 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           const fillStr: string = typeof obj.fill === "string" ? obj.fill : ""
           const strokeStr: string = typeof obj.stroke === "string" ? obj.stroke : ""
           const strokeW: number = obj.strokeWidth ?? 0
-          const hasFill = !!fillStr
-          const hasStroke = !!strokeStr && strokeW > 0
 
-          // Limpa effects.stroke legacy do PSD raw — agora usamos vectorStroke
-          // nativo. Sem isso, double-stroke (effect + vector) podia aparecer
-          // em pieces antigas que tinham o effect via tentativa anterior.
-          let effectsCleaned: any = psdLayerEffects ? { ...psdLayerEffects } : undefined
-          if (effectsCleaned?.stroke) {
-            delete effectsCleaned.stroke
-            if (Object.keys(effectsCleaned).length === 0) effectsCleaned = undefined
+          // CRITICO — limitacao do ag-psd writer SoCo:
+          //   addHandler('SoCo', target => target.vectorFill !== undefined
+          //     && target.vectorStroke === undefined  ← bloqueia quando ha stroke
+          //     && target.vectorFill.type === 'color')
+          //
+          // Quando emitia vectorFill + vectorStroke juntos → SoCo era pulado
+          // pelo guard → fill data nunca escrita no PSD → fill sumia, so
+          // stroke aparecia. Por isso usamos Layer Style stroke (effects.stroke[])
+          // em vez de vectorStroke. Layer Style Stroke renderiza identico no PS
+          // e o user edita via "Layer Style → Stroke" — Adobe-aceitavel. Sem
+          // vectorStroke → SoCo handler aciona → vectorFill escrita normalmente.
+          //
+          // Quando user explicitamente removeu (strokeWidth=0 + stroke vazio),
+          // delete o effect antigo do PSD pra nao encalhar.
+          const userRemovedStroke = (typeof obj.strokeWidth === "number" && obj.strokeWidth === 0)
+            && (obj.stroke === "" || obj.stroke === null)
+          let effectsWithStroke: any = psdLayerEffects ? { ...psdLayerEffects } : undefined
+          if (userRemovedStroke && effectsWithStroke?.stroke) {
+            delete effectsWithStroke.stroke
+            if (Object.keys(effectsWithStroke).length === 0) effectsWithStroke = undefined
+          }
+          if (strokeStr && strokeW > 0) {
+            // SHAPE stroke pode vir como rgba(...) (opacity inline encodada
+            // no painel direito do editor desde 2026-05-22). hexToAgPsdRgb
+            // ja tolera rgba e extractAlpha pega o alpha → effect.opacity.
+            const strokeFx = {
+              enabled: true,
+              position: "outside",
+              size: { value: strokeW, units: "Pixels" },
+              fillType: "color",
+              color: hexToAgPsdRgb(strokeStr),
+              opacity: extractAlpha(strokeStr),
+              blendMode: "normal",
+            }
+            effectsWithStroke = {
+              ...(effectsWithStroke ?? {}),
+              stroke: [strokeFx],
+            }
           }
           console.log("[shape-export]", name, {
             fill: fillStr, stroke: strokeStr, strokeW,
-            hasFill, hasStroke,
-            psdEffects: psdLayerEffects ? Object.keys(psdLayerEffects) : null,
+            userRemovedStroke,
+            finalEffects: effectsWithStroke ? Object.keys(effectsWithStroke) : null,
           })
-
-          // RASTERIZA o shape Fabric com fill+stroke baked — serve como bitmap
-          // visivel no PSD pra garantir que o stroke aparece mesmo se PS nao
-          // renderizar via vectorStroke. Vector data fica preservada pra
-          // editabilidade no Properties Panel. User reportou 2026-05-22:
-          // "shape sendo exportado sem stroke" — sem o canvas, PS as vezes
-          // ignorava o vectorStroke por motivos nao claros.
-          const shapeCanvas = document.createElement("canvas")
-          shapeCanvas.width = w
-          shapeCanvas.height = h
-          try {
-            const sctx = shapeCanvas.getContext("2d")!
-            const rendered = obj.toCanvasElement({ multiplier: 1 })
-            sctx.drawImage(rendered, 0, 0, w, h)
-          } catch (e) { console.warn("[shape-raster] fail:", name, e) }
 
           const psdLayer: any = {
             name,
             top, left, bottom, right,
-            canvas: shapeCanvas,
             ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
             ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
-            ...(effectsCleaned ? { effects: effectsCleaned } : {}),
+            ...(effectsWithStroke ? { effects: effectsWithStroke } : {}),
             __groupPath: Array.isArray((obj as any).__groupPath) ? (obj as any).__groupPath : undefined,
             // "combine" = path puro (sem boolean ops). "subtract" subtrai do
             // composite e deixaria o shape invisivel.
@@ -1701,33 +1714,11 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
               paths: [{ operation: "combine", knots, open: false }],
             },
           }
-          if (hasFill) {
+          if (fillStr) {
             psdLayer.vectorFill = { type: "color", color: hexToAgPsdRgb(fillStr) }
           }
-          // vectorStroke NATIVO — proper PSD shape layer stroke. Antes usavamos
-          // effects.stroke (Layer Style) por preocupacao com conflito SoCo/Stk,
-          // mas ag-psd v18 escreve ambos sem problema. PS abre como shape com
-          // stroke editavel via Properties Panel (nao via Layer Style → Stroke).
-          //
-          // strokeEnabled=true e fillEnabled=hasFill — sem fillEnabled, PS
-          // renderiza so o stroke e ignora vectorFill (shape sem preenchimento).
-          if (hasStroke) {
-            psdLayer.vectorStroke = {
-              strokeEnabled: true,
-              fillEnabled: hasFill,
-              lineWidth: { value: strokeW, units: "Pixels" },
-              lineCapType: "butt",
-              lineJoinType: "miter",
-              lineAlignment: "center",  // PS default — fora=outside, dentro=inside
-              miterLimit: 100,
-              strokeAdjust: false,
-              scaleLock: false,
-              blendMode: "normal",
-              opacity: extractAlpha(strokeStr),
-              content: { type: "color", color: hexToAgPsdRgb(strokeStr) },
-              resolution: 72,
-            }
-          }
+          // NOTA: NAO emitir vectorStroke aqui — quebra o vectorFill (SoCo guard).
+          // Stroke vai via effects.stroke[] acima.
           psdLayers.push(psdLayer)
           continue
         }
