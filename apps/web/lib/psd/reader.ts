@@ -369,7 +369,14 @@ function detectSmartObjectFormat(
 
 function readShape(l: AgPsdLayer, parentPath: string[], _warn: (w: ReadWarning) => void): PsdShapeLayer {
   const vm = (l as any).vectorMask
-  const path = vm?.paths ? vectorMaskToBezierSvg(vm) : ""
+
+  // PRIORIDADE: vectorOrigination (vogk) — "Live Shape" do PS guarda dados
+  // originais separados (rounded rect radii, ellipse, line). O vectorMask.paths
+  // tem a bounding box ja com cantos sharp; pra round-trip dos raios usamos
+  // vogk se presente. Sem isso, retangulo arredondado importado vinha como
+  // retangulo reto (path simplificado da bounding box).
+  const vogkPath = tryReadVogkPath((l as any).vectorOrigination)
+  const path = vogkPath ?? (vm?.paths ? vectorMaskToBezierSvg(vm) : "")
   const pathBbox = computePathBbox(vm) ?? readCommon(l, parentPath).bbox
 
   // Vector fill: ag-psd expoe via layer.vectorFill { color | gradient | pattern }
@@ -389,6 +396,75 @@ function readShape(l: AgPsdLayer, parentPath: string[], _warn: (w: ReadWarning) 
     stroke,
     fillRule: vm?.evenOdd === true ? "evenodd" : "nonzero",
   }
+}
+
+/**
+ * Reconstroi path SVG a partir de vectorOrigination (vogk) do PS.
+ * Suporta hoje: keyOriginType === 2 (rounded rectangle) com radii per-canto.
+ * Retorna null pra outros tipos — caller cai no vectorMask.paths normal.
+ *
+ * Live Shape (Shape Tool com corner radius) guarda raios em
+ * keyOriginRRectRadii e o bounding rect em keyOriginShapeBoundingBox.
+ * Reconstruimos um path Bezier com curvas reais nos cantos.
+ */
+function tryReadVogkPath(vogk: any): string | null {
+  if (!vogk?.keyDescriptorList?.length) return null
+  const item = vogk.keyDescriptorList[0]
+  // keyOriginType === 2 eh rounded rectangle (1=rect simples, 5=ellipse, etc).
+  if (item.keyOriginType !== 2) return null
+  const bb = item.keyOriginShapeBoundingBox
+  const radii = item.keyOriginRRectRadii
+  if (!bb || !radii) return null
+  const left = bb.left, top = bb.top
+  const right = bb.right, bottom = bb.bottom
+  const w = right - left, h = bottom - top
+  if (w <= 0 || h <= 0) return null
+  // Radii limitados a metade do menor lado (PS faz o mesmo — radii > w/2
+  // viram cantos circulares = w/2). Cada canto pode ter raio diferente.
+  const max = Math.min(w, h) / 2
+  const rTL = Math.min(radii.topLeft ?? 0, max)
+  const rTR = Math.min(radii.topRight ?? 0, max)
+  const rBR = Math.min(radii.bottomRight ?? 0, max)
+  const rBL = Math.min(radii.bottomLeft ?? 0, max)
+  // K = constante magica pra aproximar quarter circle com cubic Bezier.
+  // Off-curve cp distance = r * K do anchor pro proximo cp.
+  const K = 0.5522847498
+  // Constroi path Bezier com 8 knots (2 por canto: start + end de cada arco)
+  // mais linhas retas entre eles. Formato compativel com bezierPathToSvg.
+  const cmds: string[] = []
+  const fmt = (n: number) => n.toFixed(2)
+  // Comeca top-left, indo clockwise
+  cmds.push(`M ${fmt(left + rTL)} ${fmt(top)}`)
+  // Aresta top → top-right
+  if (rTR > 0) {
+    cmds.push(`L ${fmt(right - rTR)} ${fmt(top)}`)
+    cmds.push(`C ${fmt(right - rTR + rTR * K)} ${fmt(top)}, ${fmt(right)} ${fmt(top + rTR - rTR * K)}, ${fmt(right)} ${fmt(top + rTR)}`)
+  } else {
+    cmds.push(`L ${fmt(right)} ${fmt(top)}`)
+  }
+  // Aresta right → bottom-right
+  if (rBR > 0) {
+    cmds.push(`L ${fmt(right)} ${fmt(bottom - rBR)}`)
+    cmds.push(`C ${fmt(right)} ${fmt(bottom - rBR + rBR * K)}, ${fmt(right - rBR + rBR * K)} ${fmt(bottom)}, ${fmt(right - rBR)} ${fmt(bottom)}`)
+  } else {
+    cmds.push(`L ${fmt(right)} ${fmt(bottom)}`)
+  }
+  // Aresta bottom → bottom-left
+  if (rBL > 0) {
+    cmds.push(`L ${fmt(left + rBL)} ${fmt(bottom)}`)
+    cmds.push(`C ${fmt(left + rBL - rBL * K)} ${fmt(bottom)}, ${fmt(left)} ${fmt(bottom - rBL + rBL * K)}, ${fmt(left)} ${fmt(bottom - rBL)}`)
+  } else {
+    cmds.push(`L ${fmt(left)} ${fmt(bottom)}`)
+  }
+  // Aresta left → top-left
+  if (rTL > 0) {
+    cmds.push(`L ${fmt(left)} ${fmt(top + rTL)}`)
+    cmds.push(`C ${fmt(left)} ${fmt(top + rTL - rTL * K)}, ${fmt(left + rTL - rTL * K)} ${fmt(top)}, ${fmt(left + rTL)} ${fmt(top)}`)
+  } else {
+    cmds.push(`L ${fmt(left)} ${fmt(top)}`)
+  }
+  cmds.push("Z")
+  return cmds.join(" ")
 }
 
 /**
