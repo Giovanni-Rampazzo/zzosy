@@ -8293,23 +8293,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         >
           {saving ? "Salvando…" : "Salvar"}
         </button>
-        {/* Atalho direto pra apresentacao da campanha */}
-        {campaignId && (
-          <button
-            onClick={() => {
-              const navigate = () => {
-                if (typeof window !== "undefined") window.location.href = `/campaigns/${campaignId}/presentation`
-              }
-              // Mesma logica: pergunta SO se tem mudancas pendentes.
-              if (isDirtyRef.current) setConfirmExit(() => navigate)
-              else navigate()
-            }}
-            title="Ir direto para a apresentacao desta campanha"
-            style={{ background: "transparent", border: "1px solid #444", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer", color: "#aaa", marginLeft: 4 }}
-          >
-            Apresentação
-          </button>
-        )}
+        {/* Apresentacao movida pro fim (depois de Gerar Pecas) — botao amarelo
+            destaque na extremidade direita da topbar (2026-05-22). */}
         {/* STEPS NAVIGATION (modo peca apenas) */}
         {isPieceMode && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8, padding: "4px 8px", background: "#1a1a1a", borderRadius: 6, border: "1px solid #2a2a2a" }}>
@@ -8543,6 +8528,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         </button>
         {!isPieceMode && (
           <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>Gerar Peças</button>
+        )}
+        {/* Apresentacao — extremidade direita da topbar. Estilo amarelo igual
+            Gerar Pecas pra destaque visual da acao principal (ver resultado). */}
+        {campaignId && (
+          <button
+            onClick={() => {
+              const navigate = () => {
+                if (typeof window !== "undefined") window.location.href = `/campaigns/${campaignId}/presentation`
+              }
+              if (isDirtyRef.current) setConfirmExit(() => navigate)
+              else navigate()
+            }}
+            title="Ir direto para a apresentacao desta campanha"
+            style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111", marginLeft: "auto" }}
+          >
+            Apresentação
+          </button>
         )}
         {/* Undo/Redo botoes removidos da topbar (2026-05-22) — atalhos
             Cmd+Z / Cmd+Shift+Z continuam funcionando. */}
