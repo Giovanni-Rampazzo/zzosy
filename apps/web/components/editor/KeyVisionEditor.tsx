@@ -4014,8 +4014,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ;(async () => {
           try {
             const fab: any = await import("fabric")
-            const BlendColor = fab.BlendColor
-            if (!BlendColor) return
+            // Fabric v7: BlendColor exportado em filters namespace
+            // (`fab.filters.BlendColor`), NAO direto em `fab.BlendColor`.
+            // Antes este caminho retornava silenciosamente (BlendColor=undefined)
+            // e colorOverlay sumia no editor mesmo presente no PSD (user
+            // reportou 2026-05-22: "preview KV vem perfeito mas editor some").
+            const BlendColor = fab.filters?.BlendColor ?? fab.BlendColor
+            if (!BlendColor) {
+              editorLog("[colorOverlay runtime] Fabric.BlendColor nao encontrado")
+              return
+            }
             const alpha = Math.max(0, Math.min(1, typeof effects.colorOverlay.opacity === "number" ? effects.colorOverlay.opacity : 1))
             obj.filters = [new BlendColor({ color: effects.colorOverlay.color, mode: "tint", alpha })]
             if (typeof obj.applyFilters === "function") obj.applyFilters()
