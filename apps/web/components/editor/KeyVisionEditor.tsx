@@ -655,6 +655,18 @@ function serializeTextboxOverrides(
 }
 
 /**
+ * FONTE UNICA DE VERDADE pra serializar overrides de SHAPE (Fabric.Path).
+ * Mesmo pattern do serializeTextboxOverrides — evita drift.
+ */
+function serializeShapeOverrides(o: any): Record<string, any> {
+  const ov: Record<string, any> = {}
+  if (typeof o.fill === "string") ov.fill = o.fill
+  if (typeof o.stroke === "string") ov.stroke = o.stroke
+  if (typeof o.strokeWidth === "number") ov.strokeWidth = o.strokeWidth
+  return ov
+}
+
+/**
  * Pre-compoe uma raster mask DENTRO de uma imagem fonte. Fabric v6 renderiza
  * Image clipPath como silhueta solida (fill=black) — ignora alpha do PNG da
  * mask. A unica forma de obter alpha-mask real eh aplicar a mascara no
@@ -5556,12 +5568,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // nova adicionada la propaga automaticamente pros 6 sites.
             Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
-            // SHAPE override: fill/stroke/strokeWidth editados via painel.
-            // Sem isso, ao recarregar a peca/editor as edicoes voltavam pro
-            // asset.content original (PSD raw) — perdia tudo.
-            if (typeof o.fill === "string") layer.overrides.fill = o.fill
-            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
-            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
+            // SHAPE override via helper centralizado.
+            Object.assign(layer.overrides, serializeShapeOverrides(o))
           }
           return layer
         })
@@ -5705,10 +5713,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // pro asset. Toda outra prop via helper centralizado.
             Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
-            // SHAPE override (matriz): fill/stroke/strokeWidth editados via painel.
-            if (typeof o.fill === "string") layer.overrides.fill = o.fill
-            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
-            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
+            // SHAPE override (matriz) via helper centralizado.
+            Object.assign(layer.overrides, serializeShapeOverrides(o))
           }
           return layer
         })
@@ -6590,10 +6596,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (o.type === "textbox" || o.type === "i-text") {
             Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
-            // SHAPE override (doSave peca): mesmo padrao do save matriz.
-            if (typeof o.fill === "string") layer.overrides.fill = o.fill
-            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
-            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
+            // SHAPE override (doSave peca) via helper centralizado.
+            Object.assign(layer.overrides, serializeShapeOverrides(o))
           }
           return layer
         })
@@ -6736,10 +6740,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (o.type === "textbox" || o.type === "i-text") {
             Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
-            // SHAPE override (doSave matriz): mesmo padrao dos outros sites.
-            if (typeof o.fill === "string") layer.overrides.fill = o.fill
-            if (typeof o.stroke === "string") layer.overrides.stroke = o.stroke
-            if (typeof o.strokeWidth === "number") layer.overrides.strokeWidth = o.strokeWidth
+            // SHAPE override (doSave matriz) via helper centralizado.
+            Object.assign(layer.overrides, serializeShapeOverrides(o))
           }
           return layer
         })
@@ -8345,13 +8347,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 .filter((o: any) => !o.__isBg && o.__assetId)
                 .map((o: any, i: number) => {
                   const isText = o.type === "textbox" || o.type === "i-text"
-                  // KV export usa helper centralizado — text/content/styles/charSpacing/
-                  // fillBrandIdx/etc todos capturados num lugar so. preserveExplicit
-                  // NewlinesOnly: false porque o KV export precisa do texto live
-                  // completo (nao tem asset.content como fonte).
+                  const isShape = (o as any).__isShape === true || o.type === "path" || o.type === "Path"
+                  // KV export usa helpers centralizados — text + shape capturam tudo
+                  // num lugar so. SHAPE branch ANTES caia no else vazio → fill/stroke
+                  // editados na matriz nao iam pro pseudoData → export usava cor
+                  // ORIGINAL do asset.content (regressao 2026-05-22 reportada pelo
+                  // user). preserveExplicit NewlinesOnly: false porque KV export
+                  // precisa do texto live completo.
                   const overrides: any = isText
                     ? serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: false })
-                    : {}
+                    : isShape
+                      ? serializeShapeOverrides(o)
+                      : {}
                   // Propriedades de round-trip PSD (blendMode/opacity/effects/mask/
                   // groupPath/hidden/locked) precisam vir DO OBJETO FABRIC pro
                   // pseudoData do export. Sem isso, o export do KV gerava PSD
