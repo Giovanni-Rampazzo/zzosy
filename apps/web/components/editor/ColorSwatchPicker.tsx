@@ -151,7 +151,12 @@ export function ColorSwatchPicker({
           onClick={() => setOpen(o => !o)}
           style={{
             width: size, height: size, borderRadius: 4,
-            background: emptyChecker ?? swatchBg,
+            // Separa background-image (checker pattern) de backgroundColor (cor solida)
+            // pra nao conflitar com backgroundSize. React warning: mixing shorthand
+            // background com backgroundSize gera "Updating a style property during
+            // rerender (background) when a conflicting property is set (backgroundSize)".
+            backgroundImage: emptyChecker,
+            backgroundColor: emptyChecker ? undefined : (swatchBg as string | undefined),
             backgroundSize: emptyChecker ? "8px 8px" : undefined,
             border: "1px solid #2a2a2a", cursor: "pointer", padding: 0, flexShrink: 0,
             marginRight: 8,
