@@ -633,6 +633,65 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
   // outro user editou, refresh, etc).
   useEffect(() => { setLocalText(text) }, [text])
   const dirty = isText && localText !== text
+  // TEXT: linha unica enxuta — sem preview, label "Nome:" prefixado, conteudo
+  // + acoes inline. IMAGE/SHAPE: mantem preview a esquerda (visual ajuda
+  // a identificar).
+  if (isText) {
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "8px 16px",
+        borderBottom: isLast ? "none" : "1px solid #F0F0F0",
+      }}>
+        {/* Nome do layer — prefixo "Nome:" deixa explicito */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4, flexShrink: 0, minWidth: 0, maxWidth: 220 }}>
+          <span style={{ fontSize: 10, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Nome:</span>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
+          </div>
+        </div>
+        {/* Input do texto — flex 1 pra ocupar espaco disponivel */}
+        <input
+          type="text"
+          value={localText}
+          onChange={e => setLocalText(e.target.value)}
+          onKeyDown={e => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) {
+              e.preventDefault()
+              onTextChange(asset.id, localText)
+            } else if (e.key === "Enter" && dirty) {
+              ;(e.target as HTMLInputElement).blur()
+            }
+          }}
+          onBlur={() => { if (dirty) onTextChange(asset.id, localText) }}
+          placeholder="Conteúdo do texto"
+          style={{
+            flex: 1, minWidth: 0,
+            padding: "6px 10px", borderRadius: 6,
+            border: dirty ? "1px solid #F5C400" : "1px solid #E0E0E0",
+            fontSize: 13, color: "#111", fontFamily: "inherit", outline: "none",
+          }}
+        />
+        {/* Status de save discreto + acoes inline */}
+        <span style={{ fontSize: 10, color: saving ? "#F5C400" : dirty ? "#F5C400" : "#aaa", flexShrink: 0, minWidth: 40 }}>
+          {saving ? "Salvando…" : dirty ? "Não salvo" : "Salvo"}
+        </span>
+        <Button variant="secondary" size="sm" onClick={async () => {
+          const { exportAsset } = await import("@/lib/exportAsset")
+          try { await exportAsset(asset as any, "original") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
+        }} title="Baixar arquivo original do asset">Original</Button>
+        <Button variant="secondary" size="sm" onClick={async () => {
+          const { exportAsset } = await import("@/lib/exportAsset")
+          try { await exportAsset(asset as any, "psd") } catch (e: any) { alert("Falha no export: " + (e?.message || e)) }
+        }} title="Baixar PSD com 1 layer (texto editavel ou imagem)">PSD</Button>
+        <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+      </div>
+    )
+  }
+
+  // IMAGE / SHAPE: layout grid com preview visual (que ajuda identificar).
   return (
     <div style={{
       display: "grid",
@@ -652,22 +711,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         overflow: "hidden",
         flexShrink: 0,
       }}>
-        {isText ? (
-          <div style={{
-            padding: "8px 10px",
-            fontSize: 13,
-            color: "#333",
-            textAlign: "center",
-            overflow: "hidden",
-            display: "-webkit-box",
-            WebkitLineClamp: 4,
-            WebkitBoxOrient: "vertical" as any,
-            lineHeight: 1.3,
-            wordBreak: "break-word",
-          }}>
-            {text || <span style={{ color: "#bbb" }}>(vazio)</span>}
-          </div>
-        ) : isShape ? (
+        {isShape ? (
           <ShapePreview asset={asset} />
         ) : asset.imageUrl ? (
           <img src={asset.imageUrl} alt={asset.label}
@@ -684,44 +728,13 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             Salvando…
           </span>
         )}
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
-          <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
-        </div>
-        {isText ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <textarea
-              value={localText}
-              onChange={e => setLocalText(e.target.value)}
-              onKeyDown={e => {
-                // Cmd/Ctrl+Enter = atalho pra salvar
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) {
-                  e.preventDefault()
-                  onTextChange(asset.id, localText)
-                }
-              }}
-              style={{
-                width: "100%", padding: "8px 10px", borderRadius: 6,
-                border: dirty ? "1px solid #F5C400" : "1px solid #E0E0E0",
-                fontSize: 13, color: "#111", fontFamily: "inherit", resize: "vertical", outline: "none",
-                minHeight: 64, maxHeight: 200,
-              }}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 10, color: dirty ? "#F5C400" : "#aaa" }}>
-                {dirty ? "Alterações não salvas (Cmd+Enter pra salvar)" : "Salvo"}
-              </span>
-              <Button variant="primary" size="sm" disabled={!dirty}
-                onClick={() => onTextChange(asset.id, localText)}>
-                Salvar
-              </Button>
-            </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+          <span style={{ fontSize: 10, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Nome:</span>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
+            <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
           </div>
-        ) : isShape ? (
-          // Forma vetorial: edicao acontece no editor (KV/peca). Aqui so o
-          // preview a esquerda — sem acoes inline. Preview reflete o ultimo
-          // salvo automaticamente.
-          null
-        ) : (
+        </div>
+        {isShape ? null : (
           <div>
             <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }}>
               Trocar imagem
