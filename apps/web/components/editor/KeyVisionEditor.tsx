@@ -7405,14 +7405,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           },
         })
       }
-      // Junta linhas: inserir " " se a quebra estiver entre dois nao-whitespace.
+      // PRESERVA "\n" entre logical lines do raw text. Antes esse joiner
+      // INSERIA UM " " — perdendo a quebra explicita e desalinhando per-char
+      // styles no proximo load (chars indexados por linha visual nao batiam
+      // com obj.styles indexado por linha logica). Resultado: cores per-char
+      // sumiam no PSD export. Como agora usamos obj.text (raw) split por "\n"
+      // como fonte de lines, todo "\n" original eh explicito.
       if (lineNum < lines.length - 1) {
-        const prev = line.length > 0 ? line[line.length - 1] : ""
-        const next = lines[lineNum + 1].length > 0 ? lines[lineNum + 1][0] : ""
-        if (prev && next && !/\s/.test(prev) && !/\s/.test(next)) {
-          const lastStyle = chars.length > 0 ? chars[chars.length - 1].style : defaultStyle
-          chars.push({ ch: " ", style: lastStyle })
-        }
+        const lastStyle = chars.length > 0 ? chars[chars.length - 1].style : defaultStyle
+        chars.push({ ch: "\n", style: lastStyle })
       }
     }
     // Agrupa chars consecutivos com mesmo style em spans
