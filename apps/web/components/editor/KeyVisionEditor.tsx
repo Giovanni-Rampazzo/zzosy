@@ -2418,21 +2418,70 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         setSelectedTick(t => t + 1)
       })
 
-      // SHAPE parametric scaling — DESABILITADO temporariamente.
-      // Tentativa anterior (172217b/171121b): recompute path com cornerRadius
-      // absoluto apos scale. Causava estados quebrados:
-      //   - mid-drag: feedback loop com Fabric resetando scaleX=1
-      //   - on-release: __pathBbox crescia descontroladamente em scales
-      //     repetidos, slider de cornerRadius permitia valores 400+ que
-      //     transformavam o shape em circulo degenerado
-      // User reportou ambos. Path scaling volta ao comportamento Fabric padrao
-      // (cantos distorcem em scale nao-uniforme — mesmo que PS Path). Slider
-      // de raio em Properties Panel continua funcionando: recomputa o path
-      // assumindo bbox FIXO (nao muda durante scale, so via raio slider).
+      // === SHAPE Live Shape (Photoshop pattern) ===
+      // Pattern PS Live Shape: o raio do canto fica em pixels ABSOLUTOS,
+      // independente do scale. Como o shape eh Fabric.Rect com rx/ry nativos
+      // (substituicao de Fabric.Path), basta compensar rx/ry inversamente
+      // ao scale durante o drag, e resetar scale ao soltar.
       //
-      // TODO: re-implementar parametric scaling com cuidado — provavelmente
-      // precisa de Fabric.Rect custom + handles especiais como o PS Live
-      // Shape, em vez de hookar object:modified que tem race conditions.
+      // FORMULA: visual_radius = rx * scaleX. Pra manter visual_radius = R
+      // constante quando scaleX muda → rx = R / scaleX. ry analogo.
+      //
+      // Durante o drag (object:scaling): atualiza rx/ry em cada frame pra
+      // compensar. Resultado: arcos circulares no display space, raio
+      // PIXEL-PERFECT preservado.
+      //
+      // No release (object:modified): consolida scale em width/height
+      // (atomico ja que Fabric nao volta a mudar scale depois do release).
+      // rx/ry voltam ao valor absoluto __cornerRadius.
+      const isLiveShape = (o: any) =>
+        o && o.__isShape === true
+        && (o.type === "rect" || o.type === "ellipse")
+        && typeof o.__cornerRadius === "number"
+
+      fc.on("object:scaling" as any, (e: any) => {
+        if (!alive) return
+        const obj = e?.target
+        if (!isLiveShape(obj)) return
+        const R = obj.__cornerRadius
+        const sX = Math.abs(obj.scaleX ?? 1) || 1
+        const sY = Math.abs(obj.scaleY ?? 1) || 1
+        if (obj.type === "rect") {
+          // Compensa rx/ry inversamente pra raio visual ficar constante.
+          obj.set({ rx: R / sX, ry: R / sY })
+          // dirty + objectCaching=false ja setado no load → re-render
+          // imediato sem cache stale.
+        }
+        // Ellipse: rx/ry sao os raios DA ELIPSE em si. Scale nao-uniforme
+        // distorce a elipse num oval, comportamento esperado (igual PS
+        // Live Shape Ellipse — nao tem corner radius pra preservar).
+      })
+      fc.on("object:modified" as any, (e: any) => {
+        if (!alive) return
+        const obj = e?.target
+        if (!isLiveShape(obj)) return
+        const sX = obj.scaleX ?? 1
+        const sY = obj.scaleY ?? 1
+        if (Math.abs(sX - 1) < 0.001 && Math.abs(sY - 1) < 0.001) return
+        if (obj.type === "rect") {
+          const newW = Math.max(1, (obj.width ?? 100) * sX)
+          const newH = Math.max(1, (obj.height ?? 100) * sY)
+          const R = obj.__cornerRadius
+          obj.set({
+            width: newW, height: newH,
+            scaleX: 1, scaleY: 1,
+            rx: R, ry: R,  // de volta ao valor absoluto
+          })
+          obj.__pathBbox = { left: 0, top: 0, right: newW, bottom: newH }
+        } else if (obj.type === "ellipse") {
+          const newRx = (obj.rx ?? 50) * sX
+          const newRy = (obj.ry ?? 50) * sY
+          obj.set({ rx: newRx, ry: newRy, scaleX: 1, scaleY: 1 })
+          obj.__pathBbox = { left: 0, top: 0, right: newRx * 2, bottom: newRy * 2 }
+        }
+        obj.setCoords()
+        fc.requestRenderAll()
+      })
 
       // Ao SOLTAR o mouse apos arrastar lateral, consolida scaleX em width pra que o save
       // grave o estado limpo (scaleX=1, width final). Sem isso, scaleX!=1 ficaria salvo e
@@ -3998,7 +4047,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   async function addAssetToCanvas(fc: any, asset: Asset, layer: any) {
     const fabricMod = await import("fabric")
-    const { Rect, Textbox, FabricImage, Shadow, Path } = fabricMod as any
+    const { Rect, Textbox, FabricImage, Shadow, Path, Ellipse } = fabricMod as any
     const posX = layer?.posX ?? 100
     const posY = layer?.posY ?? 100
     const width = layer?.width ?? 400
@@ -4025,9 +4074,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // re-exportar com a mesma estrutura de groups. Array de nomes raiz → pai.
     const psdGroupPath = Array.isArray(layer?.groupPath) && layer.groupPath.length > 0 ? layer.groupPath as string[] : null
 
-    // F12 Fase 4: SHAPE assets — vetor editavel via Fabric.Path. Content
-    // tem { path, pathBbox, fill, stroke, fillRule }. Editor renderiza SEM
-    // rasterizar, mantendo o path vivo + editavel.
+    // SHAPE assets — pattern Photoshop Live Shape.
+    // Estrategia:
+    //   - kind=rectangle/roundedRect → Fabric.Rect (rx/ry nativo)
+    //   - kind=ellipse → Fabric.Ellipse (rx/ry nativo)
+    //   - sem kind (PSD path arbitrario) → Fabric.Path (path SVG cru)
+    //
+    // Vantagem do Rect/Ellipse vs Path: rx/ry sao propriedades INDEPENDENTES
+    // do path coords. Em scaling hook depois compensamos rx/ry inversamente
+    // ao scale → raio do canto fica em PIXELS ABSOLUTOS no display (igual PS
+    // Live Shape).
     if (asset.type === "SHAPE") {
       try {
         const shape = (asset as any).content ?? null
@@ -4036,11 +4092,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           console.warn("[shape] asset sem path data:", asset.label)
           return
         }
-        // Overrides do layer (peca/matriz) tem PRIORIDADE sobre asset.content
-        // — espelha o padrao de TEXT (linha 3960): asset.content eh o "intent"
-        // do designer, overrides eh o que o user editou nessa instancia. Sem
-        // isso, fill/stroke/strokeWidth editados via painel viravam pra raw do
-        // PSD em todo reload do editor.
+        // Overrides do layer (peca/matriz) tem PRIORIDADE sobre asset.content.
         const layerOv = layer?.overrides ?? {}
         const baseFill = parsedShape.fill?.kind === "solid"
           ? parsedShape.fill.color
@@ -4050,13 +4102,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fillProp = layerOv.fill !== undefined ? layerOv.fill : baseFill
         const strokeProp = layerOv.stroke !== undefined ? layerOv.stroke : baseStroke
         const strokeWidth = layerOv.strokeWidth !== undefined ? layerOv.strokeWidth : baseStrokeW
-        // PARAMETRIC SHAPE LOAD: se o asset eh parametric (kind set), recomputa
-        // o path com overrides:
-        //   - cornerRadius (raio personalizado pelo Properties Panel)
-        //   - bboxW/bboxH (dimensoes atualizadas pelo scaling hook)
-        // Caso contrario usa o path bruto do asset.content (PSD imports
-        // arbitrarios, etc).
-        let pathStr: string = parsedShape.path
+        // Effective bbox W/H — prioridade pros overrides do user (resized
+        // anteriormente), fallback no asset.content.pathBbox.
         let effBboxW = 0, effBboxH = 0
         if (parsedShape.pathBbox) {
           effBboxW = (parsedShape.pathBbox.right ?? 400) - (parsedShape.pathBbox.left ?? 0)
@@ -4068,52 +4115,61 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ? layerOv.cornerRadius
           : (typeof parsedShape.cornerRadius === "number" ? parsedShape.cornerRadius : 0)
         const isParametric = !!parsedShape.kind && effBboxW > 0 && effBboxH > 0
-        if (isParametric) {
-          pathStr = buildShapePath(parsedShape.kind as ShapeKind, effBboxW, effBboxH, effCornerR_load)
+
+        let p: any
+        if (isParametric && (parsedShape.kind === "rectangle" || parsedShape.kind === "roundedRect")) {
+          // RECT — usa rx/ry nativos (PS Live Shape Rectangle).
+          p = new Rect({
+            left: posX, top: posY,
+            width: effBboxW, height: effBboxH,
+            scaleX, scaleY, angle,
+            fill: fillProp,
+            stroke: strokeProp,
+            strokeWidth,
+            strokeUniform: true,
+            rx: effCornerR_load,
+            ry: effCornerR_load,
+            // objectCaching=false: previne cache stale durante scaling hook
+            // que muta rx/ry dinamicamente (sem isso, o cache renderiza o
+            // raio OLD ate o cache invalidar manualmente).
+            objectCaching: false,
+            ...psdExtraProps,
+          })
+        } else if (isParametric && parsedShape.kind === "ellipse") {
+          // ELLIPSE — Fabric.Ellipse usa rx/ry (raios) em vez de width/height.
+          p = new Ellipse({
+            left: posX, top: posY,
+            rx: effBboxW / 2,
+            ry: effBboxH / 2,
+            scaleX, scaleY, angle,
+            fill: fillProp,
+            stroke: strokeProp,
+            strokeWidth,
+            strokeUniform: true,
+            objectCaching: false,
+            ...psdExtraProps,
+          })
+        } else {
+          // PATH — shape generico (PSD import com path arbitrario). Sem Live
+          // Shape behavior — distorce em scale (igual PS Path), aceitavel.
+          p = new Path(parsedShape.path, {
+            left: posX, top: posY,
+            scaleX, scaleY, angle,
+            fill: fillProp,
+            stroke: strokeProp,
+            strokeWidth,
+            strokeUniform: true,
+            fillRule: parsedShape.fillRule ?? "nonzero",
+            ...psdExtraProps,
+          })
         }
-        // DEBUG: trace de onde vem cada valor (overrides vs asset.content vs effects)
-        console.log("[LOAD-SHAPE]", asset.label, {
-          baseFill, baseStroke, baseStrokeW,
-          ovFill: layerOv.fill, ovStroke: layerOv.stroke, ovStrokeW: layerOv.strokeWidth,
-          finalFill: fillProp, finalStroke: strokeProp, finalStrokeW: strokeWidth,
-          assetEffects: (asset as any)?.effects, layerEffects: layer?.effects,
-        })
-        // CRITICO: usa layer.posX/posY (posicao SALVA pelo user) com fallback
-        // pra pathBbox (posicao PSD original — primeira carga apos import).
-        // Antes era pathBbox PRIMEIRO → mover o SHAPE no editor e recarregar
-        // snapava de volta pras coords do PSD, "position nao salvava".
-        // Mesma logica pra scale/angle: layer.scaleX/Y/rotation tem prioridade.
-        const p = new Path(pathStr, {
-          left: posX,
-          top: posY,
-          scaleX: scaleX,
-          scaleY: scaleY,
-          angle: angle,
-          fill: fillProp,
-          stroke: strokeProp,
-          strokeWidth,
-          // strokeUniform mantem espessura constante em qualquer zoom/scale
-          // (comportamento PSD). Sem isso, ao escalar o objeto a borda fica
-          // mais grossa OU mais fina dependendo do scale — quebra o visual.
-          strokeUniform: true,
-          fillRule: parsedShape.fillRule ?? "nonzero",
-          ...psdExtraProps,
-        })
         ;(p as any).__assetId = asset.id
         ;(p as any).__assetLabel = asset.label
-        // Marker explicito pra detectar SHAPE no painel direito + save. Type
-        // do Fabric.Path pode variar entre versoes ("path", "Path", null em
-        // certos casos de toObject roundtrip); flag custom eh imune.
         ;(p as any).__isShape = true
-        // Shape kind/cornerRadius/pathBbox metadata pra parametric resize +
-        // Properties Panel. Prioridade pros overrides:
-        //   layer.overrides.cornerRadius > asset.content.cornerRadius
-        //   layer.overrides.bboxW/H > asset.content.pathBbox dimensions
+        // Metadata Live Shape — usada pelo scaling hook (compensa rx/ry)
+        // e pelo Properties Panel (slider de raio).
         if (parsedShape.kind) (p as any).__shapeKind = parsedShape.kind
         if (effCornerR_load !== undefined) (p as any).__cornerRadius = effCornerR_load
-        // __pathBbox SEMPRE em coords (0,0) → (W,H) — depois do recompute o
-        // path comeca em 0 e termina em effBboxW/H. Antes era pathBbox raw
-        // do asset, podia ter offset (left/top != 0).
         if (isParametric) {
           ;(p as any).__pathBbox = { left: 0, top: 0, right: effBboxW, bottom: effBboxH }
         } else if (parsedShape.pathBbox) {
@@ -4122,14 +4178,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (psdEffects) (p as any).__psdEffects = psdEffects
         if (psdGroupPath) (p as any).__groupPath = psdGroupPath
         applyFabricEffects(p, psdEffects, Shadow)
+        // pathStr usado abaixo so pra ghost stroke effect (re-render visual
+        // do effects.stroke como path independente atras do main).
+        const pathStr: string = isParametric
+          ? buildShapePath(parsedShape.kind as ShapeKind, effBboxW, effBboxH, effCornerR_load)
+          : parsedShape.path
 
         // Render dual stroke: vectorStroke (no main p) + effects.stroke (ghost
         // path atras). PS desenha os 2 simultaneos. Ghost = mesmo path, sem
         // fill, com strokeWidth = main_stroke + effects_stroke (visual: o
         // outer ring do ghost aparece em volta do main como segundo outline).
+        // SO pra Fabric.Path (PSD imports) — Live Shapes Rect/Ellipse nao tem
+        // ghost porque parsedShape.path eh do PSD original (nao bate com a
+        // forma parametric live).
         const effStroke = psdEffects?.stroke
         const hasMainStroke = typeof p.stroke === "string" && p.stroke !== "" && (p.strokeWidth ?? 0) > 0
-        if (hasMainStroke && effStroke?.color && (effStroke.width ?? 0) > 0) {
+        const isLiveRect = p.type === "rect" || p.type === "ellipse"
+        if (!isLiveRect && hasMainStroke && effStroke?.color && (effStroke.width ?? 0) > 0) {
           // strokeWidth do ghost = main_strokeWidth + 2 * effect_strokeWidth.
           // Como Fabric centraliza stroke no path, o ghost mais largo deixa
           // exatamente effect_strokeWidth aparente alem do main (de cada lado).

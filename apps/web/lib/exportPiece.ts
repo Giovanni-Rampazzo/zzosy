@@ -300,6 +300,41 @@ function svgPathToAgPsdKnots(
   }))
 }
 
+/** Gerador de path SVG pra rounded rect — duplicado de lib/shapePaths.ts pra
+ *  evitar import dinamico no hot path do export PSD. */
+function buildRoundedRectSvgPath(W: number, H: number, cornerRadius: number): string {
+  const K = 0.5522847498
+  const r = Math.max(0, Math.min(cornerRadius, Math.min(W, H) / 2))
+  if (r === 0) return `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
+  const k = r * K
+  return [
+    `M ${r} 0`,
+    `L ${W - r} 0`,
+    `C ${W - r + k} 0, ${W} ${r - k}, ${W} ${r}`,
+    `L ${W} ${H - r}`,
+    `C ${W} ${H - r + k}, ${W - r + k} ${H}, ${W - r} ${H}`,
+    `L ${r} ${H}`,
+    `C ${r - k} ${H}, 0 ${H - r + k}, 0 ${H - r}`,
+    `L 0 ${r}`,
+    `C 0 ${r - k}, ${r - k} 0, ${r} 0`,
+    "Z",
+  ].join(" ")
+}
+
+function buildEllipseSvgPath(W: number, H: number): string {
+  const K = 0.5522847498
+  const cx = W / 2, cy = H / 2, rx = W / 2, ry = H / 2
+  const dx = rx * K, dy = ry * K
+  return [
+    `M ${cx} 0`,
+    `C ${cx + dx} 0, ${W} ${cy - dy}, ${W} ${cy}`,
+    `C ${W} ${cy + dy}, ${cx + dx} ${H}, ${cx} ${H}`,
+    `C ${cx - dx} ${H}, 0 ${cy + dy}, 0 ${cy}`,
+    `C 0 ${cy - dy}, ${cx - dx} 0, ${cx} 0`,
+    "Z",
+  ].join(" ")
+}
+
 /** hex "#RRGGBB" → ag-psd { r, g, b } (0-255 each). Tolerant: aceita rgba/rgb
  *  strings tambem (extrai so rgb, ignora alpha). */
 function hexToAgPsdRgb(c: string): { r: number; g: number; b: number } {
@@ -1650,25 +1685,42 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           stack: (errText as any)?.stack,
         })
       }
-    } else if ((obj as any).__isShape === true || obj.type === "path" || obj.type === "Path") {
+    } else if ((obj as any).__isShape === true || obj.type === "path" || obj.type === "Path" || obj.type === "rect" || obj.type === "ellipse") {
       // === SHAPE: exporta como Shape Layer NATIVO do PS ===
-      // vectorMask + vectorFill + vectorStroke + SEM canvas raster. Resultado:
-      // PS abre como Shape Layer editavel (icone vector), user pode mudar
-      // fill/stroke direto no PS e preview atualiza ao vivo (Adobe renderiza
-      // do vector). Round-trip ZZOSY ↔ PS preservado.
-      //
-      // Fallback rasterizado: rotacao != 0 (transform 2D nao suportado pelo
-      // converter ainda), ou path nao parseavel.
+      // Aceita: Fabric.Path (custom paths), Fabric.Rect (rectangle/roundedRect
+      // parametric), Fabric.Ellipse (ellipse parametric).
       try {
         const assetIdSh = (obj as any).__assetId as string | undefined
         const assetSh = assetIdSh ? assetById.get(assetIdSh) : undefined
         const shape = parseShapeContent(assetSh?.content)
-        const pathSvg: string = shape?.path ?? ""
-        const pathBboxLeft = shape?.pathBbox?.left ?? left
-        const pathBboxTop = shape?.pathBbox?.top ?? top
         const objAngle = obj.angle ?? 0
         const objScaleX = obj.scaleX ?? 1
         const objScaleY = obj.scaleY ?? 1
+
+        // Path SVG pro vectorMask. Pra Live Shape (Rect/Ellipse) construimos
+        // do estado VIVO do obj (width/height + cornerRadius). Pra custom
+        // path (Fabric.Path), usa o path do asset.content.
+        let pathSvg = ""
+        let pathBboxLeft = 0, pathBboxTop = 0
+        const shapeKind = (obj as any).__shapeKind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
+        if (obj.type === "rect" || (shapeKind && shapeKind !== "ellipse")) {
+          const W = obj.width ?? 100
+          const H = obj.height ?? 100
+          const R = (obj as any).__cornerRadius ?? obj.rx ?? 0
+          pathSvg = R > 0
+            ? buildRoundedRectSvgPath(W, H, R)
+            : `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
+        } else if (obj.type === "ellipse" || shapeKind === "ellipse") {
+          const rx = obj.rx ?? 50
+          const ry = obj.ry ?? 50
+          pathSvg = buildEllipseSvgPath(rx * 2, ry * 2)
+        } else {
+          // Fabric.Path com path SVG cru — usa do asset.content
+          pathSvg = shape?.path ?? ""
+          pathBboxLeft = shape?.pathBbox?.left ?? 0
+          pathBboxTop = shape?.pathBbox?.top ?? 0
+        }
+
         const knots = Math.abs(objAngle) < 0.01
           ? svgPathToAgPsdKnots(pathSvg, pathBboxLeft, pathBboxTop, ox, oy, objScaleX, objScaleY)
           : null
