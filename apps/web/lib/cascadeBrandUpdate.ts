@@ -1,6 +1,28 @@
 "use client"
 // Cascateia mudancas no Client.brandColors pra todas as peças do cliente que
 // referenciam essas cores via fillBrandIdx (texto) ou colorBrandIdx (BG solid).
+
+// Broadcast helpers — notifica /campaigns/[id], /pieces, /presentation, etc
+// pra refetch IMEDIATO. Mesma logica usada em lib/regenerateThumbs.ts.
+// Sem isso, mudancas de brand font/cor regeravam thumbs mas as views abertas
+// nao percebiam ate proximo focus/visibility (user reportou 2026-05-22:
+// "quando mudo a fonte do cliente os preview nao atualizam na hora").
+function broadcastPieceUpdated(pieceId: string, campaignId: string | undefined) {
+  try {
+    if (typeof BroadcastChannel === "undefined") return
+    const bc = new BroadcastChannel("zzosy:pieces")
+    bc.postMessage({ type: "piece-updated", pieceId, campaignId, ts: Date.now() })
+    bc.close()
+  } catch {}
+}
+function broadcastKvUpdated(campaignId: string) {
+  try {
+    if (typeof BroadcastChannel === "undefined") return
+    const bc = new BroadcastChannel("zzosy:campaigns")
+    bc.postMessage({ type: "kv-updated", campaignId, ts: Date.now() })
+    bc.close()
+  } catch {}
+}
 //
 // Fluxo:
 //  1. Lista campanhas do cliente (/api/clients/[id])
@@ -105,7 +127,8 @@ async function renderPieceThumbBlob(piece: any, assets: any[], target = 1600): P
     const W = data?.width ?? piece.width ?? 1080
     const H = data?.height ?? piece.height ?? 1080
     const sc = Math.min(target / W, target / H, 1)
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.92, multiplier: sc, enableRetinaScaling: false })
+    // PNG (nao JPEG) — preserva canal alpha em mascaras raster transparentes.
+    const dataUrl = fc.toDataURL({ format: "png", multiplier: sc, enableRetinaScaling: false })
     fc.dispose()
     return await (await fetch(dataUrl)).blob()
   } catch (e) {
@@ -124,11 +147,16 @@ export interface CascadeProgress {
  * Cascateia uma mudança de brandColors do cliente pra todas as peças.
  * `onProgress` opcional pra mostrar progresso na UI.
  * Retorna a lista de pieceIds atualizadas.
+ *
+ * `forceRender` = pula a checagem "data nao mudou" e re-renderiza tudo. Usado
+ * quando algum efeito externo (ex: propagacao server-side de brandTypography)
+ * ja atualizou o data — precisamos regerar thumbs mesmo sem brand_colors mexer.
  */
 export async function cascadeBrandUpdate(
   clientId: string,
   brandColors: BrandColorLike[],
   onProgress?: (p: CascadeProgress) => void,
+  forceRender = false,
 ): Promise<string[]> {
   // 1. Lista campanhas do cliente
   let client: any
@@ -139,6 +167,39 @@ export async function cascadeBrandUpdate(
   } catch { return [] }
   const campaigns: any[] = Array.isArray(client?.campaigns) ? client.campaigns : []
   if (campaigns.length === 0) return []
+
+  // Pre-carrega brandFont + customFontFiles + Google Fonts referenciadas nos
+  // assets ANTES de comecar a renderizar thumbs. Sem isso, buildPieceCanvas
+  // criava Textbox com a brandFont nova mas o browser ainda nao tinha o
+  // @font-face registrado -> thumb saia com fallback (Arial). Sintoma reportado:
+  // mudar fonte do cliente nao atualizava preview na pagina de campanha.
+  try {
+    const { loadGoogleFont, loadCustomFontFamily, forceLoadFontFaces } = await import("@/lib/google-fonts")
+    if (client.brandFont) {
+      const files = Array.isArray(client.customFontFiles) ? client.customFontFiles : []
+      if (files.length > 0) loadCustomFontFamily(client.brandFont, files)
+      else loadGoogleFont(client.brandFont)
+    }
+    // Coleta fontFamilies referenciadas em todos os assets de texto pra pre-load
+    const fontSet = new Set<string>()
+    if (client.brandFont) fontSet.add(client.brandFont)
+    for (const camp of campaigns) {
+      for (const a of (camp.assets ?? [])) {
+        if (a.type !== "TEXT") continue
+        const spans: any = typeof a.content === "string"
+          ? (() => { try { return JSON.parse(a.content) } catch { return [] } })()
+          : a.content
+        if (Array.isArray(spans)) for (const s of spans) {
+          if (typeof s?.style?.fontFamily === "string") fontSet.add(s.style.fontFamily)
+        }
+        const lo = (a as any).lastOverride
+        if (lo && typeof lo.fontFamily === "string") fontSet.add(lo.fontFamily)
+      }
+    }
+    for (const fn of fontSet) loadGoogleFont(fn)
+    await forceLoadFontFaces(Array.from(fontSet), 6000)
+    try { await (document as any).fonts?.ready } catch {}
+  } catch (e) { console.warn("[cascadeBrandUpdate] preload fonts falhou:", e) }
 
   // 2. Pra cada campanha, busca pieces + assets em paralelo
   const allWork: Array<{ piece: any; assets: any[] }> = []
@@ -221,18 +282,22 @@ export async function cascadeBrandUpdate(
 
       const dataCopy = JSON.parse(JSON.stringify(data))
       const changed = resolveBrandRefsInData(dataCopy, brandColors)
-      console.log("[brand-cascade] piece", piece.id, "changed:", changed)
-      if (!changed) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
+      console.log("[brand-cascade] piece", piece.id, "changed:", changed, "force:", forceRender)
+      // Pula re-render quando nao mudou nada E nao estamos em modo force
+      // (force = typography mudou server-side e thumb precisa refletir).
+      if (!changed && !forceRender) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
 
-      // Persiste novo data. piece.data eh String? @db.LongText no schema,
-      // entao precisa ser stringified antes de mandar (Prisma update nao
-      // serializa objeto pra string automaticamente em campo Text).
-      const patchRes = await fetch(`/api/pieces/${freshPiece.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: JSON.stringify(dataCopy) }),
-      })
-      console.log("[brand-cascade] piece", piece.id, "PATCH status:", patchRes.status)
+      // Persiste novo data SOMENTE se cores mudaram aqui no cliente — em modo
+      // force, server ja persistiu e mexer aqui sobrescreveria. Em modo cor
+      // normal, persistimos.
+      if (changed) {
+        const patchRes = await fetch(`/api/pieces/${freshPiece.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: JSON.stringify(dataCopy) }),
+        })
+        console.log("[brand-cascade] piece", piece.id, "PATCH status:", patchRes.status)
+      }
 
       // Regenera thumb principal (do step ativo / single-step)
       const activeStepIdx = typeof dataCopy.activeStepIndex === "number" ? dataCopy.activeStepIndex : 0
@@ -261,6 +326,9 @@ export async function cascadeBrandUpdate(
         }
       }
 
+      // Broadcast pra views abertas (/campaigns/[id], /pieces, /presentation)
+      // refetcharem IMEDIATO. Antes ficavam stale ate focus event.
+      broadcastPieceUpdated(freshPiece.id, freshPiece.campaignId ?? piece.campaignId)
       touched.push(freshPiece.id)
     } catch (e) {
       console.warn("[cascadeBrandUpdate] piece falhou:", piece.id, e)
@@ -283,20 +351,22 @@ export async function cascadeBrandUpdate(
       if (!kv || !Array.isArray(kv.layers)) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
       const kvCopy = JSON.parse(JSON.stringify(kv))
       const changed = resolveBrandRefsInBlock(kvCopy, brandColors)
-      if (!changed) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
+      if (!changed && !forceRender) { done++; onProgress?.({ total: totalAll, done, pieceIds: touched }); continue }
 
-      // Persiste KV atualizado
-      await fetch(`/api/campaigns/${campaignId}/key-vision`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bgColor: kvCopy.bgColor,
-          layers: kvCopy.layers,
-          width: kvCopy.width,
-          height: kvCopy.height,
-          data: kvCopy.data,
-        }),
-      })
+      // Persiste KV atualizado SOMENTE se cores mudaram (em force, server ja salvou)
+      if (changed) {
+        await fetch(`/api/campaigns/${campaignId}/key-vision`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bgColor: kvCopy.bgColor,
+            layers: kvCopy.layers,
+            width: kvCopy.width,
+            height: kvCopy.height,
+            data: kvCopy.data,
+          }),
+        })
+      }
 
       // Regenera thumb da matriz reusando renderPieceThumbBlob (KV vira
       // "piece virtual" com layers+bgColor do KV).
@@ -311,6 +381,8 @@ export async function cascadeBrandUpdate(
         fd.append("thumbnail", blob, "kv-thumb.jpg")
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
       }
+      // Broadcast pra campaign overview / dashboard refetch o KV thumb novo.
+      broadcastKvUpdated(campaignId)
       touched.push(`kv-${campaignId}`)
     } catch (e) {
       console.warn("[cascadeBrandUpdate] KV falhou:", campaignId, e)
