@@ -12,6 +12,7 @@ import { normalizeName } from "@/lib/normalize"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
 import { buildShapePath, type ShapeKind } from "@/lib/shapePaths"
+import { inpS, numInpS, secS, numFieldGrid, numFieldRight, numFieldUnit } from "@/lib/editorFieldStyles"
 import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
@@ -8170,8 +8171,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const isText = selected && (selected.type === "textbox" || selected.type === "i-text")
   const pS = { position: "fixed" as const, top: 0, bottom: 0, background: "rgba(18,18,18,0.97)", backdropFilter: "blur(12px)", zIndex: 100, display: "flex", flexDirection: "column" as const, overflowY: "auto" as const }
   const bS = { background: "transparent", border: "none", cursor: "pointer", color: "#aaa", fontSize: 18, padding: "0 4px" } as React.CSSProperties
-  const inpS = { width: "100%", background: "#111", border: "1px solid #2a2a2a", color: "white", fontSize: 12, padding: "5px 8px", borderRadius: 4, outline: "none" } as React.CSSProperties
-  const secS = { fontSize: 10, fontWeight: 700 as const, textTransform: "uppercase" as const, letterSpacing: "0.8px", color: "#555", marginBottom: 8 }
+  // inpS/secS/numInpS/numFieldGrid: fonte unica de verdade em lib/editorFieldStyles.ts.
+  // Mudar dimensoes/cores ali = propaga pro editor inteiro. Anti-padrao
+  // duplicacao no editor eliminado (user pediu 2026-05-22).
 
   return (
     <div ref={wrapperRef} style={{ position: "fixed", inset: 0, background: "#1e1e1e", overflow: "hidden" }}>
@@ -9859,7 +9861,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 (texto/imagem/embedded). Round-trip: persistido no save. */}
             <div>
               <div style={secS}>Camada</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6 }}>
+              <div style={numFieldGrid}>
                 <select
                   value={(selected as any).globalCompositeOperation ?? "source-over"}
                   onChange={e => changeObjectBlendMode(e.target.value)}
@@ -9884,15 +9886,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   <option value="luminosity">Luminosity</option>
                   <option value="lighter">Linear Dodge</option>
                 </select>
-                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                <div style={numFieldRight}>
                   <input
                     type="number" min={0} max={100} step={1}
                     value={Math.round(((selected as any).opacity ?? 1) * 100)}
                     onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
                     title="Opacidade (0-100%)"
-                    style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }}
+                    style={numInpS}
                   />
-                  <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
+                  <span style={numFieldUnit}>%</span>
                 </div>
               </div>
             </div>
@@ -10229,7 +10231,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 {/* CAMADA — blend + opacidade (paridade com outros tipos). */}
                 <div>
                   <div style={secS}>Camada</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6 }}>
+                  <div style={numFieldGrid}>
                     <select
                       value={(selected as any).globalCompositeOperation ?? "source-over"}
                       onChange={e => changeObjectBlendMode(e.target.value)}
@@ -10242,12 +10244,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       <option value="darken">Darken</option>
                       <option value="lighten">Lighten</option>
                     </select>
-                    <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                    <div style={numFieldRight}>
                       <input type="number" min={0} max={100} step={1}
                         value={Math.round(((selected as any).opacity ?? 1) * 100)}
                         onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
-                        style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }} />
-                      <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
+                        style={numInpS} />
+                      <span style={numFieldUnit}>%</span>
                     </div>
                   </div>
                 </div>
@@ -10291,17 +10293,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   />
                   {/* Espessura — slider + numero. Grid `1fr 92px` + gap 6 padronizado
                       com CAMADA pra alinhamento visual consistente do right column. */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6, alignItems: "center", marginTop: 8 }}>
+                  <div style={{ ...numFieldGrid, marginTop: 8 }}>
                     <input type="range" min={0} max={50} step={1}
                       value={currentStrokeWidth}
                       onChange={e => setShapeProp("strokeWidth", Number(e.target.value))}
                       style={{ width: "100%" }} />
-                    <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                    <div style={numFieldRight}>
                       <input type="number" min={0} max={500} step={1}
                         value={currentStrokeWidth}
                         onChange={e => setShapeProp("strokeWidth", Number(e.target.value) || 0)}
-                        style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }} />
-                      <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>px</span>
+                        style={numInpS} />
+                      <span style={numFieldUnit}>px</span>
                     </div>
                   </div>
                 </div>
@@ -10312,19 +10314,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 {shapeKind === "roundedRect" && (
                   <div>
                     <div style={secS}>Raio do canto</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6, alignItems: "center" }}>
+                    <div style={numFieldGrid}>
                       <input type="range"
                         min={0} max={maxRadius} step={1}
                         value={Math.min(currentCornerRadius, maxRadius)}
                         onChange={e => setCornerRadius(Number(e.target.value))}
                         style={{ width: "100%" }} />
-                      <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                      <div style={numFieldRight}>
                         <input type="number"
                           min={0} max={maxRadius} step={1}
                           value={Math.min(currentCornerRadius, maxRadius)}
                           onChange={e => setCornerRadius(Number(e.target.value) || 0)}
-                          style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }} />
-                        <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>px</span>
+                          style={numInpS} />
+                        <span style={numFieldUnit}>px</span>
                       </div>
                     </div>
                   </div>
@@ -10339,7 +10341,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 PSD-style: imagens, shapes e embedded layers tb suportam multiply/etc. */}
             <div>
               <div style={secS}>Camada</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 6 }}>
+              <div style={numFieldGrid}>
                 <select
                   value={(selected as any).globalCompositeOperation ?? "source-over"}
                   onChange={e => changeObjectBlendMode(e.target.value)}
@@ -10364,15 +10366,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   <option value="luminosity">Luminosity</option>
                   <option value="lighter">Linear Dodge</option>
                 </select>
-                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                <div style={numFieldRight}>
                   <input
                     type="number" min={0} max={100} step={1}
                     value={Math.round(((selected as any).opacity ?? 1) * 100)}
                     onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
                     title="Opacidade (0-100%)"
-                    style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }}
+                    style={numInpS}
                   />
-                  <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>%</span>
+                  <span style={numFieldUnit}>%</span>
                 </div>
               </div>
             </div>
