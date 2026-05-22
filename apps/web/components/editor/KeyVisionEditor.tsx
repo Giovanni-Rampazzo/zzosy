@@ -3648,11 +3648,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (effects.stroke && effects.stroke.color) {
       // F12.14: stroke effect agora respeita opacity (se diferente de 1)
       // via rgba composto. Sem isso opacity era ignorado.
-      const c = typeof effects.stroke.opacity === "number" && effects.stroke.opacity < 1
-        ? effectColorWithOpacity(effects.stroke.color, effects.stroke.opacity, effects.stroke.color)
-        : effects.stroke.color
-      obj.set("stroke", c)
-      obj.set("strokeWidth", effects.stroke.width ?? 1)
+      //
+      // CRITICO: SHAPE com vectorStroke proprio (PS Properties bar Stroke) +
+      // Layer Style Stroke (effects.stroke) sao 2 strokes INDEPENDENTES no
+      // PS. Antes, applyFabricEffects sobrescrevia obj.stroke (que tinha o
+      // vectorStroke) com effects.stroke → vectorStroke perdido.
+      // Fix: pra SHAPE com stroke proprio, PRESERVA vectorStroke e nao
+      // aplica effects.stroke aqui (round-trip preserva via layer.effects).
+      // Quando renderizar AMBOS visualmente requer outline duplo, sera
+      // trabalho futuro — por ora vectorStroke ganha (eh o primario).
+      const isShapeWithOwnStroke = (obj as any).__isShape === true
+        && typeof obj.stroke === "string"
+        && obj.stroke !== ""
+        && (obj.strokeWidth ?? 0) > 0
+      if (!isShapeWithOwnStroke) {
+        const c = typeof effects.stroke.opacity === "number" && effects.stroke.opacity < 1
+          ? effectColorWithOpacity(effects.stroke.color, effects.stroke.opacity, effects.stroke.color)
+          : effects.stroke.color
+        obj.set("stroke", c)
+        obj.set("strokeWidth", effects.stroke.width ?? 1)
+      }
     }
     // Color Overlay: substitui o fill por uma cor sólida.
     if (effects.colorOverlay && effects.colorOverlay.color) {
