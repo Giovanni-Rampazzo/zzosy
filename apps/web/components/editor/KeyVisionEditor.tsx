@@ -9533,7 +9533,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               fontSize: 12,
               fontWeight: 700,
               cursor: "pointer",
-              color: "#a855f7",
+              color: "#aaa",
               textTransform: "uppercase",
               letterSpacing: "1.5px",
               textAlign: "center",
