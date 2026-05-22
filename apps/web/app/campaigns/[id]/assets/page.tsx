@@ -663,11 +663,15 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             fontSize: 13, color: "#111", fontFamily: "inherit", outline: "none",
           }}
         />
-        <Button variant="view" size="sm" disabled={!dirty || saving}
-          onClick={() => onTextChange(asset.id, localText)}
-          title={saving ? "Salvando…" : dirty ? "Salvar alterações (Cmd+Enter)" : "Sem alterações"}>
-          {saving ? "Salvando…" : "Salvar"}
-        </Button>
+        {/* So renderiza Salvar quando ha mudancas — antes ficava disabled
+            com opacity-50, deixando o amarelo "clarinho" / fantasma na UI. */}
+        {(dirty || saving) && (
+          <Button variant="view" size="sm" disabled={saving}
+            onClick={() => onTextChange(asset.id, localText)}
+            title={saving ? "Salvando…" : "Salvar alterações (Cmd+Enter)"}>
+            {saving ? "Salvando…" : "Salvar"}
+          </Button>
+        )}
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     )
