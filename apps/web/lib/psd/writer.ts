@@ -14,6 +14,7 @@
  *    PsdDocument (futuro: lib/psd/fromEditor.ts), depois chamar este writer.
  */
 import { writePsd } from "ag-psd"
+import { psdPx } from "./psdHelpers"
 import type {
   PsdDocument,
   PsdLayer,
@@ -27,6 +28,9 @@ import type {
   PsdGlowEffect,
   PsdStrokeEffect,
   PsdColorOverlayEffect,
+  PsdGradientOverlayEffect,
+  PsdSatinEffect,
+  PsdBevelEffect,
   PsdMaskData,
   PsdImageData,
   PsdBlendMode,
@@ -62,11 +66,16 @@ export interface WriteOptions {
 export function writePsdDocument(doc: PsdDocument, opts: WriteOptions = {}): WriteResult {
   const warnings: WriteWarning[] = []
   const warn = (w: WriteWarning) => warnings.push(w)
+  // Smart Objects (embedded ou linked) populam linkedFiles[] no top-level do PSD.
+  // Cada SO no documento referencia uma entry via placedLayer.id. Sem isso, o
+  // re-import perde os bytes/filePath.
+  const linkedFiles: any[] = []
 
   const psd: any = {
     width: doc.width,
     height: doc.height,
-    children: doc.layers.map(l => layerToAgPsd(l, warn)).filter(Boolean),
+    children: doc.layers.map(l => layerToAgPsd(l, warn, linkedFiles)).filter(Boolean),
+    ...(linkedFiles.length > 0 ? { linkedFiles } : {}),
     imageResources: {
       resolutionInfo: {
         horizontalResolution: doc.dpi,
@@ -100,7 +109,7 @@ export function writePsdDocument(doc: PsdDocument, opts: WriteOptions = {}): Wri
 // Layer conversion: PsdLayer → ag-psd Layer
 // ────────────────────────────────────────────────────────────────────
 
-function layerToAgPsd(l: PsdLayer, warn: (w: WriteWarning) => void): any | null {
+function layerToAgPsd(l: PsdLayer, warn: (w: WriteWarning) => void, linkedFiles: any[]): any | null {
   const common = {
     name: l.name,
     hidden: !l.visible,
@@ -118,13 +127,13 @@ function layerToAgPsd(l: PsdLayer, warn: (w: WriteWarning) => void): any | null 
 
   switch (l.type) {
     case "group":
-      return { ...common, children: l.children.map(c => layerToAgPsd(c, warn)).filter(Boolean) }
+      return { ...common, children: l.children.map(c => layerToAgPsd(c, warn, linkedFiles)).filter(Boolean) }
     case "text":
       return { ...common, ...textToAgPsd(l) }
     case "image":
       return { ...common, ...imageToAgPsd(l, warn) }
     case "smartObject":
-      return { ...common, ...smartObjectToAgPsd(l, warn) }
+      return { ...common, ...smartObjectToAgPsd(l, warn, linkedFiles) }
     case "shape":
       return { ...common, ...shapeToAgPsd(l, warn) }
     case "adjustment":
@@ -197,22 +206,40 @@ function imageToAgPsd(l: PsdImageLayer, warn: (w: WriteWarning) => void): any {
 
 // ── SMART OBJECT ─────────────────────────────────────────────────────
 
-function smartObjectToAgPsd(l: PsdSmartObjectLayer, warn: (w: WriteWarning) => void): any {
-  // Smart Object exportado como image layer normal (canvas do composite).
-  // Conteudo embedded original (PSB/PDF/JPG) eh preservado em
-  // linkedFiles[] no PSD — mas escrever isso requer setup adicional.
-  // Por ora exporta como image layer com canvas + placedLayer.transform.
+function smartObjectToAgPsd(l: PsdSmartObjectLayer, warn: (w: WriteWarning) => void, linkedFiles: any[]): any {
+  // Smart Object preserva conteudo via linkedFiles[] no top-level do PSD.
+  // Cada SO referencia uma entry pelo placedLayer.id (GUID). Reader resolve
+  // via linkedFiles.get(placed.id).
   const canvas = l.composite ? imageDataToCanvas(l.composite, warn, l.name) : null
-  // ag-psd writePsd exige GUID format pro placedLayer.id (ex: 20953ddb-9391-...).
-  // Se o id da layer ja for GUID, usa direto. Senao deriva UM GUID estavel
-  // do id existente (round-trip preserva o mapping). Sem isso, ag-psd
-  // rejeita o write com "Placed layer ID must be in a GUID format".
-  // ag-psd quer width/height do source embedded. Tomamos do bbox do layer
-  // como fallback (sera proximo do tamanho do conteudo placed).
+  // ag-psd writePsd exige GUID format pro placedLayer.id.
+  const placedId = ensureGuid(l.id)
   const placedW = canvas?.width ?? Math.max(1, Math.round(l.bbox.right - l.bbox.left))
   const placedH = canvas?.height ?? Math.max(1, Math.round(l.bbox.bottom - l.bbox.top))
+
+  // Popula linkedFiles[]:
+  //  - embedded: emite entry com data=bytes preservando o conteudo original
+  //    (PSB/PDF/JPG/PNG/AI). Reader.ts:339 le esses bytes de volta.
+  //  - linked: emite entry SEM data (so name=filePath). PS aceita como
+  //    referencia externa nao-embedada. Reader.ts:335 retorna {kind: linked,
+  //    filePath: lf.name}.
+  //  - unknown: nenhuma entry — placedLayer fica orfa, reader retorna
+  //    {kind: unknown} no re-import.
+  if (l.content.kind === "embedded") {
+    linkedFiles.push({
+      id: placedId,
+      name: `${l.name}.${l.content.format === "unknown" ? "psb" : l.content.format}`,
+      data: l.content.bytes,
+    })
+  } else if (l.content.kind === "linked") {
+    linkedFiles.push({
+      id: placedId,
+      name: l.content.filePath,
+      // Sem data: PS trata como linked externo (nao embedded).
+    })
+  }
+
   const placedLayer = {
-    id: ensureGuid(l.id),
+    id: placedId,
     type: contentKindToPlacedType(l.content),
     transform: l.transform.corners,
     width: placedW,
@@ -362,15 +389,17 @@ function effectsToAgPsd(fx: PsdLayerEffects): any {
   if (fx.innerGlow) out.innerGlow = [glowToAgPsd(fx.innerGlow, "inner")]
   if (fx.stroke) out.stroke = [strokeEffectToAgPsd(fx.stroke)]
   if (fx.colorOverlay) out.solidFill = [colorOverlayToAgPsd(fx.colorOverlay)]
-  // gradientOverlay + satin + bevel + patternOverlay → ag-psd shape mais
-  // complexa. Round-trip parcial — emite o que ag-psd aceita simples.
+  if (fx.gradientOverlay) out.gradientOverlay = [gradientOverlayToAgPsd(fx.gradientOverlay)]
+  if (fx.satin) out.satin = satinToAgPsd(fx.satin)
+  if (fx.bevel) out.bevel = bevelToAgPsd(fx.bevel)
+  // patternOverlay omitido — preserva pattern bytes precisa mapeio dedicado
+  // (mesmo escopo do shape.fill.kind="pattern"). Fase 5+.
   return out
 }
 
-// ag-psd UnitsValue helper: distance/size/choke precisam vir como
-// { value, units: "Pixels" }. Numero cru gera "Invalid value: ... (should
-// have value and units)".
-const px = (n: number) => ({ value: n, units: "Pixels" as const })
+// ag-psd UnitsValue helper centralizado em lib/psd/psdHelpers.psdPx.
+// Alias local mantido pra reduzir churn nas chamadas existentes neste arquivo.
+const px = psdPx
 
 function shadowToAgPsd(s: PsdShadowEffect): any {
   return {
@@ -414,6 +443,88 @@ function colorOverlayToAgPsd(c: PsdColorOverlayEffect): any {
     color: hexToRgb(c.color),
     opacity: c.opacity,
     blendMode: blendModeToAgPsd(c.blendMode),
+  }
+}
+
+function gradientOverlayToAgPsd(g: PsdGradientOverlayEffect): any {
+  // ag-psd LayerEffectGradientOverlay shape: type='linear/radial/angle/...',
+  // gradient.colorStops/opacityStops em formato Adobe (location 0-1, midpoint 50).
+  return {
+    enabled: g.enabled,
+    opacity: g.opacity,
+    blendMode: blendModeToAgPsd(g.blendMode),
+    type: g.gradient.kind,
+    angle: g.angle,
+    scale: g.scale,
+    reverse: g.reverse,
+    align: true,
+    gradient: {
+      name: "Custom",
+      type: "solid" as const,
+      smoothness: 4096,
+      colorStops: g.gradient.stops.map(s => ({
+        color: hexToRgb(s.color),
+        location: s.position,
+        midpoint: 50,
+      })),
+      opacityStops: g.gradient.stops.map(s => ({
+        opacity: s.opacity * 100,
+        location: s.position,
+        midpoint: 50,
+      })),
+    },
+  }
+}
+
+function satinToAgPsd(s: PsdSatinEffect): any {
+  return {
+    enabled: s.enabled,
+    color: hexToRgb(s.color),
+    opacity: s.opacity,
+    angle: s.angle,
+    distance: psdPx(s.distance),
+    size: psdPx(s.size),
+    invert: s.invert,
+    blendMode: blendModeToAgPsd(s.blendMode),
+  }
+}
+
+// Mapeia enum ZZOSY camelCase → ag-psd BevelStyle string-com-espacos.
+function bevelStyleToAgPsd(s: PsdBevelEffect["style"]): "inner bevel" | "outer bevel" | "emboss" | "pillow emboss" | "stroke emboss" {
+  switch (s) {
+    case "innerBevel":   return "inner bevel"
+    case "outerBevel":   return "outer bevel"
+    case "emboss":       return "emboss"
+    case "pillowEmboss": return "pillow emboss"
+    case "strokeEmboss": return "stroke emboss"
+  }
+}
+function bevelTechniqueToAgPsd(t: PsdBevelEffect["technique"]): "smooth" | "chisel hard" | "chisel soft" {
+  switch (t) {
+    case "smooth":     return "smooth"
+    case "chiselHard": return "chisel hard"
+    case "chiselSoft": return "chisel soft"
+  }
+}
+
+function bevelToAgPsd(b: PsdBevelEffect): any {
+  return {
+    enabled: b.enabled,
+    style: bevelStyleToAgPsd(b.style),
+    technique: bevelTechniqueToAgPsd(b.technique),
+    direction: b.direction,
+    size: psdPx(b.size),
+    soften: psdPx(b.soften),
+    strength: b.depth,
+    highlightColor: hexToRgb(b.highlightColor),
+    highlightBlendMode: blendModeToAgPsd(b.highlightBlendMode),
+    highlightOpacity: b.highlightOpacity,
+    shadowColor: hexToRgb(b.shadowColor),
+    shadowBlendMode: blendModeToAgPsd(b.shadowBlendMode),
+    shadowOpacity: b.shadowOpacity,
+    angle: 120,
+    altitude: 30,
+    useGlobalLight: false,
   }
 }
 
