@@ -129,25 +129,42 @@ export default function PresentationPage() {
     // Re-fetch sempre que a janela volta a ter foco (ex: usuario edita peca
     // em outra aba, volta pra apresentacao). Sem isso, thumbs gerados em
     // background no editor nao apareceriam na presentation ate F5.
-    function refetch() {
+    // Debounce de refetches concorrentes — varias triggers (broadcast + poll +
+    // focus) podem disparar ao mesmo tempo. Se um esta em curso, ignora.
+    let refetchInFlight = false
+    let refetchQueued = false
+    async function refetch() {
+      if (refetchInFlight) { refetchQueued = true; return }
+      refetchInFlight = true
       const ts = Date.now()
-      Promise.all([
-        fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
-        fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
-      ]).then(([c, p]) => {
+      try {
+        const [c, p] = await Promise.all([
+          fetch(`/api/campaigns/${id}?_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
+          fetch(`/api/pieces?campaignId=${id}&_t=${ts}`, { cache: "no-store" }).then(r => r.json()),
+        ])
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
-      }).catch(() => {})
+      } catch {}
+      finally {
+        refetchInFlight = false
+        if (refetchQueued) {
+          refetchQueued = false
+          refetch()
+        }
+      }
     }
     function onVisibilityChange() {
       if (document.visibilityState === "visible") refetch()
     }
     window.addEventListener("focus", refetch)
+    window.addEventListener("pageshow", refetch)
     document.addEventListener("visibilitychange", onVisibilityChange)
 
-    // === PREVIEW REAL-TIME (mesma logica de /pieces) ===
-    // BroadcastChannel: editor salva uma peca/matriz → notifica todos os
-    // viewers da apresentacao pra refetch imediato.
+    // === PREVIEW REAL-TIME ===
+    // Multiple signals pra detectar save no editor:
+    //  - BroadcastChannel zzosy:pieces (piece-updated) + zzosy:campaigns (kv-updated)
+    //  - storage event (backup pra browsers/contextos sem BroadcastChannel)
+    //  - polling agressivo 2s (catch-all pra mudancas externas)
     let bcPieces: BroadcastChannel | null = null
     let bcCampaigns: BroadcastChannel | null = null
     try {
@@ -158,16 +175,27 @@ export default function PresentationPage() {
         }
         bcCampaigns = new BroadcastChannel("zzosy:campaigns")
         bcCampaigns.onmessage = (ev) => {
-          if (ev.data?.type === "kv-updated" && ev.data?.campaignId === id) refetch()
+          const t = ev.data?.type
+          if ((t === "kv-updated" || t === "campaign-updated") && ev.data?.campaignId === id) refetch()
         }
       }
     } catch {}
-    // Polling 6s pra capturar mudancas externas (multi-user, batch scripts)
-    const poll = setInterval(() => { if (!document.hidden) refetch() }, 6000)
+    // localStorage event como SINAL CROSS-TAB ALTERNATIVO. Editor pode escrever
+    // em `zzosy:lastSave:<campaignId>` apos cada save — apresentacao ouve.
+    function onStorage(ev: StorageEvent) {
+      if (!ev.key) return
+      if (ev.key === `zzosy:lastSave:${id}` || ev.key === `zzosy:lastKvSave:${id}`) refetch()
+    }
+    window.addEventListener("storage", onStorage)
+    // Polling 2s (era 6s) pra captura rapida quando broadcast falha (e.g. same-tab
+    // navigation). Apenas quando aba esta visivel — sem desperdicio em background.
+    const poll = setInterval(() => { if (!document.hidden) refetch() }, 2000)
 
     return () => {
       window.removeEventListener("focus", refetch)
+      window.removeEventListener("pageshow", refetch)
       document.removeEventListener("visibilitychange", onVisibilityChange)
+      window.removeEventListener("storage", onStorage)
       clearInterval(poll)
       try { bcPieces?.close() } catch {}
       try { bcCampaigns?.close() } catch {}
