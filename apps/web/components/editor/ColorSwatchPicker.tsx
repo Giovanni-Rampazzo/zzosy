@@ -41,6 +41,14 @@ interface Props {
    *  field de opacity inline na mesma linha (Figma-style). */
   opacity?: number
   onOpacityChange?: (pct: number) => void
+  /**
+   * Fired no mousedown do trigger ANTES do click roubar foco do contexto
+   * atual (ex: textbox em edicao). Pra editor de texto: o parent salva
+   * `savedTextSelection.current` aqui pra applyStyle aplicar so nos chars
+   * selecionados em vez do textbox inteiro. Sem isso, per-char colors nao
+   * funcionam quando user clica no swatch.
+   */
+  onMouseDownCapture?: () => void
 }
 
 export function ColorSwatchPicker({
@@ -54,6 +62,7 @@ export function ColorSwatchPicker({
   title,
   opacity,
   onOpacityChange,
+  onMouseDownCapture,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [hex, setHex] = useState(value)
@@ -123,7 +132,12 @@ export function ColorSwatchPicker({
   }
 
   return (
-    <div ref={rootRef} style={{ position: "relative" }}>
+    <div ref={rootRef} style={{ position: "relative" }}
+      // Capture mousedown ANTES de qualquer child interativo — pra parent
+      // salvar text selection antes do click roubar foco do textbox.
+      // Critico pra per-char fill: applyStyle ler hasSavedSel = true.
+      onMouseDownCapture={onMouseDownCapture}
+    >
       {/* Inline row: swatch + hex + opacity (Figma-style enxuto) */}
       <div style={{
         display: "flex", alignItems: "center", gap: 0,

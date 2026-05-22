@@ -9737,6 +9737,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 activeBrandIdx={typeof (selected as any).__fillBrandIdx === "number" ? (selected as any).__fillBrandIdx : undefined}
                 opacity={((selected as any).opacity ?? 1) * 100}
                 onOpacityChange={pct => changeObjectOpacity(pct / 100)}
+                // CRITICO per-char: captura selection ANTES do click roubar
+                // foco do textbox. Sem isso, applyStyle ve isEditing=false +
+                // savedTextSelection stale → aplica fill no textbox INTEIRO
+                // (perde colors per-char). Mesmo pattern do fontSize input
+                // (linha ~9602).
+                onMouseDownCapture={() => {
+                  const fc = fabricRef.current
+                  const active = fc?.getActiveObject() as any
+                  if (active?.isEditing && active.selectionStart !== active.selectionEnd) {
+                    savedTextSelection.current = { obj: active, start: active.selectionStart, end: active.selectionEnd }
+                  }
+                }}
               />
             </div>
 
