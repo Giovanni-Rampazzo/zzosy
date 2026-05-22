@@ -10067,11 +10067,45 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ) : ((selected as any).__isShape === true || selected.type === "path" || selected.type === "Path") ? (
           /* SHAPE editor (Fabric.Path) — fill + stroke + stroke-width editaveis.
              Mantem o path vetorial vivo (sem rasterizar), preservando edicao
-             Photoshop-like. Sincroniza com Fabric via .set + renderAll. */
+             Photoshop-like. Sincroniza com Fabric via .set + renderAll.
+
+             Fill/Stroke OPACITIES sao INDEPENDENTES (Figma-style): codificadas
+             no proprio color string como rgba(r,g,b,a). A opacity da CAMADA
+             (objeto inteiro) multiplica ambas. Isso evita o bug "stroke=0
+             apaga o fill" que tinha quando ambas amarravam a obj.opacity. */
           (() => {
             const fc = fabricRef.current
-            const currentFill = typeof selected.fill === "string" ? selected.fill : "#000000"
-            const currentStroke = typeof selected.stroke === "string" ? selected.stroke : ""
+            // Color helpers — parse e (re)emite rgba/hex pra preservar alpha.
+            function parseColor(c: string): { hex: string; alpha: number } {
+              if (typeof c !== "string" || !c) return { hex: "", alpha: 1 }
+              const hexM = /^#([0-9a-fA-F]{6})$/.exec(c.trim())
+              if (hexM) return { hex: `#${hexM[1].toLowerCase()}`, alpha: 1 }
+              const hex8 = /^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})$/.exec(c.trim())
+              if (hex8) return { hex: `#${hex8[1].toLowerCase()}`, alpha: Math.round((parseInt(hex8[2], 16) / 255) * 1000) / 1000 }
+              const rgba = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i.exec(c.trim())
+              if (rgba) {
+                const r = parseInt(rgba[1], 10), g = parseInt(rgba[2], 10), b = parseInt(rgba[3], 10)
+                const a = rgba[4] ? parseFloat(rgba[4]) : 1
+                const hex = `#${[r, g, b].map(n => n.toString(16).padStart(2, "0")).join("")}`
+                return { hex, alpha: a }
+              }
+              return { hex: c, alpha: 1 }
+            }
+            function combineHexAlpha(hex: string, alpha: number): string {
+              if (!hex) return ""
+              const m = /^#([0-9a-fA-F]{6})$/.exec(hex)
+              if (!m) return hex
+              if (alpha >= 0.999) return `#${m[1].toLowerCase()}`
+              const n = parseInt(m[1], 16)
+              const r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff
+              return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
+            }
+            const fillParsed = parseColor(selected.fill ?? "")
+            const strokeParsed = parseColor(selected.stroke ?? "")
+            const currentFillHex = fillParsed.hex || "#000000"
+            const currentFillAlpha = fillParsed.alpha
+            const currentStrokeHex = strokeParsed.hex || ""
+            const currentStrokeAlpha = strokeParsed.alpha
             const currentStrokeWidth = (selected as any).strokeWidth ?? 0
             function setShapeProp(key: "fill" | "stroke" | "strokeWidth", val: any) {
               if (!fc || !selected) return
@@ -10107,6 +10141,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               if (isInitialized.current && !isApplyingHistory.current) pushHistory()
               doSave()
             }
+            // Setters INDEPENDENTES: combinam hex novo com alpha atual (e vice-versa).
+            const setFillHex = (hex: string) => setShapeProp("fill", combineHexAlpha(hex, currentFillAlpha))
+            const setFillAlpha = (pct: number) => setShapeProp("fill", combineHexAlpha(currentFillHex, Math.max(0, Math.min(1, pct / 100))))
+            const setStrokeHex = (hex: string) => setShapeProp("stroke", combineHexAlpha(hex, currentStrokeAlpha))
+            const setStrokeAlpha = (pct: number) => setShapeProp("stroke", combineHexAlpha(currentStrokeHex, Math.max(0, Math.min(1, pct / 100))))
             return (
               <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ fontWeight: 600, color: "#888", fontSize: 13 }}>{(selected as any).__assetLabel ?? "Shape"}</div>
@@ -10137,28 +10176,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   </div>
                 </div>
 
-                {/* FILL — ColorSwatchPicker Figma-style */}
+                {/* FILL — ColorSwatchPicker Figma-style. Opacity INDEPENDENTE
+                    (encodada em rgba do fill). */}
                 <div>
                   <div style={secS}>Preenchimento</div>
                   <ColorSwatchPicker
-                    value={currentFill}
-                    onChange={(hex) => setShapeProp("fill", hex)}
+                    value={currentFillHex}
+                    onChange={(hex) => setFillHex(hex)}
                     brandColors={brandColors as any}
                     defaultSwatches={SWATCHES}
                     allowEmpty
-                    opacity={((selected as any).opacity ?? 1) * 100}
-                    onOpacityChange={pct => changeObjectOpacity(pct / 100)}
+                    opacity={Math.round(currentFillAlpha * 100)}
+                    onOpacityChange={pct => setFillAlpha(pct)}
                   />
                 </div>
 
                 {/* STROKE — cor (ColorSwatchPicker com opacity inline, mesmo
-                    padrao Figma do FILL) + espessura abaixo. */}
+                    padrao Figma do FILL) + espessura abaixo. Opacity INDEPENDENTE
+                    da fill — antes amarrava obj.opacity e zerar stroke escondia
+                    tudo (bug reportado 2026-05-22). */}
                 <div>
                   <div style={secS}>Stroke</div>
                   <ColorSwatchPicker
-                    value={currentStroke}
+                    value={currentStrokeHex}
                     onChange={(hex) => {
-                      setShapeProp("stroke", hex)
+                      setStrokeHex(hex)
                       // Setar stroke com width=0 deixa ele invisivel — auto-applica 1px
                       // pra user ver o stroke imediatamente.
                       if (hex && currentStrokeWidth === 0) setShapeProp("strokeWidth", 1)
@@ -10168,8 +10210,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     brandColors={brandColors as any}
                     defaultSwatches={SWATCHES}
                     allowEmpty
-                    opacity={((selected as any).opacity ?? 1) * 100}
-                    onOpacityChange={pct => changeObjectOpacity(pct / 100)}
+                    opacity={Math.round(currentStrokeAlpha * 100)}
+                    onOpacityChange={pct => setStrokeAlpha(pct)}
                   />
                   {/* Espessura — slider + numero, mesmo grid pattern usado em
                       outros number fields do editor (paddingRight: 22). */}

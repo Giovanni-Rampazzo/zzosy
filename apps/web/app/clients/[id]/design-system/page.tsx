@@ -583,12 +583,13 @@ export default function EditClientPage() {
           <span style={{fontWeight:600,color:"#111"}}>Design System</span>
         </div>
 
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",maxWidth:960,marginBottom:18}}>
-          <div>
-            <h1 style={{fontSize:22,fontWeight:700,margin:0,marginBottom:4}}>Design System</h1>
-            <div style={{fontSize:12,color:"#888"}}>Identidade visual, cores e tipografia da {client.name}</div>
-          </div>
-          <Button variant="secondary" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
+        {/* Header simples — sem botao Voltar inline. Ja temos 2 caminhos de
+            volta (upper "← {cliente}" + breadcrumb) e o Voltar isolado a
+            960px do titulo ficava visualmente desconectado (user reportou
+            2026-05-22 "porque o voltar esta tao longe?"). */}
+        <div style={{maxWidth:640,marginBottom:18}}>
+          <h1 style={{fontSize:22,fontWeight:700,margin:0,marginBottom:4}}>Design System</h1>
+          <div style={{fontSize:12,color:"#888"}}>Identidade visual, cores e tipografia da {client.name}</div>
         </div>
 
         <form onSubmit={(e) => e.preventDefault()} style={{maxWidth:640}}>
