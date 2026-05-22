@@ -168,26 +168,33 @@ function textToAgPsd(l: PsdTextLayer): any {
   //  - 'lyr ' = "layer"  = manual              → PS NAO mexe
   const baselineX = l.bbox.left
   const baselineY = l.bbox.top + l.defaultStyle.fontSize
+  // BUG SUBTIL: ag-psd interpreta `styleRuns: []` (array vazio) como "0 runs"
+  // e ZERA o text.style default no PSD final. Texto sem per-char runs (caso
+  // mais comum) volta sem fonte/cor/peso. Solucao: OMITIR styleRuns quando
+  // vazio. Quando ha runs, emite normal.
+  const text: any = {
+    text: l.text,
+    transform: [1, 0, 0, 1, baselineX, baselineY],
+    style: charStyleToAgPsd(l.defaultStyle),
+    paragraphStyle: {
+      justification: l.paragraph.align === "left" ? "left"
+        : l.paragraph.align === "center" ? "center"
+        : l.paragraph.align === "right" ? "right"
+        : "justify",
+      firstLineIndent: l.paragraph.firstLineIndent,
+      spaceBefore: l.paragraph.spaceBefore,
+      spaceAfter: l.paragraph.spaceAfter,
+    },
+  }
+  if (l.styleRuns.length > 0) {
+    text.styleRuns = l.styleRuns.map(r => ({
+      length: r.length,
+      style: charStyleToAgPsd({ ...l.defaultStyle, ...r.style }),
+    }))
+  }
   return {
     nameSource: l.nameSource ?? "srct",
-    text: {
-      text: l.text,
-      transform: [1, 0, 0, 1, baselineX, baselineY],
-      style: charStyleToAgPsd(l.defaultStyle),
-      styleRuns: l.styleRuns.map(r => ({
-        length: r.length,
-        style: charStyleToAgPsd({ ...l.defaultStyle, ...r.style }),
-      })),
-      paragraphStyle: {
-        justification: l.paragraph.align === "left" ? "left"
-          : l.paragraph.align === "center" ? "center"
-          : l.paragraph.align === "right" ? "right"
-          : "justify",
-        firstLineIndent: l.paragraph.firstLineIndent,
-        spaceBefore: l.paragraph.spaceBefore,
-        spaceAfter: l.paragraph.spaceAfter,
-      },
-    },
+    text,
   }
 }
 
