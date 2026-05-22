@@ -1666,14 +1666,31 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       }
     } else if ((obj as any).__isShape === true || obj.type === "path" || obj.type === "Path") {
       // === SHAPE: exporta como Shape Layer NATIVO do PS ===
-      // Fabric.Path com fill/stroke vivos — vectorMask + vectorFill + effects.stroke.
       try {
         const assetIdSh = (obj as any).__assetId as string | undefined
         const assetSh = assetIdSh ? assetById.get(assetIdSh) : undefined
         const shape = parseShapeContent(assetSh?.content)
-        const pathSvg: string = shape?.path ?? ""
-        const pathBboxLeft = shape?.pathBbox?.left ?? left
-        const pathBboxTop = shape?.pathBbox?.top ?? top
+        // Pra shapes parametric: REBUILD o path SVG a partir do estado vivo
+        // (obj.__pathBbox + obj.__cornerRadius) — os dims ja sao absolutos
+        // pos-bake do scale em buildPieceCanvas. Sem isso, o export usaria
+        // o path cru do asset.content (400px) e ignoraria a scale aplicada
+        // pelo user (e.g., shape resizado a 2x → PSD saia 2x menor).
+        const shapeKindEarly = (obj as any).__shapeKind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
+        const objBbox = (obj as any).__pathBbox
+        let pathSvg: string = shape?.path ?? ""
+        let pathBboxLeft = shape?.pathBbox?.left ?? left
+        let pathBboxTop = shape?.pathBbox?.top ?? top
+        if (shapeKindEarly && objBbox) {
+          const bbW = (objBbox.right ?? 0) - (objBbox.left ?? 0)
+          const bbH = (objBbox.bottom ?? 0) - (objBbox.top ?? 0)
+          const cornerR = (obj as any).__cornerRadius ?? 0
+          if (bbW > 0 && bbH > 0) {
+            const { buildShapePath } = await import("@/lib/shapePaths")
+            pathSvg = buildShapePath(shapeKindEarly, bbW, bbH, cornerR)
+            pathBboxLeft = 0
+            pathBboxTop = 0
+          }
+        }
         const objAngle = obj.angle ?? 0
         const objScaleX = obj.scaleX ?? 1
         const objScaleY = obj.scaleY ?? 1
