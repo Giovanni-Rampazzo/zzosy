@@ -8,6 +8,7 @@ import { FilterPill } from "@/components/ui/FilterPill"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
+import { SegmentPicker } from "@/components/pieces/SegmentPicker"
 import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
@@ -53,6 +54,15 @@ function PiecesContent() {
   // Ref + estado pra drag-drop de PSDs nessa pagina (mesmo padrao de /campaigns/[id]).
   const psdPieceImporterRef = useRef<PsdPieceImporterHandle>(null)
   const [piecesDragOver, setPiecesDragOver] = useState(false)
+  const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
+
+  // Sugestoes de segmento (todos os segmentos existentes nas pieces).
+  useEffect(() => {
+    fetch("/api/pieces/segments", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { segments: [] })
+      .then(d => setSegmentSuggestions(Array.isArray(d.segments) ? d.segments : []))
+      .catch(() => {})
+  }, [])
   const [psdImporting, setPsdImporting] = useState(false)
 
   useEffect(() => {
@@ -447,6 +457,19 @@ function PiecesContent() {
                       status={p.status ?? "STANDBY"}
                       size="sm"
                       onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))}
+                    />
+                  </div>
+                  <div className="mt-2">
+                    <SegmentPicker
+                      pieceId={p.id}
+                      initial={(p as any).segment}
+                      suggestions={segmentSuggestions}
+                      onChange={(next) => {
+                        setPieces(prev => prev.map(x => x.id === p.id ? { ...x, segment: next ?? undefined } as any : x))
+                        if (next && !segmentSuggestions.includes(next)) {
+                          setSegmentSuggestions(prev => [...prev, next])
+                        }
+                      }}
                     />
                   </div>
                   <div className="flex items-center gap-1 mt-2 pt-2 border-t border-[#F0F0F0]">
