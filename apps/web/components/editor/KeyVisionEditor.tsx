@@ -8416,15 +8416,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             }}
           />
         </label>
-        <button onClick={() => {
-          const go = () => router.push(`/campaigns/${campaignId}/assets`)
-          // Pergunta SO se tem mudancas pendentes — sem perguntar a toa.
-          if (isDirtyRef.current) setConfirmExit(() => go)
-          else go()
-        }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
-          title="Ir para a pagina de assets desta campanha">
-          Assets
-        </button>
+        {/* Botao Assets movido pro topo do Properties Panel (2026-05-22)
+            pra reduzir poluicao visual da topbar. */}
         {isPieceMode && pieceId && (
           <button onClick={() => {
             const go = () => router.push(`/pieces/${pieceId}`)
@@ -9518,6 +9511,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }}
         />
         <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Propriedades</div>
+        {/* Atalho Assets — botao fixo no topo do Properties Panel pra navegar
+            pra pagina de assets desta campanha. Antes ficava na topbar; movido
+            pra ca pra reduzir poluicao visual da top bar (2026-05-22). */}
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a2a2a" }}>
+          <button onClick={() => {
+            const go = () => router.push(`/campaigns/${campaignId}/assets`)
+            if (isDirtyRef.current) setConfirmExit(() => go)
+            else go()
+          }} style={{
+            width: "100%",
+            background: "transparent", border: "1px solid #333", borderRadius: 6,
+            padding: "8px 12px", fontSize: 13, cursor: "pointer", color: "#aaa",
+            textAlign: "left",
+          }}
+            title="Ir para a pagina de assets desta campanha">
+            Assets
+          </button>
+        </div>
         {(!selected || (selected as any).__isBg) ? (
           <div style={{ padding: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
