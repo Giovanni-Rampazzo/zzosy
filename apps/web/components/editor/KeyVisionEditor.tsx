@@ -6,6 +6,7 @@ import { FontPicker, WeightPicker } from "./FontPicker"
 import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { MaskPanel } from "./MaskPanel"
 import { ColorSwatchPicker } from "./ColorSwatchPicker"
+import { MaskThumb } from "./MaskThumb"
 import { ExportAssetButtons } from "./ExportAssetButtons"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { normalizeName } from "@/lib/normalize"
@@ -907,6 +908,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [exportPieces, setExportPieces] = useState<any[]>([])
   const [layers, setLayers] = useState<any[]>([])
   const [editingLayerAssetId, setEditingLayerAssetId] = useState<string | null>(null)
+  // Mask focus mode: o assetId do layer cuja mask esta sendo editada via
+  // brush. Quando setado: canvas mostra overlay vermelho indicando edit
+  // mode + brush ativo. Click no MaskThumb toggla.
+  const [maskFocusAssetId, setMaskFocusAssetId] = useState<string | null>(null)
+  const [maskBrushColor, setMaskBrushColor] = useState<"white" | "black">("white")
+  const [maskBrushSize, setMaskBrushSize] = useState(20)
   // Pastas do PSD recolhidas no painel de layers. Chave = path joined por "›"
   // (ex: "Header" ou "Header›Buttons"). Quando incluido aqui, todos os layers
   // dentro daquela pasta ficam escondidos no painel ate o user expandir.
@@ -9239,6 +9246,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     style={{ fontSize: 12, color: isSel ? accentColor : "#888", fontWeight: isSel ? 600 : 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
                   >{layer.label}</span>
                 )}
+                {/* Alpha channel thumbnail (Photoshop layer panel style) — so renderiza
+                    quando o layer tem mask. Click ativa mask edit mode (overlay + brush). */}
+                {(layer.obj as any)?.__maskData && (
+                  <MaskThumb
+                    mask={(layer.obj as any).__maskData}
+                    obj={layer.obj}
+                    fc={fabricRef.current}
+                    focused={maskFocusAssetId === layerAssetId}
+                    onFocus={() => {
+                      setMaskFocusAssetId(prev => prev === layerAssetId ? null : layerAssetId)
+                    }}
+                  />
+                )}
                 {!layer.isBg && (
                   <button title="Remover" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
                     style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
@@ -9298,6 +9318,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         </div>
       </div>
 
+      {/* MASK EDIT MODE banner — fica fixo no topo do canvas quando user
+          ativou edit de uma mask via click no MaskThumb. Indica modo + da
+          opcao de sair. Brush real (pintar branco/preto sobre mask raster)
+          eh Fase C — proxima iteracao com mouse handlers customizados. */}
+      {maskFocusAssetId && (
+        <div style={{
+          position: "fixed", top: TH + 8, left: "50%", transform: "translateX(-50%)",
+          background: "#F5C400", color: "#000", padding: "8px 14px",
+          borderRadius: 6, fontSize: 12, fontWeight: 600,
+          display: "flex", alignItems: "center", gap: 12,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 200,
+        }}>
+          <span>EDITANDO MASCARA</span>
+          <button onClick={() => setMaskFocusAssetId(null)}
+            style={{
+              background: "#000", color: "#F5C400", padding: "4px 10px",
+              border: "none", borderRadius: 4, cursor: "pointer", fontSize: 11, fontWeight: 700,
+              fontFamily: "inherit",
+            }}>Sair</button>
+        </div>
+      )}
       <div style={{ ...pS, right: 0, width: PW, borderLeft: "1px solid #2a2a2a", paddingTop: TH }}>
         <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Propriedades</div>
         {(!selected || (selected as any).__isBg) ? (
