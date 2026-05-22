@@ -663,7 +663,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             fontSize: 13, color: "#111", fontFamily: "inherit", outline: "none",
           }}
         />
-        <Button variant="primary" size="sm" disabled={!dirty || saving}
+        <Button variant="view" size="sm" disabled={!dirty || saving}
           onClick={() => onTextChange(asset.id, localText)}
           title={saving ? "Salvando…" : dirty ? "Salvar alterações (Cmd+Enter)" : "Sem alterações"}>
           {saving ? "Salvando…" : "Salvar"}
