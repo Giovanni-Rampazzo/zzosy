@@ -663,6 +663,9 @@ function serializeShapeOverrides(o: any): Record<string, any> {
   if (typeof o.fill === "string") ov.fill = o.fill
   if (typeof o.stroke === "string") ov.stroke = o.stroke
   if (typeof o.strokeWidth === "number") ov.strokeWidth = o.strokeWidth
+  // cornerRadius: usado pelo Properties Panel pra slider de raio (roundedRect).
+  // Persiste o valor live pro reload mostrar o mesmo raio.
+  if (typeof o.__cornerRadius === "number") ov.cornerRadius = o.__cornerRadius
   return ov
 }
 
@@ -3954,6 +3957,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const fillProp = layerOv.fill !== undefined ? layerOv.fill : baseFill
         const strokeProp = layerOv.stroke !== undefined ? layerOv.stroke : baseStroke
         const strokeWidth = layerOv.strokeWidth !== undefined ? layerOv.strokeWidth : baseStrokeW
+        // cornerRadius override: se user mudou o raio na matriz, recomputa o
+        // path antes de criar o Fabric.Path. Sem isso, reload mostrava o raio
+        // original do asset.content (perdendo a edicao).
+        let pathStr: string = parsedShape.path
+        if (parsedShape.kind === "roundedRect"
+            && typeof layerOv.cornerRadius === "number"
+            && layerOv.cornerRadius !== parsedShape.cornerRadius
+            && parsedShape.pathBbox) {
+          const bb = parsedShape.pathBbox
+          const W = (bb.right ?? 400) - (bb.left ?? 0)
+          const H = (bb.bottom ?? 300) - (bb.top ?? 0)
+          const K = 0.5522847498
+          const r = Math.max(0, Math.min(layerOv.cornerRadius, Math.min(W, H) / 2))
+          pathStr = r === 0
+            ? `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
+            : [
+                `M ${r} 0`,
+                `L ${W - r} 0`,
+                `C ${W - r + r * K} 0, ${W} ${r - r * K}, ${W} ${r}`,
+                `L ${W} ${H - r}`,
+                `C ${W} ${H - r + r * K}, ${W - r + r * K} ${H}, ${W - r} ${H}`,
+                `L ${r} ${H}`,
+                `C ${r - r * K} ${H}, 0 ${H - r + r * K}, 0 ${H - r}`,
+                `L 0 ${r}`,
+                `C 0 ${r - r * K}, ${r - r * K} 0, ${r} 0`,
+                "Z",
+              ].join(" ")
+        }
         // DEBUG: trace de onde vem cada valor (overrides vs asset.content vs effects)
         console.log("[LOAD-SHAPE]", asset.label, {
           baseFill, baseStroke, baseStrokeW,
@@ -3966,7 +3997,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // Antes era pathBbox PRIMEIRO → mover o SHAPE no editor e recarregar
         // snapava de volta pras coords do PSD, "position nao salvava".
         // Mesma logica pra scale/angle: layer.scaleX/Y/rotation tem prioridade.
-        const p = new Path(parsedShape.path, {
+        const p = new Path(pathStr, {
           left: posX,
           top: posY,
           scaleX: scaleX,
@@ -3988,6 +4019,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // do Fabric.Path pode variar entre versoes ("path", "Path", null em
         // certos casos de toObject roundtrip); flag custom eh imune.
         ;(p as any).__isShape = true
+        // Shape kind/cornerRadius pra Properties Panel mostrar slider de raio
+        // (so renderiza quando kind === "roundedRect"). pathBbox preservado pra
+        // recomputar path quando raio mudar. Prioridade pro override:
+        //   layer.overrides.cornerRadius > asset.content.cornerRadius
+        if (parsedShape.kind) (p as any).__shapeKind = parsedShape.kind
+        const effCornerR = typeof layerOv.cornerRadius === "number"
+          ? layerOv.cornerRadius
+          : (typeof parsedShape.cornerRadius === "number" ? parsedShape.cornerRadius : undefined)
+        if (effCornerR !== undefined) (p as any).__cornerRadius = effCornerR
+        if (parsedShape.pathBbox) (p as any).__pathBbox = parsedShape.pathBbox
         if (psdEffects) (p as any).__psdEffects = psdEffects
         if (psdGroupPath) (p as any).__groupPath = psdGroupPath
         applyFabricEffects(p, psdEffects, Shadow)
@@ -10069,6 +10110,65 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const currentStrokeHex = strokeParsed.hex || ""
             const currentStrokeAlpha = strokeParsed.alpha
             const currentStrokeWidth = (selected as any).strokeWidth ?? 0
+            const shapeKind = (selected as any).__shapeKind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
+            const currentCornerRadius = (selected as any).__cornerRadius ?? 20
+            const pathBbox = (selected as any).__pathBbox ?? { left: 0, top: 0, right: 400, bottom: 300 }
+            const bboxW = (pathBbox.right ?? 400) - (pathBbox.left ?? 0)
+            const bboxH = (pathBbox.bottom ?? 300) - (pathBbox.top ?? 0)
+            // Recomputa o path SVG do roundedRect com novo raio (mesma logica
+            // do addShapeAsset). Mantem pathBbox — so muda os corners.
+            function recomputeRoundedRectPath(r: number): string {
+              const K = 0.5522847498
+              const W = bboxW, H = bboxH
+              const rr = Math.max(0, Math.min(r, Math.min(W, H) / 2))
+              if (rr === 0) {
+                return `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
+              }
+              return [
+                `M ${rr} 0`,
+                `L ${W - rr} 0`,
+                `C ${W - rr + rr * K} 0, ${W} ${rr - rr * K}, ${W} ${rr}`,
+                `L ${W} ${H - rr}`,
+                `C ${W} ${H - rr + rr * K}, ${W - rr + rr * K} ${H}, ${W - rr} ${H}`,
+                `L ${rr} ${H}`,
+                `C ${rr - rr * K} ${H}, 0 ${H - rr + rr * K}, 0 ${H - rr}`,
+                `L 0 ${rr}`,
+                `C 0 ${rr - rr * K}, ${rr - rr * K} 0, ${rr} 0`,
+                "Z",
+              ].join(" ")
+            }
+            // setCornerRadius reconstroi o Fabric.Path com novo `d`. Como Fabric.Path
+            // nao aceita `path` setter direto (precisa recriar internamente o array
+            // de comandos), usamos uma abordagem indireta: dispara o re-parse via
+            // _setPath ou reconstroi o Path object inteiro.
+            function setCornerRadius(r: number) {
+              if (!fc || !selected) return
+              const newPath = recomputeRoundedRectPath(r)
+              // Reusa o Fabric.Path existente atualizando o array `path` interno.
+              // Fabric.Path parseia o `d` string via util parsePath quando criado;
+              // aqui chamamos util manualmente.
+              try {
+                const fabric: any = (window as any).fabric || require("fabric")
+                const util = fabric.util || (fabric as any).util
+                const parsed = util?.parsePath?.(newPath) ?? null
+                if (parsed) {
+                  ;(selected as any).path = parsed
+                  ;(selected as any).set("dirty", true)
+                  // Re-mede bbox + handles
+                  if ((selected as any).setBoundingBox) (selected as any).setBoundingBox(true)
+                  ;(selected as any).setCoords?.()
+                  fc.requestRenderAll()
+                }
+              } catch (e) {
+                console.warn("[corner-radius] reparse path fail:", e)
+              }
+              ;(selected as any).__cornerRadius = r
+              setSelectedTick(t => t + 1)
+              isDirtyRef.current = true
+              setIsDirty(true)
+              if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+              doSave()
+            }
             function setShapeProp(key: "fill" | "stroke" | "strokeWidth", val: any) {
               if (!fc || !selected) return
               // Compensacao Photoshop-center: ao mudar strokeWidth, ajusta
@@ -10191,6 +10291,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     </div>
                   </div>
                 </div>
+
+                {/* CANTO ARREDONDADO — so renderiza pra shapes do tipo roundedRect.
+                    Recomputa o path SVG mantendo a bbox original, ajustando os
+                    bezier dos 4 cantos com novo raio. */}
+                {shapeKind === "roundedRect" && (
+                  <div>
+                    <div style={secS}>Raio do canto</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 8, alignItems: "center" }}>
+                      <input type="range"
+                        min={0}
+                        max={Math.floor(Math.min(bboxW, bboxH) / 2)}
+                        step={1}
+                        value={currentCornerRadius}
+                        onChange={e => setCornerRadius(Number(e.target.value))}
+                        style={{ width: "100%" }} />
+                      <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                        <input type="number"
+                          min={0}
+                          max={Math.floor(Math.min(bboxW, bboxH) / 2)}
+                          step={1}
+                          value={currentCornerRadius}
+                          onChange={e => setCornerRadius(Number(e.target.value) || 0)}
+                          style={{ ...inpS, textAlign: "right", paddingRight: 22, width: "100%" }} />
+                        <span style={{ fontSize: 10, color: "#666", marginLeft: 2 }}>px</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })()

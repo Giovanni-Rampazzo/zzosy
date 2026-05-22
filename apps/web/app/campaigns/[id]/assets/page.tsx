@@ -155,12 +155,14 @@ export default function CampaignAssetsPage() {
     const K = 0.5522847498
     let path = ""
     let label = ""
+    let cornerRadius: number | undefined = undefined
     if (kind === "rectangle") {
       label = "Retangulo"
       path = `M 0 0 L ${W} 0 L ${W} ${H} L 0 ${H} Z`
     } else if (kind === "roundedRect") {
       label = "Retangulo Arredondado"
       const r = 20
+      cornerRadius = r
       path = [
         `M ${r} 0`,
         `L ${W - r} 0`,
@@ -188,13 +190,17 @@ export default function CampaignAssetsPage() {
     }
     // Fill default: primeira brand color do cliente, ou cinza neutro.
     const defaultFill = brandColors[0]?.hex ?? "#4d4d4f"
-    const shape = {
+    // `kind` + `cornerRadius` metadata: permitem o Properties Panel mostrar
+    // controle de raio + recomputar path quando user muda o raio.
+    const shape: any = {
+      kind,
       path,
       pathBbox: { left: 0, top: 0, right: W, bottom: H },
       fill: { kind: "solid", color: defaultFill },
       stroke: null,
       fillRule: "nonzero",
     }
+    if (cornerRadius !== undefined) shape.cornerRadius = cornerRadius
     const res = await fetch(`/api/campaigns/${id}/assets`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
