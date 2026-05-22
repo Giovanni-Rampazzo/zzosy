@@ -15,6 +15,7 @@
  */
 import { writePsd } from "ag-psd"
 import { psdPx } from "./psdHelpers"
+import { svgPathToKnots } from "./pathToKnots"
 import type {
   PsdDocument,
   PsdLayer,
@@ -151,18 +152,27 @@ function layerToAgPsd(l: PsdLayer, warn: (w: WriteWarning) => void, linkedFiles:
 
 function textToAgPsd(l: PsdTextLayer): any {
   // ag-psd Layer.text shape:
-  //   { text: string, style: CharStyle (default), styleRuns: [{ length, style }],
-  //     paragraphStyle: { justification, ... }, transform: matrix }
+  //   { text: string, transform: [1,0,0,1,baselineX,baselineY], style, styleRuns,
+  //     paragraphStyle }
+  //
+  // CRITICO: sem `transform`, ag-psd serializa text.style como objeto VAZIO {}
+  // e perde TUDO (fontSize, color, weight, italic, leading, tracking, underline,
+  // strikethrough). Bug latente confirmado em 2026-05-22 — todo texto exportado
+  // por writePsdDocument saia com formatacao default.
+  //
+  // transform[4,5] = (x, y) da baseline. Usamos bbox.left + (top + fontSize)
+  // como o legacy faz (exportPiece.ts:1646).
   //
   // nameSource ('lnsr' tag): PS usa pra auto-renomear layers ao editar texto.
   //  - 'srct' = "source" = nome vem do conteudo → PS atualiza ao editar
   //  - 'lyr ' = "layer"  = manual              → PS NAO mexe
-  // Default 'srct' = comportamento Adobe esperado. Preserva valor do import
-  // quando definido (ex: PSD original com nome manual).
+  const baselineX = l.bbox.left
+  const baselineY = l.bbox.top + l.defaultStyle.fontSize
   return {
     nameSource: l.nameSource ?? "srct",
     text: {
       text: l.text,
+      transform: [1, 0, 0, 1, baselineX, baselineY],
       style: charStyleToAgPsd(l.defaultStyle),
       styleRuns: l.styleRuns.map(r => ({
         length: r.length,
@@ -287,10 +297,6 @@ function contentKindToPlacedType(content: PsdSmartObjectLayer["content"]): "unkn
 // ── SHAPE ────────────────────────────────────────────────────────────
 
 function shapeToAgPsd(l: PsdShapeLayer, warn: (w: WriteWarning) => void): any {
-  // Shape ideal seria emitir vectorMask + vectorFill + vectorStroke.
-  // ag-psd suporta isso mas a estrutura de knots/paths eh complexa de
-  // reconstruir SEMPRE corretamente do SVG path string. Por ora, emite
-  // vectorMask basico (rasterizado pelo PS na abertura).
   if (!l.path) {
     warn({
       kind: "feature-skipped",
@@ -300,8 +306,37 @@ function shapeToAgPsd(l: PsdShapeLayer, warn: (w: WriteWarning) => void): any {
     return {}
   }
   const out: any = {}
+  // VECTOR MASK eh OBRIGATORIO pro reader reconhecer o layer como shape.
+  // Sem isso, readLayer cai no fallback readImage (linha 185) e perde
+  // fill/stroke. Bug latente confirmado em 2026-05-22 — todos os shapes
+  // saiam como image apos round-trip via readPsdDocument.
+  const knots = svgPathToKnots(l.path)
+  if (knots && knots.length > 0) {
+    out.vectorMask = {
+      paths: [{ operation: "combine", knots, open: false }],
+    }
+  }
   if (l.fill?.kind === "solid") {
     out.vectorFill = { type: "color", color: hexToRgb(l.fill.color) }
+  } else if (l.fill?.kind === "gradient") {
+    // Gradient fill nativo: same shape de gradientOverlay mas em vectorFill.
+    out.vectorFill = {
+      type: "solid",
+      name: "Custom",
+      smoothness: 4096,
+      colorStops: l.fill.gradient.stops.map(s => ({
+        color: hexToRgb(s.color),
+        location: s.position,
+        midpoint: 50,
+      })),
+      opacityStops: l.fill.gradient.stops.map(s => ({
+        opacity: s.opacity * 100,
+        location: s.position,
+        midpoint: 50,
+      })),
+      style: l.fill.gradient.kind,
+      angle: 90,
+    }
   }
   // VECTOR STROKE NATIVO — quando reader marcou `isNativeVectorStroke=true`
   // (PSD original tinha Shape Layer com stroke vetorial), preserva como

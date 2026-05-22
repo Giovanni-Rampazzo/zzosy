@@ -819,15 +819,24 @@ function readEffects(l: AgPsdLayer): PsdLayerEffects {
   return out
 }
 
+// Unwrap UnitsValue do ag-psd ({value, units}) OU number cru. ag-psd retorna
+// distance/size/choke/etc como UnitsValue mas reader anterior so checava
+// `typeof === "number"` → sempre fallback. Bug latente em todos os effects.
+function unwrapNum(v: any, fallback: number): number {
+  if (typeof v === "number") return v
+  if (v && typeof v.value === "number") return v.value
+  return fallback
+}
+
 function readShadow(s: any): PsdShadowEffect {
   return {
     enabled: s.enabled !== false,
     color: parseHexColor(s.color, "#000000"),
     opacity: typeof s.opacity === "number" ? s.opacity : 0.75,
     angle: typeof s.angle === "number" ? s.angle : 120,
-    distance: typeof s.distance === "number" ? s.distance : 5,
-    blur: typeof s.size === "number" ? s.size : 5,
-    spread: typeof s.choke === "number" ? s.choke : 0,
+    distance: unwrapNum(s.distance, 5),
+    blur: unwrapNum(s.size, 5),
+    spread: unwrapNum(s.choke, 0),
     blendMode: mapBlendMode(s.blendMode ?? "multiply"),
   }
 }
@@ -837,8 +846,8 @@ function readGlow(g: any, _kind: "outer" | "inner"): PsdGlowEffect {
     enabled: g.enabled !== false,
     color: parseHexColor(g.color, "#ffffff"),
     opacity: typeof g.opacity === "number" ? g.opacity : 0.75,
-    blur: typeof g.size === "number" ? g.size : 5,
-    spread: typeof g.choke === "number" ? g.choke : 0,
+    blur: unwrapNum(g.size, 5),
+    spread: unwrapNum(g.choke, 0),
     blendMode: mapBlendMode(g.blendMode ?? "screen"),
     source: g.source ?? undefined,
   }
@@ -847,7 +856,7 @@ function readGlow(g: any, _kind: "outer" | "inner"): PsdGlowEffect {
 function readStrokeEffect(s: any): PsdStrokeEffect {
   return {
     enabled: s.enabled !== false,
-    width: typeof s.size === "number" ? s.size : 1,
+    width: unwrapNum(s.size, 1),
     position: s.position ?? "outside",
     fill: { kind: "solid", color: parseHexColor(s.color, "#000000") },
     blendMode: mapBlendMode(s.blendMode ?? "normal"),
@@ -882,8 +891,8 @@ function readSatin(s: any): import("./types").PsdSatinEffect {
     color: parseHexColor(s.color, "#000000"),
     opacity: typeof s.opacity === "number" ? s.opacity : 0.5,
     angle: typeof s.angle === "number" ? s.angle : 19,
-    distance: typeof s.distance === "number" ? s.distance : 11,
-    size: typeof s.size === "number" ? s.size : 14,
+    distance: unwrapNum(s.distance, 11),
+    size: unwrapNum(s.size, 14),
     blendMode: mapBlendMode(s.blendMode ?? "multiply"),
     invert: s.invert === true,
   }
