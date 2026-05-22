@@ -416,17 +416,38 @@ function readShape(l: AgPsdLayer, parentPath: string[], _warn: (w: ReadWarning) 
  */
 const K_BEZIER = 0.5522847498
 
+// ag-psd parseUnits retorna `{value, units}` (NAO unwrapped). Os campos do
+// keyOriginShapeBoundingBox e keyOriginRRectRadii podem vir como numero CRU
+// (PSDs antigos do PS) OU como UnitsValue. Unwrap defensivo.
+function unwrapUnits(v: any): number {
+  if (v == null) return 0
+  if (typeof v === "number") return v
+  if (typeof v === "object" && typeof v.value === "number") return v.value
+  return 0
+}
+
 function tryReadVogkPath(vogk: any): string | null {
   if (!vogk?.keyDescriptorList?.length) return null
   const item = vogk.keyDescriptorList[0]
   const type = item.keyOriginType
   const bb = item.keyOriginShapeBoundingBox
   if (!bb) return null
-  const left = bb.left, top = bb.top, right = bb.right, bottom = bb.bottom
+  const left = unwrapUnits(bb.left)
+  const top = unwrapUnits(bb.top)
+  const right = unwrapUnits(bb.right)
+  const bottom = unwrapUnits(bb.bottom)
   const w = right - left, h = bottom - top
   if (w <= 0 || h <= 0) return null
+  // Radii: idem unwrap antes de passar pra roundedRectPath.
+  const rawRadii = item.keyOriginRRectRadii
+  const radii = rawRadii ? {
+    topLeft: unwrapUnits(rawRadii.topLeft),
+    topRight: unwrapUnits(rawRadii.topRight),
+    bottomLeft: unwrapUnits(rawRadii.bottomLeft),
+    bottomRight: unwrapUnits(rawRadii.bottomRight),
+  } : null
 
-  if (type === 2) return roundedRectPath(left, top, right, bottom, item.keyOriginRRectRadii)
+  if (type === 2) return roundedRectPath(left, top, right, bottom, radii)
   if (type === 5) return ellipsePath(left, top, right, bottom)
   if (type === 4) return linePath(left, top, right, bottom, item.keyOriginBoxCorners)
   // type 1 (sharp rect) OU desconhecido: deixa o caller usar vectorMask
