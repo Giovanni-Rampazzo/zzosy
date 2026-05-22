@@ -594,8 +594,44 @@ interface RowProps {
   onDelete: (assetId: string, label: string, skipConfirm?: boolean) => Promise<void>
 }
 
+/**
+ * Renderiza preview SVG inline pra SHAPE asset. content tem o path SVG +
+ * fill + stroke. Bbox: pathBbox vira viewBox do SVG → escala caber no
+ * 180×120 do thumb. Sem isso, SHAPEs apareciam como "Sem imagem".
+ */
+function ShapePreview({ asset }: { asset: any }) {
+  let shape: any = null
+  try {
+    shape = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+  } catch {}
+  if (!shape?.path) return <div style={{ color: "#ccc", fontSize: 11 }}>Forma invalida</div>
+  const bb = shape.pathBbox ?? { left: 0, top: 0, right: 400, bottom: 300 }
+  const w = Math.max(1, bb.right - bb.left)
+  const h = Math.max(1, bb.bottom - bb.top)
+  const fill = shape.fill?.kind === "solid" ? shape.fill.color : "transparent"
+  const stroke = shape.stroke?.color
+  const strokeW = shape.stroke?.width ?? 0
+  return (
+    <svg
+      viewBox={`${bb.left} ${bb.top} ${w} ${h}`}
+      width="100%" height="100%"
+      preserveAspectRatio="xMidYMid meet"
+      style={{ display: "block", padding: 8 }}
+    >
+      <path d={shape.path}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={strokeW}
+        fillRule={shape.fillRule === "evenodd" ? "evenodd" : "nonzero"}
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  )
+}
+
 function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onDelete }: RowProps) {
   const isText = asset.type === "TEXT"
+  const isShape = asset.type === "SHAPE"
   const text = isText ? getText(asset) : ""
   // Edit local (uncontrolled visualmente — só salva ao clicar "Salvar").
   // Evita auto-save com debounce que disparava migrate em texto intermediário
@@ -639,6 +675,8 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
           }}>
             {text || <span style={{ color: "#bbb" }}>(vazio)</span>}
           </div>
+        ) : isShape ? (
+          <ShapePreview asset={asset} />
         ) : asset.imageUrl ? (
           <img src={asset.imageUrl} alt={asset.label}
             style={{ width: "100%", height: "100%", objectFit: "contain" }} />
