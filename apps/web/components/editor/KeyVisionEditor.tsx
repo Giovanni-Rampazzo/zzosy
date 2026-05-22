@@ -4089,15 +4089,37 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }
         }
       }
-      // Brand refs PER-CHAR: itera styles[line][col].fillBrandIdx e re-resolve
-      // contra brandColors atual. Sem isso, caracteres pintados via swatch
-      // Marca com seleção parcial mantém cor velha após mudança de brand.
+      // Brand refs PER-CHAR + PRUNE de entradas alem do texto.
+      //
+      // PRUNE: ao editar texto via /assets ou no editor, o numero de chars
+      // pode encolher. styles[line][col] com col >= line length viram lixo
+      // que confunde Fabric (renderiza chars fantasmas / overlap visivel).
+      // Sintoma reportado: 'texto da umas encavaladas conforme abre/fecha'.
+      //
+      // BRAND REFS: itera styles[line][col].fillBrandIdx e re-resolve contra
+      // brandColors atual. Sem isso, chars pintados via swatch Marca com
+      // selecao parcial mantem cor velha apos mudanca de brand.
       if (effStyles && typeof effStyles === "object") {
+        // Lines reais do textbox = split por \n. So mantem entradas validas.
+        const textLines = (initialText ?? "").split("\n")
         const newPerCharStyles: any = {}
         let perCharChanged = false
         for (const lineKey of Object.keys(effStyles)) {
+          const lineIdx = Number(lineKey)
+          if (!Number.isFinite(lineIdx) || lineIdx < 0 || lineIdx >= textLines.length) {
+            // Linha alem do texto — descarta.
+            perCharChanged = true
+            continue
+          }
+          const lineLen = textLines[lineIdx].length
           newPerCharStyles[lineKey] = {}
           for (const colKey of Object.keys(effStyles[lineKey])) {
+            const colIdx = Number(colKey)
+            if (!Number.isFinite(colIdx) || colIdx < 0 || colIdx >= lineLen) {
+              // Col alem da linha — descarta.
+              perCharChanged = true
+              continue
+            }
             const cs = { ...effStyles[lineKey][colKey] }
             if (typeof cs.fillBrandIdx === "number" && brandColorsRef.current[cs.fillBrandIdx]) {
               const charLive = brandColorsRef.current[cs.fillBrandIdx].hex
@@ -4108,6 +4130,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               }
             }
             newPerCharStyles[lineKey][colKey] = cs
+          }
+          // Linha sem nenhuma entrada valida — limpa.
+          if (Object.keys(newPerCharStyles[lineKey]).length === 0) {
+            delete newPerCharStyles[lineKey]
           }
         }
         if (perCharChanged) {
