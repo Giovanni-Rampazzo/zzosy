@@ -1756,12 +1756,17 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
               : shapeKind === "ellipse" ? 5
               : 0
             if (keyType > 0) {
+              // ag-psd unitsValue() REQUIRES `{value, units}` object — nao
+              // aceita numero cru. keyOriginShapeBoundingBox + keyOriginRRectRadii
+              // todos os fields precisam vir wrapped. Sem isso ag-psd throw
+              // "Invalid value: N (should have value and units)".
+              const px = (n: number) => ({ value: n, units: "Pixels" as const })
               const item: any = {
                 keyOriginType: keyType,
                 keyOriginResolution: 72,
                 keyOriginShapeBoundingBox: {
-                  top: absTop, left: absLeft,
-                  bottom: absBottom, right: absRight,
+                  top: px(absTop), left: px(absLeft),
+                  bottom: px(absBottom), right: px(absRight),
                 },
               }
               if (keyType === 2) {
@@ -1769,7 +1774,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
                 // independente per-canto fica pra futuro).
                 const r = (obj as any).__cornerRadius ?? 0
                 item.keyOriginRRectRadii = {
-                  topLeft: r, topRight: r, bottomLeft: r, bottomRight: r,
+                  topLeft: px(r), topRight: px(r), bottomLeft: px(r), bottomRight: px(r),
                 }
               }
               psdLayer.vectorOrigination = { keyDescriptorList: [item] }
