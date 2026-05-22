@@ -1672,9 +1672,25 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
             psdEffects: psdLayerEffects ? Object.keys(psdLayerEffects) : null,
           })
 
+          // RASTERIZA o shape Fabric com fill+stroke baked — serve como bitmap
+          // visivel no PSD pra garantir que o stroke aparece mesmo se PS nao
+          // renderizar via vectorStroke. Vector data fica preservada pra
+          // editabilidade no Properties Panel. User reportou 2026-05-22:
+          // "shape sendo exportado sem stroke" — sem o canvas, PS as vezes
+          // ignorava o vectorStroke por motivos nao claros.
+          const shapeCanvas = document.createElement("canvas")
+          shapeCanvas.width = w
+          shapeCanvas.height = h
+          try {
+            const sctx = shapeCanvas.getContext("2d")!
+            const rendered = obj.toCanvasElement({ multiplier: 1 })
+            sctx.drawImage(rendered, 0, 0, w, h)
+          } catch (e) { console.warn("[shape-raster] fail:", name, e) }
+
           const psdLayer: any = {
             name,
             top, left, bottom, right,
+            canvas: shapeCanvas,
             ...(psdLayerOpacity !== undefined ? { opacity: psdLayerOpacity } : {}),
             ...(psdLayerBlend ? { blendMode: psdLayerBlend } : {}),
             ...(effectsCleaned ? { effects: effectsCleaned } : {}),
