@@ -96,8 +96,10 @@ export function ColorSwatchPicker({
     : undefined
 
   const popupS: React.CSSProperties = {
-    position: "absolute", top: "calc(100% + 6px)", left: 0,
-    minWidth: 260, padding: 0,
+    // Anchor a DIREITA (right: 0) em vez de left: 0 — pra popup nao
+    // overflow do painel direito (que ja eh estreito).
+    position: "absolute", top: "calc(100% + 6px)", right: 0, left: "auto",
+    width: "100%", minWidth: 240, padding: 0,
     background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
     zIndex: 1000,
@@ -166,9 +168,14 @@ export function ColorSwatchPicker({
               value={Math.round(opacity!)}
               onChange={e => onOpacityChange!(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
               title="Opacidade %"
-              style={{ ...inlineInpS, width: 36, flex: "0 0 36px", textAlign: "right", fontFamily: "inherit" }}
+              style={{
+                ...inlineInpS, width: 44, flex: "0 0 44px",
+                textAlign: "right", fontFamily: "inherit",
+                // Padding right pra spinner arrows nao colarem no "%"
+                paddingRight: 6,
+              }}
             />
-            <span style={{ fontSize: 11, color: "#666", marginLeft: 2 }}>%</span>
+            <span style={{ fontSize: 11, color: "#666", marginLeft: 4 }}>%</span>
           </>
         )}
       </div>
@@ -220,6 +227,9 @@ export function ColorSwatchPicker({
                   const activeByRef = activeBrandIdx === i
                   const activeByHex = !activeByRef && value.toLowerCase() === bc.hex.toLowerCase()
                   const active = activeByRef || activeByHex
+                  // Sem nome no DS → mostra so hex na esquerda. Right hex fica
+                  // omitido pra nao duplicar. Com nome → nome esquerda + hex direita.
+                  const hasName = !!bc.name && bc.name.trim().length > 0
                   return (
                     <button key={`bc-${i}-${bc.hex}`} type="button"
                       onClick={() => { onChange(bc.hex, i); setOpen(false) }}
@@ -228,12 +238,20 @@ export function ColorSwatchPicker({
                       onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#252525" : "transparent" }}
                     >
                       <div style={{ width: 20, height: 20, borderRadius: 3, background: bc.hex, border: "1px solid #2a2a2a", flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
-                        {bc.name || "—"}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textTransform: "uppercase" }}>
-                        {bc.hex}
-                      </div>
+                      {hasName ? (
+                        <>
+                          <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
+                            {bc.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textTransform: "uppercase" }}>
+                            {bc.hex}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: "monospace", textTransform: "uppercase", color: "#ccc" }}>
+                          {bc.hex}
+                        </div>
+                      )}
                     </button>
                   )
                 })}
@@ -244,6 +262,7 @@ export function ColorSwatchPicker({
                 <div style={groupLabelS}>Padrão</div>
                 {defaultSwatches.map(c => {
                   const active = value.toLowerCase() === c.toLowerCase()
+                  // Default swatches nunca tem nome — sempre mostra hex direto.
                   return (
                     <button key={`def-${c}`} type="button"
                       onClick={() => { onChange(c, undefined); setOpen(false) }}
@@ -252,8 +271,7 @@ export function ColorSwatchPicker({
                       onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#252525" : "transparent" }}
                     >
                       <div style={{ width: 20, height: 20, borderRadius: 3, background: c, border: "1px solid #2a2a2a", flexShrink: 0 }} />
-                      <div style={{ flex: 1, fontSize: 12, color: "#aaa" }}>—</div>
-                      <div style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textTransform: "uppercase" }}>
+                      <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: "monospace", textTransform: "uppercase", color: "#ccc" }}>
                         {c}
                       </div>
                     </button>
