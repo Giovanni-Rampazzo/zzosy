@@ -135,16 +135,41 @@ export default function CampaignOverviewPage() {
 
   // Sempre que a overview volta a ficar ativa, recarrega para pegar thumb novo do KV/peças.
   // Cobre todos os cenarios: troca de aba, navegacao SPA, back/forward, etc.
+  // + BroadcastChannel: editor faz postMessage REALTIME quando salva peca/KV
+  // (mesma aba OU outra aba same-origin). Sem isso o overview ficava stale ate
+  // o user trocar de aba pra disparar o focus event.
   useEffect(() => {
     function refetch() { loadAll() }
     window.addEventListener("focus", refetch)
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") refetch()
-    })
+    const onVis = () => { if (document.visibilityState === "visible") refetch() }
+    document.addEventListener("visibilitychange", onVis)
     window.addEventListener("pageshow", refetch)
+
+    let bcPieces: BroadcastChannel | null = null
+    let bcCamps: BroadcastChannel | null = null
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        bcPieces = new BroadcastChannel("zzosy:pieces")
+        bcPieces.onmessage = (ev) => {
+          const m = ev.data
+          if (!m || m.type !== "piece-updated") return
+          if (m.campaignId === id) refetch()
+        }
+        bcCamps = new BroadcastChannel("zzosy:campaigns")
+        bcCamps.onmessage = (ev) => {
+          const m = ev.data
+          if (!m) return
+          if ((m.type === "kv-updated" || m.type === "campaign-updated") && m.campaignId === id) refetch()
+        }
+      }
+    } catch {}
+
     return () => {
       window.removeEventListener("focus", refetch)
+      document.removeEventListener("visibilitychange", onVis)
       window.removeEventListener("pageshow", refetch)
+      try { bcPieces?.close() } catch {}
+      try { bcCamps?.close() } catch {}
     }
   }, [id])
 
