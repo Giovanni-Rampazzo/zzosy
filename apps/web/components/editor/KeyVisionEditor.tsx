@@ -608,6 +608,53 @@ function spansToTextboxData(spans: TextSpan[]) {
 }
 
 /**
+ * FONTE UNICA DE VERDADE pra serializar overrides de TEXT layer.
+ *
+ * Antes esta logica vivia DUPLICADA em 6 sites diferentes (saveNow PECA,
+ * saveNow MATRIZ, doSaveNow PECA, doSaveNow MATRIZ, step serialize, KV export).
+ * Cada vez que adicionavamos uma prop nova (per-char styles, fillBrandIdx,
+ * charSpacing, etc) atualizavamos 1-2 sites e esqueciamos o resto — drift
+ * por copy-paste. User reportou multiplas vezes "cores per-char somem no
+ * export", "tamanho errado", "tracking perdido" — todos os sintomas do
+ * mesmo bug estrutural.
+ *
+ * Esta helper centraliza. Todos os save/export paths agora chamam aqui.
+ * Adicionar prop nova = 1 lugar, propaga automaticamente.
+ *
+ * @param o objeto Fabric textbox/i-text
+ * @param opts.preserveExplicitNewlinesOnly  Se true, so seta overrides.text
+ *        quando o texto tem \n explicito (PECA save: caracteres vem do asset,
+ *        apenas quebras locais via Enter persistem). Se false, sempre seta
+ *        overrides.text (MATRIZ/KV export: texto live e fonte da verdade).
+ */
+function serializeTextboxOverrides(
+  o: any,
+  opts: { preserveExplicitNewlinesOnly?: boolean } = {},
+): Record<string, any> {
+  const ov: Record<string, any> = {}
+  const text = typeof o.text === "string" ? o.text : ""
+  if (opts.preserveExplicitNewlinesOnly) {
+    if (text.includes("\n")) ov.text = text
+  } else {
+    ov.text = text
+    ov.content = text  // alias usado em alguns paths antigos do export
+  }
+  if (o.fill !== undefined) ov.fill = o.fill
+  if (typeof o.__fillBrandIdx === "number") ov.fillBrandIdx = o.__fillBrandIdx
+  if (o.fontSize !== undefined) ov.fontSize = o.fontSize
+  if (o.fontFamily !== undefined) ov.fontFamily = o.fontFamily
+  if (o.fontWeight !== undefined) ov.fontWeight = o.fontWeight
+  if (o.fontStyle && o.fontStyle !== "normal") ov.fontStyle = o.fontStyle
+  if (o.charSpacing !== undefined) ov.charSpacing = o.charSpacing
+  if (o.lineHeight !== undefined) ov.lineHeight = o.lineHeight
+  if (o.textAlign !== undefined) ov.textAlign = o.textAlign
+  if (o.leadingPt !== undefined && o.leadingPt !== null) ov.leadingPt = o.leadingPt
+  if (o.styles && Object.keys(o.styles).length > 0) ov.styles = o.styles
+  if (o.__dsLinked === false) ov.dsLinked = false
+  return ov
+}
+
+/**
  * Pre-compoe uma raster mask DENTRO de uma imagem fonte. Fabric v6 renderiza
  * Image clipPath como silhueta solida (fill=black) — ignora alpha do PNG da
  * mask. A unica forma de obter alpha-mask real eh aplicar a mascara no
@@ -5503,36 +5550,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             layer.groupPath = (o as any).__groupPath
           }
           if (o.type === "textbox" || o.type === "i-text") {
-            // PECA: caracteres (asset.content) continuam vindo do asset, MAS quebras de
-            // linha (\n) e edicoes locais ficam em overrides.text per-instancia. Sem
-            // isso o \n inserido via Enter sumia no reload (load caia em asset.content).
-            // Edicao via /assets continua propagando pras pecas que NAO tem overrides.text.
-            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
-              layer.overrides.text = (o as any).text
-            }
-            layer.overrides.fill = o.fill
-            // Brand ref (cor vinculada a brand color do cliente): persiste o
-            // indice pra re-sync automatico quando brandColors mudam no Client.
-            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
-            layer.overrides.fontSize = o.fontSize
-            layer.overrides.fontFamily = o.fontFamily
-            layer.overrides.fontWeight = o.fontWeight
-            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
-            if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
-            if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
-            if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
-            // Adobe-style leading: salva leadingPt (fonte da verdade). lineHeight tambem
-            // e salvo (back-compat com pecas antigas), mas leadingPt manda no load.
-            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
-              layer.overrides.leadingPt = (o as any).leadingPt
-            }
-            // Styles per-char locais da peca. Outras pecas/matriz nao sao afetadas.
-            if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
-            }
-            // DS link: persiste false explicito quando user customizou. True
-            // eh default, omitido pra economizar JSON.
-            if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
+            // PECA: caracteres (asset.content) continuam vindo do asset, MAS quebras
+            // de linha (\n) e edicoes locais ficam em overrides per-instancia.
+            // serializeTextboxOverrides eh a fonte unica de verdade — qualquer prop
+            // nova adicionada la propaga automaticamente pros 6 sites.
+            Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override: fill/stroke/strokeWidth editados via painel.
             // Sem isso, ao recarregar a peca/editor as edicoes voltavam pro
@@ -5678,33 +5700,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // perdia mudancas de estilo (estilos sao salvos no asset.content e
           // sobrescritos por overrides do layer).
           if (o.type === "textbox" || o.type === "i-text") {
-            // Matriz: caracteres vem do asset (updateAssetContent propaga edicoes,
-            // strip de \n). Mas se a matriz TEM \n, salva em overrides.text local
-            // pra preservar a quebra entre reloads (nao vaza pro asset). Novas
-            // pecas geradas a partir dessa matriz herdam essa \n via spread no
-            // GeneratePiecesModal.
-            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
-              layer.overrides.text = (o as any).text
-            }
-            layer.overrides.fill = o.fill
-            // Brand ref (cor vinculada a brand color do cliente): persiste o
-            // indice pra re-sync automatico quando brandColors mudam no Client.
-            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
-            layer.overrides.fontSize = o.fontSize
-            layer.overrides.fontFamily = o.fontFamily
-            layer.overrides.fontWeight = o.fontWeight
-            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
-            if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
-            if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
-            if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
-            // Adobe-style leading: salva leadingPt (fonte da verdade)
-            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
-              layer.overrides.leadingPt = (o as any).leadingPt
-            }
-            if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
-            }
-            if ((o as any).__dsLinked === false) layer.overrides.dsLinked = false
+            // MATRIZ: caracteres vem do asset (updateAssetContent propaga). \n
+            // local em overrides.text preserva quebra entre reloads sem vazar
+            // pro asset. Toda outra prop via helper centralizado.
+            Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override (matriz): fill/stroke/strokeWidth editados via painel.
             if (typeof o.fill === "string") layer.overrides.fill = o.fill
@@ -5807,20 +5806,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           layer.embedded = true
           layer.embeddedData = o.__embeddedData ?? null
         }
-        // Overrides per-instancia: posicao + estilo de texto.
-        // overrides.text preserva quebras de linha (\n) locais ao step. Sem isso,
-        // alternar entre steps perdia o texto editado (load caia em asset.content).
-        if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
-          layer.overrides.text = (o as any).text
+        // Overrides per-step: helper centralizado captura tudo.
+        if (o.type === "textbox" || o.type === "i-text") {
+          Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
         }
-        if ((o as any).fill !== undefined) layer.overrides.fill = (o as any).fill
-        // Brand ref do fill: persiste o indice pra re-sync com brandColors
-        if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
-        if ((o as any).fontSize !== undefined) layer.overrides.fontSize = (o as any).fontSize
-        if ((o as any).fontFamily !== undefined) layer.overrides.fontFamily = (o as any).fontFamily
-        if ((o as any).styles !== undefined) layer.overrides.styles = (o as any).styles
-        if ((o as any).leadingPt !== undefined) layer.overrides.leadingPt = (o as any).leadingPt
-        if ((o as any).textAlign !== undefined) layer.overrides.textAlign = (o as any).textAlign
         if (o.__mask) layer.mask = o.__mask
         return layer
       })
@@ -6597,33 +6586,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
             layer.groupPath = (o as any).__groupPath
           }
-          // Captura overrides para textos (cor, tamanho, fonte, peso, espacamento, entrelinha, alinhamento, styles per-char)
+          // Captura overrides para textos via helper centralizado
           if (o.type === "textbox" || o.type === "i-text") {
-            // PECA: caracteres (asset.content) continuam vindo do asset, MAS
-            // overrides.text guarda quebras de linha e edicoes locais. Sem isso o
-            // Enter (\n) inserido pelo user sumia no reload. Pecas sem overrides.text
-            // continuam herdando texto do asset (compat com edicao em /assets).
-            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
-              layer.overrides.text = (o as any).text
-            }
-            layer.overrides.fill = o.fill
-            // Brand ref (cor vinculada a brand color do cliente): persiste o
-            // indice pra re-sync automatico quando brandColors mudam no Client.
-            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
-            layer.overrides.fontSize = o.fontSize
-            layer.overrides.fontFamily = o.fontFamily
-            layer.overrides.fontWeight = o.fontWeight
-            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
-            if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
-            if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
-            if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
-            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
-              layer.overrides.leadingPt = (o as any).leadingPt
-            }
-            // Styles per-char locais da peca. Outras pecas/matriz nao afetadas.
-            if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
-            }
+            Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override (doSave peca): mesmo padrao do save matriz.
             if (typeof o.fill === "string") layer.overrides.fill = o.fill
@@ -6767,31 +6732,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             layer.groupPath = (o as any).__groupPath
           }
           // Captura overrides para textos: cor, fonte, tamanho, peso, espacamento, alinhamento, styles per-char
-          // Igual peça - matriz tambem persiste essas customizações localmente sem depender do asset
+          // Matriz: caracteres vem do asset. Helper centralizado captura tudo.
           if (o.type === "textbox" || o.type === "i-text") {
-            // Matriz: caracteres vem do asset (updateAssetContent propaga, strip
-            // de \n). Quebras ficam locais em overrides.text — sem isso a matriz
-            // perdia o \n no reload (load caia em asset.content sem \n).
-            if (typeof (o as any).text === "string" && (o as any).text.includes("\n")) {
-              layer.overrides.text = (o as any).text
-            }
-            layer.overrides.fill = o.fill
-            // Brand ref (cor vinculada a brand color do cliente): persiste o
-            // indice pra re-sync automatico quando brandColors mudam no Client.
-            if (typeof (o as any).__fillBrandIdx === "number") layer.overrides.fillBrandIdx = (o as any).__fillBrandIdx
-            layer.overrides.fontSize = o.fontSize
-            layer.overrides.fontFamily = o.fontFamily
-            layer.overrides.fontWeight = o.fontWeight
-            if (o.fontStyle && o.fontStyle !== "normal") layer.overrides.fontStyle = o.fontStyle
-            if (o.charSpacing !== undefined) layer.overrides.charSpacing = o.charSpacing
-            if (o.lineHeight !== undefined) layer.overrides.lineHeight = o.lineHeight
-            if (o.textAlign !== undefined) layer.overrides.textAlign = o.textAlign
-            if ((o as any).leadingPt !== undefined && (o as any).leadingPt !== null) {
-              layer.overrides.leadingPt = (o as any).leadingPt
-            }
-            if (o.styles && Object.keys(o.styles).length > 0) {
-              layer.overrides.styles = o.styles
-            }
+            Object.assign(layer.overrides, serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: true }))
           } else if ((o as any).__isShape === true || o.type === "path" || o.type === "Path") {
             // SHAPE override (doSave matriz): mesmo padrao dos outros sites.
             if (typeof o.fill === "string") layer.overrides.fill = o.fill
@@ -8402,30 +8345,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 .filter((o: any) => !o.__isBg && o.__assetId)
                 .map((o: any, i: number) => {
                   const isText = o.type === "textbox" || o.type === "i-text"
-                  const overrides: any = {}
-                  if (isText) {
-                    overrides.content = o.text
-                    overrides.text = o.text  // alias usado pelo export pra preferir live text
-                    if (o.fill) overrides.fill = o.fill
-                    if (o.fontSize) overrides.fontSize = o.fontSize
-                    if (o.fontFamily) overrides.fontFamily = o.fontFamily
-                    if (o.fontWeight) overrides.fontWeight = o.fontWeight
-                    if (o.fontStyle) overrides.fontStyle = o.fontStyle
-                    if (o.textAlign) overrides.textAlign = o.textAlign
-                    if (o.lineHeight !== undefined) overrides.lineHeight = o.lineHeight
-                    if ((o as any).leadingPt !== undefined) overrides.leadingPt = (o as any).leadingPt
-                    if (o.charSpacing !== undefined) overrides.charSpacing = o.charSpacing
-                    // CRITICO: per-char styles (cores/fontSize/fontFamily individuais).
-                    // Antes este path nao serializava `styles`, e o PSD exportado da
-                    // MATRIZ saia com texto monocromo / tamanho uniforme — perdendo
-                    // todo o trabalho per-char (user reportou 2026-05-22).
-                    if (o.styles && Object.keys(o.styles).length > 0) {
-                      overrides.styles = o.styles
-                    }
-                    if (typeof (o as any).__fillBrandIdx === "number") {
-                      overrides.fillBrandIdx = (o as any).__fillBrandIdx
-                    }
-                  }
+                  // KV export usa helper centralizado — text/content/styles/charSpacing/
+                  // fillBrandIdx/etc todos capturados num lugar so. preserveExplicit
+                  // NewlinesOnly: false porque o KV export precisa do texto live
+                  // completo (nao tem asset.content como fonte).
+                  const overrides: any = isText
+                    ? serializeTextboxOverrides(o, { preserveExplicitNewlinesOnly: false })
+                    : {}
                   // Propriedades de round-trip PSD (blendMode/opacity/effects/mask/
                   // groupPath/hidden/locked) precisam vir DO OBJETO FABRIC pro
                   // pseudoData do export. Sem isso, o export do KV gerava PSD
