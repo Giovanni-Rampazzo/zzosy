@@ -3253,11 +3253,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
-      // DIAGNOSTICO: detecta MULTI-OBJ DIFF entre top atual e novo snap.
-      // Esperado: 1 obj mudou (a acao explicita do user). Se >1 mudou, algo
-      // foi modificado silenciosamente sem pushHistory entre as 2 acoes do
-      // user — sintoma reportado: "undo na posicao reseta override de
-      // outro layer". Log alerta no console, sem bloquear o save.
+      // DIAGNOSTICO: detecta modificacoes silenciosas de OVERRIDE entre snaps.
+      // Multi-select drag/scale eh normal: 2+ objs mudam left/top/scaleX/scaleY
+      // junto. So eh suspeito quando >1 obj muda props DE OVERRIDE (fill, fonte,
+      // styles, etc) — sintoma "undo reseta override de outro layer".
+      //
+      // Props de transform (left/top/scaleX/scaleY/angle/width/height) sao
+      // ESPERADAS em multi-select; nao alertam. Props de override SO mudam
+      // por acao explicita per-layer — multiplas mudando = bug.
       try {
         if (top) {
           const prevObjs: any[] = JSON.parse(top)?.objects ?? []
@@ -3265,24 +3268,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const keyOf = (o: any) => o?.__assetId ?? o?.__assetLabel ?? `${o?.type}@${Math.round(o?.left ?? 0)},${Math.round(o?.top ?? 0)}`
           const prevByKey = new Map<string, any>()
           for (const o of prevObjs) prevByKey.set(keyOf(o), o)
-          const changes: Array<{ label: string; diffs: string[] }> = []
+          // Props que indicam OVERRIDE (modificacao real per-layer). Mudancas em
+          // mais de um obj nestas props sao suspeitas. Transform fica fora.
+          const OVERRIDE_PROPS = [
+            "fill", "fontSize", "fontFamily", "fontWeight", "fontStyle",
+            "charSpacing", "lineHeight", "textAlign", "text",
+          ]
+          const overrideChanges: Array<{ label: string; diffs: string[] }> = []
           for (const o of newObjs) {
             const prev = prevByKey.get(keyOf(o))
             if (!prev) continue
             const diffs: string[] = []
-            // Compara propriedades relevantes (props que o user esperaria controlar)
-            for (const k of ["left", "top", "scaleX", "scaleY", "angle", "width", "height",
-                             "fill", "fontSize", "fontFamily", "fontWeight", "fontStyle",
-                             "charSpacing", "lineHeight", "textAlign", "text", "opacity",
-                             "visible", "globalCompositeOperation"]) {
+            for (const k of OVERRIDE_PROPS) {
               if (JSON.stringify(prev[k]) !== JSON.stringify(o[k])) diffs.push(k)
             }
-            // styles per-char
             if (JSON.stringify(prev.styles ?? {}) !== JSON.stringify(o.styles ?? {})) diffs.push("styles")
-            if (diffs.length > 0) changes.push({ label: o.__assetLabel ?? "?", diffs })
+            if (diffs.length > 0) overrideChanges.push({ label: o.__assetLabel ?? "?", diffs })
           }
-          if (changes.length > 1) {
-            console.warn("[pushHistory] MULTI-OBJ DIFF detectado — provavel modificacao silenciosa entre acoes:", changes)
+          // So alerta quando 2+ layers tem mudancas em OVERRIDE props simultaneas.
+          // Multi-select de transform (left/top/scale) NAO entra aqui — desejado.
+          if (overrideChanges.length > 1) {
+            console.warn("[pushHistory] MULTI-OBJ OVERRIDE DIFF — provavel mod silenciosa de fill/font/text em multiplos layers:", overrideChanges)
           }
         }
       } catch {}
