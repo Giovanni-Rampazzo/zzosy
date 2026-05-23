@@ -721,11 +721,23 @@ function applyShapePathInPlace(obj: any, newPathD: string): void {
   try {
     const parsed = parseSimpleSvgPathToFabric(newPathD)
     if (!parsed || !parsed.length) return
-    obj.path = parsed
-    // _calcDimensions atualiza obj.width/height/pathOffset a partir do path.
-    // Sem isso, o bbox do Fabric ficaria nas dimensoes antigas → handles e
-    // mask referem-se a bbox stale.
-    if (typeof obj._calcDimensions === "function") obj._calcDimensions()
+    // _setPath eh a API CERTA do Fabric: atribui path E recalcula pathOffset
+    // a partir do novo bbox. Atribuir obj.path direto + _calcDimensions NAO
+    // atualiza pathOffset → o path fica desenhado fora da posicao visual
+    // esperada e o shape "some". Sintoma 2026-05-23: "mudei cornerRadius
+    // e shape desapareceu". Fabric draw faz translate(-pathOffset) entao
+    // se pathOffset acompanha bbox center, posicao visual (left, top) se
+    // mantem mesmo com mudanca de coords absolutas → relativas.
+    if (typeof obj._setPath === "function") {
+      // adjustPosition=FALSE: passar true faz Fabric chamar setPositionByOrigin
+      // que MOVE o objeto pra pathOffset coords. Queremos manter left/top como
+      // estavam (posicao visual constante) — _setPath atualiza pathOffset
+      // sozinho e isso ja eh suficiente pra render correto.
+      obj._setPath(parsed, false)
+    } else {
+      obj.path = parsed
+      if (typeof obj._calcDimensions === "function") obj._calcDimensions()
+    }
     obj.dirty = true
     if (obj.setCoords) obj.setCoords()
   } catch (e) {
