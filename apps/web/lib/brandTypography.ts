@@ -67,11 +67,14 @@ export const PRESET_DESCRIPTIONS: Record<BrandPresetKey, string> = {
 // User pode sobrescrever a qualquer momento — esses sao apenas os defaults
 // iniciais. Quando o user muda fontSize sem mexer no leading, mantemos o
 // leading absoluto (Adobe-style: leading e fontSize sao independentes).
+// Leading padrao 90% do fontSize (compactacao tight). User pediu 2026-05-22.
+// Antes era ~1.2x (default Adobe), mas ZZOSY foca em layouts editoriais
+// densos onde 0.9x melhor reflete o que designer entrega no PS.
 export const DEFAULT_TYPOGRAPHY: BrandTypography = {
-  titulo:    { fontWeight: 700, fontSize: 80, leadingPt: 96, charSpacing: 0 },
-  subtitulo: { fontWeight: 600, fontSize: 48, leadingPt: 58, charSpacing: 0 },
-  body:      { fontWeight: 400, fontSize: 24, leadingPt: 29, charSpacing: 0 },
-  legenda:   { fontWeight: 400, fontSize: 16, leadingPt: 19, charSpacing: 0 },
+  titulo:    { fontWeight: 700, fontSize: 80, leadingPt: 72, charSpacing: 0 },
+  subtitulo: { fontWeight: 600, fontSize: 48, leadingPt: 43, charSpacing: 0 },
+  body:      { fontWeight: 400, fontSize: 24, leadingPt: 22, charSpacing: 0 },
+  legenda:   { fontWeight: 400, fontSize: 16, leadingPt: 14, charSpacing: 0 },
 }
 
 /**

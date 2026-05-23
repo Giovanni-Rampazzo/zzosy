@@ -257,7 +257,8 @@ function emitTextLayer(l: PsdTextLayer, parentPath: string[], ctx: BuildContext)
     lineHeight: l.defaultStyle.leading
       ? l.defaultStyle.leading / l.defaultStyle.fontSize
       : 1.0,
-    leadingPt: l.defaultStyle.leading ?? Math.round(l.defaultStyle.fontSize * 1.2),
+    // Auto leading default 0.9x (padrao ZZOSY tight). Antes era 1.2x Adobe.
+    leadingPt: l.defaultStyle.leading ?? Math.round(l.defaultStyle.fontSize * 0.9),
     textAlign: l.paragraph.align,
     styles: buildLineIndexedStyles(l),
   }

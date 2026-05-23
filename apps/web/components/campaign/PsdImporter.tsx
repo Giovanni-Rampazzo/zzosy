@@ -1724,7 +1724,10 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
           // e o caso de "leading literal compactado" eh muito mais comum em
           // design real do que "PS bugou e persistiu leading=fontSize".
           const defLeadingRaw = typeof defStyle.leading === "number" ? defStyle.leading : undefined
-          const paraAutoFactor = typeof td.paragraphStyle?.autoLeading === "number" ? td.paragraphStyle.autoLeading : 1.2
+          // Auto-leading factor: respeita o que PS persistiu (paragraphStyle.
+          // autoLeading), mas se ausente, usa 0.9 (padrao ZZOSY — tight) em
+          // vez do 1.2 do Adobe. User pediu 2026-05-22.
+          const paraAutoFactor = typeof td.paragraphStyle?.autoLeading === "number" ? td.paragraphStyle.autoLeading : 0.9
           const isLeadingAuto = defStyle.autoLeading === true || defLeadingRaw === undefined
           const defLeadingPt = isLeadingAuto
             ? Math.round(scaledDefFontSize * paraAutoFactor)

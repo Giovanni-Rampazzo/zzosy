@@ -259,8 +259,9 @@ function mapTextLayer(
     fontStyle: def.fontStyle,
     textAlign: layer.paragraph.align,
     charSpacing: def.tracking,
-    leadingPt: def.leading ?? Math.round(def.fontSize * 1.2),
-    lineHeight: def.fontSize > 0 ? (def.leading ?? def.fontSize * 1.2) / def.fontSize : 1.0,
+    // Auto leading default 0.9x (padrao ZZOSY tight). Antes era 1.2x Adobe.
+    leadingPt: def.leading ?? Math.round(def.fontSize * 0.9),
+    lineHeight: def.fontSize > 0 ? (def.leading ?? def.fontSize * 0.9) / def.fontSize : 1.0,
   }
   if (Object.keys(styles).length > 0) overrides.styles = styles
 
