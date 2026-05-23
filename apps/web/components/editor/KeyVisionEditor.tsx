@@ -1200,11 +1200,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       isApplyingHistory.current = wasApplying
     }
     if (!bgChanged && !textChanged) return
-    // ANTES: zerava undoStack inteiro (`undoStack.current = [snap]`). Resultado
-    // catastrofico — qualquer brand update apagava TODO o trabalho previo do
-    // user (sintoma: "undo de um layer reseta override de outro layer sem
-    // relacao"). Agora apenas re-renderiza e marca dirty pro proximo save
-    // persistir as novas cores. Undo permanece intacto.
+    // BUG GRAVE corrigido 2026-05-23: brand sync alterava fill de N objs
+    // silenciosamente, MAS o undoStack continuava com snaps tendo as cores
+    // ANTIGAS no topo. User editava 1 layer → push novo snap → undo aplica
+    // snap antigo → todos os layers com __fillBrandIdx voltavam pras cores
+    // velhas (sintoma: "undo de um texto reseta override de outro").
+    //
+    // Fix: REFAZ o snapshot do TOPO do undoStack com o estado atual (apos
+    // sync). Snap top representa "estado pre-edicao" — agora reflete as
+    // novas brand colors. Undo do user volta pro estado VISIVEL atual,
+    // nao pra um pre-sync inexistente.
+    //
+    // Anteriormente o codigo zerava undoStack inteiro pra evitar isso
+    // (catastrofico — perdia historia). Solucao intermediaria so re-renderia
+    // (deixava o bug). Re-snap do topo eh o balanco correto.
     if (bgChanged) {
       ;(async () => {
         const fabricMod: any = await import("fabric")
@@ -1218,6 +1227,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     } else {
       fc.renderAll()
     }
+    // Atualiza snap top com o estado pos-sync (sem isso, undo reverte o sync).
+    try {
+      if (undoStack.current.length > 0) {
+        const newTopSnap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "__isSmartObject", "__smartObjectGuid", "__smartObjectMime", "__smartObjectFilePath", "__smartObjectOriginalName", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+        undoStack.current[undoStack.current.length - 1] = newTopSnap
+      }
+    } catch { /* ignora — snap eh diagnostico, nao crítico */ }
     // Marca dirty pra que o sync persista no proximo auto-save. Sem isso, se
     // user fechar a aba sem editar nada, o sync visual nao seria salvo no DB.
     isDirtyRef.current = true
