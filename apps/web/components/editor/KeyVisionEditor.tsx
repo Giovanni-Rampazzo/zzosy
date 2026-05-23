@@ -4680,6 +4680,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       applyFabricEffects(t, psdEffects, Shadow)
       fc.add(t)
+      // Re-aplica leadingPt MEDINDO o factor real do Fabric depois que o
+      // textbox esta totalmente construido (styles, font, dimensions). Sem
+      // isso, o lineHeight inicial (fast path com 1.13 hardcoded) podia
+      // ficar off ate o user mexer no scaling. User reportou 2026-05-23:
+      // continuava errado mesmo apos applyLeadingPtToFabric nos sites de
+      // scaling — load inicial ainda usava fast path.
+      if (typeof effLeadingPt === "number" && effFontSize > 0) {
+        applyLeadingPtToFabric(t, effLeadingPt)
+      }
     }
   }
 
@@ -5463,15 +5472,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             }
             tb.set("styles", scaledStyles)
           }
-          // leadingPt (entrelinhas em pontos) — substitui o lineHeight quando
-          // setado. Conversao: lineHeight = leadingPt / fontSize.
-          if (typeof overrides.leadingPt === "number" && overrides.leadingPt > 0) {
-            const scaledLeading = overrides.leadingPt * scale
-            const effFontSize = baseFontSize * scale
-            if (effFontSize > 0) tb.set("lineHeight", leadingPtToFabricLineHeight(scaledLeading, effFontSize))
-          }
+          // leadingPt (entrelinhas em pontos) — match exato baseline-to-baseline
+          // com PSD via medicao runtime do factor real do Fabric.
           if ((tb as any).initDimensions) (tb as any).initDimensions()
           sfc.add(tb)
+          if (typeof overrides.leadingPt === "number" && overrides.leadingPt > 0) {
+            const scaledLeading = overrides.leadingPt * scale
+            applyLeadingPtToFabric(tb, scaledLeading)
+          }
         }
       }
       sfc.renderAll()
