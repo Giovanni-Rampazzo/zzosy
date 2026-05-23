@@ -10006,17 +10006,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               <div>
                 <div style={secS}>Tamanho {mixedFontSize && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múlt.)</span>}</div>
                 <input
-                  key={`fs-${(selected as any).__assetId ?? "x"}`}
                   type="number"
                   value={mixedFontSize ? "" : fontSizeInput}
                   placeholder={mixedFontSize ? "—" : ""}
-                  onFocus={() => { numericInputFocusedRef.current = true }}
+                  onFocus={(e) => {
+                    numericInputFocusedRef.current = true
+                    // Seleciona tudo no focus — user digita o novo numero sem
+                    // precisar apagar primeiro. Padrao Adobe/Figma.
+                    e.currentTarget.select()
+                  }}
                   onBlur={() => { numericInputFocusedRef.current = false }}
-                  // CRITICO pra char-level edit: captura a seleção do textbox
-                  // ANTES do click no input remover o foco (saindo do edit mode).
-                  // Sem isso, applyStyle vê isEditing=false e savedTextSelection
-                  // pode estar stale (polling roda só a cada 100ms — clique rápido
-                  // perde a seleção).
+                  // Captura a seleção do textbox ANTES do click no input remover
+                  // o foco (saindo do edit mode). Sem isso, applyStyle vê
+                  // isEditing=false e savedTextSelection pode estar stale.
                   onMouseDown={() => {
                     const fc = fabricRef.current
                     const active = fc?.getActiveObject() as any
@@ -10077,11 +10079,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 <div style={secS}>Entrelinhas</div>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   <input
-                    key={`lh-${(selected as any).__assetId ?? "x"}`}
                     type="number"
                     step="1"
                     value={leadingInput}
-                    onFocus={() => { numericInputFocusedRef.current = true }}
+                    onFocus={(e) => {
+                      numericInputFocusedRef.current = true
+                      e.currentTarget.select()
+                    }}
                     onBlur={() => { numericInputFocusedRef.current = false }}
                     onMouseDown={() => {
                       const fc = fabricRef.current
