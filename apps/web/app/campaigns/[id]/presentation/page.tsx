@@ -5,6 +5,7 @@ import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { SlideCover, SlideCode, SlideSegment, SlidePiece, SlideThanks } from "@/components/presentation/Slides"
 import { useBrand } from "@/lib/useBrand"
+import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 
 interface Piece {
   id: string
@@ -65,12 +66,17 @@ export default function PresentationPage() {
   const [presenting, setPresenting] = useState(false)
   const [presentIdx, setPresentIdx] = useState(0)
   const brand = useBrand()
+  // brandFont do CLIENTE da campanha — fonte custom dos textos nos slides.
+  // User pediu 2026-05-22: "na apresentacao todas as fontes precisam ser
+  // a do cliente". Lazy-load via useEffect abaixo quando campaign carrega.
+  const clientBrandFont = (campaign?.client as any)?.brandFont as string | undefined
   // Subset do brand passado aos slides (campos opcionais com fallback nos defaults).
   const slideBrand = {
     primaryColor: brand.raw.whiteLabelAccentColor ?? undefined,
     logoUrl: brand.raw.brandLogoUrl ?? undefined,
     secondaryLogoUrl: brand.raw.brandSecondaryLogoUrl ?? undefined,
     footerText: brand.raw.brandFooterText ?? undefined,
+    fontFamily: clientBrandFont,
   }
 
   useEffect(() => {
@@ -403,7 +409,7 @@ export default function PresentationPage() {
               heightValue={p.heightValue}
               widthUnit={p.widthUnit}
               heightUnit={p.heightUnit}
-              imageUrl={p.imageUrl ?? null}
+              imageUrl={p.imageUrl ? `${p.imageUrl}?t=${new Date((p as any).updatedAt ?? Date.now()).getTime()}` : null}
               steps={stepsForSlide}
               copy={p.copy ?? null}
               pieceId={p.id}
