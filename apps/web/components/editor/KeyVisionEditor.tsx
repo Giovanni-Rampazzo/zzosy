@@ -3519,8 +3519,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ;(obj as any).styles = cloned
           ;(obj as any).dirty = true
           if ((obj as any)._styleMap) (obj as any)._styleMap = null
+          // Restaurar charSpacing (tracking) — loadFromJSON deveria mas em
+          // textbox restaurado as vezes vem 0 mesmo com snap setado. Force.
+          if (typeof src.charSpacing === "number") {
+            ;(obj as any).charSpacing = src.charSpacing
+          }
+          // CRITICO: leadingPt + override de instance.
+          // applyLeadingPtToFabric instala overrides de INSTANCE no textbox
+          // (_fontSizeMult=1.0 via Object.defineProperty + getHeightOfLineImpl
+          // override). loadFromJSON cria nova instance — esses overrides somem.
+          // Sem reaplicar: _fontSizeMult volta pro default 1.13, lineHeight no
+          // snap eh leadingPt/ascender (~0.6), resultado: getHeightOfLine =
+          // fontSize × 1.13 × (leadingPt/ascender) ≈ 1.5 × leadingPt — leading
+          // 50% maior que o esperado. User percebe como "override de typesetting
+          // sumiu apos undo". Re-aplicar restaura matematica exata PSD.
+          if (typeof src.leadingPt === "number" && src.leadingPt > 0) {
+            ;(obj as any).leadingPt = src.leadingPt
+          }
           if (obj.initDimensions) obj.initDimensions()
           if (obj.setCoords) obj.setCoords()
+          if (typeof (obj as any).leadingPt === "number" && (obj as any).leadingPt > 0) {
+            applyLeadingPtToFabric(obj, (obj as any).leadingPt)
+          }
         }
         // Restaurar mascara: clipPath reconstruido pelo loadFromJSON pode estar
         // quebrado (e.g. Image clipPath nao re-carrega o dataUrl). Re-aplicamos
