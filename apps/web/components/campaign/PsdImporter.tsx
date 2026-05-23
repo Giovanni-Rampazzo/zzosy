@@ -1861,49 +1861,101 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
               : undefined,
             groupPath: groupPath.length > 0 ? groupPath : undefined,
           })
-        } else if ((() => {
-          // SHAPE PARAMETRIC: PSD com Shape Tool (rect/roundedRect/ellipse).
-          // Detecta vogk descriptor antes de cair no fallback raster. Preserva
-          // cornerRadius pro slider do editor. Roundtrip 100% Photoshop ↔ ZZOSY.
-          if (!(layer as any).vectorMask?.paths?.length) return false
-          if (!(layer as any).vectorFill && !(layer as any).vectorStroke) return false
-          return !!detectParametricShape(layer)
-        })()) {
-          const shapeInfo = detectParametricShape(layer)!
-          const W = shapeInfo.bbox.right - shapeInfo.bbox.left
-          const H = shapeInfo.bbox.bottom - shapeInfo.bbox.top
-          // Path absoluto (origem 0,0) — exportPiece.ts:633 multiplica por
-          // layer.scaleX no buildPieceCanvas, entao deixamos coords pre-scale.
-          const path = buildShapePath(shapeInfo.kind, W, H, shapeInfo.cornerRadius)
-          const shapeContent = {
-            path,
-            pathBbox: { left: 0, top: 0, right: W, bottom: H },
-            kind: shapeInfo.kind,
-            cornerRadius: shapeInfo.cornerRadius,
-            fill: shapeInfo.fill,
-            stroke: shapeInfo.stroke,
-            fillRule: "nonzero" as const,
+        } else if ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke)) {
+          // SHAPE: PSD tem vectorMask + fill/stroke. 2 caminhos:
+          //   (a) PARAMETRIC (rect/roundedRect/ellipse via vogk descriptor):
+          //       extrai kind+cornerRadius pra slider do editor.
+          //   (b) PATH ARBITRARIO (Shape Tool com forma custom, Pen Tool, etc):
+          //       extrai SVG path do vectorMask via vectorMaskToSvgPath.
+          // Em AMBOS os casos, asset eh type:"SHAPE" — nao mais raster (que
+          // perdia editabilidade do fill/stroke).
+          const parametric = detectParametricShape(layer)
+          let shapeContent: any
+          let bboxLeft = 0, bboxTop = 0, W = 0, H = 0
+          if (parametric) {
+            // Caminho (a) — parametric
+            W = parametric.bbox.right - parametric.bbox.left
+            H = parametric.bbox.bottom - parametric.bbox.top
+            bboxLeft = parametric.bbox.left
+            bboxTop = parametric.bbox.top
+            shapeContent = {
+              path: buildShapePath(parametric.kind, W, H, parametric.cornerRadius),
+              pathBbox: { left: 0, top: 0, right: W, bottom: H },
+              kind: parametric.kind,
+              cornerRadius: parametric.cornerRadius,
+              fill: parametric.fill,
+              stroke: parametric.stroke,
+              fillRule: "nonzero" as const,
+            }
+            console.log("[PSD-SHAPE-PARAMETRIC]", {
+              name, kind: parametric.kind, cornerRadius: parametric.cornerRadius,
+              W, H, fill: parametric.fill?.color, stroke: parametric.stroke?.color,
+            })
+          } else {
+            // Caminho (b) — path arbitrario. Extrai SVG do vectorMask.
+            const { d, bbox } = vectorMaskToSvgPath((layer as any).vectorMask)
+            if (!d || !bbox) {
+              // Sem path valido — cai no fallback raster (proximo else if)
+              console.warn("[PSD-SHAPE] sem vogk e sem path valido — fallback raster:", name)
+              // NAO faz continue; deixa o codigo seguir pra o branch raster.
+              // Mas isso requer estruturar o codigo diferente. Por ora, marca
+              // pra cair no else if abaixo (que ja tem vectorMask check).
+              // Aqui usamos um trick: re-entra na cadeia via if SE bbox null.
+              ;(layer as any).__zzosyShapeFallback = true
+            } else {
+              W = bbox.maxX - bbox.minX
+              H = bbox.maxY - bbox.minY
+              bboxLeft = bbox.minX
+              bboxTop = bbox.minY
+              // Normaliza path pro origin (0,0)
+              const normalizedPath = d  // vectorMaskToSvgPath ja usa coords absolutas
+              // Extrai fill/stroke
+              const vf = (layer as any).vectorFill
+              const vs = (layer as any).vectorStroke
+              const fill = (vf?.type === "color" && vf.color) ? {
+                kind: "solid" as const,
+                color: colorToHex(vf.color),
+              } : null
+              const stroke = (vs && vs.strokeEnabled !== false) ? {
+                color: (vs.content?.type === "color" && vs.content.color) ? colorToHex(vs.content.color) : "#000000",
+                width: (typeof vs.lineWidth?.value === "number") ? vs.lineWidth.value : (typeof vs.lineWidth === "number" ? vs.lineWidth : 0),
+              } : null
+              shapeContent = {
+                path: normalizedPath,
+                pathBbox: { left: bboxLeft, top: bboxTop, right: bbox.maxX, bottom: bbox.maxY },
+                fill,
+                stroke,
+                fillRule: "nonzero" as const,
+              }
+              console.log("[PSD-SHAPE-PATH]", {
+                name, W, H, fill: fill?.color, stroke: stroke?.color,
+                pathLen: normalizedPath.length,
+              })
+            }
           }
-          assets.push({
-            label: name, type: "SHAPE",
-            shape: shapeContent,
-            posX: shapeInfo.bbox.left, posY: shapeInfo.bbox.top,
-            width: W, height: H, zIndex,
-            mask: assetMask,
-            hidden: layer.hidden === true ? true : undefined,
-            locked: (layer as any).transparencyProtected === true ? true : undefined,
-            opacity: psdOpacity,
-            blendMode: psdBlend,
-            effects: psdEffects,
-            groupPath: groupPath.length > 0 ? groupPath : undefined,
-          })
-          console.log("[PSD-SHAPE-PARAMETRIC]", {
-            name, kind: shapeInfo.kind, cornerRadius: shapeInfo.cornerRadius,
-            W, H, fill: shapeInfo.fill?.color, stroke: shapeInfo.stroke?.color,
-          })
-          zIndex++
-          continue
-        } else if (layer.canvas || ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke))) {
+          if (shapeContent) {
+            assets.push({
+              label: name, type: "SHAPE",
+              shape: shapeContent,
+              posX: bboxLeft, posY: bboxTop,
+              width: W, height: H, zIndex,
+              mask: assetMask,
+              hidden: layer.hidden === true ? true : undefined,
+              locked: (layer as any).transparencyProtected === true ? true : undefined,
+              opacity: psdOpacity,
+              blendMode: psdBlend,
+              effects: psdEffects,
+              groupPath: groupPath.length > 0 ? groupPath : undefined,
+            })
+            zIndex++
+            continue
+          }
+          // Fall-through: shape falhou (sem vogk e sem path valido) → marca
+          // pra cair no fallback raster abaixo. Sem essa flag, o `if` standalone
+          // do raster processaria layers TEXT/etc duas vezes.
+          ;(layer as any).__zzosyShapeFallback = true
+        }
+        if ((layer as any).__zzosyShapeFallback || (!layer.text && (layer.canvas || ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke))))) {
           try {
             // COMPOSITE SLICE deterministico via pixel comparison:
             //
