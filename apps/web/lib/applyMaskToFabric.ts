@@ -54,6 +54,13 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
       // aparecer 50% mais fino + visivel apenas internamente. Sintoma reportado
       // 2026-05-23: "box verde com stroke preto nao esta importando direito".
       // Skipa quando obj eh PATH e path do mask === path do obj.
+      // Shape PARAMETRIC (rect/roundedRect/ellipse): o path PROPRIO ja eh a
+      // geometria final. Mask vector pra um shape parametric eh sempre redundante
+      // (PSD shape layer = vectorMask). Skip imediato, sem comparar paths
+      // (paths diferem quando user promoveu rect→roundedRect via cornerRadius).
+      if (obj?.__isShape && obj?.__shapeKind) {
+        return
+      }
       if ((obj?.__isShape || obj?.type === "path") && Array.isArray(obj.path)) {
         // PSD shape layers usam vectorMask como definicao do shape. Reader
         // extrai esse mesmo path em DUAS hops:

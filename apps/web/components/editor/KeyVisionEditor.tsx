@@ -4346,7 +4346,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // scale != 1 reabria com path no tamanho original e scale aplicado
         // visualmente — assimetrico (path internal 400 mas visible 800), que
         // depois confundia o export PSD (3x menor que editor).
-        const isParametric = !!parsedShape.kind
+        // Parametric: asset.content.kind define (Rectangle/RoundedRect/Ellipse).
+        // PROMOCAO: PSD shapes nao parametricos viram parametricos quando o user
+        // edita cornerRadius via Properties Panel (setCornerRadius promove pra
+        // "roundedRect"). Esse caso fica detectavel pela presenca de cornerRadius
+        // > 0 + bboxW/bboxH nos overrides. Sem essa promocao no LOAD, cornerRadius
+        // salvo no DB era ignorado e shape voltava retangular ao reabrir.
+        // Sintoma 2026-05-23: "mudei corner radius, salvei, abri de novo, perdeu".
+        const userPromotedToRounded = !parsedShape.kind
+          && typeof layerOv.cornerRadius === "number" && layerOv.cornerRadius > 0
+          && typeof layerOv.bboxW === "number" && layerOv.bboxW > 0
+          && typeof layerOv.bboxH === "number" && layerOv.bboxH > 0
+        const effKind: ShapeKind | undefined = parsedShape.kind ?? (userPromotedToRounded ? "roundedRect" : undefined)
+        const isParametric = !!effKind
         let effBboxW = 0, effBboxH = 0
         if (parsedShape.pathBbox) {
           effBboxW = (parsedShape.pathBbox.right ?? 400) - (parsedShape.pathBbox.left ?? 0)
@@ -4366,9 +4378,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ? layerOv.cornerRadius
           : (typeof parsedShape.cornerRadius === "number" ? parsedShape.cornerRadius : 0)
         const isParametricFinal = isParametric && effBboxW > 0 && effBboxH > 0
-        // Recomputa path com cornerRadius override se shape eh parametric.
-        const pathStr: string = isParametricFinal
-          ? buildShapePath(parsedShape.kind as ShapeKind, effBboxW, effBboxH, effCornerR_load)
+        // Recomputa path com cornerRadius override se shape eh parametric
+        // (incluindo promocao do user).
+        const pathStr: string = isParametricFinal && effKind
+          ? buildShapePath(effKind, effBboxW, effBboxH, effCornerR_load)
           : parsedShape.path
         const p = new Path(pathStr, {
           left: posX, top: posY,
@@ -4387,7 +4400,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ;(p as any).__assetId = asset.id
         ;(p as any).__assetLabel = asset.label
         ;(p as any).__isShape = true
-        if (parsedShape.kind) (p as any).__shapeKind = parsedShape.kind
+        // Prefere effKind (inclui promocao user) sobre parsedShape.kind cru.
+        // Sem isso, ao recarregar shape promovido, __shapeKind ficava undefined
+        // e save subsequente nao gravava bboxW/bboxH → corner radius perdido.
+        if (effKind) (p as any).__shapeKind = effKind
         if (effCornerR_load !== undefined) (p as any).__cornerRadius = effCornerR_load
         if (isParametricFinal) {
           ;(p as any).__pathBbox = { left: 0, top: 0, right: effBboxW, bottom: effBboxH }

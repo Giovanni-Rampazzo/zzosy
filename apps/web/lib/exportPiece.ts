@@ -614,7 +614,16 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             //
             // Apos recompute path tem dims absolutos → Fabric.Path NAO precisa
             // de scaleX/Y (set como 1) → PSD vai com path no tamanho correto.
-            const shapeKind = (shape as any).kind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
+            // Promocao parametric: PSD shapes nao parametricos viram parametricos
+            // quando user edita cornerRadius via panel. Sem promover no export,
+            // o PNG/PSD da peca saia com path original (corner radius perdido).
+            // Detecta pela presenca de cornerRadius>0 + bboxW/bboxH em overrides.
+            // Mesmo pattern que KeyVisionEditor.tsx load (manter em sync).
+            const userPromoted = !(shape as any).kind
+              && typeof overrides.cornerRadius === "number" && overrides.cornerRadius > 0
+              && typeof overrides.bboxW === "number" && overrides.bboxW > 0
+              && typeof overrides.bboxH === "number" && overrides.bboxH > 0
+            const shapeKind = ((shape as any).kind ?? (userPromoted ? "roundedRect" : undefined)) as ("rectangle"|"roundedRect"|"ellipse"|undefined)
             const layerScaleX = layer.scaleX ?? 1
             const layerScaleY = layer.scaleY ?? 1
             let pathD = shape.path
