@@ -79,26 +79,31 @@ function Footer({ brand }: { brand?: SlideBrand }) {
 
 /* ============== Slide 1 — Capa ==============
  * Layout: logo PRINCIPAL pequeno no canto superior direito + logo GRANDE
- * horizontal embaixo (largura 90% do slide). Estilo original ZZOSY antes
- * do redesenho centralizado. White-label substitui ambos via brand props.
+ * horizontal embaixo (largura 90% do slide).
+ *
+ * IMPORTANTE: a CAPA sempre usa os defaults Suno + UNITED CREATORS,
+ * ignorando o brand custom do tenant. User definiu 2026-05-22: "ela
+ * precisa ser aquela da suno, united creator, que e o padrao".
+ * Slides internos continuam respeitando o brand custom (cor primary,
+ * footer, logos nos slides de codigo/segmento/etc).
  */
 export function SlideCover({ brand }: { brand?: SlideBrand } = {}) {
   return (
     <div style={{ ...slideShellBase, background: BG_LIGHT, containerType: "inline-size" }}>
-      {/* Logo principal — topo direito */}
+      {/* Logo principal — topo direito (sempre Suno, default) */}
       <img
-        src={getLogo(brand)}
-        alt="Logo"
+        src="/presentation/suno.png"
+        alt="Suno"
         style={{
           position: "absolute", top: "8%", right: "5%",
           height: "8cqw", width: "auto",
           display: "block",
         }}
       />
-      {/* Logo grande horizontal embaixo */}
+      {/* Logo grande horizontal embaixo (sempre United Creators, default) */}
       <img
-        src={getSecondaryLogo(brand)}
-        alt="Logo grande"
+        src="/presentation/united-creators.png"
+        alt="United Creators"
         style={{
           position: "absolute", bottom: "13%", left: "5%",
           width: "90%", height: "auto",

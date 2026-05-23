@@ -93,8 +93,10 @@ interface Palette {
   primary: string       // hex sem '#'
   primaryLight: string  // hex mais claro (boxes slide 2/3)
   footerText: string
-  logoUri: string | null
-  secondaryLogoUri: string | null
+  logoUri: string | null              // custom do tenant — slides internos
+  secondaryLogoUri: string | null     // custom do tenant — slides internos
+  coverLogoUri: string | null         // SEMPRE Suno default — capa
+  coverSecondaryLogoUri: string | null // SEMPRE UnitedCreators default — capa
 }
 
 /**
@@ -110,26 +112,24 @@ function addFooter(slide: any, pptx: PptxGenJS, palette: Palette) {
 
 /**
  * Slide 1: Capa
- *  - Logo SUNO no topo direito
- *  - Logo UNITED CREATORS gigante embaixo
+ *  - Logo SUNO no topo direito (sempre default — nao usa custom brand)
+ *  - Logo UNITED CREATORS gigante embaixo (sempre default)
+ *
+ * User definiu 2026-05-22: "ela precisa ser aquela da suno, united creator,
+ * que e o padrao". Capa ignora custom brand do tenant.
  */
 function addCoverSlide(pptx: PptxGenJS, palette: Palette) {
   const slide = pptx.addSlide()
   slide.background = { color: BG_LIGHT }
 
-  // Logo principal topo direito (proporcional, altura fixa 1.0")
-  if (palette.logoUri) {
-    slide.addImage({ data: palette.logoUri, x: 10.0, y: 0.5, w: 2.99, h: 1.0, sizing: { type: "contain", w: 2.99, h: 1.0 } })
-  } else {
-    slide.addShape("ellipse", {
-      x: 12.2, y: 0.65, w: 0.45, h: 0.45,
-      fill: { color: palette.primary }, line: { color: palette.primary },
-    })
+  // Logo principal topo direito — usa coverLogoUri (sempre Suno default)
+  if (palette.coverLogoUri) {
+    slide.addImage({ data: palette.coverLogoUri, x: 10.0, y: 0.5, w: 2.99, h: 1.0, sizing: { type: "contain", w: 2.99, h: 1.0 } })
   }
 
-  // Logo grande centro-baixo (proporcional, largura 12")
-  if (palette.secondaryLogoUri) {
-    slide.addImage({ data: palette.secondaryLogoUri, x: 0.66, y: 5.4, w: 12.0, h: 1.51, sizing: { type: "contain", w: 12.0, h: 1.51 } })
+  // Logo grande centro-baixo — usa coverSecondaryLogoUri (sempre UnitedCreators)
+  if (palette.coverSecondaryLogoUri) {
+    slide.addImage({ data: palette.coverSecondaryLogoUri, x: 0.66, y: 5.4, w: 12.0, h: 1.51, sizing: { type: "contain", w: 12.0, h: 1.51 } })
   }
 
   addFooter(slide, pptx, palette)
@@ -516,6 +516,9 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
     footerText: (data.brand?.footerText?.trim()) || "Classificação da informação: Uso Interno",
     logoUri: await imgToDataUri(data.brand?.logoUrl?.trim() || "/presentation/suno.png"),
     secondaryLogoUri: await imgToDataUri(data.brand?.secondaryLogoUrl?.trim() || "/presentation/united-creators.png"),
+    // Cover SEMPRE usa defaults Suno/UnitedCreators (ignora custom).
+    coverLogoUri: await imgToDataUri("/presentation/suno.png"),
+    coverSecondaryLogoUri: await imgToDataUri("/presentation/united-creators.png"),
   }
 
   addCoverSlide(pptx, palette)
