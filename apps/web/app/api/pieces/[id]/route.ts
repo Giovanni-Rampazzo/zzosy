@@ -68,9 +68,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     }, { status: 400 })
   }
   const piece = await prisma.piece.update({ where: { id }, data })
-  // Auto-merge: quando user grava segment numa peca, append na taxonomia GLOBAL
-  // do tenant (sem duplicar). Vira fonte unica de verdade pra autocomplete em
-  // TODAS as entidades (pecas, campanhas, clientes, midias) + edicao manual.
+  // Auto-merge: quando user grava segment numa peca, append na Tenant.taxonomy
+  // (source-of-truth: gerenciado via ClientSettingsCard em /clients/[id]/edit
+  // que persiste no mesmo Tenant.taxonomy). Sincronia bidirecional: segments
+  // novos em pecas viram sugestoes no painel do cliente automaticamente.
   if (typeof body?.segment === "string" && body.segment.trim().length > 0) {
     try {
       const camp = await prisma.campaign.findUnique({
