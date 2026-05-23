@@ -16,8 +16,9 @@ export const dynamic = "force-dynamic"
  *   campaignId, name, width, height,
  *   data: { layers: [...] },
  *   newTextAssets?: [{ label, content, type: 'TEXT', layerKeysToLink }]
- *      // assets de TEXT a criar antes da peca; layerKeysToLink lista
- *      // chaves no array de layers que apontam pro asset criado.
+ *   newShapeAssets?: [{ label, content, type: 'SHAPE', layerKeysToLink }]
+ *      // assets a criar antes da peca; layerKeysToLink lista chaves no
+ *      // array de layers que apontam pro asset criado.
  * }
  *
  * Layers podem ter:
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
   const tenantId = (session.user as any).tenantId
 
   const body = await req.json().catch(() => ({}))
-  const { campaignId, name, width, height, data, newTextAssets } = body || {}
+  const { campaignId, name, width, height, data, newTextAssets, newShapeAssets } = body || {}
 
   if (!campaignId || typeof campaignId !== "string") {
     return NextResponse.json({ error: "campaignId obrigatorio" }, { status: 400 })
@@ -99,6 +100,47 @@ export async function POST(req: NextRequest) {
       }
 
       // Mapeia as chaves temporarias dos layers pra esse assetId
+      for (const k of layerKeysToLink) {
+        keyToAssetId[k] = assetId
+      }
+    }
+  }
+
+  // PASSO 1b: cria assets SHAPE novos (mesma logica do TEXT — dedup por label normalizado)
+  if (Array.isArray(newShapeAssets) && newShapeAssets.length > 0) {
+    const existing = await prisma.campaignAsset.findMany({
+      where: { campaignId, type: "SHAPE" },
+      select: { id: true, label: true },
+    })
+    const existingByKey = new Map<string, string>()
+    for (const a of existing) {
+      const k = normalizeName(a.label)
+      if (k) existingByKey.set(k, a.id)
+    }
+    const firstOrder = await prisma.campaignAsset.findFirst({
+      where: { campaignId }, orderBy: { order: "asc" }, select: { order: true }
+    })
+    let nextOrder = (firstOrder?.order ?? 0) - 1
+
+    for (const newAsset of newShapeAssets) {
+      const { label, content, layerKeysToLink } = newAsset || {}
+      if (!label || !Array.isArray(layerKeysToLink) || layerKeysToLink.length === 0) continue
+      const normKey = normalizeName(label)
+      let assetId = existingByKey.get(normKey)
+      if (!assetId) {
+        const contentStr = typeof content === "string" ? content : JSON.stringify(content ?? {})
+        const created = await prisma.campaignAsset.create({
+          data: {
+            campaignId,
+            type: "SHAPE",
+            label,
+            content: contentStr,
+            order: nextOrder--,
+          },
+        })
+        assetId = created.id
+        existingByKey.set(normKey, assetId)
+      }
       for (const k of layerKeysToLink) {
         keyToAssetId[k] = assetId
       }

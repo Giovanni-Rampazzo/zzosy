@@ -6,66 +6,7 @@ import { autoHidePhantomFolders, autoHideWrapperSmartObjects } from "@/lib/psdLa
 import { buildShapePath } from "@/lib/shapePaths"
 import { unwrapPsdUnits } from "@/lib/psd/psdHelpers"
 import { leadingPtToFabricLineHeight } from "@/lib/fabricLineHeight"
-
-/**
- * Detecta vogk (vectorOrigination.keyDescriptorList) e extrai shape parametric.
- * keyOriginType:  1=Rectangle, 2=RoundedRectangle, 5=Ellipse.
- *
- * Quando o PSD foi feito com Shape Tool do PS (rect/roundedRect/ellipse com
- * cornerRadius), preserva a parametricidade — usuario edita o raio no slider
- * do ZZOSY e re-export PSD volta com vogk equivalente. Sem essa deteccao,
- * shape era rasterizado pra image perdendo o cornerRadius.
- */
-function detectParametricShape(layer: any): {
-  kind: "rectangle" | "roundedRect" | "ellipse"
-  bbox: { left: number; top: number; right: number; bottom: number }
-  cornerRadius: number
-  fill: { kind: "solid"; color: string } | null
-  stroke: { color: string; width: number } | null
-} | null {
-  const vo = layer.vectorOrigination
-  const item = vo?.keyDescriptorList?.[0]
-  if (!item) return null
-  const type = item.keyOriginType
-  const kindMap: Record<number, "rectangle" | "roundedRect" | "ellipse"> = {
-    1: "rectangle",
-    2: "roundedRect",
-    5: "ellipse",
-  }
-  const kind = kindMap[type]
-  if (!kind) return null
-
-  const bb = item.keyOriginShapeBoundingBox
-  if (!bb) return null
-  const left = unwrapPsdUnits(bb.left)
-  const top = unwrapPsdUnits(bb.top)
-  const right = unwrapPsdUnits(bb.right)
-  const bottom = unwrapPsdUnits(bb.bottom)
-  if (right <= left || bottom <= top) return null
-
-  // Corner radius (uniform) — usa topLeft. RoundedRect tem 4 raios independentes
-  // no PSD; ZZOSY MVP suporta um raio uniforme. Per-canto fica pra futuro.
-  let cornerRadius = 0
-  if (kind === "roundedRect" && item.keyOriginRRectRadii) {
-    cornerRadius = unwrapPsdUnits(item.keyOriginRRectRadii.topLeft)
-  }
-
-  // Fill (solid color do vectorFill)
-  const vf = layer.vectorFill
-  const fill = (vf?.type === "color" && vf.color) ? {
-    kind: "solid" as const,
-    color: colorToHex(vf.color),
-  } : null
-
-  // Stroke (vectorStroke nativo)
-  const vs = layer.vectorStroke
-  const stroke = (vs && vs.strokeEnabled !== false) ? {
-    color: (vs.content?.type === "color" && vs.content.color) ? colorToHex(vs.content.color) : "#000000",
-    width: unwrapPsdUnits(vs.lineWidth) || 0,
-  } : null
-
-  return { kind, bbox: { left, top, right, bottom }, cornerRadius, fill, stroke }
-}
+import { tryExtractShapeFromLayer } from "@/lib/psd/shapeImport"
 
 interface Props {
   campaignId: string
@@ -1862,83 +1803,22 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
             groupPath: groupPath.length > 0 ? groupPath : undefined,
           })
         } else if ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke)) {
-          // SHAPE: PSD tem vectorMask + fill/stroke. 2 caminhos:
-          //   (a) PARAMETRIC (rect/roundedRect/ellipse via vogk descriptor):
-          //       extrai kind+cornerRadius pra slider do editor.
-          //   (b) PATH ARBITRARIO (Shape Tool com forma custom, Pen Tool, etc):
-          //       extrai SVG path do vectorMask via vectorMaskToSvgPath.
-          // Em AMBOS os casos, asset eh type:"SHAPE" — nao mais raster (que
-          // perdia editabilidade do fill/stroke).
-          const parametric = detectParametricShape(layer)
-          let shapeContent: any
-          let bboxLeft = 0, bboxTop = 0, W = 0, H = 0
-          if (parametric) {
-            // Caminho (a) — parametric
-            W = parametric.bbox.right - parametric.bbox.left
-            H = parametric.bbox.bottom - parametric.bbox.top
-            bboxLeft = parametric.bbox.left
-            bboxTop = parametric.bbox.top
-            shapeContent = {
-              path: buildShapePath(parametric.kind, W, H, parametric.cornerRadius),
-              pathBbox: { left: 0, top: 0, right: W, bottom: H },
-              kind: parametric.kind,
-              cornerRadius: parametric.cornerRadius,
-              fill: parametric.fill,
-              stroke: parametric.stroke,
-              fillRule: "nonzero" as const,
-            }
-            console.log("[PSD-SHAPE-PARAMETRIC]", {
-              name, kind: parametric.kind, cornerRadius: parametric.cornerRadius,
-              W, H, fill: parametric.fill?.color, stroke: parametric.stroke?.color,
+          // SHAPE: PSD tem vectorMask + fill/stroke. Logica centralizada em
+          // lib/psd/shapeImport (parametric vogk OU path arbitrario).
+          const extracted = tryExtractShapeFromLayer(layer)
+          if (extracted) {
+            console.log(`[PSD-SHAPE-${extracted.source.toUpperCase()}]`, {
+              name, W: extracted.W, H: extracted.H,
+              kind: extracted.shapeContent.kind,
+              cornerRadius: extracted.shapeContent.cornerRadius,
+              fill: extracted.shapeContent.fill?.color,
+              stroke: extracted.shapeContent.stroke?.color,
             })
-          } else {
-            // Caminho (b) — path arbitrario. Extrai SVG do vectorMask.
-            const { d, bbox } = vectorMaskToSvgPath((layer as any).vectorMask)
-            if (!d || !bbox) {
-              // Sem path valido — cai no fallback raster (proximo else if)
-              console.warn("[PSD-SHAPE] sem vogk e sem path valido — fallback raster:", name)
-              // NAO faz continue; deixa o codigo seguir pra o branch raster.
-              // Mas isso requer estruturar o codigo diferente. Por ora, marca
-              // pra cair no else if abaixo (que ja tem vectorMask check).
-              // Aqui usamos um trick: re-entra na cadeia via if SE bbox null.
-              ;(layer as any).__zzosyShapeFallback = true
-            } else {
-              W = bbox.maxX - bbox.minX
-              H = bbox.maxY - bbox.minY
-              bboxLeft = bbox.minX
-              bboxTop = bbox.minY
-              // Normaliza path pro origin (0,0)
-              const normalizedPath = d  // vectorMaskToSvgPath ja usa coords absolutas
-              // Extrai fill/stroke
-              const vf = (layer as any).vectorFill
-              const vs = (layer as any).vectorStroke
-              const fill = (vf?.type === "color" && vf.color) ? {
-                kind: "solid" as const,
-                color: colorToHex(vf.color),
-              } : null
-              const stroke = (vs && vs.strokeEnabled !== false) ? {
-                color: (vs.content?.type === "color" && vs.content.color) ? colorToHex(vs.content.color) : "#000000",
-                width: (typeof vs.lineWidth?.value === "number") ? vs.lineWidth.value : (typeof vs.lineWidth === "number" ? vs.lineWidth : 0),
-              } : null
-              shapeContent = {
-                path: normalizedPath,
-                pathBbox: { left: bboxLeft, top: bboxTop, right: bbox.maxX, bottom: bbox.maxY },
-                fill,
-                stroke,
-                fillRule: "nonzero" as const,
-              }
-              console.log("[PSD-SHAPE-PATH]", {
-                name, W, H, fill: fill?.color, stroke: stroke?.color,
-                pathLen: normalizedPath.length,
-              })
-            }
-          }
-          if (shapeContent) {
             assets.push({
               label: name, type: "SHAPE",
-              shape: shapeContent,
-              posX: bboxLeft, posY: bboxTop,
-              width: W, height: H, zIndex,
+              shape: extracted.shapeContent,
+              posX: extracted.bboxLeft, posY: extracted.bboxTop,
+              width: extracted.W, height: extracted.H, zIndex,
               mask: assetMask,
               hidden: layer.hidden === true ? true : undefined,
               locked: (layer as any).transparencyProtected === true ? true : undefined,
@@ -1950,9 +1830,10 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
             zIndex++
             continue
           }
-          // Fall-through: shape falhou (sem vogk e sem path valido) → marca
-          // pra cair no fallback raster abaixo. Sem essa flag, o `if` standalone
-          // do raster processaria layers TEXT/etc duas vezes.
+          // Fall-through: shape extract falhou → marca pra cair no fallback
+          // raster abaixo. Sem essa flag, o `if` standalone do raster
+          // processaria layers TEXT/etc duas vezes.
+          console.warn("[PSD-SHAPE] extracao falhou — fallback raster:", name)
           ;(layer as any).__zzosyShapeFallback = true
         }
         if ((layer as any).__zzosyShapeFallback || (!layer.text && (layer.canvas || ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke))))) {

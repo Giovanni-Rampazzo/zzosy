@@ -28,6 +28,7 @@ export interface PsdPieceImporterHandle {
   isLoading: () => boolean
 }
 import { normalizePsdFontToGoogle, extractFontWeight } from "@/lib/google-fonts"
+import { tryExtractShapeFromLayer } from "@/lib/psd/shapeImport"
 
 interface Asset {
   id: string
@@ -182,6 +183,7 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
 
     const dataLayers: any[] = []
     const newTextAssetsList: any[] = []  // texts sem match -> sera criado asset TEXT novo
+    const newShapeAssetsList: any[] = []  // shapes sem match -> sera criado asset SHAPE novo
     let linked = 0
     let embedded = 0
     let newAssetCreated = 0
@@ -364,6 +366,42 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
         }
         applyPsdHiddenLocked(layerData, layer); dataLayers.push(layerData)
 
+      } else if ((layer as any).vectorMask?.paths?.length && ((layer as any).vectorFill || (layer as any).vectorStroke)) {
+        // === SHAPE LAYER ===
+        // Tenta extrair shape parametric (vogk) ou path arbitrario via helper
+        // centralizado. Se extrai: cria asset SHAPE (ou linka se ja existe).
+        // Antes peças com shape vinham SEMPRE rasterizadas — agora preservam
+        // editabilidade igual matriz.
+        const extracted = tryExtractShapeFromLayer(layer)
+        if (extracted) {
+          const layerData: any = {
+            type: "SHAPE",
+            posX: extracted.bboxLeft,
+            posY: extracted.bboxTop,
+            width: extracted.W,
+            height: extracted.H,
+            zIndex,
+            ...(groupPath.length > 0 ? { groupPath } : {}),
+          }
+          if (matchedAsset && matchedAsset.type === "SHAPE") {
+            layerData.assetId = matchedAsset.id
+            linked++
+          } else {
+            const assetKey = `new-shape-${newShapeAssetsList.length}`
+            newShapeAssetsList.push({
+              label: layerName,
+              type: "SHAPE",
+              content: extracted.shapeContent,
+              layerKeysToLink: [assetKey],
+            })
+            layerData.__pendingNewAssetKey = assetKey
+            newAssetCreated++
+          }
+          applyPsdHiddenLocked(layerData, layer); dataLayers.push(layerData)
+        } else {
+          console.warn("[piece-import] shape extract falhou — layer ignorado:", layerName)
+        }
+
       } else if (layer.canvas) {
         // === IMAGE LAYER (raster com pixels) ===
         try {
@@ -469,6 +507,7 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
         // Textos sem match na matriz: o endpoint cria assets TEXT novos e
         // troca __pendingNewAssetKey -> assetId real nos layers correspondentes
         newTextAssets: newTextAssetsList,
+        newShapeAssets: newShapeAssetsList,
       }),
     })
     if (!pieceRes.ok) {
