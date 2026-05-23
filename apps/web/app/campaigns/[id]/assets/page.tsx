@@ -687,18 +687,20 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
   }
 
   // IMAGE / SHAPE: layout grid com preview visual (que ajuda identificar).
+  // Preview menor (120x80 era 180x120) + alignItems center pra alinhar linha
+  // vertical com o texto/botoes (user pediu 2026-05-22).
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "180px 1fr auto",
+      gridTemplateColumns: "120px 1fr auto",
       gap: 16,
-      alignItems: "stretch",
-      padding: 16,
+      alignItems: "center",
+      padding: 12,
       borderBottom: isLast ? "none" : "1px solid #F0F0F0",
     }}>
       {/* Preview a esquerda */}
       <div style={{
-        width: 180, height: 120,
+        width: 120, height: 80,
         background: "#F8F9FA",
         borderRadius: 6,
         border: "1px solid #E5E5E5",
@@ -737,8 +739,8 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         )}
       </div>
 
-      {/* Acoes — so Apagar (Original/PSD removidos a pedido do user 2026-05-22) */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end", gap: 6, flexWrap: "wrap" }}>
+      {/* Acoes — so Apagar */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, flexWrap: "wrap" }}>
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     </div>
