@@ -3407,6 +3407,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // Cancela qualquer save pendente IMEDIATAMENTE — antes do loadFromJSON disparar
     // eventos que poderiam re-agendar saves em estado transitorio.
     clearTimeout(saveTimer.current)
+    // Import fabric uma vez pra acesso a util.stylesFromArray (converte styles
+    // do formato ARRAY de serializacao pro OBJECT de runtime).
+    let fabricUtil: any = null
+    try { fabricUtil = (await import("fabric")).util } catch {}
     try {
       // Parse o snapshot pra ter acesso aos dados originais (precisaremos pra restaurar
       // styles per-char e props customizadas que loadFromJSON pode perder)
@@ -3584,12 +3588,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           for (const k of TEXT_PROPS) {
             if (src[k] !== undefined) (obj as any)[k] = src[k]
           }
-          // styles per-char (DEEP CLONE pra evitar reference sharing entre
-          // snap e canvas — Fabric muta styles internamente em algumas ops)
+          // styles per-char — CRITICO: Fabric serializa em ARRAY format
+          // (stylesToArray: [{start,end,style}]) pro snap mas runtime usa
+          // OBJECT format ({line: {col: style}}). Sem converter, assignar o
+          // array direto QUEBRA per-char styles (fontWeight/fill/fontSize
+          // sumiam visualmente — sintoma user "perde peso da fonte no undo").
+          // util.stylesFromArray converte; handle ambos formatos (no-op se
+          // ja for object).
           const srcStyles = src.styles ?? {}
+          const objectStyles = fabricUtil?.stylesFromArray
+            ? fabricUtil.stylesFromArray(srcStyles, src.text ?? obj.text ?? "")
+            : srcStyles
+          // DEEP CLONE pra evitar reference sharing entre snap e canvas
           const cloned = typeof structuredClone === "function"
-            ? structuredClone(srcStyles)
-            : JSON.parse(JSON.stringify(srcStyles))
+            ? structuredClone(objectStyles)
+            : JSON.parse(JSON.stringify(objectStyles))
           ;(obj as any).styles = cloned
           ;(obj as any).dirty = true
           if ((obj as any)._styleMap) (obj as any)._styleMap = null
