@@ -49,6 +49,55 @@ export function fabricLineHeightToLeadingPt(lineHeight: number, fontSize: number
 }
 
 /**
+ * Inverso quando applyLeadingPtToFabric foi usado: lineHeight foi setado como
+ * leadingPt/ascender, então leadingPt = lineHeight × ascender.
+ * Usado no SAVE pra recuperar o leadingPt original.
+ */
+export function fabricLineHeightToLeadingPtAscender(
+  lineHeight: number, fontSize: number, fontFamily?: string,
+  fontWeight?: string | number, fontStyle?: string,
+): number {
+  if (!Number.isFinite(fontSize) || fontSize <= 0) return 0
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0) return 0
+  const asc = measureAscender(fontSize, fontFamily, fontWeight, fontStyle) ?? fontSize
+  return lineHeight * asc
+}
+
+/** Cache de ascender por chave (size+family+weight+style) — evita recalcular
+ *  cada call (medir TextMetrics tem custo nao-trivial). */
+const _ascenderCache = new Map<string, number>()
+
+/** Mede o ascender REAL da fonte via Canvas TextMetrics. Retorna em pixels
+ *  (mesma unidade do fontSize passado). Retorna null se nao tiver document
+ *  (SSR/Node) ou se a fonte nao tiver metrics disponiveis. */
+export function measureAscender(
+  fontSize: number, fontFamily?: string,
+  fontWeight?: string | number, fontStyle?: string,
+): number | null {
+  if (typeof document === "undefined") return null
+  if (!Number.isFinite(fontSize) || fontSize <= 0) return null
+  const family = fontFamily || "Arial"
+  const weight = fontWeight ?? "normal"
+  const style = fontStyle || "normal"
+  const key = `${fontSize}|${family}|${weight}|${style}`
+  const cached = _ascenderCache.get(key)
+  if (cached !== undefined) return cached
+  try {
+    const canvas = document.createElement("canvas")
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return null
+    ctx.font = `${style} ${weight} ${fontSize}px "${family}"`
+    const m = ctx.measureText("Mg")
+    const asc = (m as any).actualBoundingBoxAscent
+    if (Number.isFinite(asc) && asc > 0) {
+      _ascenderCache.set(key, asc)
+      return asc
+    }
+  } catch { /* ignora */ }
+  return null
+}
+
+/**
  * Aplica leadingPt num Fabric Textbox de modo que TANTO a distancia entre
  * baselines QUANTO a altura total batem com Photoshop.
  *
@@ -78,14 +127,72 @@ export function applyLeadingPtToFabric(obj: any, leadingPt: number): void {
   if (!Number.isFinite(fs) || fs <= 0) return
   if (!Number.isFinite(leadingPt) || leadingPt <= 0) return
   try {
-    // 1. Sobrescreve _fontSizeMult pra 1.0 — remove o ascender artificial
-    //    de 1.13×fs que o Fabric assume hardcoded.
-    obj._fontSizeMult = 1.0
-    // 2. lineHeight = leadingPt / fontSize → distancia baseline-to-baseline
-    //    EXATAMENTE igual a leadingPt.
-    obj.set("lineHeight", leadingPt / fs)
+    // Matematica (PS standard):
+    //   - distancia baseline-to-baseline = leadingPt
+    //   - Y do baseline da linha 0 = top + ascender_real_da_fonte
+    //   - Y do baseline da linha i = top + i×leadingPt + ascender
+    //
+    // Fabric (pre-fix):
+    //   - getHeightOfLineImpl(i) = maxFontSize × _fontSizeMult
+    //   - getHeightOfLine(i) = getHeightOfLineImpl(i) × lineHeight
+    //   - baseline_0 = top + getHeightOfLineImpl(0)
+    //   - baseline_i = top + sum(getHeightOfLine(0..i-1)) + getHeightOfLineImpl(i)
+    //
+    // Pra match: override getHeightOfLineImpl pra retornar ascender REAL
+    // (TextMetrics.actualBoundingBoxAscent). Daí lineHeight = leadingPt/ascender.
+    //   - baseline_0 = top + ascender ✓
+    //   - getHeightOfLine(i) = ascender × (leadingPt/ascender) = leadingPt ✓
+    //   - baseline_i = top + i×leadingPt + ascender ✓
+    const ascender = measureAscender(fs, obj.fontFamily, obj.fontWeight, obj.fontStyle) ?? fs
+
+    try {
+      Object.defineProperty(obj, "_fontSizeMult", {
+        value: 1.0,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      })
+    } catch {
+      obj._fontSizeMult = 1.0
+    }
+    // Override no metodo da instance: retorna ascender por linha
+    obj.getHeightOfLineImpl = function(lineIndex: number): number {
+      if (!this.__lineHeights) this.__lineHeights = []
+      const cached = this.__lineHeights[lineIndex]
+      if (cached) return cached
+      let maxFs = this.fontSize
+      const line = this._textLines?.[lineIndex]
+      if (Array.isArray(line) && typeof this.getHeightOfChar === "function") {
+        for (let j = 0, len = line.length; j < len; j++) {
+          const h = this.getHeightOfChar(lineIndex, j)
+          if (h > maxFs) maxFs = h
+        }
+      }
+      const asc = measureAscender(maxFs, this.fontFamily, this.fontWeight, this.fontStyle) ?? maxFs
+      this.__lineHeights[lineIndex] = asc
+      return asc
+    }
+    // lineHeight = leadingPt / ascender  →  getHeightOfLine = leadingPt
+    obj.set("lineHeight", leadingPt / ascender)
     // 3. initDimensions invalida cache __lineHeights e recalcula.
     if (typeof obj.initDimensions === "function") obj.initDimensions()
+    // 4. Diagnostico: loga valores reais pra detectar gaps. Apenas em dev.
+    if (typeof window !== "undefined" && (window as any).__zzosyLeadingDebug !== false) {
+      try {
+        const impl = typeof obj.getHeightOfLineImpl === "function" ? obj.getHeightOfLineImpl(0) : null
+        const full = typeof obj.getHeightOfLine === "function" ? obj.getHeightOfLine(0) : null
+        // eslint-disable-next-line no-console
+        console.log("[leading-apply]", {
+          label: obj.__assetLabel ?? "?",
+          fs, leadingPt,
+          _fontSizeMult: obj._fontSizeMult,
+          lineHeight: obj.lineHeight,
+          getHeightOfLineImpl_0: impl,
+          getHeightOfLine_0: full,
+          match: full !== null ? Math.abs(full - leadingPt) < 0.01 : null,
+        })
+      } catch { /* ignora */ }
+    }
   } catch {
     obj.set("lineHeight", leadingPtToFabricLineHeight(leadingPt, fs))
   }
