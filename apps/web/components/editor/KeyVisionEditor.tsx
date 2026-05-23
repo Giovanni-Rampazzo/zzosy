@@ -943,6 +943,27 @@ function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: 
   return overlays
 }
 
+/**
+ * Props customizadas (alem das nativas do Fabric) que precisam entrar em
+ * TODO snapshot do undo stack. Centralizado pra evitar drift entre os 3
+ * sites que chamam toObject(...) (pushHistory, brand-sync re-snap, save
+ * pre-undo) — adicionar prop nova = 1 linha aqui, propaga pra todos.
+ *
+ * Sem isso, undo "perdia" props sutilmente: novo override adicionado em
+ * applyStyle (ex: cornerRadius, __shapeKind) so vai pro snap se estiver
+ * nessa lista. User reportava como "undo perde X" — sintoma estrutural.
+ */
+const HISTORY_PROPS_TO_INCLUDE = [
+  "__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData",
+  "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked",
+  "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath",
+  "__isSmartObject", "__smartObjectGuid", "__smartObjectMime",
+  "__smartObjectFilePath", "__smartObjectOriginalName",
+  // text
+  "styles", "leadingPt", "lineHeight", "charSpacing",
+  // shape
+  "__isShape", "__shapeKind", "__cornerRadius", "__pathBbox",
+]
 
 export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, openGenerator }: { campaignId: string; pieceId?: string; from?: string; initialStepIndex?: number; openGenerator?: boolean }) {
   const router = useRouter()
@@ -1231,7 +1252,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // Atualiza snap top com o estado pos-sync (sem isso, undo reverte o sync).
     try {
       if (undoStack.current.length > 0) {
-        const newTopSnap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "__isSmartObject", "__smartObjectGuid", "__smartObjectMime", "__smartObjectFilePath", "__smartObjectOriginalName", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+        const newTopSnap = JSON.stringify((fc as any).toObject(HISTORY_PROPS_TO_INCLUDE))
         undoStack.current[undoStack.current.length - 1] = newTopSnap
       }
     } catch { /* ignora — snap eh diagnostico, nao crítico */ }
@@ -3111,7 +3132,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       // Snapshot inicial (estado limpo, sem dirty)
       try {
-        const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "__isSmartObject", "__smartObjectGuid", "__smartObjectMime", "__smartObjectFilePath", "__smartObjectOriginalName", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+        const snap = JSON.stringify((fc as any).toObject(HISTORY_PROPS_TO_INCLUDE))
         undoStack.current = [snap]
         redoStack.current = []
       } catch (e) {}
@@ -3284,7 +3305,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (orphans.length > 0) {
         console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
-      const snap = JSON.stringify((fc as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData", "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked", "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath", "__isSmartObject", "__smartObjectGuid", "__smartObjectMime", "__smartObjectFilePath", "__smartObjectOriginalName", "styles", "leadingPt", "lineHeight", "charSpacing"]))
+      const snap = JSON.stringify((fc as any).toObject(HISTORY_PROPS_TO_INCLUDE))
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -3511,28 +3532,40 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         //  - dirty + _styleMap=null pra invalidar cache do Textbox
         //  - initDimensions pra re-medir
         if (obj.type === "textbox" || obj.type === "i-text") {
+          // FORCE-RESTORE de TODAS as props textuais do snap (single source of
+          // truth). loadFromJSON deveria restaurar via construtor, mas na
+          // pratica varias props somem ou voltam com default — sintoma
+          // reportado pelo user 2026-05-23: "peso da fonte se perde no undo,
+          // o mesmo padrao acontece com fonte/cor/entrelinhas/entreletras".
+          // Solucao proativa: enumera TODAS as props que entram no snap e
+          // re-seta direto na instance, sem depender do Fabric construtor.
+          const TEXT_PROPS = [
+            "text", "fill", "fontSize", "fontFamily", "fontWeight",
+            "fontStyle", "charSpacing", "lineHeight", "textAlign",
+            "underline", "overline", "linethrough",
+            "stroke", "strokeWidth", "strokeUniform",
+            "width", "height", "left", "top", "scaleX", "scaleY", "angle",
+            "opacity", "globalCompositeOperation", "visible",
+          ]
+          for (const k of TEXT_PROPS) {
+            if (src[k] !== undefined) (obj as any)[k] = src[k]
+          }
+          // styles per-char (DEEP CLONE pra evitar reference sharing entre
+          // snap e canvas — Fabric muta styles internamente em algumas ops)
           const srcStyles = src.styles ?? {}
-          // Deep clone (Fabric muta styles internamente em algumas ops)
           const cloned = typeof structuredClone === "function"
             ? structuredClone(srcStyles)
             : JSON.parse(JSON.stringify(srcStyles))
           ;(obj as any).styles = cloned
           ;(obj as any).dirty = true
           if ((obj as any)._styleMap) (obj as any)._styleMap = null
-          // Restaurar charSpacing (tracking) — loadFromJSON deveria mas em
-          // textbox restaurado as vezes vem 0 mesmo com snap setado. Force.
-          if (typeof src.charSpacing === "number") {
-            ;(obj as any).charSpacing = src.charSpacing
-          }
-          // CRITICO: leadingPt + override de instance.
+          // leadingPt (custom prop) + override de instance.
           // applyLeadingPtToFabric instala overrides de INSTANCE no textbox
           // (_fontSizeMult=1.0 via Object.defineProperty + getHeightOfLineImpl
           // override). loadFromJSON cria nova instance — esses overrides somem.
           // Sem reaplicar: _fontSizeMult volta pro default 1.13, lineHeight no
-          // snap eh leadingPt/ascender (~0.6), resultado: getHeightOfLine =
-          // fontSize × 1.13 × (leadingPt/ascender) ≈ 1.5 × leadingPt — leading
-          // 50% maior que o esperado. User percebe como "override de typesetting
-          // sumiu apos undo". Re-aplicar restaura matematica exata PSD.
+          // snap eh leadingPt/ascender (~0.6), resultado: getHeightOfLine ≈
+          // 1.5 × leadingPt — leading 50% maior. Re-aplicar restaura PSD.
           if (typeof src.leadingPt === "number" && src.leadingPt > 0) {
             ;(obj as any).leadingPt = src.leadingPt
           }
@@ -3541,6 +3574,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (typeof (obj as any).leadingPt === "number" && (obj as any).leadingPt > 0) {
             applyLeadingPtToFabric(obj, (obj as any).leadingPt)
           }
+        } else if (obj.type === "path" || obj.type === "Path" || (obj as any).__isShape === true) {
+          // Mesma logica pra SHAPE — force-restore das props basicas.
+          // Sintoma reportado: undo "perdia" fill/stroke/cornerRadius do shape.
+          const SHAPE_PROPS = [
+            "fill", "stroke", "strokeWidth", "strokeUniform", "fillRule",
+            "left", "top", "scaleX", "scaleY", "angle",
+            "opacity", "globalCompositeOperation", "visible",
+          ]
+          for (const k of SHAPE_PROPS) {
+            if (src[k] !== undefined) (obj as any)[k] = src[k]
+          }
+          // __shapeKind / __cornerRadius / __pathBbox sao customs — restaura
+          // explicito (alem dos __* tratados acima)
+          if (src.__shapeKind !== undefined) (obj as any).__shapeKind = src.__shapeKind
+          if (typeof src.__cornerRadius === "number") (obj as any).__cornerRadius = src.__cornerRadius
+          if (src.__pathBbox) (obj as any).__pathBbox = src.__pathBbox
+          if (obj.setCoords) obj.setCoords()
+          ;(obj as any).dirty = true
+        } else {
+          // IMAGE e outros: restaura props basicas de transform/visibilidade
+          const BASIC_PROPS = [
+            "left", "top", "scaleX", "scaleY", "angle",
+            "opacity", "globalCompositeOperation", "visible",
+          ]
+          for (const k of BASIC_PROPS) {
+            if (src[k] !== undefined) (obj as any)[k] = src[k]
+          }
+          if (obj.setCoords) obj.setCoords()
         }
         // Restaurar mascara: clipPath reconstruido pelo loadFromJSON pode estar
         // quebrado (e.g. Image clipPath nao re-carrega o dataUrl). Re-aplicamos
