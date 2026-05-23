@@ -14,7 +14,7 @@ import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
 import { buildShapePath, type ShapeKind } from "@/lib/shapePaths"
 import { inpS, numInpS, secS, numFieldGrid, numFieldRight, numFieldUnit } from "@/lib/editorFieldStyles"
-import { leadingPtToFabricLineHeight } from "@/lib/fabricLineHeight"
+import { leadingPtToFabricLineHeight, applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
 import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
@@ -2491,11 +2491,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
         const newWidth = (obj.width ?? 100) * sX
         obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
-        // Recalcula lineHeight via helper central (compensa Fabric _fontSizeMult 1.13)
-        if (curLeadingPt !== undefined && curLeadingPt !== null) {
-          obj.set({ lineHeight: leadingPtToFabricLineHeight((obj as any).leadingPt, newFontSize) })
-        }
         if ((obj as any).initDimensions) (obj as any).initDimensions()
+        // applyLeadingPtToFabric MEDE o factor real do Fabric naquela linha
+        // (em vez de assumir 1.13) — match exato baseline-to-baseline com PSD.
+        if (curLeadingPt !== undefined && curLeadingPt !== null) {
+          applyLeadingPtToFabric(obj, (obj as any).leadingPt)
+        }
         obj.setCoords()
         setSelectedTick(t => t + 1)
       })
@@ -3767,10 +3768,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
       }
       obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
-      if (curLeadingPt !== undefined && curLeadingPt !== null) {
-        obj.set({ lineHeight: leadingPtToFabricLineHeight((obj as any).leadingPt, newFontSize) })
-      }
       if (obj.initDimensions) obj.initDimensions()
+      // Match exato baseline-to-baseline com PSD (mede factor real).
+      if (curLeadingPt !== undefined && curLeadingPt !== null) {
+        applyLeadingPtToFabric(obj, (obj as any).leadingPt)
+      }
       // Re-mede e ancora no centro original (mantem posicao visual, so muda tamanho)
       const effW = (obj.width ?? newWidth)
       const effH = (obj.height ?? newFontSize)
@@ -7879,12 +7881,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (!obj) return
     const isText = obj.type === "textbox" || obj.type === "i-text"
     if (!isText) return
-    const fs = obj.fontSize ?? 48
     const leadingPt = obj.leadingPt
-    const lh = (leadingPt === undefined || leadingPt === null)
-      ? 1.0
-      : leadingPtToFabricLineHeight(leadingPt, fs)
-    obj.set("lineHeight", lh)
+    if (leadingPt === undefined || leadingPt === null) {
+      // Auto leading — usa default Fabric 1.0 (no extra multiplier).
+      obj.set("lineHeight", 1.0)
+    } else {
+      // applyLeadingPtToFabric MEDE o factor real do Fabric — match exato
+      // baseline-to-baseline com Photoshop.
+      applyLeadingPtToFabric(obj, leadingPt)
+    }
   }
 
   /**
