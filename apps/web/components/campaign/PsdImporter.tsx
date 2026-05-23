@@ -1710,21 +1710,21 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
           // Leading em PONTOS — modelo Adobe. Estados que Photoshop persiste:
           //   1. autoLeading=true (explicit) → Auto (fontSize × autoLeadingFactor)
           //   2. leading=undefined → Auto (default, designer nao tocou)
-          //   3. leading=N && autoLeading=false (explicit) → LITERAL puro
-          //   4. leading=N (mesmo valor de fontSize) && autoLeading=undefined →
-          //      ambiguo. Empiricamente PS persiste assim quando "Auto" esta
-          //      marcado na UI mas o flag nao foi salvo. Mais comum que o
-          //      designer setar literal=fontSize. Por isso: trata como Auto.
+          //   3. leading=N (qualquer valor) → LITERAL puro
           //
-          // Regra final: assume Auto a menos que autoLeading SEJA explicitamente
-          // false. Trade-off: titulo com leading INTENCIONALMENTE compactado
-          // (=fontSize) precisa de ajuste manual no editor. Acceptable.
+          // Regra (2026-05-22): SE o PSD persistiu um numero literal em leading,
+          // RESPEITA. Antes a regra tinha um "trade-off acceptable" que tratava
+          // leading==fontSize como Auto → entrelinha saia ~20% maior que o
+          // designer pediu. User reportou justamente esse caso: texto importado
+          // com entrelinhas alteradas.
+          //
+          // Trade-off invertido: agora se PS realmente queria Auto mas persistiu
+          // leading=N por bug, sai literal. Mais previsivel (WYSIWYG real do PSD)
+          // e o caso de "leading literal compactado" eh muito mais comum em
+          // design real do que "PS bugou e persistiu leading=fontSize".
           const defLeadingRaw = typeof defStyle.leading === "number" ? defStyle.leading : undefined
           const paraAutoFactor = typeof td.paragraphStyle?.autoLeading === "number" ? td.paragraphStyle.autoLeading : 1.2
-          const leadingEqualsFont = defLeadingRaw !== undefined && Math.abs(defLeadingRaw - defFontSize) < 0.5
-          const isLeadingAuto = defStyle.autoLeading === true
-            || defLeadingRaw === undefined
-            || (leadingEqualsFont && defStyle.autoLeading !== false)
+          const isLeadingAuto = defStyle.autoLeading === true || defLeadingRaw === undefined
           const defLeadingPt = isLeadingAuto
             ? Math.round(scaledDefFontSize * paraAutoFactor)
             : Math.round(defLeadingRaw! * textScale)
