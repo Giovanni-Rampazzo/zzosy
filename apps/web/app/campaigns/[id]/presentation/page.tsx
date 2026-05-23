@@ -98,6 +98,14 @@ export default function PresentationPage() {
         }
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
+        // Carrega a fonte do CLIENTE no document. Slides aplicam fontFamily
+        // via CSS, mas sem injetar @font-face / <link> o browser cai em
+        // fallback system. Mesma logica que /campaigns/[id]/assets/page.tsx.
+        if (c?.client?.brandFont) {
+          const files = c.client?.customFontFiles
+          if (Array.isArray(files) && files.length > 0) loadCustomFontFamily(c.client.brandFont, files)
+          else loadGoogleFont(c.client.brandFont)
+        }
         // Garante step thumbs pra pecas multi-step que tem steps sem imageUrl.
         // Acontece quando user adiciona steps via editor mas nao re-abriu a
         // peca (autoGen do editor so roda na abertura). Roda em background
@@ -150,6 +158,12 @@ export default function PresentationPage() {
         ])
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
+        // Re-carrega a fonte tambem no refetch (cliente pode ter trocado brandFont).
+        if (c?.client?.brandFont) {
+          const files = c.client?.customFontFiles
+          if (Array.isArray(files) && files.length > 0) loadCustomFontFamily(c.client.brandFont, files)
+          else loadGoogleFont(c.client.brandFont)
+        }
       } catch {}
       finally {
         refetchInFlight = false

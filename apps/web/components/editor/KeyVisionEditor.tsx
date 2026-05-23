@@ -7953,7 +7953,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // "nao consigo alterar o tamanho da fonte do titulo". Removemos os
       // per-char overrides desses campos pra que o set() default tenha efeito
       // visual completo.
-      if (styleKey === "fontSize" || styleKey === "fontFamily" || styleKey === "fontWeight" || styleKey === "fontStyle") {
+      if (styleKey === "fontSize" || styleKey === "fontFamily" || styleKey === "fontWeight" || styleKey === "fontStyle" || styleKey === "charSpacing") {
         const styles = (obj as any).styles
         if (styles && typeof styles === "object") {
           for (const lineKey of Object.keys(styles)) {
@@ -8095,7 +8095,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     syncLineHeightFromLeading(obj)
     if (obj.initDimensions) obj.initDimensions()
     obj.setCoords()
-    fc.renderAll()
+    // dirty=true forca invalidacao do object cache (objectCaching default true).
+    obj.dirty = true
+    fc.requestRenderAll()
     // NAO disparar setSelectedTick aqui — isso re-roda o useEffect que
     // reescreve `leadingInput` no meio da digitacao, quebrando o input.
     // O reset ao Auto (botao "A") usa um caminho separado que sincroniza.
@@ -8117,11 +8119,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       obj.setSelectionStyles({ charSpacing: units })
     } else {
       obj.set("charSpacing", units)
+      // PSD imports gravam charSpacing PER-CHAR em styles[line][col]. Fabric
+      // usa per-char ANTES de box-level, entao mudar box.charSpacing aqui
+      // sozinho nao afeta o visual. Sintoma reportado 2026-05-23: "entreletras
+      // nao muda". Strip per-char pra que o box-level prevaleca. Mesmo pattern
+      // que applyStyle aplica pra fontSize/fontFamily/fontWeight/fontStyle.
+      const styles = obj.styles
+      if (styles && typeof styles === "object") {
+        for (const lineKey of Object.keys(styles)) {
+          const line = styles[lineKey]
+          if (!line || typeof line !== "object") continue
+          for (const colKey of Object.keys(line)) {
+            if (line[colKey] && Object.prototype.hasOwnProperty.call(line[colKey], "charSpacing")) {
+              delete line[colKey].charSpacing
+            }
+            if (line[colKey] && Object.keys(line[colKey]).length === 0) delete line[colKey]
+          }
+          if (Object.keys(line).length === 0) delete styles[lineKey]
+        }
+      }
     }
     obj.__dsLinked = false
     if (obj.initDimensions) obj.initDimensions()
     obj.setCoords()
-    fc.renderAll()
+    obj.dirty = true
+    fc.requestRenderAll()
     doSave()
   }
 
