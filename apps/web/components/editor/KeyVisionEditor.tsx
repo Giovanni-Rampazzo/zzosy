@@ -2290,7 +2290,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         anchor.left = obj.left ?? 0
         anchor.top = obj.top ?? 0
       }
-      fc.on("object:modified", (e: any) => { syncMaskToObj(e?.target) })
+      fc.on("object:modified", (e: any) => {
+        // Guard undo: sem isso syncMaskToObj durante restore pode reaplicar
+        // delta zero (anchor ja foi resetado no restore loop) mas ainda toca
+        // maskData.dirty — defensivo.
+        if (isApplyingHistory.current) return
+        syncMaskToObj(e?.target)
+      })
       fc.on("object:modified", () => {
         if (!alive) return
         // Bloqueia save durante undo/redo — o save acontece via outro caminho
@@ -2331,6 +2337,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       fc.on("object:rotating" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
       fc.on("object:modified", async (e: any) => {
         if (!alive || !fc) return
+        // Guard undo: applyClippingMaskNative async sobrescreveria clipPath
+        // restaurado pelo applySnapshot durante o restore.
+        if (isApplyingHistory.current) return
         const modified = e?.target
         if (!modified || modified.__isBg || modified.__isBleedOverlay || modified.__isStrokeGhost) return
         const all = fc.getObjects().filter((o: any) =>
@@ -2575,6 +2584,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       cleanupFns.push(() => window.removeEventListener("keyup", onKeyUp))
       fc.on("text:changed", (e: any) => {
         if (!alive) return
+        // Guard undo: text:changed pode disparar dentro do applySnapshot
+        // (initDimensions em wraps especificos). Como o auto-fit eh debounced
+        // 120ms, o timer fire APOS isApplyingHistory ja ser false e modificar
+        // width permanentemente do estado restaurado. Skipa enfileiramento.
+        if (isApplyingHistory.current) return
         // Coalesce Properties panel re-renders no proximo frame. Sem isso,
         // cada keystroke disparava re-render completo do painel direito (font,
         // size, color pickers, swatches) — em maquinas mais fracas, gerava
@@ -2599,6 +2613,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (!alive) return
           // Validacao: pode ter mudado o objeto / saido de edicao no entremeio
           if (obj.type !== "textbox") return
+          // Re-check do guard: se um undo disparou nos 120ms entre o text:changed
+          // e o timer, abortar — auto-fit nao deve modificar estado restaurado.
+          if (isApplyingHistory.current) return
           try {
             const oldWidth = obj.width
             obj.set("width", 5000)
@@ -2657,6 +2674,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // bleed visualmente.
       fc.on("object:added", (e: any) => {
         if (!alive) return
+        // Guard undo: applySnapshot recria bleed overlays no final, n=2 a 4
+        // re-elevacoes durante restore sao desperdicio (e cada bringToFront
+        // marca canvas como dirty). Skipa o restore inteiro.
+        if (isApplyingHistory.current) return
         const added = e?.target
         // Nao re-eleva se o objeto adicionado e um dos proprios overlays
         if (added && (added as any).__isBleedOverlay) return
@@ -2670,6 +2691,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Captura texto+styles ao ENTRAR em modo edicao (T0 para diff posterior)
       fc.on("text:editing:entered", (e: any) => {
         if (!alive || !e?.target) return
+        // Guard undo: loadFromJSON pode disparar editing:entered se ativar
+        // textbox restaurado (raro mas possivel). Skipar evita corromper o
+        // baseline T0 com snapshot intermediario.
+        if (isApplyingHistory.current) return
         ;(e.target as any).__editStartText = e.target.text ?? ""
         ;(e.target as any).__editStartStyles = JSON.parse(JSON.stringify(e.target.styles ?? {}))
       })
@@ -2678,6 +2703,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (!alive) return
         const obj = e.target
         if (!obj) return
+        // Guard undo: loadFromJSON SEMPRE limpa o canvas, fazendo Fabric sair
+        // de qualquer text-edit ativo e disparar exit. Sem o guard, durante o
+        // undo updateAssetContent propagava texto STALE pro asset (server) —
+        // perdia override real do user. ALL state propagation skip aqui.
+        if (isApplyingHistory.current) {
+          delete (obj as any).__editStartText
+          delete (obj as any).__editStartStyles
+          return
+        }
 
         // Sempre limpar refs de edicao
         const startText = (obj as any).__editStartText
