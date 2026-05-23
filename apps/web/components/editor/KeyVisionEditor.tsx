@@ -8883,7 +8883,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       return {
                         display: "flex", alignItems: "center", gap: 4,
                         padding: `6px 8px 6px ${12 + h.depth * 12}px`,
-                        cursor: "grab",
+                        // pointer (mao pequena) > grab (mao gigante do macOS).
+                        // Browser ativa grabbing automaticamente durante o drag HTML5.
+                        cursor: "pointer",
                         fontSize: 10, fontWeight: 700,
                         textTransform: "uppercase", letterSpacing: "0.5px",
                         color: isDropHere ? "#fff" : "#888",
@@ -9178,7 +9180,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     title="Arraste pra reordenar"
                     style={{
                       display: "flex", flexDirection: "column", justifyContent: "center",
-                      gap: 2, padding: "0 4px", cursor: "grab",
+                      // pointer pequeno e preciso > grab grande do macOS.
+                      gap: 2, padding: "0 4px", cursor: "pointer",
                       color: dragLayerIdx === i ? accentColor : "#444",
                       flexShrink: 0,
                     }}
