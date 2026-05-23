@@ -10374,8 +10374,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               // Clamp HARD pra evitar shape degenerado (circulo quando r >= min/2).
               // O input HTML max eh "soft" — user pode digitar valor maior.
               const clamped = Math.max(0, Math.min(r, maxRadius))
-              const newPath = buildShapePath("roundedRect", bboxW, bboxH, clamped)
+              // Promove rectangle pra roundedRect ao receber raio > 0 (Adobe-style:
+              // user nao precisa "converter" antes — mexer no slider faz a conversao).
+              // shapeKind ja era roundedRect: mantem. ellipse: nao se aplica (input
+              // fica disabled mas se chegar aqui via codigo, ignora).
+              const curKind = (selected as any).__shapeKind
+              if (curKind === "ellipse") return
+              const targetKind: "roundedRect" | "rectangle" = clamped > 0 ? "roundedRect" : "rectangle"
+              const newPath = buildShapePath(targetKind, bboxW, bboxH, clamped)
               applyShapePathInPlace(selected, newPath)
+              ;(selected as any).__shapeKind = targetKind
               ;(selected as any).__cornerRadius = clamped
               fc.requestRenderAll()
               setSelectedTick(t => t + 1)
@@ -10508,29 +10516,44 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   </div>
                 </div>
 
-                {/* CANTO ARREDONDADO — so renderiza pra shapes do tipo roundedRect.
-                    Recomputa o path SVG mantendo a bbox original, ajustando os
-                    bezier dos 4 cantos com novo raio. Mesmo grid pattern. */}
-                {shapeKind === "roundedRect" && (
-                  <div>
-                    <div style={secS}>Raio do canto</div>
-                    <div style={numFieldGrid}>
-                      <input type="range"
-                        min={0} max={maxRadius} step={1}
-                        value={Math.min(currentCornerRadius, maxRadius)}
-                        onChange={e => setCornerRadius(Number(e.target.value))}
-                        style={{ width: "100%" }} />
-                      <div style={numFieldRight}>
-                        <input type="number"
+                {/* RAIO DO CANTO — SEMPRE renderiza pra qualquer shape selecionado
+                    (request user 2026-05-23: Fill/Stroke/Raio sao as 3 props basicas
+                    de todo shape). Disable pra ellipse (nao se aplica) e arbitrary
+                    path (sem __shapeKind — converter perderia o desenho original).
+                    Pra rectangle, mexer no slider auto-promove a roundedRect. */}
+                {(() => {
+                  const radiusApplicable = shapeKind === "rectangle" || shapeKind === "roundedRect"
+                  const disabledTitle = shapeKind === "ellipse"
+                    ? "Raio do canto nao se aplica a elipses"
+                    : !shapeKind
+                      ? "Raio nao se aplica a paths arbitrarios"
+                      : undefined
+                  const displayRadius = radiusApplicable ? Math.min(currentCornerRadius, maxRadius) : 0
+                  return (
+                    <div>
+                      <div style={secS}>Raio do canto</div>
+                      <div style={numFieldGrid}>
+                        <input type="range"
                           min={0} max={maxRadius} step={1}
-                          value={Math.min(currentCornerRadius, maxRadius)}
-                          onChange={e => setCornerRadius(Number(e.target.value) || 0)}
-                          style={numInpS} />
-                        <span style={numFieldUnit}>px</span>
+                          value={displayRadius}
+                          disabled={!radiusApplicable}
+                          title={disabledTitle}
+                          onChange={e => setCornerRadius(Number(e.target.value))}
+                          style={{ width: "100%", opacity: radiusApplicable ? 1 : 0.4, cursor: radiusApplicable ? "pointer" : "not-allowed" }} />
+                        <div style={numFieldRight}>
+                          <input type="number"
+                            min={0} max={maxRadius} step={1}
+                            value={displayRadius}
+                            disabled={!radiusApplicable}
+                            title={disabledTitle}
+                            onChange={e => setCornerRadius(Number(e.target.value) || 0)}
+                            style={{ ...numInpS, opacity: radiusApplicable ? 1 : 0.4, cursor: radiusApplicable ? "text" : "not-allowed" }} />
+                          <span style={numFieldUnit}>px</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
               </div>
             )
           })()
