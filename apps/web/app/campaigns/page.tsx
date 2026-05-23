@@ -29,6 +29,63 @@ export default function CampaignsPage() {
   const [q, setQ] = useState("")
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  // Modal "+ Nova Campanha" (analogo ao "+ Nova Empresa" da dashboard).
+  const [showNew, setShowNew] = useState(false)
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([])
+  const [newForm, setNewForm] = useState<{ name: string; clientId: string; code: string }>({ name: "", clientId: "", code: "" })
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  async function openNewModal() {
+    setShowNew(true)
+    setCreateError(null)
+    // Lazy load clientes — so abre modal quando user clica.
+    if (clients.length === 0) {
+      try {
+        const r = await fetch("/api/clients", { cache: "no-store" })
+        const d = await r.json()
+        const list = Array.isArray(d) ? d : []
+        setClients(list)
+        if (list.length > 0 && !newForm.clientId) {
+          setNewForm(f => ({ ...f, clientId: list[0].id }))
+        }
+      } catch (e) {
+        setCreateError("Falha ao carregar empresas")
+      }
+    }
+  }
+
+  async function createCampaign(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newForm.name.trim() || !newForm.clientId) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const r = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newForm.name.trim(),
+          clientId: newForm.clientId,
+          code: newForm.code.trim() || undefined,
+        }),
+      })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        throw new Error(d?.error ?? "Falha ao criar campanha")
+      }
+      const created = await r.json()
+      setShowNew(false)
+      setNewForm({ name: "", clientId: "", code: "" })
+      // Navega direto pra pagina da campanha criada — mesmo padrao de
+      // "+ Nova Empresa" que sai do dashboard pra page da empresa.
+      router.push(`/campaigns/${created.id}`)
+    } catch (err: any) {
+      setCreateError(err?.message ?? "Erro ao criar")
+    } finally {
+      setCreating(false)
+    }
+  }
 
   async function deleteCampaign(id: string, skipConfirm = false) {
     if (!skipConfirm && confirmDelete !== id) { setConfirmDelete(id); return }
@@ -83,6 +140,7 @@ export default function CampaignsPage() {
                 <button onClick={() => setView("grid")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "grid" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Grid</button>
                 <button onClick={() => setView("list")} className={`px-3 py-1.5 text-xs font-medium cursor-pointer border-0 ${view === "list" ? "bg-[#111111] text-white" : "bg-white text-[#888888]"}`}>Lista</button>
               </div>
+              <Button onClick={openNewModal}>+ Nova Campanha</Button>
             </>
           }
         />
@@ -226,6 +284,65 @@ export default function CampaignsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal "+ Nova Campanha" — analogo ao "+ Nova Empresa" do dashboard.
+          Select de Empresa + Nome + Codigo opcional. POST + redirect pra
+          /campaigns/{id}. */}
+      {showNew && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "white", borderRadius: 12, width: 480, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "16px 24px", borderBottom: "1px solid #E0E0E0" }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Nova Campanha</div>
+            </div>
+            <form onSubmit={createCampaign} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.5px", color: "#888", display: "block", marginBottom: 5 }}>Empresa *</label>
+                {clients.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "#888", padding: "8px 0" }}>Carregando empresas…</div>
+                ) : (
+                  <select
+                    value={newForm.clientId}
+                    onChange={e => setNewForm(f => ({ ...f, clientId: e.target.value }))}
+                    required
+                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #E0E0E0", borderRadius: 6, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" as const, background: "white" }}
+                  >
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.5px", color: "#888", display: "block", marginBottom: 5 }}>Nome *</label>
+                <input
+                  type="text"
+                  value={newForm.name}
+                  onChange={e => setNewForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="Nome da campanha"
+                  required
+                  autoFocus
+                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #E0E0E0", borderRadius: 6, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" as const }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.5px", color: "#888", display: "block", marginBottom: 5 }}>Código (opcional)</label>
+                <input
+                  type="text"
+                  value={newForm.code}
+                  onChange={e => setNewForm(f => ({ ...f, code: e.target.value }))}
+                  placeholder="Ex: BB-2026-001"
+                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #E0E0E0", borderRadius: 6, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" as const }}
+                />
+              </div>
+              {createError && <p style={{ color: "#dc2626", fontSize: 12, margin: 0 }}>{createError}</p>}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+                <Button type="button" variant="secondary" onClick={() => setShowNew(false)}>Cancelar</Button>
+                <Button type="submit" loading={creating} disabled={!newForm.name.trim() || !newForm.clientId || creating}>
+                  {creating ? "Criando…" : "Criar campanha"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </PageShell>
   )
 }
