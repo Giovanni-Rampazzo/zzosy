@@ -916,17 +916,35 @@ function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: 
   const worldRight = worldLeft + worldW   // ex.: + worldW pra direita
   const worldBottom = worldTop + worldH
 
-  const overlays = [
-    // Top: do top do canvas ate o top da peca
-    new Rect({ left: worldLeft, top: worldTop, width: worldW, height: -worldTop }),
-    // Bottom: do bottom da peca ate o bottom do canvas
-    new Rect({ left: worldLeft, top: ch, width: worldW, height: worldBottom - ch }),
-    // Left: do left do canvas ate o left da peca, entre top e bottom da peca
-    new Rect({ left: worldLeft, top: 0, width: -worldLeft, height: ch }),
-    // Right: do right da peca ate o right do canvas
-    new Rect({ left: cw, top: 0, width: worldRight - cw, height: ch }),
-  ]
-  for (const o of overlays) {
+  // CRITICO: em zoom > 100% com peca > canvas DOM, offsetX vira negativo
+  // → worldLeft vira positivo (peca extrapola o canvas DOM). Os overlays
+  // "left/right/top/bottom" passariam a ter width/height NEGATIVO, o que
+  // Fabric renderiza com artefatos (gaps de mascara reportados em zoom >
+  // 170%). Quando o overlay nao se aplica (peca cobre toda visivel area
+  // naquela direcao), apenas pula a criacao dele.
+  const overlaysConfig: Array<{ left: number; top: number; width: number; height: number }> = []
+  // Top: do top do canvas ate o top da peca — so existe se worldTop < 0
+  if (worldTop < 0) {
+    overlaysConfig.push({ left: worldLeft, top: worldTop, width: worldW, height: -worldTop })
+  }
+  // Bottom: do bottom da peca ate o bottom do canvas — so existe se worldBottom > ch
+  if (worldBottom > ch) {
+    overlaysConfig.push({ left: worldLeft, top: ch, width: worldW, height: worldBottom - ch })
+  }
+  // Left: do left do canvas ate o left da peca — so existe se worldLeft < 0
+  if (worldLeft < 0) {
+    overlaysConfig.push({ left: worldLeft, top: 0, width: -worldLeft, height: ch })
+  }
+  // Right: do right da peca ate o right do canvas — so existe se worldRight > cw
+  if (worldRight > cw) {
+    overlaysConfig.push({ left: cw, top: 0, width: worldRight - cw, height: ch })
+  }
+  const overlays: any[] = []
+  for (const cfg of overlaysConfig) {
+    // Sanity: garante dimensoes positivas (clamp ultimo recurso pra evitar
+    // Fabric quebrar em arredondamentos extremos)
+    if (cfg.width <= 0 || cfg.height <= 0) continue
+    const o = new Rect(cfg)
     o.set({
       fill: BLEED_FILL,
       selectable: false, evented: false, excludeFromExport: true,
@@ -934,6 +952,7 @@ function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: 
     })
     ;(o as any).__isBleedOverlay = true
     fc.add(o)
+    overlays.push(o)
   }
   // Garante z-stack: overlays no topo (acima de objetos de conteudo).
   for (const o of overlays) {
@@ -3997,15 +4016,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       fc.setViewportTransform(vt)
       // Re-dimensiona os overlays pra cobrirem a nova area fora da peca.
       // Mais simples: remove e recria com novos parametros.
+      // SYNC: usa Rect via constructor de bg/overlay existente (evita race
+      // do `await import("fabric")` que deixava o canvas SEM overlays por
+      // 1 frame entre o remove e o async create — visivel durante zoom alto).
       const existingOverlays = (fc as any).__bleedOverlays as any[] | undefined
+      const RectCtor: any = existingOverlays?.[0]?.constructor
+        ?? bgRectsRef.current?.[0]?.constructor
       if (existingOverlays) {
         for (const o of existingOverlays) fc.remove(o)
       }
-      ;(async () => {
-        const { Rect } = await import("fabric")
-        createBleedOverlays(fc, Rect, cw, ch, fullW, fullH, z)
-        fc.renderAll()
-      })()
+      if (RectCtor) {
+        createBleedOverlays(fc, RectCtor, cw, ch, fullW, fullH, z)
+      } else {
+        // Fallback async (so chega aqui na primeira vez antes de qualquer obj
+        // ter sido criado — improvavel mas seguro).
+        ;(async () => {
+          const { Rect } = await import("fabric")
+          createBleedOverlays(fc, Rect, cw, ch, fullW, fullH, z)
+          fc.renderAll()
+        })()
+      }
       fc.renderAll()
     } catch (e) { console.warn("applyZoom fail:", e) }
   }
