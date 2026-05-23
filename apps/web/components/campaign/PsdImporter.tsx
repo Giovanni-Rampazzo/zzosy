@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button"
 import { autoHidePhantomFolders, autoHideWrapperSmartObjects } from "@/lib/psdLayerVisibility"
 import { buildShapePath } from "@/lib/shapePaths"
 import { unwrapPsdUnits } from "@/lib/psd/psdHelpers"
+import { leadingPtToFabricLineHeight } from "@/lib/fabricLineHeight"
 
 /**
  * Detecta vogk (vectorOrigination.keyDescriptorList) e extrai shape parametric.
@@ -1791,8 +1792,10 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
             // PSD tracking → Fabric charSpacing (mesma unidade 1/1000 em).
             // Aplica letterspacing direto pra metricas baterem com o PSD.
             charSpacing: defTracking,
-            // lineHeight derivado de leadingPt/fontSize (Fabric usa multiplier).
-            lineHeight: scaledDefFontSize > 0 ? defLeadingPt / scaledDefFontSize : 1.0,
+            // lineHeight via helper centralizado (compensa Fabric _fontSizeMult 1.13).
+            // Antes era `defLeadingPt / scaledDefFontSize` direto → editor renderizava
+            // ~13% mais espacoso que o PSD original (user reportou 2026-05-22).
+            lineHeight: leadingPtToFabricLineHeight(defLeadingPt, scaledDefFontSize),
             leadingPt: defLeadingPt,
             textAlign: defAlign,
           }

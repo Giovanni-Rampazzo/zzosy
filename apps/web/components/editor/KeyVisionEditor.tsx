@@ -14,6 +14,7 @@ import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
 import { buildShapePath, type ShapeKind } from "@/lib/shapePaths"
 import { inpS, numInpS, secS, numFieldGrid, numFieldRight, numFieldUnit } from "@/lib/editorFieldStyles"
+import { leadingPtToFabricLineHeight } from "@/lib/fabricLineHeight"
 import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
@@ -2474,9 +2475,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
         const newWidth = (obj.width ?? 100) * sX
         obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
-        // Recalcula lineHeight se leadingPt explicito (mantem visual sincronizado)
+        // Recalcula lineHeight via helper central (compensa Fabric _fontSizeMult 1.13)
         if (curLeadingPt !== undefined && curLeadingPt !== null) {
-          obj.set({ lineHeight: ((obj as any).leadingPt) / newFontSize })
+          obj.set({ lineHeight: leadingPtToFabricLineHeight((obj as any).leadingPt, newFontSize) })
         }
         if ((obj as any).initDimensions) (obj as any).initDimensions()
         obj.setCoords()
@@ -3741,7 +3742,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 })
       if (curLeadingPt !== undefined && curLeadingPt !== null) {
-        obj.set({ lineHeight: ((obj as any).leadingPt) / newFontSize })
+        obj.set({ lineHeight: leadingPtToFabricLineHeight((obj as any).leadingPt, newFontSize) })
       }
       if (obj.initDimensions) obj.initDimensions()
       // Re-mede e ancora no centro original (mantem posicao visual, so muda tamanho)
@@ -4529,7 +4530,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // entao linha com glyph maior pode overflow visualmente dentro do textbox,
       // mas a altura TOTAL bate com o PSD e textboxes vizinhos nao colidem.
       const initialLineHeight = (typeof effLeadingPt === "number" && effFontSize > 0)
-        ? effLeadingPt / effFontSize
+        ? leadingPtToFabricLineHeight(effLeadingPt, effFontSize)
         : (typeof ov?.lineHeight === "number" ? ov.lineHeight : 1.2)
       const t = new Textbox(initialText, {
         left: posX, top: posY,
@@ -5439,7 +5440,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (typeof overrides.leadingPt === "number" && overrides.leadingPt > 0) {
             const scaledLeading = overrides.leadingPt * scale
             const effFontSize = baseFontSize * scale
-            if (effFontSize > 0) tb.set("lineHeight", scaledLeading / effFontSize)
+            if (effFontSize > 0) tb.set("lineHeight", leadingPtToFabricLineHeight(scaledLeading, effFontSize))
           }
           if ((tb as any).initDimensions) (tb as any).initDimensions()
           sfc.add(tb)
@@ -7856,7 +7857,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const leadingPt = obj.leadingPt
     const lh = (leadingPt === undefined || leadingPt === null)
       ? 1.0
-      : leadingPt / fs
+      : leadingPtToFabricLineHeight(leadingPt, fs)
     obj.set("lineHeight", lh)
   }
 
