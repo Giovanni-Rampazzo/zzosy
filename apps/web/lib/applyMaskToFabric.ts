@@ -44,6 +44,37 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
         console.warn("[mask] vector mask com coords absurdas no path — descartando. Re-importe o PSD.")
         return
       }
+      // SHAPE layer redundancy: PSD shape layers usam vectorMask COMO definicao
+      // do proprio shape. O reader extrai esse vectorMask em DOIS lugares:
+      //   1. asset.content.path (define a forma)
+      //   2. layer.mask.vector.path (re-lido como mascara)
+      // Aplicar clipPath = path do shape parece inofensivo (clipa pra si mesmo)
+      // MAS o stroke do Fabric eh centrado no path — metade dele extrapola pra
+      // fora. clipPath corta justamente essa metade externa, fazendo stroke
+      // aparecer 50% mais fino + visivel apenas internamente. Sintoma reportado
+      // 2026-05-23: "box verde com stroke preto nao esta importando direito".
+      // Skipa quando obj eh PATH e path do mask === path do obj.
+      if (obj?.type === "path" && Array.isArray(obj.path)) {
+        // Fabric serializa path como array de comandos com numbers (inteiros).
+        // Reader PSD entrega path string com "85.00" (decimais). Normaliza
+        // numeros pra comparar — extrai todos numeros + comandos em ordem.
+        const tokenize = (s: string): string => {
+          // Match comandos (letras) ou numeros (inteiros/decimais negativos/positivos)
+          const toks = s.match(/[mlhvcsqtazMLHVCSQTAZ]|-?\d+(?:\.\d+)?/g) || []
+          // Normaliza: comandos lowercase, numeros como Number() (drop trailing zeros)
+          return toks.map(t => {
+            if (/^-?\d/.test(t)) return String(Number(t))
+            return t.toLowerCase()
+          }).join(" ")
+        }
+        const objPathStr = tokenize(obj.path.map((c: any[]) => c.join(" ")).join(" "))
+        const maskPathStr = tokenize(path)
+        if (objPathStr === maskPathStr || maskPathStr.replace(/\s*z\s*$/, "") === objPathStr.replace(/\s*z\s*$/, "")) {
+          // Path identico — mask redundante. Preserva __maskData (ja feito acima)
+          // pra round-trip de save/export, mas NAO aplica clipPath.
+          return
+        }
+      }
       // Vector mask: cria fabric.Path com o SVG path d="..."
       // absolutePositioned=true faz o clipPath usar coordenadas absolutas do canvas
       // (nao relativas ao objeto). Assim a mascara fica onde estava no PSD.
