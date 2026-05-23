@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
-import { PsdImporter } from "@/components/campaign/PsdImporter"
+import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
 import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
@@ -71,7 +71,8 @@ export default function CampaignAssetsPage() {
   // o clientId. Refetch automatico no evento 'zzosy:client-brand-updated' pra
   // refletir mudancas feitas em /clients/[id]/edit sem reload.
   const [brandColors, setBrandColors] = useState<BrandColor[]>([])
-  const newImageInputRef = useRef<HTMLInputElement>(null)
+  // newImageInputRef removido — file picker agora vive dentro de AddMenu.
+  const psdImporterRef = useRef<PsdImporterHandle | null>(null)
   const saveTimers = useRef<Record<string, any>>({})
 
   async function addTextAsset(preset: BrandPresetKey = "body") {
@@ -447,15 +448,23 @@ export default function CampaignAssetsPage() {
             hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
             actions={
               <>
-                <AddTextMenu onPick={addTextAsset} />
-                <Button variant="secondary" size="md" onClick={() => newImageInputRef.current?.click()}>+ Imagem</Button>
-                <AddShapeMenu onPick={addShapeAsset} />
-                <PsdImporter campaignId={id} onImported={load} />
+                {/* Botao unico "+ Adicionar" agrupa Texto/Imagem/Forma/PSD.
+                    Alinhado a direita via marginLeft:auto dentro do AddMenu.
+                    PsdImporter renderizado hidden — usa ref pra disparar
+                    importFile() quando user clica "Importar PSD" no menu. */}
+                <AddMenu
+                  onPickText={addTextAsset}
+                  onPickShape={addShapeAsset}
+                  onAddImage={addImageAsset}
+                  onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
+                />
+                <div style={{ display: "none" }}>
+                  <PsdImporter ref={psdImporterRef} campaignId={id} onImported={load} />
+                </div>
               </>
             }
           />
-          <input ref={newImageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
-            onChange={e => { const f = e.target.files?.[0]; if (f) addImageAsset(f); e.target.value = "" }} />
+          {/* input file removido — agora vive dentro de AddMenu (ref proprio). */}
         </div>
 
         {campaign.assets.length === 0 ? (
@@ -736,17 +745,29 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
   )
 }
 
+/* AddShapeMenu removido (2026-05-22) — funcionalidade absorvida pelo AddMenu unificado acima. */
+
 /**
- * Dropdown menu pra criar texto com 1 dos 4 presets tipograficos.
- * Click no botao abre menu com Titulo / Subtitulo / Corpo / Legenda.
+ * Botao unico "+ Adicionar" que agrupa Texto + Imagem + Forma num menu so.
+ * User pediu 2026-05-22: "isso tudo vira um botao so de Adicionar.. (+),
+ * e quando clica nele aparecem essas opcoes". PSD continua botao separado
+ * (acao diferente — substitui KV inteira).
  */
-/**
- * Dropdown analogo a + Texto, mas pra SHAPE. Permite criar rectangle,
- * roundedRect ou ellipse direto pelo painel (sem precisar importar PSD).
- */
-function AddShapeMenu({ onPick }: { onPick: (kind: "rectangle" | "roundedRect" | "ellipse") => void }) {
+function AddMenu({
+  onPickText,
+  onPickShape,
+  onAddImage,
+  onPickPsd,
+}: {
+  onPickText: (preset: BrandPresetKey) => void
+  onPickShape: (kind: "rectangle" | "roundedRect" | "ellipse") => void
+  onAddImage: (file: File) => void
+  onPickPsd: (file: File) => void
+}) {
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const psdRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (!open) return
     function onClick(e: MouseEvent) {
@@ -755,85 +776,97 @@ function AddShapeMenu({ onPick }: { onPick: (kind: "rectangle" | "roundedRect" |
     document.addEventListener("mousedown", onClick)
     return () => document.removeEventListener("mousedown", onClick)
   }, [open])
-  const items: { kind: "rectangle" | "roundedRect" | "ellipse"; label: string }[] = [
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+    letterSpacing: "0.8px", color: "#999",
+    padding: "10px 12px 4px",
+  }
+  const itemS: React.CSSProperties = {
+    display: "block", width: "100%", textAlign: "left",
+    padding: "8px 12px", background: "transparent",
+    border: "none", borderRadius: 6, cursor: "pointer",
+    fontSize: 13, fontFamily: "inherit", color: "#111",
+  }
+  const onHoverIn = (e: React.MouseEvent<HTMLButtonElement>) => { (e.currentTarget as HTMLButtonElement).style.background = "#F5F5F5" }
+  const onHoverOut = (e: React.MouseEvent<HTMLButtonElement>) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }
+  const shapes: { kind: "rectangle" | "roundedRect" | "ellipse"; label: string }[] = [
     { kind: "rectangle", label: "Retangulo" },
     { kind: "roundedRect", label: "Retangulo arredondado" },
     { kind: "ellipse", label: "Elipse" },
   ]
   return (
-    <div ref={wrapperRef} style={{ position: "relative" }}>
-      <Button variant="secondary" size="md" onClick={() => setOpen(o => !o)}>+ Forma ▾</Button>
+    // marginLeft: "auto" pra alinhar a direita dentro do flex container do subnav.
+    <div ref={wrapperRef} style={{ position: "relative", marginLeft: "auto" }}>
+      <Button variant="secondary" size="md" onClick={() => setOpen(o => !o)} title="Adicionar Texto / Imagem / Forma / PSD">+ Adicionar ▾</Button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }}
+        tabIndex={-1}
+        onChange={e => {
+          const f = e.target.files?.[0]
+          e.target.value = ""
+          if (f) onAddImage(f)
+        }}
+      />
+      <input
+        ref={psdRef}
+        type="file"
+        accept=".psd"
+        style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }}
+        tabIndex={-1}
+        onChange={e => {
+          const f = e.target.files?.[0]
+          e.target.value = ""
+          if (f) onPickPsd(f)
+        }}
+      />
       {open && (
         <div style={{
-          position: "absolute", top: "calc(100% + 4px)", left: 0,
+          // right: 0 ancora popup pela direita (menu nao sai pra fora da viewport
+          // quando o botao esta no canto direito do subnav).
+          position: "absolute", top: "calc(100% + 4px)", right: 0,
           background: "white", border: "1px solid #E0E0E0", borderRadius: 8,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-          minWidth: 220, zIndex: 50, padding: 4,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+          minWidth: 240, zIndex: 50, padding: 4,
         }}>
-          {items.map(it => (
-            <button
-              key={it.kind}
-              type="button"
-              onClick={() => { onPick(it.kind); setOpen(false) }}
-              style={{
-                display: "block", width: "100%", textAlign: "left",
-                padding: "8px 12px", background: "transparent",
-                border: "none", borderRadius: 6, cursor: "pointer",
-                fontSize: 13, fontFamily: "inherit", color: "#111",
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#F5F5F5" }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
-            >
-              + {it.label}
+          <div style={sectionLabel}>Texto</div>
+          {PRESET_ORDER.map(key => (
+            <button key={key} type="button" style={itemS}
+              onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}
+              onClick={() => { onPickText(key); setOpen(false) }}>
+              + {PRESET_LABELS[key]}
             </button>
           ))}
+          <div style={{ borderTop: "1px solid #F0F0F0", margin: "6px 0" }} />
+          <div style={sectionLabel}>Imagem</div>
+          <button type="button" style={itemS}
+            onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}
+            onClick={() => { setOpen(false); fileRef.current?.click() }}>
+            + Imagem (PNG/JPG/SVG)
+          </button>
+          <div style={{ borderTop: "1px solid #F0F0F0", margin: "6px 0" }} />
+          <div style={sectionLabel}>Forma</div>
+          {shapes.map(s => (
+            <button key={s.kind} type="button" style={itemS}
+              onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}
+              onClick={() => { onPickShape(s.kind); setOpen(false) }}>
+              + {s.label}
+            </button>
+          ))}
+          <div style={{ borderTop: "1px solid #F0F0F0", margin: "6px 0" }} />
+          <div style={sectionLabel}>PSD</div>
+          <button type="button" style={itemS}
+            onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}
+            onClick={() => { setOpen(false); psdRef.current?.click() }}
+            title="Importar arquivo PSD (substitui Key Vision atual)">
+            + Importar PSD
+          </button>
         </div>
       )}
     </div>
   )
 }
 
-function AddTextMenu({ onPick }: { onPick: (preset: BrandPresetKey) => void }) {
-  const [open, setOpen] = useState(false)
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    function onClick(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", onClick)
-    return () => document.removeEventListener("mousedown", onClick)
-  }, [open])
-  return (
-    <div ref={wrapperRef} style={{ position: "relative" }}>
-      <Button variant="secondary" size="md" onClick={() => setOpen(o => !o)}>+ Texto ▾</Button>
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 4px)", left: 0,
-          background: "white", border: "1px solid #E0E0E0", borderRadius: 8,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-          minWidth: 200, zIndex: 50,
-          padding: 4,
-        }}>
-          {PRESET_ORDER.map(key => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => { onPick(key); setOpen(false) }}
-              style={{
-                display: "block", width: "100%", textAlign: "left",
-                padding: "8px 12px", background: "transparent",
-                border: "none", borderRadius: 6, cursor: "pointer",
-                fontSize: 13, fontFamily: "inherit", color: "#111",
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#F5F5F5" }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
-            >
-              + {PRESET_LABELS[key]}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+/* AddTextMenu removido (2026-05-22) — funcionalidade absorvida pelo AddMenu unificado acima. */
