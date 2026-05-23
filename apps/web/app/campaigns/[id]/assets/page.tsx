@@ -411,27 +411,23 @@ export default function CampaignAssetsPage() {
       <TopNav />
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
 
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display:"flex", alignItems:"center", gap: 8 }}>
-            <ClientLogoBadge
-              client={{ id: campaign.client.id, name: campaign.client.name, brandLogoUrl: campaign.client.brandLogoUrl }}
-              size={24}
-              radius={4}
-            />
-            <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
-              {campaign.client.name}
-            </span>
-            <span>/</span>
-            <span style={{ cursor: "pointer" }} onClick={() => router.push(`/campaigns/${id}`)}>
-              {campaign.name}
-            </span>
-          </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
-            Assets
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#888", marginLeft: 8 }}>
-              {campaign.assets.length}
-            </span>
-          </h1>
+        {/* Header limpo: breadcrumb compacto inline com contador. Titulo
+            "Assets" removido — subnav abaixo ja destaca a tab ativa. */}
+        <div style={{ fontSize: 13, color: "#666", marginBottom: 12, display:"flex", alignItems:"center", gap: 8 }}>
+          <ClientLogoBadge
+            client={{ id: campaign.client.id, name: campaign.client.name, brandLogoUrl: campaign.client.brandLogoUrl }}
+            size={20}
+            radius={3}
+          />
+          <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
+            {campaign.client.name}
+          </span>
+          <span style={{ color: "#bbb" }}>/</span>
+          <span style={{ cursor: "pointer", color: "#111", fontWeight: 600 }} onClick={() => router.push(`/campaigns/${id}`)}>
+            {campaign.name}
+          </span>
+          <span style={{ color: "#bbb" }}>·</span>
+          <span style={{ color: "#888" }}>{campaign.assets.length} {campaign.assets.length === 1 ? "asset" : "assets"}</span>
         </div>
 
         {/* Sub-nav contextual da campanha. Navegacao no topo (Cliente, Campanha,
@@ -796,9 +792,10 @@ function AddMenu({
     { kind: "ellipse", label: "Elipse" },
   ]
   return (
-    // marginLeft: "auto" pra alinhar a direita dentro do flex container do subnav.
-    <div ref={wrapperRef} style={{ position: "relative", marginLeft: "auto" }}>
-      <Button variant="secondary" size="md" onClick={() => setOpen(o => !o)} title="Adicionar Texto / Imagem / Forma / PSD">+ Adicionar ▾</Button>
+    // CampaignSubnav ja aplica marginLeft:auto no container de actions, entao
+    // o AddMenu naturalmente fica encostado a direita.
+    <div ref={wrapperRef} style={{ position: "relative" }}>
+      <Button variant="view" size="md" onClick={() => setOpen(o => !o)} title="Adicionar Texto / Imagem / Forma / PSD">+ Adicionar ▾</Button>
       <input
         ref={fileRef}
         type="file"
