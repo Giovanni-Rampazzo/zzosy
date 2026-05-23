@@ -620,16 +620,34 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
     return (
       <div style={{
         display: "flex",
-        alignItems: "center",
+        // flex-start: botoes alinham com a PRIMEIRA linha do textarea quando
+        // ele cresce. Center fazia eles "flutuarem" no meio vertical do
+        // textarea expandido.
+        alignItems: "flex-start",
         gap: 12,
         padding: "8px 16px",
         borderBottom: isLast ? "none" : "1px solid #F0F0F0",
       }}>
-        {/* Input do texto — flex 1 pra ocupar espaco disponivel */}
-        <input
-          type="text"
+        {/* Textarea auto-crescente — user pediu 2026-05-22: "gostava daquela
+            janelinha de antes. que o texto ia descendo para a linha de baixo
+            e a caixa ia aumentando". Auto-resize via ref/scrollHeight. Enter
+            vira newline natural; Cmd+Enter salva. */}
+        <textarea
+          ref={el => {
+            if (!el) return
+            // Auto-resize: zera height pra ler scrollHeight correto, depois aplica.
+            el.style.height = "auto"
+            el.style.height = `${el.scrollHeight}px`
+          }}
+          rows={1}
           value={localText}
-          onChange={e => setLocalText(e.target.value)}
+          onChange={e => {
+            setLocalText(e.target.value)
+            // Cresce a caixa conforme o conteudo.
+            const t = e.currentTarget
+            t.style.height = "auto"
+            t.style.height = `${t.scrollHeight}px`
+          }}
           onKeyDown={e => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) {
               e.preventDefault()
@@ -642,6 +660,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             padding: "6px 10px", borderRadius: 6,
             border: dirty ? "1px solid #F5C400" : "1px solid #E0E0E0",
             fontSize: 13, color: "#111", fontFamily: "inherit", outline: "none",
+            resize: "none", overflow: "hidden", lineHeight: 1.5,
           }}
         />
         {/* So renderiza Salvar quando ha mudancas — antes ficava disabled
