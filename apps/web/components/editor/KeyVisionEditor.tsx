@@ -10710,12 +10710,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     path (sem __shapeKind — converter perderia o desenho original).
                     Pra rectangle, mexer no slider auto-promove a roundedRect. */}
                 {(() => {
-                  const radiusApplicable = shapeKind === "rectangle" || shapeKind === "roundedRect"
+                  // Allow corner radius para: parametric rect/roundedRect E para
+                  // PSD shapes sem kind (auto-promove pra roundedRect ao mexer —
+                  // mesma logica que load detecta no userPromoted). So bloqueia
+                  // ellipse (matematicamente nao se aplica). Sintoma reportado
+                  // 2026-05-23: "nao consigo alterar CR no Properties" — input
+                  // ficava disabled pra todo shape importado de PSD.
+                  const radiusApplicable = shapeKind !== "ellipse"
                   const disabledTitle = shapeKind === "ellipse"
-                    ? "Raio do canto nao se aplica a elipses"
-                    : !shapeKind
-                      ? "Raio nao se aplica a paths arbitrarios"
-                      : undefined
+                    ? "Corner radius nao se aplica a elipses"
+                    : undefined
                   const displayRadius = radiusApplicable ? Math.min(currentCornerRadius, maxRadius) : 0
                   return (
                     <div>
