@@ -472,13 +472,22 @@ export default function CampaignOverviewPage() {
                 </Button>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2, marginTop: 8 }}>Entrega</div>
                 <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => router.push(`/campaigns/${id}/presentation`)}
+                  disabled={!hasPieces}
+                  title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}
+                >
+                  Apresentação
+                </Button>
+                <Button
                   variant={primaryStep === "deliver" ? "primary" : "secondary"}
                   size="lg"
                   onClick={() => setDeliveryOpen(true)}
                   disabled={!hasPieces}
                   title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}
                 >
-                  Empacotar entrega
+                  Entrega
                 </Button>
               </div>
             )
