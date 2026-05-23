@@ -2596,6 +2596,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // capturar acoes reais do user (modify, add, remove via drag-drop/paste).
       fc.on("object:modified", (e: any) => {
         if (!isInitialized.current) return
+        // CRITICO: durante applySnapshot (undo/redo), initDimensions/scale hooks
+        // disparam object:modified — sem essa guarda, undo empilhava NOVO snapshot
+        // baseado no estado ja restaurado, e o proximo undo "voltava" pra o mesmo
+        // estado (parecia que undo nao mexia ou mexia em layer aleatorio).
+        if (isApplyingHistory.current) return
         if (!isInternalOverlay(e?.target)) pushHistory()
       })
       fc.on("object:added", (e: any) => {
