@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useLayoutEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
@@ -622,6 +622,18 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
   // Re-sincroniza localText quando o asset.content muda externamente (ex:
   // outro user editou, refresh, etc).
   useEffect(() => { setLocalText(text) }, [text])
+  // Auto-resize do textarea apos cada mudanca de localText. useLayoutEffect
+  // pra rodar APOS o React commitar o novo value mas ANTES do browser pintar
+  // (sem flicker). Antes era ref callback inline que rodava ANTES do commit
+  // do novo value, perdendo updates externos (setLocalText via useEffect).
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    if (!isText) return
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${el.scrollHeight}px`
+  }, [localText, isText])
   const dirty = isText && localText !== text
   // TEXT: linha unica enxuta — input direto + Salvar + Apagar (sem label
   // do layer na frente, a pedido do user 2026-05-22).
@@ -637,26 +649,13 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         padding: "8px 16px",
         borderBottom: isLast ? "none" : "1px solid #F0F0F0",
       }}>
-        {/* Textarea auto-crescente — user pediu 2026-05-22: "gostava daquela
-            janelinha de antes. que o texto ia descendo para a linha de baixo
-            e a caixa ia aumentando". Auto-resize via ref/scrollHeight. Enter
-            vira newline natural; Cmd+Enter salva. */}
+        {/* Textarea auto-crescente — resize via useLayoutEffect (acima),
+            roda APOS commit do React. Enter vira newline natural; Cmd+Enter salva. */}
         <textarea
-          ref={el => {
-            if (!el) return
-            // Auto-resize: zera height pra ler scrollHeight correto, depois aplica.
-            el.style.height = "auto"
-            el.style.height = `${el.scrollHeight}px`
-          }}
+          ref={textareaRef}
           rows={1}
           value={localText}
-          onChange={e => {
-            setLocalText(e.target.value)
-            // Cresce a caixa conforme o conteudo.
-            const t = e.currentTarget
-            t.style.height = "auto"
-            t.style.height = `${t.scrollHeight}px`
-          }}
+          onChange={e => setLocalText(e.target.value)}
           onKeyDown={e => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) {
               e.preventDefault()

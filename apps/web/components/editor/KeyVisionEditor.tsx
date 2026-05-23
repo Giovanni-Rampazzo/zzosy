@@ -3268,11 +3268,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const keyOf = (o: any) => o?.__assetId ?? o?.__assetLabel ?? `${o?.type}@${Math.round(o?.left ?? 0)},${Math.round(o?.top ?? 0)}`
           const prevByKey = new Map<string, any>()
           for (const o of prevObjs) prevByKey.set(keyOf(o), o)
-          // Props que indicam OVERRIDE (modificacao real per-layer). Mudancas em
-          // mais de um obj nestas props sao suspeitas. Transform fica fora.
+          // Props que indicam OVERRIDE per-layer NUNCA disparadas por scaling
+          // de multi-select. Excluidas: transform (left/top/scale/angle —
+          // normal em multi-select); fontSize (scaling hook recalcula pra
+          // preservar tamanho visual); lineHeight (derivado de leadingPt).
+          // Restam props que so mudam por acao direta no painel/canvas em
+          // UM layer por vez. 2+ layers com diff nelas = bug real.
           const OVERRIDE_PROPS = [
-            "fill", "fontSize", "fontFamily", "fontWeight", "fontStyle",
-            "charSpacing", "lineHeight", "textAlign", "text",
+            "fill", "fontFamily", "fontWeight", "fontStyle",
+            "charSpacing", "textAlign", "text",
           ]
           const overrideChanges: Array<{ label: string; diffs: string[] }> = []
           for (const o of newObjs) {
