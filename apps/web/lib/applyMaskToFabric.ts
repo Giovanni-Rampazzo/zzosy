@@ -54,24 +54,50 @@ export async function applyMaskToFabricObject(fabric: any, obj: any, mask: Layer
       // aparecer 50% mais fino + visivel apenas internamente. Sintoma reportado
       // 2026-05-23: "box verde com stroke preto nao esta importando direito".
       // Skipa quando obj eh PATH e path do mask === path do obj.
-      if (obj?.type === "path" && Array.isArray(obj.path)) {
-        // Fabric serializa path como array de comandos com numbers (inteiros).
-        // Reader PSD entrega path string com "85.00" (decimais). Normaliza
-        // numeros pra comparar — extrai todos numeros + comandos em ordem.
-        const tokenize = (s: string): string => {
-          // Match comandos (letras) ou numeros (inteiros/decimais negativos/positivos)
+      if ((obj?.__isShape || obj?.type === "path") && Array.isArray(obj.path)) {
+        // PSD shape layers usam vectorMask como definicao do shape. Reader
+        // extrai esse mesmo path em DUAS hops:
+        //   1. asset.content.path (vira o shape do Fabric)
+        //   2. layer.mask.vector.path (re-lido como mascara)
+        // No editor matriz, ambos vem identicos em coords. Em PECA gerada,
+        // o mask path pode estar SCALED (ex: matriz 128x30, peca 256x60),
+        // mas a TOPOLOGIA do shape eh a mesma — clipPath = shape sempre.
+        //
+        // Comparar paths normalizando pra bbox 0-1: extrai bbox, mapeia cada
+        // numero ao range relativo, compara estruturas. Match = redundante.
+        //
+        // Sem skip, o clipPath corta o stroke (que Fabric centraliza no path):
+        // metade externa fica fora do mask e somem visualmente. Sintoma:
+        // "shape com stroke nao importa direito".
+        const tokenize = (s: string): Array<string|number> => {
           const toks = s.match(/[mlhvcsqtazMLHVCSQTAZ]|-?\d+(?:\.\d+)?/g) || []
-          // Normaliza: comandos lowercase, numeros como Number() (drop trailing zeros)
+          return toks.map(t => /^-?\d/.test(t) ? Number(t) : t.toLowerCase())
+        }
+        const normalize = (toks: Array<string|number>): string => {
+          const nums = toks.filter((t): t is number => typeof t === "number")
+          if (nums.length === 0) return toks.join(" ")
+          // Bbox: alterna X,Y nas posicoes pares/impares (heuristica simples).
+          // Pra rects+curves do PSD shape, todos numeros vem em pares (x,y).
+          const xs: number[] = [], ys: number[] = []
+          for (let i = 0; i < nums.length; i++) (i % 2 === 0 ? xs : ys).push(nums[i])
+          const minX = Math.min(...xs), maxX = Math.max(...xs)
+          const minY = Math.min(...ys), maxY = Math.max(...ys)
+          const dx = maxX - minX || 1
+          const dy = maxY - minY || 1
+          let xi = 0, yi = 0
           return toks.map(t => {
-            if (/^-?\d/.test(t)) return String(Number(t))
-            return t.toLowerCase()
+            if (typeof t === "string") return t
+            const isX = (xi + yi) % 2 === 0
+            if (isX) { const n = (t - minX) / dx; xi++; return n.toFixed(3) }
+            else { const n = (t - minY) / dy; yi++; return n.toFixed(3) }
           }).join(" ")
         }
-        const objPathStr = tokenize(obj.path.map((c: any[]) => c.join(" ")).join(" "))
-        const maskPathStr = tokenize(path)
-        if (objPathStr === maskPathStr || maskPathStr.replace(/\s*z\s*$/, "") === objPathStr.replace(/\s*z\s*$/, "")) {
-          // Path identico — mask redundante. Preserva __maskData (ja feito acima)
-          // pra round-trip de save/export, mas NAO aplica clipPath.
+        const objNorm = normalize(tokenize(obj.path.map((c: any[]) => c.join(" ")).join(" ")))
+        const maskNorm = normalize(tokenize(path))
+        if (objNorm === maskNorm
+            || objNorm.replace(/\s*z\s*$/, "") === maskNorm.replace(/\s*z\s*$/, "")) {
+          // Path topologicamente identico (independente de scale/posicao) —
+          // mask redundante. Preserva __maskData pra round-trip de PSD export.
           return
         }
       }
