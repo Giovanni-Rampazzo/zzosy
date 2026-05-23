@@ -1030,6 +1030,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [bgHexInput, setBgHexInput] = useState<string>("#ffffff")
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
   const [leadingInput, setLeadingInput] = useState<string>("96")
+  const [charSpacingInput, setCharSpacingInput] = useState<string>("0")
   // Ref pra rastrear se algum input numérico do painel está em digitação.
   // Mais confiável que document.activeElement (que pode estar stale em
   // re-renders concorrentes do React 18). Usado pra impedir o useEffect
@@ -2269,7 +2270,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         anchor.top = obj.top ?? 0
       }
       fc.on("object:modified", (e: any) => { syncMaskToObj(e?.target) })
-      fc.on("object:modified", () => { if (alive) doSave() })
+      fc.on("object:modified", () => {
+        if (!alive) return
+        // Bloqueia save durante undo/redo — o save acontece via outro caminho
+        // depois que applySnapshot termina (saveTimer.current).
+        if (isApplyingHistory.current) return
+        doSave()
+      })
       // Clipping mask LIVE sync — Photoshop: clip sempre acompanha o base
       // em tempo real conforme user move/escala/rota. Estrategia:
       //   - object:moving/scaling/rotating (LIVE): sync APENAS transform
@@ -2515,6 +2522,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // ao recarregar o textbox apareceria com scale ainda aplicado.
       fc.on("object:modified" as any, (e: any) => {
         if (!alive) return
+        // CRITICO: durante applySnapshot (undo/redo), initDimensions dispara
+        // object:modified — esse handler "consolidaria" o scale do snap em
+        // width/height permanentemente, fazendo cada undo modificar o estado
+        // restaurado. User reportava "undo estraga overrides" porque o snap
+        // pos-consolidacao virava diferente do snap original.
+        if (isApplyingHistory.current) return
         const obj = e?.target
         if (!obj) return
         const isText = obj.type === "textbox" || obj.type === "i-text"
@@ -7472,6 +7485,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ? Math.round(lh * fs)
         : leadingPt
       setLeadingInput(String(Math.round(effectiveLeading)))
+      // charSpacing (entreletra, PSD tracking) — 0 = sem espaco extra
+      const cs = typeof obj.charSpacing === "number" ? obj.charSpacing : 0
+      setCharSpacingInput(String(Math.round(cs)))
     }
   }, [selected, selectedTick])
 
@@ -7926,6 +7942,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // reescreve `leadingInput` no meio da digitacao, quebrando o input.
     // O reset ao Auto (botao "A") usa um caminho separado que sincroniza.
     if (pt === null) setSelectedTick(t => t + 1)
+    doSave()
+  }
+
+  /**
+   * Define charSpacing (tracking/entreletra) em milesimos de em (Adobe-style).
+   * Mesma unidade do PSD tracking — 0 = sem espaco extra, positivo = afastadas,
+   * negativo = mais juntas.
+   */
+  function setCharSpacingProp(units: number) {
+    const fc = fabricRef.current; const obj = selected as any
+    if (!fc || !obj) return
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+    if (!isText) return
+    if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+      obj.setSelectionStyles({ charSpacing: units })
+    } else {
+      obj.set("charSpacing", units)
+    }
+    obj.__dsLinked = false
+    if (obj.initDimensions) obj.initDimensions()
+    obj.setCoords()
+    fc.renderAll()
     doSave()
   }
 
@@ -10108,6 +10146,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 Encaixar no canvas
               </button>
             </div>
+            {/* Tipografia avancada: entrelinha + entreletra agrupadas (2026-05-23).
+                Ambas sao propriedades de TYPESETTING — fazem parte do mesmo bloco
+                visual junto com fonte/peso/tamanho acima. Alinhamento ficou logo
+                abaixo no proximo grid. */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <div style={secS}>Entrelinhas</div>
@@ -10153,6 +10195,39 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   </button>
                 </div>
               </div>
+              <div>
+                <div style={secS}>Entreletras</div>
+                <input
+                  type="number"
+                  step="10"
+                  value={charSpacingInput}
+                  onFocus={(e) => {
+                    numericInputFocusedRef.current = true
+                    e.currentTarget.select()
+                  }}
+                  onBlur={() => { numericInputFocusedRef.current = false }}
+                  onMouseDown={() => {
+                    const fc = fabricRef.current
+                    const active = fc?.getActiveObject() as any
+                    if (active?.isEditing && active.selectionStart !== active.selectionEnd) {
+                      savedTextSelection.current = { obj: active, start: active.selectionStart, end: active.selectionEnd }
+                    }
+                  }}
+                  onChange={e => {
+                    const raw = e.target.value
+                    setCharSpacingInput(raw)
+                    const n = Number(raw)
+                    if (Number.isFinite(n)) setCharSpacingProp(n)
+                  }}
+                  onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+                  title="Entreletra (tracking) em milesimos de em — mesma unidade do Photoshop"
+                  style={inpS}
+                />
+              </div>
+            </div>
+
+            {/* Alinhamento separado num grid full-width pra dar mais espaco */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
               <div>
                 <div style={secS}>Alinhamento</div>
                 <div style={{ display: "flex", gap: 4 }}>

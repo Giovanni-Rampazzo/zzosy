@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { FontPicker, WeightPicker } from "./FontPicker"
+import { applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
 
 interface Props {
   selectedObj: any
@@ -17,6 +18,8 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
   const [fontSize, setFontSize] = useState(80)
   const [fontFamily, setFontFamily] = useState("Arial")
   const [fontWeight, setFontWeight] = useState("normal")
+  const [leadingPt, setLeadingPt] = useState(96)
+  const [charSpacing, setCharSpacing] = useState(0)
   const [isEditing, setIsEditing] = useState(false)
 
   const isBg = selectedObj?.isBackground === true
@@ -51,12 +54,32 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
     setFontSize(obj.fontSize ?? 80)
     setFontFamily(obj.fontFamily ?? "Arial")
     setFontWeight(obj.fontWeight ?? "normal")
+    // leadingPt eh fonte da verdade no editor; se ausente, deriva do lineHeight×fontSize.
+    const fs = obj.fontSize ?? 80
+    const lpt = typeof obj.leadingPt === "number" && obj.leadingPt > 0
+      ? obj.leadingPt
+      : Math.round((obj.lineHeight ?? 1.0) * fs)
+    setLeadingPt(lpt)
+    setCharSpacing(typeof obj.charSpacing === "number" ? obj.charSpacing : 0)
   }, [selectedObj])
 
   function applyText(key: string, val: any) {
     if(!selectedObj || !fabricRef.current) return
     const obj = fabricRef.current.getObjects().find((o:any) => o === selectedObj || o.layerId === selectedObj.layerId)
     if(!obj) return
+
+    // leadingPt: usa helper centralizado (ajusta lineHeight + _fontSizeMult
+    // + ascender pra match pixel-perfect com PSD/Photoshop).
+    if(key === "leadingPt"){
+      const lpt = +val
+      ;(obj as any).leadingPt = lpt
+      applyLeadingPtToFabric(obj, lpt)
+      obj.setCoords?.()
+      setLeadingPt(lpt)
+      fabricRef.current.renderAll()
+      onUpdate?.(fabricRef.current)
+      return
+    }
 
     // Se tem texto selecionado → aplica só na seleção (por caractere)
     if(obj.isEditing && obj.selectionStart !== obj.selectionEnd){
@@ -65,16 +88,19 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
       if(key === "fontSize") style.fontSize = +val
       if(key === "fontFamily") style.fontFamily = val
       if(key === "fontWeight") style.fontWeight = val
+      if(key === "charSpacing") style.charSpacing = +val
       obj.setSelectionStyles(style)
     } else {
       // Aplica no objeto inteiro
-      obj.set(key, key === "fontSize" ? +val : val)
+      const numericKeys = new Set(["fontSize", "charSpacing"])
+      obj.set(key, numericKeys.has(key) ? +val : val)
     }
 
     if(key === "fill") setFill(val)
     if(key === "fontSize") setFontSize(+val)
     if(key === "fontFamily") setFontFamily(val)
     if(key === "fontWeight") setFontWeight(val)
+    if(key === "charSpacing") setCharSpacing(+val)
 
     fabricRef.current.renderAll()
     onUpdate?.(fabricRef.current)
@@ -138,33 +164,65 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
             </div>
           )}
 
-          <div>
-            <div style={sec}>Fonte</div>
-            <FontPicker value={fontFamily} onChange={(f) => applyText("fontFamily", f)} />
-          </div>
+          {/* Tipografia agrupada: fonte, peso, tamanho, entrelinha, entreletra
+              juntos. User pediu (2026-05-23) — antes só fonte+peso+tamanho
+              estavam aqui, entrelinha/entreletra faltavam totalmente. */}
+          <div style={{display:"flex",flexDirection:"column",gap:10,padding:12,background:"#0d0d0d",borderRadius:8,border:"1px solid #1f1f1f"}}>
+            <div style={{...sec,marginBottom:0,color:"#888"}}>Tipografia</div>
 
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <div>
-              <div style={sec}>Tamanho</div>
-              <div style={{display:"flex",gap:4}}>
-                <button
-                  type="button"
-                  onClick={()=>applyText("fontSize",String(Math.max(1, Math.round(+fontSize) - 4)))}
-                  title="Diminuir 4pt"
-                  style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
-                >−</button>
-                <input type="number" value={fontSize} onChange={e=>applyText("fontSize",e.target.value)} style={{...inp,textAlign:"center"}}/>
-                <button
-                  type="button"
-                  onClick={()=>applyText("fontSize",String(Math.round(+fontSize) + 4))}
-                  title="Aumentar 4pt"
-                  style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
-                >+</button>
+              <FontPicker value={fontFamily} onChange={(f) => applyText("fontFamily", f)} />
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div>
+                <div style={{...sec,fontSize:9,marginBottom:4}}>Tamanho</div>
+                <div style={{display:"flex",gap:4}}>
+                  <button
+                    type="button"
+                    onClick={()=>applyText("fontSize",String(Math.max(1, Math.round(+fontSize) - 4)))}
+                    title="Diminuir 4pt"
+                    style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
+                  >−</button>
+                  <input type="number" value={fontSize} onChange={e=>applyText("fontSize",e.target.value)} style={{...inp,textAlign:"center"}}/>
+                  <button
+                    type="button"
+                    onClick={()=>applyText("fontSize",String(Math.round(+fontSize) + 4))}
+                    title="Aumentar 4pt"
+                    style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
+                  >+</button>
+                </div>
+              </div>
+              <div>
+                <div style={{...sec,fontSize:9,marginBottom:4}}>Peso</div>
+                <WeightPicker value={fontFamily} onChange={(f) => applyText("fontFamily", f)} />
               </div>
             </div>
-            <div>
-              <div style={sec}>Peso</div>
-              <WeightPicker value={fontFamily} onChange={(f) => applyText("fontFamily", f)} />
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div>
+                <div style={{...sec,fontSize:9,marginBottom:4}} title="Entrelinha em pontos (PSD/Adobe). Distancia baseline-to-baseline.">Entrelinha</div>
+                <input
+                  type="number"
+                  value={leadingPt}
+                  min={0}
+                  step={1}
+                  onChange={e=>applyText("leadingPt", e.target.value)}
+                  style={{...inp,textAlign:"center"}}
+                  title="Entrelinha em pontos"
+                />
+              </div>
+              <div>
+                <div style={{...sec,fontSize:9,marginBottom:4}} title="Entreletra (tracking) em milesimos de em. Mesma unidade do Photoshop.">Entreletra</div>
+                <input
+                  type="number"
+                  value={charSpacing}
+                  step={10}
+                  onChange={e=>applyText("charSpacing", e.target.value)}
+                  style={{...inp,textAlign:"center"}}
+                  title="Entreletra (tracking) em milesimos de em"
+                />
+              </div>
             </div>
           </div>
 
