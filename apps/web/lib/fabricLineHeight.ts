@@ -49,17 +49,28 @@ export function fabricLineHeightToLeadingPt(lineHeight: number, fontSize: number
 }
 
 /**
- * Aplica leadingPt num Fabric Textbox medindo o factor REAL em runtime
- * (em vez de assumir constante 1.13). Garante match EXATO com Photoshop
- * baseline-to-baseline.
+ * Aplica leadingPt num Fabric Textbox de modo que TANTO a distancia entre
+ * baselines QUANTO a altura total batem com Photoshop.
  *
- * Algoritmo:
- *  1. Salva lineHeight atual
- *  2. Set lineHeight=1, recalcula → mede getHeightOfLine(0) = factor real × fs
- *  3. Set lineHeight = leadingPt / refHeight (matematicamente exato)
+ * Problema descoberto 2026-05-23: o _fontSizeMult=1.13 hardcoded do Fabric
+ * assume um ascender artificial de 1.13×fontSize, mas fontes reais tem
+ * ascender ~0.8×fontSize. Resultado:
+ *   altura_Fabric = (N-1) × leadingPt + fontSize × 1.13
+ *   altura_PS     = (N-1) × leadingPt + fontSize × 0.8 (~)
+ *   diff ≈ 0.33 × fontSize de "espaco vazio" extra no Fabric
  *
- * Usa try/catch porque Fabric pode lancar quando textbox nao tem texto.
- * Fallback: usa leadingPtToFabricLineHeight (fast path).
+ * Esse espaco extra eh o que o user percebia como "entrelinhas erradas"
+ * mesmo apos o calculo baseline-to-baseline estar correto.
+ *
+ * SOLUCAO: sobrescrevemos `_fontSizeMult` por instance pra 1.0 (sem fator
+ * artificial), depois setamos lineHeight = leadingPt / fontSize. Isso:
+ *   - getHeightOfLineImpl = fontSize × 1.0 = fontSize
+ *   - getHeightOfLine = fontSize × 1.0 × (leadingPt/fontSize) = leadingPt
+ *   - altura_total = (N-1) × leadingPt + fontSize  ← match PSD!
+ *   - distancia baseline-to-baseline = leadingPt ✓
+ *
+ * Sem gambiarra: estamos usando a API publica de instance properties do
+ * Fabric. _fontSizeMult eh property normal, sobrescrivivel.
  */
 export function applyLeadingPtToFabric(obj: any, leadingPt: number): void {
   if (!obj) return
@@ -67,25 +78,15 @@ export function applyLeadingPtToFabric(obj: any, leadingPt: number): void {
   if (!Number.isFinite(fs) || fs <= 0) return
   if (!Number.isFinite(leadingPt) || leadingPt <= 0) return
   try {
-    // Salva e seta lineHeight=1 pra medir factor real.
-    if (typeof obj.getHeightOfLine !== "function") {
-      obj.set("lineHeight", leadingPtToFabricLineHeight(leadingPt, fs))
-      return
-    }
-    obj.set("lineHeight", 1)
-    if (typeof obj.initDimensions === "function") obj.initDimensions()
-    // getHeightOfLine(0) com lineHeight=1 retorna getHeightOfLineImpl(0)
-    // = maxFontSize × _fontSizeMult (factor real do Fabric naquela linha).
-    const refHeight = obj.getHeightOfLine(0)
-    if (!Number.isFinite(refHeight) || refHeight <= 0) {
-      obj.set("lineHeight", leadingPtToFabricLineHeight(leadingPt, fs))
-      return
-    }
-    // lineHeight tal que: refHeight × lineHeight = leadingPt
-    obj.set("lineHeight", leadingPt / refHeight)
+    // 1. Sobrescreve _fontSizeMult pra 1.0 — remove o ascender artificial
+    //    de 1.13×fs que o Fabric assume hardcoded.
+    obj._fontSizeMult = 1.0
+    // 2. lineHeight = leadingPt / fontSize → distancia baseline-to-baseline
+    //    EXATAMENTE igual a leadingPt.
+    obj.set("lineHeight", leadingPt / fs)
+    // 3. initDimensions invalida cache __lineHeights e recalcula.
     if (typeof obj.initDimensions === "function") obj.initDimensions()
   } catch {
-    // Fallback fast path.
     obj.set("lineHeight", leadingPtToFabricLineHeight(leadingPt, fs))
   }
 }
