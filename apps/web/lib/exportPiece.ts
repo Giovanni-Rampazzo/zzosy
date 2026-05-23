@@ -11,6 +11,7 @@ import {
   fabricOpacityToPsd,
   normalizeBlendModeForAgPsd,
 } from "@/lib/psd/psdHelpers"
+import { leadingPtToFabricLineHeight } from "@/lib/fabricLineHeight"
 
 export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
 
@@ -440,7 +441,10 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
         if (overrides.leadingPt !== undefined && overrides.leadingPt !== null) {
           ;(t as any).leadingPt = overrides.leadingPt
           const fs = t.fontSize ?? 48
-          ;(t as any).set("lineHeight", overrides.leadingPt / fs)
+          // Helper centralizado compensa Fabric _fontSizeMult 1.13. Sem isso,
+          // preview da peca renderizava com ~13% mais espaco entre linhas que
+          // o PSD original (user reportou 2026-05-23 com print lado-a-lado).
+          ;(t as any).set("lineHeight", leadingPtToFabricLineHeight(overrides.leadingPt, fs))
         }
         // Aplicar styles per-char DEPOIS (Fabric Textbox ignora styles no construtor)
         // Prioridade: overrides.styles (peca) > assetStyles (matriz/asset)
