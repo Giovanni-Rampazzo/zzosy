@@ -9,6 +9,7 @@ import {
   extractAlphaFromColor,
   fabricBlendToPsd,
   fabricOpacityToPsd,
+  normalizeBlendModeForAgPsd,
 } from "@/lib/psd/psdHelpers"
 
 export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
@@ -1450,7 +1451,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           angle: angleFromOffsets(dx, dy, 120),
           distance: px(Math.round(Math.hypot(dx, dy))),
           size: px(d.blur ?? 5),
-          blendMode: d.blendMode ?? "multiply",
+          blendMode: normalizeBlendModeForAgPsd(d.blendMode, "multiply"),
           useGlobalLight: false,
         }]
       }
@@ -1465,7 +1466,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           distance: px(Math.round(Math.hypot(dx, dy))),
           size: px(i.blur ?? 5),
           choke: px(i.choke ?? 0),
-          blendMode: i.blendMode ?? "multiply",
+          blendMode: normalizeBlendModeForAgPsd(i.blendMode, "multiply"),
           useGlobalLight: false,
         }]
       }
@@ -1476,7 +1477,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           opacity: fx.outerGlow.opacity ?? 0.5,
           size: px(fx.outerGlow.blur ?? 5),
           choke: px(fx.outerGlow.choke ?? 0),
-          blendMode: fx.outerGlow.blendMode ?? "screen",
+          blendMode: normalizeBlendModeForAgPsd(fx.outerGlow.blendMode, "screen"),
         }
       }
       if (fx.innerGlow) {
@@ -1487,7 +1488,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           size: px(fx.innerGlow.blur ?? 5),
           choke: px(fx.innerGlow.choke ?? 0),
           source: fx.innerGlow.source ?? "edge",
-          blendMode: fx.innerGlow.blendMode ?? "screen",
+          blendMode: normalizeBlendModeForAgPsd(fx.innerGlow.blendMode, "screen"),
         }
       }
       if (fx.stroke) {
@@ -1497,7 +1498,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           fillColor: { color: hexToPsdColor(fx.stroke.color ?? "#000000") },
           size: px(fx.stroke.width ?? 1),
           opacity: fx.stroke.opacity ?? 1,
-          blendMode: fx.stroke.blendMode ?? "normal",
+          blendMode: normalizeBlendModeForAgPsd(fx.stroke.blendMode, "normal"),
         }]
       }
       if (fx.colorOverlay) {
@@ -1505,7 +1506,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           enabled: true,
           color: hexToPsdColor(fx.colorOverlay.color ?? "#000000"),
           opacity: fx.colorOverlay.opacity ?? 1,
-          blendMode: fx.colorOverlay.blendMode ?? "normal",
+          blendMode: normalizeBlendModeForAgPsd(fx.colorOverlay.blendMode, "normal"),
         }]
       }
       if (fx.gradientOverlay && Array.isArray(fx.gradientOverlay.stops)) {
@@ -1513,7 +1514,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         out.gradientOverlay = [{
           enabled: true,
           opacity: go.opacity ?? 1,
-          blendMode: go.blendMode ?? "normal",
+          blendMode: normalizeBlendModeForAgPsd(go.blendMode, "normal"),
           type: go.type ?? "linear",
           angle: go.angle ?? 90,
           scale: go.scale ?? 100,
@@ -1550,10 +1551,10 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           altitude: b.altitude ?? 30,
           highlightColor: hexToPsdColor(b.highlightColor ?? "#ffffff"),
           highlightOpacity: b.highlightOpacity ?? 0.75,
-          highlightBlendMode: b.highlightBlendMode ?? "screen",
+          highlightBlendMode: normalizeBlendModeForAgPsd(b.highlightBlendMode, "screen"),
           shadowColor: hexToPsdColor(b.shadowColor ?? "#000000"),
           shadowOpacity: b.shadowOpacity ?? 0.75,
-          shadowBlendMode: b.shadowBlendMode ?? "multiply",
+          shadowBlendMode: normalizeBlendModeForAgPsd(b.shadowBlendMode, "multiply"),
           strength: b.strength ?? 100,
           soften: px(b.soften ?? 0),
           useGlobalLight: false,
@@ -1568,7 +1569,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           distance: px(fx.satin.distance ?? 11),
           size: px(fx.satin.size ?? 14),
           invert: fx.satin.invert === true,
-          blendMode: fx.satin.blendMode ?? "multiply",
+          blendMode: normalizeBlendModeForAgPsd(fx.satin.blendMode, "multiply"),
         }
       }
       // patternOverlay omitido — não preservamos pattern bytes (precisaria mapeio

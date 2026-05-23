@@ -106,6 +106,39 @@ export function fabricBlendToPsd(bm: string | undefined): string | undefined {
 }
 
 /**
+ * Normaliza qualquer blend mode (canvas hifen, PSD camelCase, ag-psd com
+ * espaco) → ag-psd string format ("linear dodge", "color burn", etc).
+ *
+ * Resolve bug confirmado 2026-05-22: effects.dropShadow.blendMode vinha
+ * como "linearDodge" (camelCase do PsdBlendMode importado) e era passado
+ * raw pro ag-psd writer que falhava com "Invalid value for enum: 'linearDodge'".
+ *
+ * Cobre TODOS os 27 blend modes oficiais do PS + fallback default.
+ */
+export function normalizeBlendModeForAgPsd(bm: string | undefined, fallback: string = "normal"): string {
+  if (!bm) return fallback
+  // Se ja tem espacos (formato ag-psd), retorna direto.
+  if (bm.includes(" ")) return bm
+  // PSD camelCase → ag-psd com espaco
+  const psdCamel: Record<string, string> = {
+    normal: "normal", dissolve: "dissolve", passThrough: "pass through",
+    darken: "darken", multiply: "multiply",
+    colorBurn: "color burn", linearBurn: "linear burn", darkerColor: "darker color",
+    lighten: "lighten", screen: "screen",
+    colorDodge: "color dodge", linearDodge: "linear dodge", lighterColor: "lighter color",
+    overlay: "overlay", softLight: "soft light", hardLight: "hard light",
+    vividLight: "vivid light", linearLight: "linear light", pinLight: "pin light", hardMix: "hard mix",
+    difference: "difference", exclusion: "exclusion", subtract: "subtract", divide: "divide",
+    hue: "hue", saturation: "saturation", color: "color", luminosity: "luminosity",
+  }
+  if (psdCamel[bm]) return psdCamel[bm]
+  // Canvas com hifen
+  const canvasHifen = fabricBlendToPsd(bm)
+  if (canvasHifen) return canvasHifen
+  return fallback
+}
+
+/**
  * Converte Fabric opacity (0-1) → ag-psd opacity byte (0-255).
  * Retorna undefined quando opaco (1.0) — ag-psd default.
  */
