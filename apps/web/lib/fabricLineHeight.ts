@@ -87,11 +87,21 @@ export function measureAscender(
     const ctx = canvas.getContext("2d")
     if (!ctx) return null
     ctx.font = `${style} ${weight} ${fontSize}px "${family}"`
+    // Mede uma string com ascender E descender (M alto, g desce) pra forcar
+    // o browser a expor fontBoundingBoxAscent (que eh o hhea.ascent, igual ao
+    // que PS usa). actualBoundingBoxAscent varia por string — fontBoundingBox
+    // eh fixo pela fonte.
     const m = ctx.measureText("Mg")
-    const asc = (m as any).actualBoundingBoxAscent
-    if (Number.isFinite(asc) && asc > 0) {
-      _ascenderCache.set(key, asc)
-      return asc
+    const fontAsc = (m as any).fontBoundingBoxAscent
+    if (Number.isFinite(fontAsc) && fontAsc > 0) {
+      _ascenderCache.set(key, fontAsc)
+      return fontAsc
+    }
+    // Fallback: actualBoundingBoxAscent (menos preciso)
+    const actAsc = (m as any).actualBoundingBoxAscent
+    if (Number.isFinite(actAsc) && actAsc > 0) {
+      _ascenderCache.set(key, actAsc)
+      return actAsc
     }
   } catch { /* ignora */ }
   return null
