@@ -425,9 +425,9 @@ export default function CampaignOverviewPage() {
           {(() => {
             const hasAssets = !!campaign.assets && campaign.assets.length > 0
             const hasPieces = pieces.length > 0
+            // Layout final 2026-05-24 (mockup user): TODOS botoes mesmo
+            // estilo (secondary), com gap maior separando grupos visuais.
             return (
-              {/* Layout final 2026-05-24 (mockup user): TODOS botoes mesmo
-                  estilo (secondary), com gap maior separando grupos visuais. */}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/assets`)}
