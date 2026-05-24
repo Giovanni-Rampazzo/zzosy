@@ -10198,6 +10198,40 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </div>
               )
             })()}
+            {/* BLEND MODE acima da cor (user pedido 2026-05-23: 'poe blend
+                para cima da cor'). Sai do agrupamento BlendMode+Mask original. */}
+            {(() => {
+              const layer = bgLayersRef.current[currentBgIdx()]
+              if (!layer) return null
+              const blend = layer.blendMode ?? "source-over"
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888", marginBottom: 10 }}>
+                  <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Blend</span>
+                  <select value={blend}
+                    onChange={e => changeBgBlendMode(e.target.value as BgBlendMode)}
+                    style={{ flex: 1, padding: "4px 6px", fontSize: 11, background: "#0d0d0d",
+                      color: "#bbb", border: "1px solid #333", borderRadius: 3,
+                      fontFamily: "inherit", outline: "none" }}>
+                    <option value="source-over">Normal</option>
+                    <option value="multiply">Multiply</option>
+                    <option value="screen">Screen</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="darken">Darken</option>
+                    <option value="lighten">Lighten</option>
+                    <option value="color-dodge">Color Dodge</option>
+                    <option value="color-burn">Color Burn</option>
+                    <option value="hard-light">Hard Light</option>
+                    <option value="soft-light">Soft Light</option>
+                    <option value="difference">Difference</option>
+                    <option value="exclusion">Exclusion</option>
+                    <option value="hue">Hue</option>
+                    <option value="saturation">Saturation</option>
+                    <option value="color">Color</option>
+                    <option value="luminosity">Luminosity</option>
+                  </select>
+                </div>
+              )
+            })()}
             {/* SOLID: ColorSwatchPicker (Figma-style — swatch + popup) */}
             {(() => {
               const layer = bgLayersRef.current[currentBgIdx()]
@@ -10330,39 +10364,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             })()}
             {/* Opacity agora vive INLINE na linha do ColorSwatchPicker (Figma-style).
                 Slider standalone removido. */}
-            {/* BlendMode + Mask (BG-5) — controles avancados de PSD pro layer de BG */}
+            {/* Mask (BG-5) — Blend foi movido pra ANTES da cor (user 2026-05-23). */}
             {(() => {
               const layer = bgLayersRef.current[currentBgIdx()]
               if (!layer) return null
-              const blend = layer.blendMode ?? "source-over"
               return (
                 <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888", marginBottom: 10 }}>
-                    <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Blend</span>
-                    <select value={blend}
-                      onChange={e => changeBgBlendMode(e.target.value as BgBlendMode)}
-                      style={{ flex: 1, padding: "4px 6px", fontSize: 11, background: "#0d0d0d",
-                        color: "#bbb", border: "1px solid #333", borderRadius: 3,
-                        fontFamily: "inherit", outline: "none" }}>
-                      <option value="source-over">Normal</option>
-                      <option value="multiply">Multiply</option>
-                      <option value="screen">Screen</option>
-                      <option value="overlay">Overlay</option>
-                      <option value="darken">Darken</option>
-                      <option value="lighten">Lighten</option>
-                      <option value="color-dodge">Color Dodge</option>
-                      <option value="color-burn">Color Burn</option>
-                      <option value="hard-light">Hard Light</option>
-                      <option value="soft-light">Soft Light</option>
-                      <option value="difference">Difference</option>
-                      <option value="exclusion">Exclusion</option>
-                      <option value="hue">Hue</option>
-                      <option value="saturation">Saturation</option>
-                      <option value="color">Color</option>
-                      <option value="luminosity">Luminosity</option>
-                    </select>
-                  </div>
-                  {/* Mask */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888" }}>
                     <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Mask</span>
                     {layer.mask ? (
