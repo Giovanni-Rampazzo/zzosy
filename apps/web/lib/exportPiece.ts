@@ -67,64 +67,36 @@ const MIME_BY_EXT: Record<string, string> = {
 }
 
 async function downloadBlob(blob: Blob, filename: string): Promise<void> {
-  // SEMPRE usa <a download> (salva direto em Downloads/, sem dialog).
-  // User pedido 2026-05-23: "nao pergunta onde quero salvar".
-  // showSaveFilePicker REMOVIDO 2026-05-24: gerava nomes UUID-like quando
-  // dialog era cancelado ou nome ficava em branco (Chrome usa derivado da
-  // blob URL em vez do suggestedName em alguns casos). Fallback simples e
-  // robusto.
-  // Sanity: filename DEVE ter extensao e ser nao-vazio. Senao Chrome ignora
-  // o download attribute e usa UUID da blob URL como nome.
+  // Usa file-saver lib (FileSaver.js) — biblioteca battle-tested que cobre
+  // todos browser quirks. Internamente tenta: msSaveBlob (legacy Edge/IE) →
+  // iframe download → <a download>. Resolve casos onde .click() programatico
+  // do <a> e bloqueado pelo Chrome quando o user gesture context ja se
+  // perdeu na chain async longa do export. Adicionado 2026-05-24 apos user
+  // reportar export nao baixando apesar do code chegar ate o click().
   let safeFilename = (filename ?? "").trim()
-  if (!safeFilename || safeFilename === "." || /^\.+$/.test(safeFilename)) {
+  if (!safeFilename || /^\.+$/.test(safeFilename)) {
     safeFilename = `download-${Date.now()}.bin`
   }
   if (!/\.[a-zA-Z0-9]+$/.test(safeFilename)) {
-    // Sem extensao reconhecivel — adiciona .bin pra Chrome respeitar o nome
     safeFilename = `${safeFilename}.bin`
   }
   console.log("[downloadBlob]", { filename: safeFilename, size: blob.size, mime: blob.type })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = safeFilename
-  a.rel = "noopener"
-  // FIX 2026-05-24: Chrome as vezes ignora .click() programatico em <a download>
-  // quando dispara fora de user gesture direto (chain async longa do export).
-  // dispatchEvent com MouseEvent explicito + bubbles e mais robusto.
-  a.style.position = "fixed"
-  a.style.top = "0"
-  a.style.left = "0"
-  a.style.opacity = "0"
-  a.style.pointerEvents = "none"
-  document.body.appendChild(a)
   try {
-    // Tenta dispatchEvent primeiro — funciona mais consistente que .click()
-    const ev = new MouseEvent("click", {
-      view: window,
-      bubbles: true,
-      cancelable: true,
-    })
-    a.dispatchEvent(ev)
-    console.log("[downloadBlob] click dispatched via MouseEvent")
+    const { saveAs } = await import("file-saver")
+    saveAs(blob, safeFilename)
+    console.log("[downloadBlob] saveAs OK via file-saver")
   } catch (e) {
-    console.warn("[downloadBlob] MouseEvent falhou, tentando .click():", e)
+    console.warn("[downloadBlob] file-saver falhou, fallback <a download>:", e)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = safeFilename
+    a.style.position = "fixed"
+    a.style.opacity = "0"
+    document.body.appendChild(a)
     a.click()
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 1000)
   }
-  // Fallback adicional: se o download nao iniciar em 3s, abre URL em nova aba
-  // pra user salvar manualmente. Detecta via window.onblur (browser foca janela
-  // de download quando inicia) — se nao blurou, provavelmente bloqueado.
-  let downloadStarted = false
-  const onBlur = () => { downloadStarted = true; window.removeEventListener("blur", onBlur) }
-  window.addEventListener("blur", onBlur)
-  setTimeout(() => {
-    window.removeEventListener("blur", onBlur)
-    if (!downloadStarted) {
-      console.warn("[downloadBlob] download nao iniciou em 3s — abrindo blob em nova aba como fallback")
-      try { window.open(url, "_blank") } catch {}
-    }
-  }, 3000)
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 5000)
 }
 
 function safeName(s: string) {
