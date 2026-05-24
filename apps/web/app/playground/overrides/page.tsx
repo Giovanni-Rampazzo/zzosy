@@ -86,9 +86,11 @@ function rebuildSpans(prev: Span[], newText: string): Span[] {
   return result.length > 0 ? result : [{ text: newText, style: defaultStyle }]
 }
 
-// migrateOverrideText: distribui tokens do novo texto pelas linhas do override antigo
+// migrateOverrideText: distribui tokens do novo texto pelas linhas do override antigo.
+// Funciona pra single-line tambem (preservada qtd de linhas/tokens originais).
+// Bug fix 2026-05-24: antes retornava early se nao havia '\n' — override single-line
+// ficava congelado e nao atualizava mais quando asset mudava.
 function migrateOverrideText(oldOverrideText: string, newAssetCleanText: string): string {
-  if (!oldOverrideText.includes("\n")) return ""
   const oldLines = oldOverrideText.split("\n")
   const lineTokenCounts = oldLines.map(line => line.trim().split(/\s+/).filter(t => t.length > 0).length)
   const newTokens = newAssetCleanText.trim().split(/\s+/).filter(t => t.length > 0)
@@ -189,7 +191,9 @@ export default function OverridesPlayground() {
         ...p,
         layers: p.layers.map(l => {
           if (l.assetId !== assetId) return l
-          if (typeof l.overrides.text === "string" && l.overrides.text.includes("\n")) {
+          // Migra QUALQUER override.text nao-vazio (single-line OU multi-line).
+          // Antes filtrava por '\n' presente — single-line ficava stuck.
+          if (typeof l.overrides.text === "string" && l.overrides.text.length > 0) {
             const migrated = migrateOverrideText(l.overrides.text, newText)
             return { ...l, overrides: { ...l.overrides, text: migrated } }
           }
