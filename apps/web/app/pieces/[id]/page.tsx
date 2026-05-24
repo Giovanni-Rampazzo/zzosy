@@ -207,12 +207,17 @@ export default function PiecePage() {
 
         {/* CAMPO LEGENDAS — hero da pagina: foco maximo aqui. Hora do redator brilhar */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "16px 24px" }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+          {/* Titulo + subtitulo descritivo ANTES do field — padrao titulo/subtitulo
+              que user pediu 2026-05-24 (descricao sai de baixo do field). */}
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
             Legenda / Copy
             <span style={{ fontSize: 10, color: "#bbb", fontWeight: 500, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
               {copy.length} {copy.length === 1 ? "caractere" : "caracteres"}
             </span>
           </label>
+          <div style={{ fontSize: 11, color: "#aaa", marginBottom: 8 }}>
+            Texto pra redes sociais. Aparece na apresentação ao lado da peça e vai num arquivo .txt na entrega.
+          </div>
           <textarea
             value={copy}
             onChange={e => {
@@ -242,9 +247,6 @@ export default function PiecePage() {
               minHeight: 140,
             }}
           />
-          <div style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>
-            Texto pra redes sociais. Aparece na apresentação ao lado da peça e vai num arquivo .txt na entrega.
-          </div>
         </div>
 
         {/* Outros campos (nome, status, segmento) */}
@@ -275,7 +277,10 @@ export default function PiecePage() {
           </div>
 
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Segmento</label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>Segmento</label>
+            <div style={{ fontSize: 11, color: "#aaa", marginBottom: 8 }}>
+              Usado pra agrupar peças na apresentação. Peças com mesmo segmento ficam juntas.
+            </div>
             <input
               value={segment}
               onChange={e => {
@@ -290,9 +295,6 @@ export default function PiecePage() {
             <datalist id="piece-segments">
               {segmentSuggestions.map(s => <option key={s} value={s} />)}
             </datalist>
-            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
-              Usado pra agrupar peças na apresentação. Peças com mesmo segmento ficam juntas.
-            </div>
           </div>
 
           <div style={{ padding: "12px 16px", background: "#F8F9FA", borderRadius: 6, fontSize: 12, color: "#888" }}>
