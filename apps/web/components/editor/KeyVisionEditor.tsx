@@ -8368,9 +8368,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
    */
   function setCharSpacingProp(units: number) {
     const fc = fabricRef.current; const obj = selected as any
-    if (!fc || !obj) return
+    if (!fc || !obj) { console.warn("[charSpacing] no fc or obj", { fc: !!fc, obj: !!obj }); return }
     const isText = obj.type === "textbox" || obj.type === "i-text"
-    if (!isText) return
+    if (!isText) { console.warn("[charSpacing] not text", obj.type); return }
     // Detecta range selection. Como o foco no input tira isEditing antes do
     // onChange disparar, fallback pra savedTextSelection (capturada onMouseDown).
     const saved = savedTextSelection.current
@@ -8379,6 +8379,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const useRange = hasLiveRange || hasSavedRange
     const rangeStart = hasLiveRange ? obj.selectionStart : (hasSavedRange ? saved!.start : 0)
     const rangeEnd = hasLiveRange ? obj.selectionEnd : (hasSavedRange ? saved!.end : 0)
+    console.log("[charSpacing]", {
+      units,
+      isEditing: obj.isEditing,
+      liveSel: [obj.selectionStart, obj.selectionEnd],
+      savedSel: saved ? [saved.start, saved.end, saved.obj === obj] : null,
+      useRange, rangeStart, rangeEnd,
+      textLen: (obj.text ?? "").length,
+      stylesBeforeKeys: Object.keys(obj.styles ?? {}),
+    })
 
     // Helper: mapeia char-index ABSOLUTO (sem \n) pra {line, col} respeitando
     // quebras de linha do texto. setSelectionStyles do Fabric ja faz isso
@@ -8436,6 +8445,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (obj._forceClearCache !== undefined) obj._forceClearCache = true
     obj.setCoords()
     obj.dirty = true
+    console.log("[charSpacing] post-apply", {
+      objCharSpacing: obj.charSpacing,
+      stylesAfter: JSON.stringify(obj.styles).slice(0, 200),
+    })
     fc.requestRenderAll()
     doSave()
   }
