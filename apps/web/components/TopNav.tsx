@@ -3,11 +3,14 @@ import { signOut, useSession } from "next-auth/react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
+// Formatos = catalogo GLOBAL de formatos de midia (dimensoes/veiculos) do
+// tenant. Tambem acessivel via /clients/[id]/edit > card "Formatos de midia".
+// Fluxo: Empresas → Campanhas → Peças → Formatos → Aprovação → Entregas.
 const links = [
-  { href: "/dashboard", label: "Clientes" },
+  { href: "/dashboard", label: "Empresas" },
   { href: "/campaigns", label: "Campanhas" },
   { href: "/pieces", label: "Peças" },
-  { href: "/medias", label: "Mídias" },
+  { href: "/medias", label: "Formatos" },
   { href: "/approvals", label: "Aprovação" },
   { href: "/deliveries", label: "Entregas" },
 ]
@@ -34,6 +37,7 @@ export default function TopNav() {
           </Link>
         )
       })}
+      <div style={{flex:1}} />
       {(session?.user as any)?.role === "SUPER_ADMIN" && (
         <Link href="/admin/users" style={{
           color: pathname?.startsWith("/admin") ? "#ffffff" : "#bbbbbb",
@@ -46,7 +50,6 @@ export default function TopNav() {
           Admin
         </Link>
       )}
-      <div style={{flex:1}} />
       <Link href="/account" style={{
         color: pathname?.startsWith("/account") ? "#ffffff" : "#bbbbbb",
         textDecoration:"none",
