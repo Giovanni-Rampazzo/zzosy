@@ -14,7 +14,7 @@ import { RowThumb } from "@/components/ui/RowThumb"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { PsdPieceImporter, type PsdPieceImporterHandle } from "@/components/campaign/PsdPieceImporter"
 import { Button } from "@/components/ui/Button"
-import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
+import { CampaignSubnav, subnavButtonStyle } from "@/components/campaign/CampaignSubnav"
 import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
 
 interface Asset { id: string; type: string; label: string }
@@ -314,12 +314,9 @@ export default function CampaignOverviewPage() {
           {campaign.client?.id && (
             <button
               onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
-              style={{
-                background: "transparent", border: "none", color: "#888",
-                fontSize: 13, padding: 0, cursor: "pointer",
-                display: "inline-flex", alignItems: "center", gap: 6,
-                marginBottom: 8,
-              }}
+              style={{ ...subnavButtonStyle({}), marginBottom: 12 }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F0" }}
+              onMouseLeave={e => { e.currentTarget.style.background = "white" }}
               title="Voltar para Campanhas"
             >
               ← Campanhas
