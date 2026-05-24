@@ -108,7 +108,10 @@ export default function DashboardPage() {
                         <>
                           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
                           <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}/edit`)}>Editar</Button>
-                          <Button variant="view" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
+                          {/* CTA primario da row: Ver = acao mais provavel. Padrao
+                              ZZOSY (feedback_primary_action_fill_brand): fill amarelo
+                              no botao mais provavel. Editar/Apagar ficam outline. */}
+                          <Button variant="primary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
                         </>
                       )}
                     </div>

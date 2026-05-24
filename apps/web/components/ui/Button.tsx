@@ -14,8 +14,11 @@
  *  - warning: laranja. Atencao, avisos.
  *  - info:    azul. Duplicar, copiar, acoes intermediarias.
  *  - ghost:   cinza bem claro. Acoes secundarias/menos importantes.
- *  - view:    amarelo (stroke amarelo, fill branco, texto preto). PADRAO pra
- *             botoes "Ver" — navegar/abrir item, em todo o sistema.
+ *  - view:    amarelo (stroke amarelo, fill branco, texto preto). LEGADO —
+ *             novo padrao ZZOSY (feedback_primary_action_fill_brand 2026-05-23):
+ *             botao MAIS PROVAVEL de ser clicado usa `primary` (fill amarelo),
+ *             nao `view`. Use `view` apenas quando ja ha um primary na mesma
+ *             linha/grupo (pra nao ter 2 fills competindo).
  *
  * REGRA: todo botao com fill branco DEVE ter borda visivel (stroke). Nunca botao
  * sem borda em cima de fundo branco — fica "perdido". A unica excecao e o primary
@@ -81,13 +84,16 @@ export function Button({ variant = "secondary", size = "md", loading, className,
   if (onFileSelect) {
     const overlayDisabled = disabled || loading
     return (
-      <span style={{ position: "relative", display: "inline-block" }}>
+      // display:block + align-self:stretch — sem isso, o span (inline-block)
+      // nao estica no eixo cruzado de um flex column container e o botao
+      // ficava visualmente menor que botoes <Button onClick> irmaos.
+      <span style={{ position: "relative", display: "block", alignSelf: "stretch" }}>
         <button
           type="button"
           className={cls}
           disabled={overlayDisabled}
           title={(props.title as string) || undefined}
-          style={props.style}
+          style={{ width: "100%", ...props.style }}
           // Sem onClick — o input invisivel por cima captura o click. Botao
           // serve so como "fachada visual" + acessibilidade (Tab focus, Enter).
           // Se foco vier por teclado e Enter for pressionado, fallback dispara
