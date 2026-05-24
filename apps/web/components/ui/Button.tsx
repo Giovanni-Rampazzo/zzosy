@@ -94,10 +94,19 @@ export function Button({ variant = "secondary", size = "md", loading, className,
           disabled={overlayDisabled}
           title={(props.title as string) || undefined}
           style={{ width: "100%", ...props.style }}
-          // Sem onClick — o input invisivel por cima captura o click. Botao
-          // serve so como "fachada visual" + acessibilidade (Tab focus, Enter).
-          // Se foco vier por teclado e Enter for pressionado, fallback dispara
-          // o input via ref (caminho keyboard nao consegue tunelar pro overlay).
+          // Defense-in-depth (2026-05-24): primariamente o input invisivel
+          // overlay captura o click, mas se por algum motivo nao captura
+          // (z-index dev server crash residuo, browser policy, etc), onClick
+          // do botao tambem dispara input.click() como fallback.
+          onClick={(e) => {
+            if (overlayDisabled) return
+            // Se click ja foi no input (overlay funcionou), o input ja abriu o picker.
+            // Aqui forca de novo so se target NAO eh o input (caso edge onde click
+            // bate no button real). React de-duplica gestures nativos do mesmo tick.
+            if ((e.target as HTMLElement).tagName !== "INPUT") {
+              fileInputRef.current?.click()
+            }
+          }}
           onKeyDown={e => {
             if ((e.key === "Enter" || e.key === " ") && !overlayDisabled) {
               e.preventDefault()
@@ -125,6 +134,7 @@ export function Button({ variant = "secondary", size = "md", loading, className,
           tabIndex={-1}
           onChange={e => {
             const f = e.target.files?.[0]
+            if (typeof window !== "undefined") console.log("[Button-onFileSelect]", { hasFile: !!f, name: f?.name, accept })
             if (f) onFileSelect(f)
             e.target.value = ""
           }}
