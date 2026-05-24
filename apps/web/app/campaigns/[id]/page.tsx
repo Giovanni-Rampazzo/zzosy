@@ -306,15 +306,14 @@ export default function CampaignOverviewPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
       <TopNav />
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 24px" }}>
 
-        {/* Header limpo 2026-05-24. Padrao ZZOSY: botoes concisos, nao
-            didaticos. PSD name + counters removidos (info ruidosa). */}
-        <div style={{ marginBottom: 24 }}>
+        {/* Header limpo 2026-05-24. Padrao ZZOSY: botoes concisos. */}
+        <div style={{ marginBottom: 12 }}>
           {campaign.client?.id && (
             <button
               onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
-              style={{ ...subnavButtonStyle({}), marginBottom: 12 }}
+              style={{ ...subnavButtonStyle({}), marginBottom: 8 }}
               onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F0" }}
               onMouseLeave={e => { e.currentTarget.style.background = "white" }}
               title="Voltar para Campanhas"
@@ -358,20 +357,11 @@ export default function CampaignOverviewPage() {
           </div>
         </div>
 
-        {/* Preview KV + botões. Subnav ANTES Mexido pra DENTRO do box 2026-05-24
-            (user pedido "isso aqui deve estar tudo no box do kv"): subnav +
-            preview + actions concentrados num so card pra hierarquia visual
-            unica. */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "14px 24px", marginBottom: 28 }}>
-          <CampaignSubnav
-            campaignId={id}
-            clientId={campaign.client?.id}
-            clientName={campaign.client?.name}
-            activeTab="campaign"
-            hasAssets={!!campaign.assets && campaign.assets.length > 0}
-            hasPieces={pieces.length > 0}
-          />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>
+        {/* Preview KV + sidebar 2026-05-24: subnav movido pro TOPO DA SIDEBAR
+            DIREITA (user pedido "subnav vai pra direita do KV"). Reduzido
+            paddings/margins pra peças aparecerem no fold sem scroll. */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px", marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 16, alignItems: "start" }}>
           <div>
             <div
               onClick={() => router.push(`/editor?campaignId=${id}`)}
@@ -437,6 +427,15 @@ export default function CampaignOverviewPage() {
               !hasAssets ? "import" : !hasPieces ? "generate" : "deliver"
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {/* Subnav no TOPO da sidebar direita 2026-05-24 (user pedido) */}
+                <CampaignSubnav
+                  campaignId={id}
+                  clientId={campaign.client?.id}
+                  clientName={campaign.client?.name}
+                  activeTab="campaign"
+                  hasAssets={!!campaign.assets && campaign.assets.length > 0}
+                  hasPieces={pieces.length > 0}
+                />
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0 }}>Matriz</div>
                 <PsdImporter
                   ref={psdMatrixImporterRef}
