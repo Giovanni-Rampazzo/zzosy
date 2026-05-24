@@ -3388,6 +3388,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Marca init concluido — saves sao liberados a partir daqui. Antes disso, salvar
       // poderia gravar layers: [] (canvas ainda nao tinha objetos carregados).
       isInitialized.current = true
+      // RESET dirty 2026-05-24: load/sync de brand colors durante init podia
+      // marcar isDirty=true mesmo sem o user editar. Sem este reset, sair
+      // logo depois de abrir o editor disparava "Save changes?" — falso
+      // positivo. Apos init, estado representa "saved" ate o user editar.
+      isDirtyRef.current = false
+      setIsDirty(false)
 
       // Re-aplica clipping masks salvas (mask.type === "clipping") agora que
       // todos os objetos estao no canvas. applyMaskToFabric so anota
@@ -3422,6 +3428,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           if (touched > 0) {
             fc.requestRenderAll()
             console.log("[fonts-ready] re-mediu", touched, "textboxes pos-load")
+            // Reset dirty: re-medir textos pos-load nao e edit do user.
+            isDirtyRef.current = false
+            setIsDirty(false)
           }
         }).catch(() => {})
       }
