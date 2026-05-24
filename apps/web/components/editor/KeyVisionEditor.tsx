@@ -8742,6 +8742,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           75%  { box-shadow: 0 0 8px 1px var(--zzosy-accent-soft); background: var(--zzosy-accent-faint); }
           100% { box-shadow: 0 0 0 2px transparent; background: var(--zzosy-accent-faint); }
         }
+        /* Folder pulse contínuo: indica que selecao esta dentro do folder.
+           User pediu 2026-05-23: "se estiver dentro de folder, deixar
+           piscando no folder". Loop infinito sutil. */
+        @keyframes zzosy-folder-pulse {
+          0%   { background: var(--zzosy-accent-faint); }
+          50%  { background: var(--zzosy-accent-soft); }
+          100% { background: var(--zzosy-accent-faint); }
+        }
       `}</style>
       <div style={{
         position: "absolute",
@@ -9296,6 +9304,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   const path: string[] = (Array.isArray(layer.groupPath) ? layer.groupPath : []).slice(0, h.depth + 1)
                   const folderHidden = isGroupHidden(path)
                   const folderLocked = isGroupLocked(path)
+                  // Folder CONTEM o layer selecionado? Pulse pra deixar claro
+                  // que a selecao esta dentro desse folder. User pedido 2026-05-23:
+                  // "se estiver dentro de folder, deixar ele piscando no folder".
+                  const selectedObj: any = selected
+                  const selPath: string[] = Array.isArray(selectedObj?.__groupPath) ? selectedObj.__groupPath : []
+                  const folderContainsSel = selPath.length >= path.length
+                    && path.every((seg, idx) => selPath[idx] === seg)
                   return (
                   <div key={`folder-${h.key}-${i}`}
                     data-folder-key={h.key}
@@ -9366,10 +9381,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         cursor: "pointer",
                         fontSize: 10, fontWeight: 700,
                         textTransform: "uppercase", letterSpacing: "0.5px",
-                        color: isDropHere ? "#fff" : "#888",
+                        color: isDropHere ? "#fff" : (folderContainsSel ? "#fff" : "#888"),
                         background: isDropHere
                           ? accentRgba(0.20)
-                          : "rgba(255,255,255,0.02)",
+                          : (folderContainsSel ? accentRgba(0.10) : "rgba(255,255,255,0.02)"),
+                        // Folder contem selecao: borderLeft acento + pulse contínuo.
+                        borderLeft: folderContainsSel ? `4px solid ${accentColor}` : undefined,
+                        animation: folderContainsSel ? "zzosy-folder-pulse 1600ms ease-in-out infinite" : undefined,
+                        ["--zzosy-accent-soft" as any]: accentRgba(0.18),
+                        ["--zzosy-accent-faint" as any]: accentRgba(0.05),
                         borderTop: "1px solid #222",
                         opacity: isDraggedSelf ? 0.3 : 1,
                         transform: isDropHere ? "scale(1.05)" : "scale(1)",
@@ -9597,11 +9617,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   alignItems: "center", gap: 4,
                   padding: `8px 8px 8px ${12 + indent}px`,
                   cursor: "default",
-                  // Selecionado: borda 3px pra reforcar com qualquer brand color
-                  // (ex: dark green sobre #1a1a1a). Inset shadow tambem aplicado
-                  // abaixo via merge com magnifyShadow (evita clobber).
-                  borderLeft: isSel ? `3px solid ${accentColor}` : "3px solid transparent",
-                  background: dropBg,
+                  // Selecionado: barra colorida GROSSA (6px) na esquerda + bg
+                  // mais intenso pra ficar CRYSTAL CLEAR qual layer esta ativo.
+                  // User pedido 2026-05-23: "box colorido (com a cor principal
+                  // do cliente), box a esquerda, deixando clarissimo".
+                  borderLeft: isSel ? `6px solid ${accentColor}` : "6px solid transparent",
+                  background: isSel ? accentRgba(0.18) : dropBg,
                   opacity: dragLayerIdx === i ? 0.3 : 1,
                   borderTop: dragLineTop ? `3px solid ${accentColor}` : "2px solid transparent",
                   borderBottom: dragLineBottom ? `3px solid ${accentColor}` : "2px solid transparent",
