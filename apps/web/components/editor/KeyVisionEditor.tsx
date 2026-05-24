@@ -9132,9 +9132,37 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <button onClick={centerObjectInCanvas} style={bS} title="Center selected object in canvas (vertical + horizontal)">Center</button>
         <button onClick={centerView} style={bS} title="Fit the piece in the viewport (Shift+1)">Fit</button>
         <button onClick={zoomToSelection} style={bS} title="Focus on the selected object (Shift+2)">Focus selection</button>
-        <button onClick={() => changeZoom(-0.1)} style={bS} title="Zoom out">−</button>
-        <span style={{ fontSize: 11, color: "#555", minWidth: 40, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
-        <button onClick={() => changeZoom(+0.1)} style={bS} title="Zoom in">+</button>
+        {/* Zoom: −/input/+ agrupados pra reduzir gap visual e tornar % editavel.
+            Input numerico (5–300), commit em Enter/blur. User pedido 2026-05-24. */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+          <button onClick={() => changeZoom(-0.1)} style={bS} title="Zoom out">−</button>
+          <input
+            type="number"
+            min={5}
+            max={300}
+            step={5}
+            value={Math.round(zoom * 100)}
+            onFocus={(e) => { numericInputFocusedRef.current = true; e.currentTarget.select() }}
+            onBlur={() => { numericInputFocusedRef.current = false }}
+            onChange={(e) => {
+              const n = Number(e.target.value)
+              if (!Number.isFinite(n)) return
+              const z = Math.min(3, Math.max(0.05, n / 100))
+              const fc = fabricRef.current
+              if (fc) applyZoom(fc, z)
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+            title="Zoom (5–300%)"
+            style={{
+              width: 42, height: 24,
+              background: "transparent", border: "1px solid #2a2a2a",
+              borderRadius: 4, padding: "0 4px",
+              fontSize: 11, color: "#aaa", textAlign: "center",
+              outline: "none",
+            }}
+          />
+          <button onClick={() => changeZoom(+0.1)} style={bS} title="Zoom in">+</button>
+        </div>
         {/* Toggle paineis laterais (Tab) — user pedido 2026-05-23. Esconde
             Layers + Properties pra preview limpo. */}
         <button
