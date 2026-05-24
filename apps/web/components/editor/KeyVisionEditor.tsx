@@ -2093,6 +2093,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     function onKeyDown(e: KeyboardEvent) {
       if (e.code !== "Space") return
       if (isTypingTarget(e.target)) return // permite Space normal em inputs
+      // CRITICO 2026-05-24: checar isEditing ANTES do preventDefault. Fabric
+      // textbox em edit mode nao e um <input>/<textarea> — isTypingTarget
+      // retorna false porque o target e window/canvas. Sem este guard, Space
+      // era consumido por preventDefault e nunca chegava no textbox — user
+      // nao conseguia digitar espaco em texto editavel.
+      const activeObj = fabricRef.current?.getActiveObject() as any
+      if (activeObj?.isEditing) return
       // Importante: prevent default pra Space nao scrollar pagina nem inserir em outros lugares
       e.preventDefault()
       activate()
