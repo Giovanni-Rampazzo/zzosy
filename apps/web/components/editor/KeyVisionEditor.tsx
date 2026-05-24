@@ -8828,7 +8828,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         </div>
       </div>
 
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: TH, background: "rgba(17,17,17,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 12, zIndex: 200 }}>
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, minHeight: TH, background: "rgba(17,17,17,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "6px 16px", gap: 12, zIndex: 200 }}>
         <button onClick={async () => {
           const hash = from === "presentation" && isPieceMode && pieceId ? `#piece-${pieceId}` : ""
           const base = from === "presentation"
@@ -9087,7 +9087,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           2026-05-23: "central, so botoes relacionados ao monitor"). O Asset
           picker + "+ Add to canvas" foi movido pra dentro de Properties, ao
           lado do botao ASSETS. */}
-      <div style={{ position: "fixed", top: TH, left: effLayersPanelWidth, right: effPropsPanelWidth, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
+      <div style={{ position: "fixed", top: TH, left: effLayersPanelWidth, right: effPropsPanelWidth, minHeight: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "6px 16px", gap: 8, zIndex: 200 }}>
         {/* STEPS NAVIGATION movido pra ca (user pedido 2026-05-23) — eh
             relacionado ao monitor/canvas, nao navegacao principal. */}
         {isPieceMode && (
