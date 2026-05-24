@@ -8876,9 +8876,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // Pergunta SO se tem mudancas pendentes.
             if (isDirtyRef.current) setConfirmExit(() => go)
             else go()
-          }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
-            title="Edit captions/copy for this piece">
-            Captions
+          }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(245,196,0,0.15)"; (e.currentTarget as HTMLButtonElement).style.color = "#F5C400" }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "#bbb" }}
+            style={{ background: "transparent", border: "1px solid #F5C400", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#bbb", display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}
+            title="Open piece details page (captions, status, segment, name)">
+            <span style={{ fontSize: 14 }}>📋</span>
+            Piece details
           </button>
         )}
         <button
