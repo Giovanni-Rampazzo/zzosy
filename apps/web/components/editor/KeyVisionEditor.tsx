@@ -9135,11 +9135,40 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               >Remove step</button>
             )}
             <div style={{ width: 1, height: 16, background: "#333", margin: "0 4px" }} />
-            <button onClick={() => psdStepInputRef.current?.click()} title="Replace step with PSD"
-              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-            >PSD</button>
-            <button onClick={(e) => openInExternalApp(e.altKey)} title="External edit in Photoshop"
-              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+            {/* PSD: overlay pattern (input absolute opacity:0). Antes era
+                ref.click() programatico mas Chrome+Next 16 nao dispara picker
+                via .click() em <input display:none>. 2026-05-24. */}
+            {isPieceMode ? (
+              <span style={{ position: "relative", display: "inline-flex" }}>
+                <button
+                  type="button"
+                  title="Replace step with PSD"
+                  style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+                >PSD</button>
+                <input
+                  type="file"
+                  accept=".psd,application/octet-stream,image/vnd.adobe.photoshop"
+                  tabIndex={-1}
+                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0]
+                    e.target.value = ""
+                    if (!f) return
+                    if (!window.confirm(`Replace the content of Step ${activeStepIndex + 1} with the layers of "${f.name}"? The current content of this step will be discarded.`)) return
+                    await replaceStepFromPsd(f)
+                  }}
+                />
+              </span>
+            ) : (
+              <button
+                onClick={() => alert("PSD step replace is only available in piece editor — open a piece first.")}
+                title="Only available in piece editor"
+                style={{ background: "transparent", border: "1px solid #333", borderRadius: 4, color: "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+              >PSD</button>
+            )}
+            <button onClick={(e) => openInExternalApp(e.altKey)} title={isPieceMode ? "External edit in Photoshop" : "Only available in piece editor"}
+              disabled={!isPieceMode}
+              style={{ background: "transparent", border: `1px solid ${isPieceMode ? "#444" : "#333"}`, borderRadius: 4, color: isPieceMode ? "#aaa" : "#555", cursor: isPieceMode ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
             >External edit</button>
             {externalPsdName && (
               <button onClick={syncFromExternalApp} title={`Re-import "${externalPsdName}"`}
