@@ -5394,6 +5394,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(ph as any).__groupPath = newPath
       ;(ph as any).__assetLabel = "(folder placeholder)"
       fc.add(ph)
+      // User pedido 2026-05-23: 'criar folder abaixo do layer selecionado'.
+      // Se ha layer ativo, posiciona o placeholder logo ABAIXO dele no z-stack
+      // (painel mostra top→bottom = front→back, entao abaixo do selecionado
+      // significa atras no canvas). Sem isso, o placeholder cai no topo (front),
+      // longe da selecao do user.
+      const active = fc.getActiveObject() as any
+      if (active && !active.__isBg && !active.__isBleedOverlay) {
+        const all = fc.getObjects()
+        const activeIdx = all.indexOf(active)
+        if (activeIdx >= 0) {
+          // moveObjectTo coloca ph no index dado. Pra ficar ABAIXO de active no
+          // painel (= um z-step atras na lista do Fabric), insere em activeIdx.
+          // Fabric shifta active pra cima automaticamente.
+          fc.moveObjectTo(ph, activeIdx)
+        }
+        // BG sempre embaixo apos qualquer reorder
+        const bgObj = all.find((o: any) => o.__isBg)
+        if (bgObj) fc.sendObjectToBack(bgObj)
+      }
     }
     fc.renderAll()
     refreshLayers(fc)
