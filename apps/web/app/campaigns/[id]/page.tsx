@@ -368,7 +368,7 @@ export default function CampaignOverviewPage() {
         />
 
         {/* Preview KV + botões */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, marginBottom: 28, display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "14px 24px", marginBottom: 28, display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>
           <div>
             <div
               onClick={() => router.push(`/editor?campaignId=${id}`)}
@@ -433,13 +433,13 @@ export default function CampaignOverviewPage() {
             const primaryStep: "import" | "generate" | "deliver" =
               !hasAssets ? "import" : !hasPieces ? "generate" : "deliver"
             return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2 }}>Matriz</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0 }}>Matriz</div>
                 <PsdImporter
                   ref={psdMatrixImporterRef}
                   campaignId={id}
                   onImported={loadAll}
-                  size="lg"
+                  size="md"
                 />
                 {hasAssets && (
                   <PsdPieceImporter
@@ -449,20 +449,20 @@ export default function CampaignOverviewPage() {
                     onImported={loadAll}
                   />
                 )}
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2, marginTop: 8 }}>Conteúdo</div>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0, marginTop: 4 }}>Conteúdo</div>
                 <Button
                   variant={primaryStep === "generate" ? "primary" : "secondary"}
-                  size="lg"
+                  size="md"
                   onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
                   disabled={!hasAssets}
                   title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}
                 >
                   + Gerar peça
                 </Button>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 2, marginTop: 8 }}>Entrega</div>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0, marginTop: 4 }}>Entrega</div>
                 <Button
                   variant="secondary"
-                  size="lg"
+                  size="md"
                   onClick={() => router.push(`/campaigns/${id}/presentation`)}
                   disabled={!hasPieces}
                   title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}
@@ -471,7 +471,7 @@ export default function CampaignOverviewPage() {
                 </Button>
                 <Button
                   variant={primaryStep === "deliver" ? "primary" : "secondary"}
-                  size="lg"
+                  size="md"
                   onClick={() => setDeliveryOpen(true)}
                   disabled={!hasPieces}
                   title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}
