@@ -9045,9 +9045,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 <div style={{ width: 1, height: 16, background: "#333", margin: "0 2px" }} />
               </>
             )}
+            {/* Add/Remove step PAREADOS (user pedido 2026-05-23: "remove step
+                deveria estar do lado de step"). Sao acoes opostas — agrupar
+                fica mais intuitivo. PSD/External edit ficam depois. */}
             <button onClick={addStep} title="Add new step"
               style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
             >+ Step</button>
+            {stepCount > 1 && (
+              <button onClick={(e) => removeStep(activeStepIndex, e.altKey)} title="Remove step (Option+click skips confirm)"
+                style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+              >Remove step</button>
+            )}
+            <div style={{ width: 1, height: 16, background: "#333", margin: "0 4px" }} />
             <button onClick={() => psdStepInputRef.current?.click()} title="Replace step with PSD"
               style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
             >PSD</button>
@@ -9058,11 +9067,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               <button onClick={syncFromExternalApp} title={`Re-import "${externalPsdName}"`}
                 style={{ background: "#2a2a1a", border: "1px solid #F5C400", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
               >Sync</button>
-            )}
-            {stepCount > 1 && (
-              <button onClick={(e) => removeStep(activeStepIndex, e.altKey)} title="Remove step (Option+click skips confirm)"
-                style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-              >Remove step</button>
             )}
           </div>
         )}
