@@ -23,6 +23,8 @@ interface Asset {
   id: string
   label: string
   content: Span[]
+  /** Entrelinhas global do asset (multiplicador de fontSize, ex: 1.2). */
+  lineHeight?: number
 }
 
 interface Layer {
@@ -145,6 +147,32 @@ export default function OverridesPlayground() {
     },
   ])
 
+  // Atualiza style de UM char especifico (per-char editing)
+  function updateCharStyle(assetId: string, charIdx: number, patch: Partial<Style>) {
+    setAssets(prev => prev.map(a => {
+      if (a.id !== assetId) return a
+      // Expand spans em chars individuais
+      const chars: { ch: string; style: Style }[] = []
+      for (const span of a.content) {
+        for (const ch of span.text) chars.push({ ch, style: { ...span.style } })
+      }
+      if (charIdx < 0 || charIdx >= chars.length) return a
+      chars[charIdx].style = { ...chars[charIdx].style, ...patch }
+      // Re-merge chars adjacentes com mesmo style
+      const newContent: Span[] = []
+      for (const { ch, style } of chars) {
+        const last = newContent[newContent.length - 1]
+        if (last && JSON.stringify(last.style) === JSON.stringify(style)) last.text += ch
+        else newContent.push({ text: ch, style })
+      }
+      return { ...a, content: newContent }
+    }))
+  }
+
+  function updateAssetLineHeight(assetId: string, lineHeight: number) {
+    setAssets(prev => prev.map(a => a.id === assetId ? { ...a, lineHeight } : a))
+  }
+
   // REALTIME 2026-05-24: edit no textarea aplica IMEDIATAMENTE no asset
   // state + migra overrides das pecas. Sem botao Salvar. Padrao ZZOSY
   // "preview realtime em tudo".
@@ -216,14 +244,89 @@ export default function OverridesPlayground() {
             <h2 style={{ fontSize: 14, fontWeight: 700, color: "#F5C400", margin: 0, textTransform: "uppercase", letterSpacing: "0.5px" }}>Assets (fonte da verdade)</h2>
             {assets.map(asset => {
               const text = getText(asset)
+              // Expand chars individuais pra UI per-char
+              const chars: { ch: string; style: Style; idx: number }[] = []
+              let absIdx = 0
+              for (const span of asset.content) {
+                for (const ch of span.text) {
+                  chars.push({ ch, style: span.style, idx: absIdx++ })
+                }
+              }
               return (
                 <div key={asset.id} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: 14 }}>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>{asset.label}</div>
                   <textarea
                     value={text}
                     onChange={e => updateAssetText(asset.id, e.target.value)}
-                    style={{ width: "100%", minHeight: 72, padding: 10, fontSize: 13, background: "#111", color: "#ddd", border: "1px solid #333", borderRadius: 4, fontFamily: "inherit", resize: "vertical", outline: "none" }}
+                    style={{ width: "100%", minHeight: 48, padding: 10, fontSize: 13, background: "#111", color: "#ddd", border: "1px solid #333", borderRadius: 4, fontFamily: "inherit", resize: "vertical", outline: "none" }}
                   />
+                  {/* Entrelinhas (asset-level) */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 11, color: "#888" }}>
+                    <span>Entrelinhas (lineHeight)</span>
+                    <input
+                      type="number"
+                      step={0.05}
+                      min={0.5}
+                      max={3}
+                      value={asset.lineHeight ?? 1.2}
+                      onChange={e => updateAssetLineHeight(asset.id, Number(e.target.value) || 1.2)}
+                      style={{ width: 60, padding: "2px 6px", background: "#0d0d0d", color: "#ddd", border: "1px solid #2a2a2a", borderRadius: 3, fontSize: 11 }}
+                    />
+                  </div>
+                  {/* Per-char editor */}
+                  <div style={{ marginTop: 12, fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px" }}>Editar per-char</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6, maxHeight: 280, overflowY: "auto", border: "1px solid #2a2a2a", borderRadius: 4, padding: 6 }}>
+                    {chars.map(({ ch, style, idx }) => (
+                      <div key={idx} style={{ display: "grid", gridTemplateColumns: "28px 36px 50px 70px 90px", gap: 4, alignItems: "center", fontSize: 10 }}>
+                        <span style={{ textAlign: "center", color: style.color ?? "#fff", fontWeight: style.fontWeight === "bold" ? 700 : 400, fontFamily: style.fontFamily ?? "inherit", background: "#0a0a0a", padding: "2px 0", borderRadius: 2 }}>
+                          {ch === " " ? "·" : ch === "\n" ? "↵" : ch}
+                        </span>
+                        <input
+                          type="color"
+                          value={style.color ?? "#000000"}
+                          onChange={e => updateCharStyle(asset.id, idx, { color: e.target.value })}
+                          style={{ width: 36, height: 22, padding: 0, border: "1px solid #2a2a2a", background: "transparent", cursor: "pointer" }}
+                          title="Cor"
+                        />
+                        <input
+                          type="number"
+                          min={6}
+                          max={500}
+                          value={style.fontSize ?? 16}
+                          onChange={e => updateCharStyle(asset.id, idx, { fontSize: Number(e.target.value) || 16 })}
+                          style={{ padding: "2px 4px", background: "#0d0d0d", color: "#ddd", border: "1px solid #2a2a2a", borderRadius: 2, fontSize: 10 }}
+                          title="Tamanho"
+                        />
+                        <select
+                          value={style.fontWeight ?? "normal"}
+                          onChange={e => updateCharStyle(asset.id, idx, { fontWeight: e.target.value })}
+                          style={{ padding: "2px 4px", background: "#0d0d0d", color: "#ddd", border: "1px solid #2a2a2a", borderRadius: 2, fontSize: 10 }}
+                          title="Peso"
+                        >
+                          <option value="normal">normal</option>
+                          <option value="bold">bold</option>
+                          <option value="100">100</option>
+                          <option value="300">300</option>
+                          <option value="500">500</option>
+                          <option value="700">700</option>
+                          <option value="900">900</option>
+                        </select>
+                        <select
+                          value={style.fontFamily ?? "Arial"}
+                          onChange={e => updateCharStyle(asset.id, idx, { fontFamily: e.target.value })}
+                          style={{ padding: "2px 4px", background: "#0d0d0d", color: "#ddd", border: "1px solid #2a2a2a", borderRadius: 2, fontSize: 10 }}
+                          title="Família"
+                        >
+                          <option value="Arial">Arial</option>
+                          <option value="Helvetica">Helvetica</option>
+                          <option value="Georgia">Georgia</option>
+                          <option value="'Courier New', monospace">Courier</option>
+                          <option value="'Times New Roman', serif">Times</option>
+                          <option value="'DM Sans', sans-serif">DM Sans</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
                   {/* Debug spans */}
                   <details style={{ marginTop: 10 }}>
                     <summary style={{ fontSize: 10, color: "#666", cursor: "pointer" }}>spans (debug)</summary>
@@ -367,7 +470,7 @@ function LayerRender({ layer, asset }: { layer: Layer; asset: Asset }) {
   return (
     <div style={{ marginBottom: 8 }}>
       {lines.map((line, li) => (
-        <div key={li} style={{ lineHeight: 1.1 }}>
+        <div key={li} style={{ lineHeight: asset.lineHeight ?? 1.1 }}>
           {line.map(({ ch, style }, ci) => (
             <span key={ci} style={{
               color: style.color ?? "#111",
