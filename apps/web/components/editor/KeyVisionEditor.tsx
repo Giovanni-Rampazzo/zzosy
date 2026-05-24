@@ -8962,7 +8962,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             document.body.style.cursor = "ew-resize"
             document.body.style.userSelect = "none"
           }}
-          onDoubleClick={() => setLayersPanelWidth(LW)}
+          onDoubleClick={() => setLayersPanelWidth(LW_MIN)}
           title="Drag to resize · double-click to reset"
           style={{
             position: "absolute",
@@ -9845,7 +9845,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             document.body.style.cursor = "ew-resize"
             document.body.style.userSelect = "none"
           }}
-          onDoubleClick={() => setPropsPanelWidth(PW)}
+          onDoubleClick={() => setPropsPanelWidth(PW_MIN)}
           title="Drag to resize · double-click to reset"
           style={{
             position: "absolute",
