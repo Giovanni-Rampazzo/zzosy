@@ -67,39 +67,31 @@ const MIME_BY_EXT: Record<string, string> = {
 }
 
 async function downloadBlob(blob: Blob, filename: string): Promise<void> {
-  // Tenta showSaveFilePicker (Chrome/Edge 86+) — abre dialog "Salvar como"
-  // pra user escolher pasta + nome. Fallback pra <a download> em browsers
-  // sem suporte (Firefox/Safari) — salva direto na pasta Downloads.
+  // SEMPRE usa <a download> (salva direto em Downloads/, sem dialog).
   // User pedido 2026-05-23: "nao pergunta onde quero salvar".
-  const ext = (filename.split(".").pop() ?? "").toLowerCase()
-  const mime = MIME_BY_EXT[ext] ?? blob.type ?? "application/octet-stream"
-  const showSaveFilePicker = (window as any).showSaveFilePicker
-  if (typeof showSaveFilePicker === "function") {
-    try {
-      const handle = await showSaveFilePicker({
-        suggestedName: filename,
-        types: ext ? [{ description: ext.toUpperCase(), accept: { [mime]: [`.${ext}`] } }] : undefined,
-      })
-      const writable = await handle.createWritable()
-      await writable.write(blob)
-      await writable.close()
-      return
-    } catch (e: any) {
-      // AbortError = user cancelou. NotAllowedError = bloqueado (HTTPS req?).
-      // Em ambos, NAO faz fallback automatico pra <a download> — se user
-      // cancelou, nao deve baixar; se bloqueou, problema de contexto.
-      if (e?.name === "AbortError") return
-      console.warn("[downloadBlob] showSaveFilePicker falhou, fallback <a download>:", e)
-    }
+  // showSaveFilePicker REMOVIDO 2026-05-24: gerava nomes UUID-like quando
+  // dialog era cancelado ou nome ficava em branco (Chrome usa derivado da
+  // blob URL em vez do suggestedName em alguns casos). Fallback simples e
+  // robusto.
+  // Sanity: filename DEVE ter extensao e ser nao-vazio. Senao Chrome ignora
+  // o download attribute e usa UUID da blob URL como nome.
+  let safeFilename = (filename ?? "").trim()
+  if (!safeFilename || safeFilename === "." || /^\.+$/.test(safeFilename)) {
+    safeFilename = `download-${Date.now()}.bin`
   }
-  // Fallback: <a download> classico (salva direto em Downloads/, sem dialog)
+  if (!/\.[a-zA-Z0-9]+$/.test(safeFilename)) {
+    // Sem extensao reconhecivel — adiciona .bin pra Chrome respeitar o nome
+    safeFilename = `${safeFilename}.bin`
+  }
+  console.log("[downloadBlob]", { filename: safeFilename, size: blob.size, mime: blob.type })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = filename
+  a.download = safeFilename
+  a.style.display = "none"
   document.body.appendChild(a)
   a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 100)
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 1000)
 }
 
 function safeName(s: string) {
