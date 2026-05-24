@@ -8561,7 +8561,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   const isText = selected && (selected.type === "textbox" || selected.type === "i-text")
   const pS = { position: "fixed" as const, top: 0, bottom: 0, background: "rgba(18,18,18,0.97)", backdropFilter: "blur(12px)", zIndex: 100, display: "flex", flexDirection: "column" as const, overflowY: "auto" as const }
-  const bS = { background: "transparent", border: "none", cursor: "pointer", color: "#aaa", fontSize: 18, padding: "0 4px" } as React.CSSProperties
+  // Estilo dos botoes da monitor toolbar — padronizado com os botoes da
+  // esquerda (Steps nav) pra consistencia visual (user pedido 2026-05-23).
+  const bS = { background: "transparent", border: "1px solid #444", borderRadius: 4, cursor: "pointer", color: "#aaa", fontSize: 11, fontWeight: 600, padding: "3px 10px", lineHeight: 1, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center" } as React.CSSProperties
   // inpS/secS/numInpS/numFieldGrid: fonte unica de verdade em lib/editorFieldStyles.ts.
   // Mudar dimensoes/cores ali = propaga pro editor inteiro. Anti-padrao
   // duplicacao no editor eliminado (user pediu 2026-05-22).
@@ -8889,9 +8891,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <button onClick={centerObjectInCanvas} style={bS} title="Center selected object in canvas (vertical + horizontal)">Center</button>
         <button onClick={centerView} style={bS} title="Fit the piece in the viewport (Shift+1)">Fit</button>
         <button onClick={zoomToSelection} style={bS} title="Focus on the selected object (Shift+2)">Focus selection</button>
-        <button onClick={() => changeZoom(-0.1)} style={bS}>−</button>
+        <button onClick={() => changeZoom(-0.1)} style={bS} title="Zoom out">−</button>
         <span style={{ fontSize: 11, color: "#555", minWidth: 40, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
-        <button onClick={() => changeZoom(+0.1)} style={bS}>+</button>
+        <button onClick={() => changeZoom(+0.1)} style={bS} title="Zoom in">+</button>
+        {/* Toggle paineis laterais (Tab) — user pedido 2026-05-23. Esconde
+            Layers + Properties pra preview limpo. */}
+        <button
+          onClick={() => setPanelsHidden(v => !v)}
+          title={panelsHidden ? "Show side panels (Tab)" : "Hide side panels (Tab)"}
+          style={{ ...bS, marginLeft: 4, background: panelsHidden ? "#F5C400" : "transparent", color: panelsHidden ? "#111" : "#aaa", borderColor: panelsHidden ? "#F5C400" : "#444" }}
+        >
+          {panelsHidden ? "▣" : "▢"}
+        </button>
       </div>
 
       <div style={{ ...pS, left: 0, width: effLayersPanelWidth, borderRight: "1px solid #2a2a2a", paddingTop: TH, overflow: panelsHidden ? "hidden" : pS.overflow }}>
