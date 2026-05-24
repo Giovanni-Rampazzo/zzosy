@@ -357,17 +357,9 @@ export default function CampaignOverviewPage() {
           </div>
         </div>
 
-        {/* Subnav horizontal no topo — voltei pra esse layout 2026-05-24 apos
-            tentativa anterior de colocar dentro do box / na direita do KV
-            ficar visualmente ruim. Mais simples = melhor. */}
-        <CampaignSubnav
-          campaignId={id}
-          clientId={campaign.client?.id}
-          clientName={campaign.client?.name}
-          activeTab="campaign"
-          hasAssets={!!campaign.assets && campaign.assets.length > 0}
-          hasPieces={pieces.length > 0}
-        />
+        {/* Subnav REMOVIDO 2026-05-24 (user pedido). Agora cada botao vai
+            pra seu contexto correto na sidebar: Assets+KV em MATRIZ, Pecas
+            removido (ja tem PECAS GERADAS embaixo), Apresentacao em ENTREGA. */}
 
         {/* Preview KV + actions sidebar */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px", marginBottom: 14 }}>
@@ -390,7 +382,7 @@ export default function CampaignOverviewPage() {
                 await psdMatrixImporterRef.current?.importFile(file)
               }}
               style={{
-                maxHeight: 110, display: "flex", alignItems: "center", justifyContent: "center",
+                maxHeight: 260, display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#aaa", fontSize: 13,
                 cursor: "pointer",
                 transition: "transform 0.15s ease, box-shadow 0.15s ease, outline 0.15s ease",
@@ -409,10 +401,10 @@ export default function CampaignOverviewPage() {
             >
               {campaign.keyVision?.thumbnailUrl ? (
                 <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
-                  style={{ maxWidth: "100%", maxHeight: 110, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+                  style={{ maxWidth: "100%", maxHeight: 260, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
               ) : (
                 <div style={{
-                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 110, width: "auto", maxWidth: "100%",
+                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 260, width: "auto", maxWidth: "100%",
                   background: kvBg, borderRadius: 6, border: "1px solid #E0E0E0",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
@@ -436,16 +428,18 @@ export default function CampaignOverviewPage() {
             const primaryStep: "import" | "generate" | "deliver" =
               !hasAssets ? "import" : !hasPieces ? "generate" : "deliver"
             return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {/* Apenas acoes que MODIFICAM dados — navegacao ja esta no subnav.
-                    Apresentacao removida daqui (duplicava o botao no subnav).
-                    Entrega permanece — e acao destrutiva/final, vale destaque. */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {/* Reorganizado 2026-05-24 (user pedido):
+                    - Assets + KV vao em MATRIZ (sao recursos da matriz)
+                    - Pecas removido (ja tem lista PECAS GERADAS embaixo)
+                    - Apresentacao vai em ENTREGA (e formato de delivery)
+                    Todos size="sm" (igual botoes Legenda/Apagar). */}
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0 }}>Matriz</div>
                 <PsdImporter
                   ref={psdMatrixImporterRef}
                   campaignId={id}
                   onImported={loadAll}
-                  size="md"
+                  size="sm"
                 />
                 {hasAssets && (
                   <PsdPieceImporter
@@ -455,10 +449,27 @@ export default function CampaignOverviewPage() {
                     onImported={loadAll}
                   />
                 )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => router.push(`/campaigns/${id}/assets`)}
+                  title="Lista de assets desta campanha"
+                >
+                  Assets
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => router.push(`/editor?campaignId=${id}`)}
+                  disabled={!hasAssets}
+                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Editor da Matriz (Key Vision)"}
+                >
+                  KV
+                </Button>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0, marginTop: 4 }}>Conteúdo</div>
                 <Button
                   variant={primaryStep === "generate" ? "primary" : "secondary"}
-                  size="md"
+                  size="sm"
                   onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
                   disabled={!hasAssets}
                   title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}
@@ -467,8 +478,17 @@ export default function CampaignOverviewPage() {
                 </Button>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0, marginTop: 4 }}>Entrega</div>
                 <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => router.push(`/campaigns/${id}/presentation`)}
+                  disabled={!hasPieces}
+                  title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}
+                >
+                  Apresentação
+                </Button>
+                <Button
                   variant={primaryStep === "deliver" ? "primary" : "secondary"}
-                  size="md"
+                  size="sm"
                   onClick={() => setDeliveryOpen(true)}
                   disabled={!hasPieces}
                   title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}
