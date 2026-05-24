@@ -14,7 +14,6 @@ import { RowThumb } from "@/components/ui/RowThumb"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { PsdPieceImporter, type PsdPieceImporterHandle } from "@/components/campaign/PsdPieceImporter"
 import { Button } from "@/components/ui/Button"
-import { CampaignSubnav, subnavButtonStyle } from "@/components/campaign/CampaignSubnav"
 import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
 
 interface Asset { id: string; type: string; label: string }
@@ -308,19 +307,8 @@ export default function CampaignOverviewPage() {
       <TopNav />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 24px" }}>
 
-        {/* Header limpo 2026-05-24. Padrao ZZOSY: botoes concisos. */}
-        <div style={{ marginBottom: 12 }}>
-          {campaign.client?.id && (
-            <button
-              onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
-              style={{ ...subnavButtonStyle({}), marginBottom: 8 }}
-              onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F0" }}
-              onMouseLeave={e => { e.currentTarget.style.background = "white" }}
-              title="Voltar para Campanhas"
-            >
-              ← Campanhas
-            </button>
-          )}
+        {/* Header: titulo a esquerda + "← Campanhas" amarelo a direita 2026-05-24 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             {campaign.code && campaign.code.trim() && (
               <div style={{ flexShrink: 0, color: "#999" }}>
@@ -355,6 +343,16 @@ export default function CampaignOverviewPage() {
               />
             </h1>
           </div>
+          {campaign.client?.id && (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
+              title="Voltar para Campanhas"
+            >
+              ← Campanhas
+            </Button>
+          )}
         </div>
 
         {/* Subnav REMOVIDO 2026-05-24 (user pedido). Agora cada botao vai
@@ -440,16 +438,12 @@ export default function CampaignOverviewPage() {
                   title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Editor da Matriz (Key Vision)"}>
                   KV
                 </Button>
-                {/* gap maior separa Conteudo do Matriz */}
-                <div style={{ height: 8 }} />
                 <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
                   disabled={!hasAssets}
                   title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}>
                   + Gerar peça
                 </Button>
-                {/* gap maior separa Entrega de Conteudo */}
-                <div style={{ height: 8 }} />
                 <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/presentation`)}
                   disabled={!hasPieces}
