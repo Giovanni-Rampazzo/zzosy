@@ -8924,7 +8924,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         </button>
       </div>
 
-      <div style={{ ...pS, left: 0, width: effLayersPanelWidth, borderRight: "1px solid #2a2a2a", paddingTop: TH, overflow: panelsHidden ? "hidden" : pS.overflow }}>
+      <div style={{ ...pS, left: 0, width: effLayersPanelWidth, borderRight: "1px solid #2a2a2a", paddingTop: TH, overflowY: (panelsHidden ? "hidden" : (pS.overflowY ?? "auto"))}}>
         {/* Drag handle de resize do painel — barra fininha na borda direita.
             Mouse-down marca posicao inicial; mousemove em window recalcula
             largura; mouse-up libera. localStorage persiste. Clamped [180,500]
@@ -9803,7 +9803,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             }}>Exit</button>
         </div>
       )}
-      <div style={{ ...pS, right: 0, width: effPropsPanelWidth, borderLeft: "1px solid #2a2a2a", paddingTop: TH, overflow: panelsHidden ? "hidden" : pS.overflow }}>
+      <div style={{ ...pS, right: 0, width: effPropsPanelWidth, borderLeft: "1px solid #2a2a2a", paddingTop: TH, overflowY: (panelsHidden ? "hidden" : (pS.overflowY ?? "auto"))}}>
         {/* Drag handle de resize do painel Properties — borda ESQUERDA. Mesmo
             padrao do layersPanelWidth (mirrored). */}
         <div
