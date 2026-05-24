@@ -2819,15 +2819,39 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (!isApplyingHistory.current) doSave()
       })
 
-      // Zoom Photoshop-style: Ctrl+Scroll
+      // Zoom Photoshop/Figma-style: Ctrl+Scroll, ANCORADO NO CURSOR.
+      // User pedido 2026-05-23 (PRIORIDADE): cursor eh o anchor point —
+      // ponto do canvas embaixo do cursor permanece no mesmo lugar do
+      // viewport apos zoom. fc.zoomToPoint faz exatamente isso quando o
+      // point eh dado em coords do canvas DOM (offset relativo ao canvas).
       const wrapper = wrapperRef.current
       const onWheel = (e: WheelEvent) => {
         if (!e.ctrlKey && !e.metaKey) return
-        if (!alive || !fabricRef.current) return
+        const fc = fabricRef.current
+        if (!alive || !fc) return
         e.preventDefault()
         const delta = e.deltaY > 0 ? -0.05 : 0.05
         const newZ = Math.min(3, Math.max(0.05, zoomRef.current + delta))
-        applyZoom(fabricRef.current, newZ)
+        // Pega coords do mouse RELATIVAS ao canvas DOM (cursor pos no canvas).
+        const canvasEl = (fc as any).lowerCanvasEl
+          ?? (fc as any).lower?.el
+          ?? (fc as any).elements?.lower
+        if (canvasEl) {
+          const rect = canvasEl.getBoundingClientRect()
+          const px = e.clientX - rect.left
+          const py = e.clientY - rect.top
+          fc.zoomToPoint({ x: px, y: py } as any, newZ)
+          zoomRef.current = newZ
+          setZoom(newZ)
+          // Re-dimensiona bleed overlays + invalida cache de viewport extents.
+          // applyZoom faz isso, mas como zoomToPoint setou vt direto, repassamos.
+          try {
+            fc.requestRenderAll()
+          } catch {}
+        } else {
+          // Fallback: applyZoom (centraliza no canvas, nao no cursor).
+          applyZoom(fc, newZ)
+        }
       }
       if (wrapper) wrapper.addEventListener("wheel", onWheel, { passive: false })
       cleanupFns.push(() => { if (wrapper) wrapper.removeEventListener("wheel", onWheel) })
