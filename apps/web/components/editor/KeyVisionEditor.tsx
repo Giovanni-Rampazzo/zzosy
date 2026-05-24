@@ -6202,6 +6202,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         .filter((o: any) => {
           if (o.__isBg) return false
           if ((o as any).__isStrokeGhost === true) return false
+          if ((o as any).__isBleedOverlay === true) return false
           if (!o.__assetId) {
             editorLog("[PIECE-SAVE-NOW] objeto sem __assetId BLOQUEADO:", {
               type: o.type, text: (o as any).text?.slice(0, 30),
@@ -6313,9 +6314,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         .filter((o: any) => {
           if (o.__isBg) return false
           if ((o as any).__isStrokeGhost === true) return false
+          if ((o as any).__isBleedOverlay === true) return false
           // Bloqueia save de objetos sem __assetId — antes salvava com "" e o load
           // descartava silenciosamente, fazendo o canvas voltar vazio (bug grave de
           // perda de conteudo). Se acontecer, logamos pra detectar a causa-raiz.
+          // Bleed overlays JA filtrados acima — log so dispara em caso real.
           if (!o.__assetId) {
             editorLog("[SAVE-MATRIX] objeto sem __assetId ignorado no save:", o.type, { left: o.left, top: o.top, text: (o as any).text })
             return false

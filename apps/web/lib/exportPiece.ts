@@ -67,35 +67,51 @@ const MIME_BY_EXT: Record<string, string> = {
 }
 
 async function downloadBlob(blob: Blob, filename: string): Promise<void> {
-  // Usa file-saver lib (FileSaver.js) — biblioteca battle-tested que cobre
-  // todos browser quirks. Internamente tenta: msSaveBlob (legacy Edge/IE) →
-  // iframe download → <a download>. Resolve casos onde .click() programatico
-  // do <a> e bloqueado pelo Chrome quando o user gesture context ja se
-  // perdeu na chain async longa do export. Adicionado 2026-05-24 apos user
-  // reportar export nao baixando apesar do code chegar ate o click().
+  // SERVER-SIDE PROXY 2026-05-24: client-side download (.click() programatico)
+  // bloqueado pelo Chrome quando user gesture ja se perdeu na chain async do
+  // export. Solucao DEFINITIVA: POST do blob pra /api/download-proxy → server
+  // armazena temporariamente → client navega via window.location.href que
+  // serve com Content-Disposition: attachment. Browser SEMPRE baixa response
+  // com esse header — nao da pra bloquear.
   let safeFilename = (filename ?? "").trim()
-  if (!safeFilename || /^\.+$/.test(safeFilename)) {
-    safeFilename = `download-${Date.now()}.bin`
-  }
-  if (!/\.[a-zA-Z0-9]+$/.test(safeFilename)) {
-    safeFilename = `${safeFilename}.bin`
-  }
+  if (!safeFilename || /^\.+$/.test(safeFilename)) safeFilename = `download-${Date.now()}.bin`
+  if (!/\.[a-zA-Z0-9]+$/.test(safeFilename)) safeFilename = `${safeFilename}.bin`
   console.log("[downloadBlob]", { filename: safeFilename, size: blob.size, mime: blob.type })
   try {
-    const { saveAs } = await import("file-saver")
-    saveAs(blob, safeFilename)
-    console.log("[downloadBlob] saveAs OK via file-saver")
+    const fd = new FormData()
+    fd.append("file", blob, safeFilename)
+    fd.append("filename", safeFilename)
+    const res = await fetch("/api/download-proxy", { method: "POST", body: fd })
+    if (!res.ok) throw new Error(`proxy upload failed: ${res.status}`)
+    const { url } = await res.json()
+    if (!url) throw new Error("proxy returned no url")
+    console.log("[downloadBlob] proxy OK, baixando via iframe", url)
+    // IFRAME hidden em vez de window.location.href: navegacao quebraria o
+    // SPA (perde estado). Iframe carrega a URL, browser ve Content-Disposition
+    // e baixa SEM navegar a pagina principal. Mesmo trick que ferramentas tipo
+    // jsPDF/exceljs usam pra forcar download sem confiar em <a>.click().
+    const iframe = document.createElement("iframe")
+    iframe.style.display = "none"
+    iframe.src = url
+    document.body.appendChild(iframe)
+    // Remove apos 30s (tempo de download pra arquivos grandes + safety margin)
+    setTimeout(() => { try { iframe.remove() } catch {} }, 30000)
   } catch (e) {
-    console.warn("[downloadBlob] file-saver falhou, fallback <a download>:", e)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = safeFilename
-    a.style.position = "fixed"
-    a.style.opacity = "0"
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 1000)
+    console.warn("[downloadBlob] proxy falhou, fallback file-saver:", e)
+    try {
+      const { saveAs } = await import("file-saver")
+      saveAs(blob, safeFilename)
+    } catch (e2) {
+      console.warn("[downloadBlob] file-saver tb falhou, ultimo fallback <a download>:", e2)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = safeFilename
+      a.style.position = "fixed"; a.style.opacity = "0"
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 1000)
+    }
   }
 }
 
