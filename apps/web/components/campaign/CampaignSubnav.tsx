@@ -26,6 +26,39 @@ interface Props {
   hasPieces?: boolean
 }
 
+/**
+ * Estilo PADRAO ZZOSY 2026-05-24 (user pedido) pros botoes de subnavegacao:
+ * fundo branco + borda 2px #555 + texto preto bold. Active = fill amarelo
+ * brand (#F5C400). Disabled = cinza. Mesmo visual do Button variant=secondary,
+ * mas o active vira primary fill.
+ *
+ * Centralizado aqui pra reuso futuro (outras subnavs).
+ */
+export const SUBNAV_BUTTON_BASE: React.CSSProperties = {
+  padding: "10px 18px",
+  background: "white",
+  border: "2px solid #555555",
+  borderRadius: 6,
+  color: "#111111",
+  fontFamily: "'DM Sans', sans-serif",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+  transition: "background 0.12s, color 0.12s, border-color 0.12s",
+  whiteSpace: "nowrap",
+}
+
+export function subnavButtonStyle(opts: { active?: boolean; disabled?: boolean }): React.CSSProperties {
+  const { active, disabled } = opts
+  if (disabled) {
+    return { ...SUBNAV_BUTTON_BASE, background: "#F5F5F0", color: "#bbb", borderColor: "#D0D0D0", cursor: "not-allowed" }
+  }
+  if (active) {
+    return { ...SUBNAV_BUTTON_BASE, background: "#F5C400", borderColor: "#F5C400", color: "#111" }
+  }
+  return SUBNAV_BUTTON_BASE
+}
+
 export function CampaignSubnav({ campaignId, actions, inlineActions, activeTab, hasAssets, hasPieces }: Props) {
   const router = useRouter()
   const Tab = (props: { label: string; tab: NonNullable<Props["activeTab"]>; href: string; title: string; disabled?: boolean }) => {
@@ -36,38 +69,34 @@ export function CampaignSubnav({ campaignId, actions, inlineActions, activeTab, 
         onClick={() => { if (!isActive && !props.disabled) router.push(props.href) }}
         disabled={props.disabled}
         title={props.title}
-        style={{
-          padding: "8px 4px",
-          background: "transparent",
-          border: "none",
-          borderBottom: isActive ? "2px solid #111" : "2px solid transparent",
-          color: props.disabled ? "#bbb" : (isActive ? "#111" : "#666"),
-          fontFamily: "inherit",
-          fontSize: 13,
-          fontWeight: isActive ? 700 : 500,
-          cursor: props.disabled ? "not-allowed" : (isActive ? "default" : "pointer"),
-          marginBottom: -1,
+        style={subnavButtonStyle({ active: isActive, disabled: props.disabled })}
+        onMouseEnter={e => {
+          if (!isActive && !props.disabled) {
+            e.currentTarget.style.background = "#F5F5F0"
+          }
+        }}
+        onMouseLeave={e => {
+          if (!isActive && !props.disabled) {
+            e.currentTarget.style.background = "white"
+          }
         }}
       >
         {props.label}
       </button>
     )
   }
-  // Suporte legado: inlineActions agora vai junto com `actions` (mesmo bucket)
   const combinedActions = (inlineActions || actions) ? (
     <>{inlineActions}{actions}</>
   ) : null
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: 24,
-      borderBottom: "1px solid #E5E5E5",
+      display: "flex", alignItems: "center", gap: 16,
       marginBottom: 16,
-      paddingBottom: 0,
+      flexWrap: "wrap",
     }}>
-      {/* Tabs — esquerda. Tab "Campanha" REMOVIDA 2026-05-24 (user pedido):
-          quando user esta na page da campanha, ja sabe disso — tab redundante.
-          Pra navegar entre campanhas use TopNav > Campanhas. */}
-      <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+      {/* Subnav buttons — esquerda. Padrao ZZOSY: todos com border 2px #555,
+          active = fill amarelo brand. */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <Tab label="Assets" tab="assets" href={`/campaigns/${campaignId}/assets`} title="Lista de assets desta campanha" />
         <Tab
           label="KV"
@@ -85,9 +114,8 @@ export function CampaignSubnav({ campaignId, actions, inlineActions, activeTab, 
           disabled={hasPieces === false}
         />
       </div>
-      {/* Actions — direita, alinhadas inline com as tabs */}
       {combinedActions && (
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingBottom: 8 }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {combinedActions}
         </div>
       )}
