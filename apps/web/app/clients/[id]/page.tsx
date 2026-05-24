@@ -95,39 +95,13 @@ export default function ClientPage() {
             >
               ← Empresas
             </Button>
+            {/* Header limpo 2026-05-24 (user pedido "tira tudo isso"):
+                swatches de cor, font name, Design System + Editar empresa
+                buttons removidos. Acesso a essas areas via /clients/[id]/edit
+                e /clients/[id]/design-system direto pelas URLs ou via outros
+                lugares do app (Configuracoes na edit page). */}
             <ClientLogoBadge client={{id, name: client.name, brandLogoUrl: client.brandLogoUrl}} size={48} radius={8} />
-            <div style={{display:"flex",flexDirection:"column",gap:2,flex:1,minWidth:0}}>
-              <div style={{fontSize:22,fontWeight:700,color:"#111",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{client.name}</div>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                {client.brandColors && client.brandColors.length > 0 && (
-                  <div style={{display:"flex",gap:4,alignItems:"center"}} title="Cores da marca — clique pra abrir o Design System">
-                    {client.brandColors.slice(0,6).map((c, i) => (
-                      <div key={i} style={{width:14,height:14,borderRadius:"50%",background:c.hex,border:"1px solid rgba(0,0,0,0.1)",cursor:"pointer"}} onClick={() => router.push(`/clients/${id}/design-system`)} />
-                    ))}
-                  </div>
-                )}
-                {client.brandFont && (
-                  <span
-                    onClick={() => router.push(`/clients/${id}/design-system`)}
-                    title="Tipografia da marca — clique pra abrir o Design System"
-                    style={{fontSize:12,color:"#666",fontFamily:`'${client.brandFont}', sans-serif`,cursor:"pointer",borderBottom:"1px dashed #ccc"}}>
-                    {client.brandFont}
-                  </span>
-                )}
-                <button
-                  onClick={() => router.push(`/clients/${id}/design-system`)}
-                  title="Design System — cores, fontes, tipografia e logo da marca"
-                  style={{background:"transparent",border:"1px solid #D0D0D0",color:"#666",fontSize:11,padding:"3px 10px",borderRadius:4,cursor:"pointer"}}>
-                  Design System
-                </button>
-                <button
-                  onClick={() => router.push(`/clients/${id}/edit`)}
-                  title="Editar dados administrativos da empresa (contato, endereço, etc)"
-                  style={{background:"transparent",border:"1px solid #D0D0D0",color:"#666",fontSize:11,padding:"3px 10px",borderRadius:4,cursor:"pointer"}}>
-                  Editar empresa
-                </button>
-              </div>
-            </div>
+            <div style={{fontSize:22,fontWeight:700,color:"#111",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{client.name}</div>
           </div>
         </div>
 
