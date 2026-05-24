@@ -145,25 +145,18 @@ export default function OverridesPlayground() {
     },
   ])
 
-  // Edit local do textarea de asset (sem salvar até clicar)
-  const [localAssetText, setLocalAssetText] = useState<Record<string, string>>(() =>
-    Object.fromEntries(assets.map(a => [a.id, getText(a)]))
-  )
-
-  // SALVAR asset: rebuild spans + migrate overrides das peças
-  function saveAsset(assetId: string) {
-    const newText = localAssetText[assetId] ?? ""
+  // REALTIME 2026-05-24: edit no textarea aplica IMEDIATAMENTE no asset
+  // state + migra overrides das pecas. Sem botao Salvar. Padrao ZZOSY
+  // "preview realtime em tudo".
+  function updateAssetText(assetId: string, newText: string) {
     const asset = assets.find(a => a.id === assetId)
     if (!asset) return
     const oldText = getText(asset)
     if (oldText === newText) return
     const skipMigrate = newText.trim().length === 0
-
     const newContent = rebuildSpans(asset.content, newText)
     setAssets(prev => prev.map(a => a.id === assetId ? { ...a, content: newContent } : a))
-
     if (!skipMigrate) {
-      // Migra overrides.text das peças que tinham \n
       setPieces(prev => prev.map(p => ({
         ...p,
         layers: p.layers.map(l => {
@@ -201,7 +194,6 @@ export default function OverridesPlayground() {
       { id: "p1", name: "Peça A", layers: [{ assetId: "a1", overrides: { text: "Hello\nWorld" } }, { assetId: "a2", overrides: {} }] },
       { id: "p2", name: "Peça B", layers: [{ assetId: "a1", overrides: { fill: "#118AB2" } }, { assetId: "a2", overrides: { fontSize: 32 } }] },
     ])
-    setLocalAssetText({ a1: "Hello World", a2: "Subtitulo simples" })
   }
 
   return (
@@ -215,7 +207,7 @@ export default function OverridesPlayground() {
           </button>
         </div>
         <p style={{ fontSize: 13, color: "#888", marginBottom: 24, lineHeight: 1.5 }}>
-          Mexe nos assets à esquerda (clica <strong>Salvar</strong> pra propagar). Mexe nos overrides das peças à direita. Vê em tempo real como a regra funciona: <code>asset.content</code> é fonte da verdade dos chars, <code>overrides.text</code> sobrescreve LOCAL (com <code>\n</code>), <code>overrides.fill/fontSize</code> sobrescreve estilo padrão. Cores per char do asset são preservadas no texto da peça.
+          Mexe nos assets à esquerda — mudança propaga REALTIME nas peças à direita (sem botão Salvar). <code>asset.content</code> é fonte da verdade dos chars, <code>overrides.text</code> sobrescreve LOCAL (com <code>\n</code>), <code>overrides.fill/fontSize</code> sobrescreve estilo padrão. Cores per char do asset são preservadas no texto da peça.
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 24 }}>
@@ -223,24 +215,15 @@ export default function OverridesPlayground() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: "#F5C400", margin: 0, textTransform: "uppercase", letterSpacing: "0.5px" }}>Assets (fonte da verdade)</h2>
             {assets.map(asset => {
-              const localText = localAssetText[asset.id] ?? ""
-              const dirty = localText !== getText(asset)
+              const text = getText(asset)
               return (
                 <div key={asset.id} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: 14 }}>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>{asset.label}</div>
                   <textarea
-                    value={localText}
-                    onChange={e => setLocalAssetText(m => ({ ...m, [asset.id]: e.target.value }))}
-                    onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) { e.preventDefault(); saveAsset(asset.id) } }}
-                    style={{ width: "100%", minHeight: 72, padding: 10, fontSize: 13, background: "#111", color: "#ddd", border: dirty ? "1px solid #F5C400" : "1px solid #333", borderRadius: 4, fontFamily: "inherit", resize: "vertical", outline: "none" }}
+                    value={text}
+                    onChange={e => updateAssetText(asset.id, e.target.value)}
+                    style={{ width: "100%", minHeight: 72, padding: 10, fontSize: 13, background: "#111", color: "#ddd", border: "1px solid #333", borderRadius: 4, fontFamily: "inherit", resize: "vertical", outline: "none" }}
                   />
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
-                    <span style={{ fontSize: 10, color: dirty ? "#F5C400" : "#666" }}>{dirty ? "Não salvo (Cmd+Enter)" : "Salvo"}</span>
-                    <button onClick={() => saveAsset(asset.id)} disabled={!dirty}
-                      style={{ padding: "4px 12px", background: dirty ? "#F5C400" : "#333", color: dirty ? "#111" : "#666", border: "none", borderRadius: 4, cursor: dirty ? "pointer" : "default", fontSize: 11, fontWeight: 700 }}>
-                      Salvar
-                    </button>
-                  </div>
                   {/* Debug spans */}
                   <details style={{ marginTop: 10 }}>
                     <summary style={{ fontSize: 10, color: "#666", cursor: "pointer" }}>spans (debug)</summary>
