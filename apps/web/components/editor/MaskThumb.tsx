@@ -53,7 +53,7 @@ export function MaskThumb({ mask, obj, fc, onFocus, focused = false, size = 16 }
   return (
     <button
       type="button"
-      title={focused ? "Editando mask" : `${mask.type} mask — click pra editar`}
+      title={focused ? "Editing mask" : `${mask.type} mask — click to edit`}
       onClick={e => { e.stopPropagation(); onFocus?.() }}
       style={{
         width: size, height: size, padding: 0, flexShrink: 0,

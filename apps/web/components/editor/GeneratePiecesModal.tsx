@@ -301,6 +301,11 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
           rotation: l.rotation ?? 0,
           zIndex: l.zIndex ?? 0,
         }
+        // SKEW propagado da matriz pra peca (user pedido 2026-05-23: "skew
+        // continua nao salvando nas pecas geradas"). Skew nao precisa de scale
+        // — eh um angulo, mantem visualmente igual em qualquer tamanho.
+        if (typeof l.skewX === "number" && l.skewX !== 0) base.skewX = l.skewX
+        if (typeof l.skewY === "number" && l.skewY !== 0) base.skewY = l.skewY
         // Round-trip metadata da matriz → peca. Sem isso, a peca nascia perdendo
         // mascaras (channel mask sumia, aparecia imagem inteira), hidden/locked,
         // opacity/blendMode, effects e groupPath. Sintoma reportado pelo user:
@@ -438,7 +443,7 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
     setGenerating(false)
     setProgress("")
     if (failures.length > 0) {
-      alert(`Geração concluiu com ${failures.length} falha(s):\n\n${failures.join("\n")}\n\nVer browser console pra detalhes.`)
+      alert(`Generation finished with ${failures.length} failure(s):\n\n${failures.join("\n")}\n\nSee browser console for details.`)
     }
     onGenerated()
 
@@ -461,7 +466,7 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
   // Agrupa formatos dinamicamente por valores unicos de category.
   // Formatos sem categoria caem em "Sem categoria".
   const categoryGroups = formats.reduce<Record<string, MediaFormat[]>>((acc, f) => {
-    const k = f.category || "Sem categoria"
+    const k = f.category || "No category"
     if (!acc[k]) acc[k] = []
     acc[k].push(f)
     return acc
@@ -472,15 +477,15 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
       <div className="bg-[#1a1a1a] rounded-xl w-[560px] max-h-[80vh] flex flex-col border border-[#333333]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#333333]">
-          <span className="font-bold text-white text-base">Selecionar formatos</span>
+          <span className="font-bold text-white text-base">Select formats</span>
           <button onClick={onClose} className="text-[#555555] hover:text-white bg-transparent border-0 text-xl cursor-pointer">✕</button>
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-4">
           {loading ? (
-            <div className="text-center py-8 text-[#555555]">Carregando formatos...</div>
+            <div className="text-center py-8 text-[#555555]">Loading formats...</div>
           ) : categoryNames.length === 0 ? (
-            <div className="text-center py-8 text-[#555555]">Nenhum formato cadastrado.</div>
+            <div className="text-center py-8 text-[#555555]">No format registered.</div>
           ) : (
             <>
               {categoryNames.map((cat) => {
@@ -490,7 +495,7 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-bold uppercase tracking-wider text-[#555555]">{cat}</span>
                     <button onClick={() => toggleAll(cat)} className="text-xs text-[#F5C400] bg-transparent border-0 cursor-pointer">
-                      {data.every(f => selected.includes(f.id)) ? "Desmarcar todos" : "Selecionar todos"}
+                      {data.every(f => selected.includes(f.id)) ? "Deselect all" : "Select all"}
                     </button>
                   </div>
                   {data.map(f => (
@@ -508,11 +513,11 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
         </div>
 
         <div className="px-6 py-4 border-t border-[#333333] flex justify-between items-center">
-          <span className="text-xs text-[#555555]">{generating ? progress : `${selected.length} formato(s) selecionado(s)`}</span>
+          <span className="text-xs text-[#555555]">{generating ? progress : `${selected.length} format(s) selected`}</span>
           <div className="flex gap-3">
-            <Button variant="ghost" onClick={onClose} className="text-[#888888]">Cancelar</Button>
+            <Button variant="ghost" onClick={onClose} className="text-[#888888]">Cancel</Button>
             <Button onClick={generate} loading={generating} disabled={selected.length === 0}>
-              Gerar {selected.length > 0 ? `${selected.length} ` : ""}peças
+              Generate {selected.length > 0 ? `${selected.length} ` : ""}pieces
             </Button>
           </div>
         </div>

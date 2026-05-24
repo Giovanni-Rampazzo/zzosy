@@ -112,12 +112,12 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%",overflowY:"auto"}}>
       <div style={{padding:"12px 16px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.8px",color:"#555",borderBottom:"1px solid #2a2a2a"}}>
-        Propriedades
+        Properties
       </div>
 
       {!selectedObj ? (
         <div style={{fontSize:11,color:"#444",textAlign:"center",padding:"32px 12px"}}>
-          Selecione um elemento
+          Select an element
         </div>
       ) : isSmartObject ? (
         <div style={{padding:16,display:"flex",flexDirection:"column",gap:10}}>
@@ -125,7 +125,7 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
             <div style={{fontSize:14,lineHeight:1}}>{"◇"}</div>
             <div>
               <div style={{fontSize:11,fontWeight:700,color:"#60a5fa",letterSpacing:"0.6px",textTransform:"uppercase"}}>Smart Object</div>
-              <div style={{fontSize:10,color:"#777",marginTop:2}}>Preservado do PSD original. Bytes intactos no re-export.</div>
+              <div style={{fontSize:10,color:"#777",marginTop:2}}>Preserved from original PSD. Bytes intact on re-export.</div>
             </div>
           </div>
           {soOriginalName && (
@@ -135,12 +135,12 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
           )}
           {soMime && (
             <div style={{fontSize:10,color:"#888"}}>
-              <span style={{color:"#555"}}>Formato:</span> {soMime}
+              <span style={{color:"#555"}}>Format:</span> {soMime}
             </div>
           )}
           <div style={{fontSize:10,color:"#666",lineHeight:1.5,padding:"8px 10px",background:"#1a1a1a",borderRadius:6,marginTop:4}}>
-            Posicao, escala e effects sao editaveis. O conteudo original do
-            Smart Object eh preservado e re-exportado para o Photoshop.
+            Position, scale and effects are editable. The original Smart Object
+            content is preserved and re-exported to Photoshop.
           </div>
         </div>
       ) : isBg ? (
@@ -160,7 +160,7 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
         <div style={{padding:16,display:"flex",flexDirection:"column",gap:14}}>
           {isEditing && (
             <div style={{padding:8,background:"rgba(245,196,0,0.1)",borderRadius:6,border:"1px solid rgba(245,196,0,0.3)",fontSize:10,color:"#F5C400"}}>
-              Selecione letras para mudar cor/tamanho individual
+              Select letters to change individual color/size
             </div>
           )}
 
@@ -168,7 +168,7 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
               juntos. User pediu (2026-05-23) — antes só fonte+peso+tamanho
               estavam aqui, entrelinha/entreletra faltavam totalmente. */}
           <div style={{display:"flex",flexDirection:"column",gap:10,padding:12,background:"#0d0d0d",borderRadius:8,border:"1px solid #1f1f1f"}}>
-            <div style={{...sec,marginBottom:0,color:"#888"}}>Tipografia</div>
+            <div style={{...sec,marginBottom:0,color:"#888"}}>Typography</div>
 
             <div>
               <FontPicker value={fontFamily} onChange={(f) => applyText("fontFamily", f)} />
@@ -176,32 +176,32 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
 
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <div>
-                <div style={{...sec,fontSize:9,marginBottom:4}}>Tamanho</div>
+                <div style={{...sec,fontSize:9,marginBottom:4}}>Size</div>
                 <div style={{display:"flex",gap:4}}>
                   <button
                     type="button"
                     onClick={()=>applyText("fontSize",String(Math.max(1, Math.round(+fontSize) - 4)))}
-                    title="Diminuir 4pt"
+                    title="Decrease 4pt"
                     style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
                   >−</button>
                   <input type="number" value={fontSize} onChange={e=>applyText("fontSize",e.target.value)} style={{...inp,textAlign:"center"}}/>
                   <button
                     type="button"
                     onClick={()=>applyText("fontSize",String(Math.round(+fontSize) + 4))}
-                    title="Aumentar 4pt"
+                    title="Increase 4pt"
                     style={{width:28,background:"#111",border:"1px solid #2a2a2a",color:"white",fontSize:14,fontWeight:700,borderRadius:4,cursor:"pointer",lineHeight:1}}
                   >+</button>
                 </div>
               </div>
               <div>
-                <div style={{...sec,fontSize:9,marginBottom:4}}>Peso</div>
+                <div style={{...sec,fontSize:9,marginBottom:4}}>Weight</div>
                 <WeightPicker value={fontFamily} onChange={(f) => applyText("fontFamily", f)} />
               </div>
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <div>
-                <div style={{...sec,fontSize:9,marginBottom:4}} title="Entrelinha em pontos (PSD/Adobe). Distancia baseline-to-baseline.">Entrelinha</div>
+                <div style={{...sec,fontSize:9,marginBottom:4}} title="Line height in points (PSD/Adobe). Baseline-to-baseline distance.">Line height</div>
                 <input
                   type="number"
                   value={leadingPt}
@@ -209,25 +209,25 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
                   step={1}
                   onChange={e=>applyText("leadingPt", e.target.value)}
                   style={{...inp,textAlign:"center"}}
-                  title="Entrelinha em pontos"
+                  title="Line height in points"
                 />
               </div>
               <div>
-                <div style={{...sec,fontSize:9,marginBottom:4}} title="Entreletra (tracking) em milesimos de em. Mesma unidade do Photoshop.">Entreletra</div>
+                <div style={{...sec,fontSize:9,marginBottom:4}} title="Letter spacing (tracking) in thousandths of em. Same unit as Photoshop.">Letter spacing</div>
                 <input
                   type="number"
                   value={charSpacing}
                   step={10}
                   onChange={e=>applyText("charSpacing", e.target.value)}
                   style={{...inp,textAlign:"center"}}
-                  title="Entreletra (tracking) em milesimos de em"
+                  title="Letter spacing (tracking) in thousandths of em"
                 />
               </div>
             </div>
           </div>
 
           <div>
-            <div style={sec}>Cor {isEditing?"(seleção)":"(texto todo)"}</div>
+            <div style={sec}>Color {isEditing?"(selection)":"(entire text)"}</div>
             <input type="color" value={fill} onChange={e=>applyText("fill",e.target.value)}
               style={{width:"100%",height:40,cursor:"pointer",border:"none",borderRadius:6,padding:0,background:"transparent"}}/>
             <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
@@ -239,14 +239,14 @@ export function PropertiesPanel({ selectedObj, fabricRef, onUpdate, onBgColorCha
           </div>
 
           <div style={{padding:10,background:"#111",borderRadius:6,fontSize:10,color:"#555",lineHeight:1.5}}>
-            Duplo clique = editar texto<br/>
-            Enter = quebrar linha<br/>
-            Selecionar letras = mudar cor individual
+            Double click = edit text<br/>
+            Enter = line break<br/>
+            Select letters = change individual color
           </div>
         </div>
       ) : (
         <div style={{padding:16,fontSize:11,color:"#555",textAlign:"center"}}>
-          Mova e redimensione no canvas
+          Move and resize on canvas
         </div>
       )}
     </div>

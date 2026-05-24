@@ -1074,6 +1074,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     setActiveStepIndex(value)
   }
   const [selected, setSelected] = useState<any>(null)
+  // Toggle do popover "+ Add asset" ao lado do botao ASSETS no Properties.
+  const [showAddAsset, setShowAddAsset] = useState(false)
+  // Tab key toggle: esconde Layers + Properties pra preview limpo (Photoshop-style).
+  // User pedido 2026-05-23. effLayersPanelWidth/effPropsPanelWidth computados
+  // mais abaixo (depois que layersPanelWidth/propsPanelWidth foram declarados).
+  const [panelsHidden, setPanelsHidden] = useState(false)
+  // Force-rerender counter pra LayerPanel quando rename precisa atualizar
+  // labels alem do refreshLayers normal (defensivo — sintoma 2026-05-23).
+  const [layerVersion, setLayerVersion] = useState(0)
+  void layerVersion
   // selectedRef: usado em handlers/funcoes (changeBg, addBgLayer, etc) que
   // precisam ler o selected atual sem depender de stale closure de re-renders.
   const selectedRef = useRef<any>(null)
@@ -1132,6 +1142,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (typeof window !== "undefined") window.dispatchEvent(new Event("resize"))
   }, [propsPanelWidth])
   const propsResizeRef = useRef<{ startX: number; startW: number } | null>(null)
+  // Largura EFFECTIVE dos paineis (0 quando hidden via Tab). User pedido
+  // 2026-05-23: shortcut Tab esconde Layers + Properties (Photoshop-style).
+  const effLayersPanelWidth = panelsHidden ? 0 : layersPanelWidth
+  const effPropsPanelWidth = panelsHidden ? 0 : propsPanelWidth
   // Estado do drag-and-drop no painel Layers (visualIndex sendo arrastado / sobre)
   const [dragLayerIdx, setDragLayerIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
@@ -1760,6 +1774,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Cmd+Shift+>/< (font size) roubem a tecla.
       if (isTypingInPanel(e.target)) return
 
+      // TAB — toggle ambos os paineis laterais (Photoshop-style). Single key,
+      // sem modificadores. Esconde Layers + Properties pra preview limpo do
+      // canvas. User pedido 2026-05-23.
+      if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        setPanelsHidden(prev => !prev)
+        return
+      }
+
       const fc = fabricRef.current
       const active = fc?.getActiveObject() as any
       const isTextActive = active && (active.type === "textbox" || active.type === "i-text")
@@ -1824,7 +1847,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const cb = getClipboard()
         if (!cb) return
         if (cb.campaignId !== campaignId) {
-          alert("Asset copiado pertence a outra campanha — copie/cole apenas dentro da mesma campanha por enquanto.")
+          alert("Copied asset belongs to another campaign — copy/paste only within the same campaign for now.")
           return
         }
         e.preventDefault()
@@ -3987,6 +4010,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (o.__assetId === assetId) o.__assetLabel = trimmed
     })
     refreshLayers(fc)
+    // Force re-render do LayerPanel mesmo se setLayers nao detectar mudanca
+    // (defensivo): bump no selectedTick + bump no layerVersion. Sintoma 2026-05-23:
+    // "rename salva no DB mas preview do editor nao muda — precisa entrar e sair".
+    setSelectedTick(t => t + 1)
+    setLayerVersion(v => v + 1)
     // Persiste no banco
     try {
       await fetch(`/api/campaigns/${campaignId}/assets/${assetId}`, {
@@ -3999,6 +4027,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ...prev,
         assets: prev.assets.map(a => a.id === assetId ? { ...a, label: trimmed } : a),
       } : prev)
+      // Re-refresh apos campanha sync — algumas vias renderizam label a partir
+      // de campaign.assets em vez de obj.__assetLabel.
+      refreshLayers(fc)
+      setLayerVersion(v => v + 1)
     } catch (e) {
       console.warn("[renameLayer] falha ao persistir:", e)
     }
@@ -4296,6 +4328,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const scaleX = layer?.scaleX ?? 1
     const scaleY = layer?.scaleY ?? 1
     const angle = layer?.rotation ?? 0
+    // Skew: Fabric suporta skewX/skewY em todos os obj types. Salvo no layer
+    // ao sair editor — sem load aqui, skew aplicado em runtime perderia ao
+    // recarregar. Sintoma reportado 2026-05-23: "aplico skew e nao salva".
+    const skewX = typeof layer?.skewX === "number" ? layer.skewX : 0
+    const skewY = typeof layer?.skewY === "number" ? layer.skewY : 0
     // PSD opacity/blendMode (extraídos no import) preservados como props do
     // Fabric object. Só repassa quando há valor explícito (não-default) —
     // setar `opacity: 1` ou `globalCompositeOperation: "source-over"` no
@@ -4444,6 +4481,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           fc.add(ghost)
         }
         fc.add(p)
+        if (skewX !== 0 || skewY !== 0) { (p as any).set({ skewX, skewY }); (p as any).setCoords() }
         fc.requestRenderAll()
         return
       } catch (e) {
@@ -4597,6 +4635,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const pixelsBaked = (asset as any).pixelsIncludeEffects === true
           if (!pixelsBaked) applyFabricEffects(img, psdEffects, Shadow)
           fc.add(img)
+          if (skewX !== 0 || skewY !== 0) { (img as any).set({ skewX, skewY }); (img as any).setCoords() }
           fc.requestRenderAll()
           return
         } catch (e) { console.error("Image load failed:", e) }
@@ -4894,6 +4933,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         applyLeadingPtToFabric(t, effLeadingPt)
       }
     }
+    // SKEW post-construct (fallback pra branches sem return: textbox/embedded).
+    // Branches IMAGE e SHAPE aplicam inline antes do return delas. Sweep.
+    if (skewX !== 0 || skewY !== 0) {
+      const objs = fc.getObjects()
+      const last = objs[objs.length - 1]
+      if (last) {
+        last.set({ skewX, skewY })
+        last.setCoords()
+      }
+    }
   }
 
   function refreshLayers(fc: any) {
@@ -5161,7 +5210,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const key = newPath.join("›")
     const existing = getAllFolderPaths()
     if (existing.has(key)) {
-      alert(`Folder "${cleanName}" ja existe nesse nivel.`)
+      alert(`Folder "${cleanName}" already exists at this level.`)
       return
     }
     if (moveSelection) {
@@ -5174,7 +5223,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         targets = targets.filter((o: any) => !o.__isBg && !o.__isBleedOverlay)
       }
       if (targets.length === 0) {
-        alert("Selecione um ou mais layers no canvas pra mover pra dentro do folder.")
+        alert("Select one or more layers on the canvas to move into the folder.")
         return
       }
       for (const o of targets) {
@@ -5213,7 +5262,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const newKey = newPath.join("›")
     const existing = getAllFolderPaths()
     if (existing.has(newKey) && newKey !== folderPath.join("›")) {
-      alert(`Folder "${cleanName}" ja existe nesse nivel.`)
+      alert(`Folder "${cleanName}" already exists at this level.`)
       return
     }
     const depth = folderPath.length - 1
@@ -5249,7 +5298,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // Conflito de nome no destino
     const existing = getAllFolderPaths()
     if (newFolderPath.join("›") !== folderPath.join("›") && existing.has(newFolderPath.join("›"))) {
-      alert(`Ja existe um folder "${folderName}" no destino.`)
+      alert(`A folder "${folderName}" already exists at the destination.`)
       return
     }
     const descs = getFolderDescendants(folderPath)
@@ -5977,6 +6026,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             assetId: o.__assetId,
             posX: Math.round(o.left ?? 0), posY: Math.round(o.top ?? 0),
             scaleX: o.scaleX ?? 1, scaleY: o.scaleY ?? 1,
+            ...(o.skewX ? { skewX: o.skewX } : {}),
+            ...(o.skewY ? { skewY: o.skewY } : {}),
             rotation: o.angle ?? 0, zIndex: i,
             width: Math.round(o.width ?? 400), height: Math.round(o.height ?? 100),
             overrides: {},
@@ -6086,6 +6137,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             assetId: o.__assetId,
             posX: Math.round(o.left ?? 0), posY: Math.round(o.top ?? 0),
             scaleX: o.scaleX ?? 1, scaleY: o.scaleY ?? 1,
+            ...(o.skewX ? { skewX: o.skewX } : {}),
+            ...(o.skewY ? { skewY: o.skewY } : {}),
             rotation: o.angle ?? 0, zIndex: i,
             width: Math.round(o.width ?? 400),
             height: Math.round((o.height ?? 300) * (o.scaleY ?? 1)),
@@ -6201,6 +6254,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           posY: Math.round(o.top ?? 0),
           scaleX: o.scaleX ?? 1,
           scaleY: o.scaleY ?? 1,
+          ...(o.skewX ? { skewX: o.skewX } : {}),
+          ...(o.skewY ? { skewY: o.skewY } : {}),
           rotation: o.angle ?? 0,
           zIndex: i,
           width: Math.round(o.width ?? 400),
@@ -6460,7 +6515,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // manualmente. Sync depois via re-leitura do file handle persistido.
   async function openInExternalApp(forceNewRoot = false) {
     if (!pieceId || !pieceRef.current) {
-      alert("Disponível apenas pra peças geradas (não pra matriz)")
+      alert("Available only for generated pieces (not for the matrix)")
       return
     }
     const piece = pieceRef.current
@@ -6468,10 +6523,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     try {
       // Sanitiza nomes pra filesystem (remove chars proibidos em paths)
       const safe = (s: string | undefined | null) =>
-        (s ?? "").replace(/[\\/:*?"<>| -]+/g, "_").trim() || "Sem nome"
+        (s ?? "").replace(/[\\/:*?"<>| -]+/g, "_").trim() || "Unnamed"
       // Busca info de MediaFormat (vehicle/media) — não vem direto no piece
-      let vehicle = "Sem veiculo"
-      let media = "Sem midia"
+      let vehicle = "No vehicle"
+      let media = "No media"
       const mfId = (piece as any).mediaFormatId
       if (mfId) {
         try {
@@ -6489,7 +6544,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const { exportPSDBlob } = await import("@/lib/exportPiece")
       const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
       const blob = await exportPSDBlob({
-        id: piece.id, name: piece.name ?? "Peça",
+        id: piece.id, name: piece.name ?? "Piece",
         data,
         width: canvasWRef.current, height: canvasHRef.current,
       })
@@ -6499,8 +6554,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const root = await ensurePsdRootDir(forceNewRoot)
         if (!root) { return /* user cancelou */ }
         // Cria subfolders: client / campanha / veiculo / midia
-        const clientName = safe(camp?.client?.name ?? "Cliente")
-        const campName = safe(camp?.name ?? "Campanha")
+        const clientName = safe(camp?.client?.name ?? "Client")
+        const campName = safe(camp?.name ?? "Campaign")
         const vehName = safe(vehicle)
         const mediaName = safe(media)
         const clientDir = await root.getDirectoryHandle(clientName, { create: true })
@@ -6514,7 +6569,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         externalPsdHandle.current = fileHandle
         setExternalPsdName(fileName)
         const path = `${clientName} / ${campName} / ${vehName} / ${mediaName} / ${fileName}`
-        alert(`PSD salvo em:\n${path}\n\n1. Abra o arquivo no Photoshop\n2. Edite + salve (Cmd+S)\n3. Volta e clica em Sync`)
+        alert(`PSD saved at:\n${path}\n\n1. Open the file in Photoshop\n2. Edit + save (Cmd+S)\n3. Come back and click Sync`)
       } else {
         // Fallback: download
         const url = URL.createObjectURL(blob)
@@ -6522,12 +6577,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         a.href = url; a.download = fileName
         document.body.appendChild(a); a.click()
         setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 100)
-        alert(`PSD baixado: ${fileName}\n\nSeu browser não suporta sync automático (use Chrome ou Edge).\nDepois de editar no Photoshop, re-importe o arquivo via "PSD".`)
+        alert(`PSD downloaded: ${fileName}\n\nYour browser does not support automatic sync (use Chrome or Edge).\nAfter editing in Photoshop, re-import the file via "PSD".`)
       }
     } catch (e: any) {
       if (e?.name === "AbortError") return
       console.error("[external-edit] falha:", e)
-      alert("Erro ao exportar PSD: " + (e?.message ?? e))
+      alert("Error exporting PSD: " + (e?.message ?? e))
     }
   }
 
@@ -6537,7 +6592,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   async function syncFromExternalApp() {
     const handle = externalPsdHandle.current
     if (!handle) {
-      alert("Nenhum PSD externo vinculado. Use 'Editar Externo' primeiro.")
+      alert("No external PSD linked. Use 'External edit' first.")
       return
     }
     try {
@@ -6545,17 +6600,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (perm !== "granted") {
         const req = await handle.requestPermission({ mode: "read" })
         if (req !== "granted") {
-          alert("Permissão de leitura negada — não dá pra sincronizar")
+          alert("Read permission denied — cannot sync")
           return
         }
       }
       const file = await handle.getFile()
       const mtime = file.lastModified ? new Date(file.lastModified).toLocaleTimeString() : "?"
-      if (!confirm(`Sincronizar com "${file.name}" (modificado em ${mtime})?\n\nO conteúdo do Step ativo será substituído pelos layers do PSD.`)) return
+      if (!confirm(`Sync with "${file.name}" (modified at ${mtime})?\n\nThe active Step content will be replaced by the PSD layers.`)) return
       await replaceStepFromPsd(file)
     } catch (e: any) {
       console.error("[external-sync] falha:", e)
-      alert("Falha ao sincronizar: " + (e?.message ?? e))
+      alert("Failed to sync: " + (e?.message ?? e))
     }
   }
 
@@ -6729,14 +6784,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Save now pra persistir o step substituido + regenerar thumb
       await doSaveNow()
 
-      const msg = `Step substituído: ${matched} layer(s) linkadas, ${ignored} ignoradas.`
+      const msg = `Step replaced: ${matched} layer(s) linked, ${ignored} ignored.`
       const detail = missingNames.length > 0
-        ? `\n\nSem match no asset (nomeie os assets em /assets pra reusar):\n• ${missingNames.slice(0, 10).join("\n• ")}${missingNames.length > 10 ? `\n…+${missingNames.length - 10}` : ""}`
+        ? `\n\nNo asset match (name the assets in /assets to reuse):\n• ${missingNames.slice(0, 10).join("\n• ")}${missingNames.length > 10 ? `\n…+${missingNames.length - 10}` : ""}`
         : ""
       alert(msg + detail)
     } catch (e: any) {
       console.error("[replaceStepFromPsd] erro:", e)
-      alert(`Erro ao processar PSD: ${e?.message ?? e}`)
+      alert(`Error processing PSD: ${e?.message ?? e}`)
     } finally {
       setSaving(false)
     }
@@ -6744,7 +6799,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   async function removeStep(indexToRemove: number, skipConfirm = false) {
     if (stepCountRef.current <= 1) return // nao deixa apagar o ultimo
-    if (!skipConfirm && !window.confirm(`Apagar Step ${indexToRemove + 1}? Os steps seguintes serao renumerados.`)) return
+    if (!skipConfirm && !window.confirm(`Delete Step ${indexToRemove + 1}? The following steps will be renumbered.`)) return
     // Caso A: apaga step ativo. Precisa carregar outro no canvas primeiro.
     if (indexToRemove === activeStepIndexRef.current) {
       // Escolhe vizinho: anterior se houver, senao proximo.
@@ -6941,6 +6996,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             posY: Math.round(o.top ?? 0),
             scaleX: o.scaleX ?? 1,
             scaleY: o.scaleY ?? 1,
+            ...(o.skewX ? { skewX: o.skewX } : {}),
+            ...(o.skewY ? { skewY: o.skewY } : {}),
             rotation: o.angle ?? 0,
             zIndex: i,
             width: Math.round(o.width ?? 400),
@@ -7097,6 +7154,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             posY: Math.round(o.top ?? 0),
             scaleX: o.scaleX ?? 1,
             scaleY: o.scaleY ?? 1,
+            ...(o.skewX ? { skewX: o.skewX } : {}),
+            ...(o.skewY ? { skewY: o.skewY } : {}),
             rotation: o.angle ?? 0,
             zIndex: i,
             width: Math.round(o.width ?? 400),
@@ -7184,7 +7243,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // sair pra /campaigns/[id]/assets.
   async function createTextAssetAndAdd() {
     if (!campaignId) return
-    const defaultText = "Novo texto"
+    const defaultText = "New text"
     const span = { text: defaultText, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: "Arial" } }
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
@@ -7193,7 +7252,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         body: JSON.stringify({ type: "TEXT", label: defaultText, value: defaultText, content: [span] }),
       })
       if (!res.ok) {
-        alert("Falha ao criar asset de texto")
+        alert("Failed to create text asset")
         return
       }
       const created = await res.json()
@@ -7212,7 +7271,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       await addLayer()
     } catch (e) {
       console.warn("[createTextAssetAndAdd] falhou:", e)
-      alert("Erro ao criar texto")
+      alert("Error creating text")
     }
   }
 
@@ -7347,7 +7406,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         opacity: l.opacity, hidden: l.hidden, locked: l.locked,
       }))
     }
-    reader.onerror = () => alert("Falha ao ler imagem")
+    reader.onerror = () => alert("Failed to read image")
     reader.readAsDataURL(file)
   }
 
@@ -8479,7 +8538,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   if (!campaign) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a1a", color: "#888", fontSize: 14 }}>
-      Carregando...
+      Loading...
     </div>
   )
 
@@ -8487,16 +8546,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // menos 1 asset pra arrastar). Mostra orientacao + link pra pagina de assets.
   if (!Array.isArray(campaign.assets) || campaign.assets.length === 0) return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a1a", color: "#aaa", fontSize: 14, gap: 16, padding: 20, textAlign: "center" }}>
-      <div style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>Esta campanha ainda não tem assets.</div>
-      <div style={{ maxWidth: 420 }}>Para editar a peça, cadastre ao menos um asset (imagem, logo, ou texto) na campanha.</div>
+      <div style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>This campaign has no assets yet.</div>
+      <div style={{ maxWidth: 420 }}>To edit the piece, register at least one asset (image, logo, or text) in the campaign.</div>
       <button
         onClick={() => router.push(`/campaigns/${campaignId}/assets`)}
         style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
-      >Cadastrar assets</button>
+      >Register assets</button>
       <button
         onClick={() => router.push(`/campaigns/${campaignId}`)}
         style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
-      >← Voltar para a campanha</button>
+      >← Back to campaign</button>
     </div>
   )
 
@@ -8524,7 +8583,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       `}</style>
       <div style={{
         position: "absolute",
-        left: layersPanelWidth, top: TH + BH, right: propsPanelWidth, bottom: 0,
+        left: effLayersPanelWidth, top: TH + BH, right: effPropsPanelWidth, bottom: 0,
         overflow: "hidden",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
@@ -8569,8 +8628,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             navigate()
           }
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
-          title={from === "presentation" ? "Voltar para a apresentacao" : "Voltar para a campanha"}>
-          {from === "presentation" ? "← Voltar para apresentação" : "← Voltar para campanha"}
+          title={from === "presentation" ? "Back to presentation" : "Back to campaign"}>
+          {from === "presentation" ? "← Back to presentation" : "← Back to campaign"}
         </button>
         {/* Nome + indicador "Salvo"/"Não salvo" removidos da topbar a pedido
             do user (2026-05-22) — info redundante; estado salvo continua
@@ -8580,7 +8639,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <button
           onClick={() => { performSave() }}
           disabled={!isDirty || saving}
-          title={!isDirty ? "Nada pra salvar" : saving ? "Aguarde…" : "Salvar alteracoes"}
+          title={!isDirty ? "Nothing to save" : saving ? "Please wait…" : "Save changes"}
           style={{
             background: (!isDirty || saving) ? "#1a1a1a" : "#F5C400",
             border: (!isDirty || saving) ? "1px solid #333" : "none",
@@ -8590,93 +8649,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             color: (!isDirty || saving) ? "#666" : "#111",
           }}
         >
-          {saving ? "Salvando…" : "Salvar"}
+          {saving ? "Saving…" : "Save"}
         </button>
         {/* Apresentacao movida pro fim (depois de Gerar Pecas) — botao amarelo
             destaque na extremidade direita da topbar (2026-05-22). */}
-        {/* STEPS NAVIGATION (modo peca apenas) */}
+        {/* Steps nav movido pra monitor toolbar (2026-05-23). */}
         {isPieceMode && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8, padding: "4px 8px", background: "#1a1a1a", borderRadius: 6, border: "1px solid #2a2a2a" }}>
-            {stepCount > 1 && (
-              <>
-                <button
-                  onClick={() => switchToStep(activeStepIndex - 1)}
-                  disabled={activeStepIndex === 0}
-                  title="Step anterior"
-                  style={{ background: "transparent", border: "none", color: activeStepIndex === 0 ? "#333" : "#aaa", cursor: activeStepIndex === 0 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 6px", lineHeight: 1 }}
-                >
-                  Anterior
-                </button>
-                <span style={{ fontSize: 11, color: "#bbb", fontWeight: 600, minWidth: 60, textAlign: "center" }}>
-                  Step {activeStepIndex + 1} de {stepCount}
-                </span>
-                <button
-                  onClick={() => switchToStep(activeStepIndex + 1)}
-                  disabled={activeStepIndex >= stepCount - 1}
-                  title="Proximo step"
-                  style={{ background: "transparent", border: "none", color: activeStepIndex >= stepCount - 1 ? "#333" : "#aaa", cursor: activeStepIndex >= stepCount - 1 ? "not-allowed" : "pointer", fontSize: 14, padding: "2px 6px", lineHeight: 1 }}
-                >
-                  Próximo
-                </button>
-                <div style={{ width: 1, height: 16, background: "#333", margin: "0 2px" }} />
-              </>
-            )}
-            <button
-              onClick={addStep}
-              title="Adicionar novo step (carrossel, sequencia, etc)"
-              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-            >
-              + Step
-            </button>
-            <button
-              onClick={() => psdStepInputRef.current?.click()}
-              title="Substituir o conteúdo do step ativo por um PSD (layers com mesmo nome de asset são linkadas; sem match = ignoradas)"
-              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-            >
-              PSD
-            </button>
-            {/* Editar Externo: exporta PSD pro disco (FSA API) com hierarquia
-                cliente/campanha/veiculo/midia automática. Option/Alt+click
-                pra trocar a pasta raiz. */}
-            <button
-              onClick={(e) => openInExternalApp(e.altKey)}
-              title="Exporta esta peça como PSD organizada em cliente/campanha/veiculo/midia. Option+click pra trocar pasta raiz. Depois edita no Photoshop, salva, clica 'Sync'."
-              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-            >
-              Editar Externo
-            </button>
-            {externalPsdName && (
-              <button
-                onClick={syncFromExternalApp}
-                title={`Re-importa "${externalPsdName}" do disco (use após salvar no Photoshop)`}
-                style={{ background: "#2a2a1a", border: "1px solid #F5C400", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-              >
-                Sync
-              </button>
-            )}
-            <input
-              ref={psdStepInputRef}
-              type="file"
-              accept=".psd,application/octet-stream,image/vnd.adobe.photoshop"
-              style={{ display: "none" }}
-              onChange={async (e) => {
-                const f = e.target.files?.[0]
-                e.currentTarget.value = ""
-                if (!f) return
-                if (!window.confirm(`Substituir o conteúdo do Step ${activeStepIndex + 1} pelos layers de "${f.name}"? O conteúdo atual desse step será descartado.`)) return
-                await replaceStepFromPsd(f)
-              }}
-            />
-            {stepCount > 1 && (
-              <button
-                onClick={(e) => removeStep(activeStepIndex, e.altKey)}
-                title="Apagar este step (Option+click pula confirmacao)"
-                style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
-              >
-                Remover step
-              </button>
-            )}
-          </div>
+          <input
+            ref={psdStepInputRef}
+            type="file"
+            accept=".psd,application/octet-stream,image/vnd.adobe.photoshop"
+            style={{ display: "none" }}
+            onChange={async (e) => {
+              const f = e.target.files?.[0]
+              e.currentTarget.value = ""
+              if (!f) return
+              if (!window.confirm(`Replace the content of Step ${activeStepIndex + 1} with the layers of "${f.name}"? The current content of this step will be discarded.`)) return
+              await replaceStepFromPsd(f)
+            }}
+          />
         )}
         <div style={{ flex: 1 }} />
         {/* Resolução {canvasW} × {canvasH} removida a pedido do user (2026-05-22) —
@@ -8684,10 +8675,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             Cmd+Z / Cmd+Shift+Z continuam funcionando). */}
         {/* Acoes secundarias alinhadas a direita: Importar PSD / Assets / Legendas */}
         <label
-          title="Importar PSD pra esta campanha (substitui Key Vision atual)"
+          title="Import PSD for this campaign (replaces current Key Vision)"
           style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer", color: "#aaa", userSelect: "none" }}
         >
-          {psdImporterRef.current?.isLoading() ? "Importando…" : "Importar PSD"}
+          {psdImporterRef.current?.isLoading() ? "Importing…" : "Import PSD"}
           <input
             type="file"
             accept=".psd"
@@ -8716,8 +8707,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (isDirtyRef.current) setConfirmExit(() => go)
             else go()
           }} style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
-            title="Editar legendas/copy desta peca">
-            Legendas
+            title="Edit captions/copy for this piece">
+            Captions
           </button>
         )}
         <button
@@ -8736,7 +8727,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             // Constroi pseudo-piece a partir do estado atual do canvas (layers + bg).
             try {
               const fc = fabricRef.current
-              if (!fc) { alert("Canvas indisponivel"); return }
+              if (!fc) { alert("Canvas unavailable"); return }
               const W = canvasWRef.current
               const H = canvasHRef.current
               const layers = fc.getObjects()
@@ -8779,6 +8770,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     posY: Math.round(o.top ?? 0),
                     scaleX: o.scaleX ?? 1,
                     scaleY: o.scaleY ?? 1,
+                    ...(o.skewX ? { skewX: o.skewX } : {}),
+                    ...(o.skewY ? { skewY: o.skewY } : {}),
                     rotation: o.angle ?? 0,
                     zIndex: i,
                     width: Math.round(o.width ?? 400),
@@ -8810,16 +8803,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               setExportOpen(true)
             } catch (e) {
               console.error("[KV-EXPORT] falha", e)
-              alert("Falha ao preparar exportacao do Key Vision")
+              alert("Failed to prepare Key Vision export")
             }
           }}
           style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#aaa" }}
-          title={isPieceMode ? "Exportar esta peca" : "Exportar Key Vision (matriz)"}
+          title={isPieceMode ? "Export this piece" : "Export Key Vision (matrix)"}
         >
-          Exportar
+          Export
         </button>
         {!isPieceMode && (
-          <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>Gerar Peças</button>
+          <button onClick={() => setModal(true)} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}>Generate Pieces</button>
         )}
         {/* Apresentacao — extremidade direita da topbar. Estilo amarelo igual
             Gerar Pecas pra destaque visual da acao principal (ver resultado). */}
@@ -8832,67 +8825,76 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               if (isDirtyRef.current) setConfirmExit(() => navigate)
               else navigate()
             }}
-            title="Ir direto para a apresentacao desta campanha"
+            title="Go directly to this campaign's presentation"
             style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111", marginLeft: "auto" }}
           >
-            Apresentação
+            Presentation
           </button>
         )}
         {/* Undo/Redo botoes removidos da topbar (2026-05-22) — atalhos
             Cmd+Z / Cmd+Shift+Z continuam funcionando. */}
       </div>
 
-      <div style={{ position: "fixed", top: TH, left: layersPanelWidth, right: propsPanelWidth, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
-        <span style={{ fontSize: 11, color: "#555", fontWeight: 600, flexShrink: 0 }}>Asset:</span>
-        <select value={assetId} onChange={e => { setAssetId(e.target.value); assetIdRef.current = e.target.value }}
-          style={{ background: "#222", color: "white", border: "1px solid #333", borderRadius: 4, padding: "4px 8px", fontSize: 12, maxWidth: 260 }}>
-          {(campaign.assets ?? []).map((a: Asset) => <option key={a.id} value={a.id}>{a.label}</option>)}
-        </select>
-        {(() => {
-          // Regra: asset TEXTO so pode aparecer 1x no canvas (matriz ou peca).
-          // Se ja existe layer com esse assetId E o asset eh TEXT, desabilita o botao.
-          const currentAsset = (campaign.assets ?? []).find((a: Asset) => a.id === assetId)
-          const isText = currentAsset?.type === "TEXT"
-          const fc = fabricRef.current
-          const alreadyOnCanvas = isText && fc
-            ? fc.getObjects().some((o: any) => o.__assetId === assetId)
-            : false
-          // selectedTick na deps pra re-render quando layers mudam
-          void selectedTick
-          const disabled = alreadyOnCanvas
-          return (
-            <button
-              onClick={addLayer}
-              disabled={disabled}
-              title={disabled ? "Este asset de texto ja esta no canvas. Cada asset texto so pode aparecer uma vez." : undefined}
-              style={{
-                background: disabled ? "#3a3a1a" : "#F5C400",
-                color: disabled ? "#666" : "#111",
-                border: "none",
-                padding: "5px 14px",
-                borderRadius: 4,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: disabled ? "not-allowed" : "pointer",
-              }}
-            >+ Adicionar ao canvas</button>
-          )
-        })()}
-        {/* Botão "+ Texto novo" removido (UX request 2026-05-17): assets de
-            texto agora sao criados exclusivamente via /campaigns/[id]/assets
-            pra centralizar a criação e evitar texts órfãos no canvas. A função
-            createTextAssetAndAdd permanece definida pra back-compat caso algum
-            caminho ainda chame, mas nao tem mais UI. */}
+      {/* MONITOR TOOLBAR — so botoes relacionados ao canvas/zoom (user pedido
+          2026-05-23: "central, so botoes relacionados ao monitor"). O Asset
+          picker + "+ Add to canvas" foi movido pra dentro de Properties, ao
+          lado do botao ASSETS. */}
+      <div style={{ position: "fixed", top: TH, left: effLayersPanelWidth, right: effPropsPanelWidth, height: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", alignItems: "center", padding: "0 16px", gap: 8, zIndex: 200, overflowX: "auto" }}>
+        {/* STEPS NAVIGATION movido pra ca (user pedido 2026-05-23) — eh
+            relacionado ao monitor/canvas, nao navegacao principal. */}
+        {isPieceMode && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", background: "#0d0d0d", borderRadius: 6, border: "1px solid #2a2a2a" }}>
+            {stepCount > 1 && (
+              <>
+                <button
+                  onClick={() => switchToStep(activeStepIndex - 1)}
+                  disabled={activeStepIndex === 0}
+                  title="Previous step"
+                  style={{ background: "transparent", border: "none", color: activeStepIndex === 0 ? "#333" : "#aaa", cursor: activeStepIndex === 0 ? "not-allowed" : "pointer", fontSize: 12, padding: "2px 6px", lineHeight: 1 }}
+                >Previous</button>
+                <span style={{ fontSize: 11, color: "#bbb", fontWeight: 600, minWidth: 60, textAlign: "center" }}>
+                  Step {activeStepIndex + 1} of {stepCount}
+                </span>
+                <button
+                  onClick={() => switchToStep(activeStepIndex + 1)}
+                  disabled={activeStepIndex >= stepCount - 1}
+                  title="Next step"
+                  style={{ background: "transparent", border: "none", color: activeStepIndex >= stepCount - 1 ? "#333" : "#aaa", cursor: activeStepIndex >= stepCount - 1 ? "not-allowed" : "pointer", fontSize: 12, padding: "2px 6px", lineHeight: 1 }}
+                >Next</button>
+                <div style={{ width: 1, height: 16, background: "#333", margin: "0 2px" }} />
+              </>
+            )}
+            <button onClick={addStep} title="Add new step"
+              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+            >+ Step</button>
+            <button onClick={() => psdStepInputRef.current?.click()} title="Replace step with PSD"
+              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+            >PSD</button>
+            <button onClick={(e) => openInExternalApp(e.altKey)} title="External edit in Photoshop"
+              style={{ background: "transparent", border: "1px solid #444", borderRadius: 4, color: "#aaa", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+            >External edit</button>
+            {externalPsdName && (
+              <button onClick={syncFromExternalApp} title={`Re-import "${externalPsdName}"`}
+                style={{ background: "#2a2a1a", border: "1px solid #F5C400", borderRadius: 4, color: "#F5C400", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+              >Sync</button>
+            )}
+            {stepCount > 1 && (
+              <button onClick={(e) => removeStep(activeStepIndex, e.altKey)} title="Remove step (Option+click skips confirm)"
+                style={{ background: "transparent", border: "1px solid #553333", borderRadius: 4, color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600, padding: "3px 8px" }}
+              >Remove step</button>
+            )}
+          </div>
+        )}
         <div style={{ flex: 1 }} />
-        <button onClick={centerObjectInCanvas} style={bS} title="Centralizar objeto selecionado no canvas (vertical + horizontal)">Centralizar</button>
-        <button onClick={centerView} style={bS} title="Fit da peça no viewport (Shift+1)">Fit</button>
-        <button onClick={zoomToSelection} style={bS} title="Focar no objeto selecionado (Shift+2)">Focar seleção</button>
+        <button onClick={centerObjectInCanvas} style={bS} title="Center selected object in canvas (vertical + horizontal)">Center</button>
+        <button onClick={centerView} style={bS} title="Fit the piece in the viewport (Shift+1)">Fit</button>
+        <button onClick={zoomToSelection} style={bS} title="Focus on the selected object (Shift+2)">Focus selection</button>
         <button onClick={() => changeZoom(-0.1)} style={bS}>−</button>
         <span style={{ fontSize: 11, color: "#555", minWidth: 40, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
         <button onClick={() => changeZoom(+0.1)} style={bS}>+</button>
       </div>
 
-      <div style={{ ...pS, left: 0, width: layersPanelWidth, borderRight: "1px solid #2a2a2a", paddingTop: TH }}>
+      <div style={{ ...pS, left: 0, width: effLayersPanelWidth, borderRight: "1px solid #2a2a2a", paddingTop: TH, overflow: panelsHidden ? "hidden" : pS.overflow }}>
         {/* Drag handle de resize do painel — barra fininha na borda direita.
             Mouse-down marca posicao inicial; mousemove em window recalcula
             largura; mouse-up libera. localStorage persiste. Clamped [180,500]
@@ -8921,7 +8923,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             document.body.style.userSelect = "none"
           }}
           onDoubleClick={() => setLayersPanelWidth(LW)}
-          title="Arraste pra redimensionar · duplo-clique pra resetar"
+          title="Drag to resize · double-click to reset"
           style={{
             position: "absolute",
             top: 0, right: -3, bottom: 0,
@@ -8939,9 +8941,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               Sem selecao, mostra alerta orientando user a selecionar primeiro
               (Photoshop tambem nao cria folder vazio sem layer). */}
           <button
-            title="Novo folder (move layers selecionados pra dentro)"
+            title="New folder (moves selected layers into it)"
             onClick={() => {
-              const name = window.prompt("Nome do folder:")
+              const name = window.prompt("Folder name:")
               if (name) createFolder(name)
             }}
             style={{
@@ -8953,7 +8955,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           </button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
-          {!layers.length && <div style={{ fontSize: 11, color: "#444", textAlign: "center", padding: "24px 12px" }}>Adicione assets ao canvas</div>}
+          {!layers.length && <div style={{ fontSize: 11, color: "#444", textAlign: "center", padding: "24px 12px" }}>Add assets to canvas</div>}
           {/* Pre-processa: pra cada layer, calcula quais folder headers devem
               aparecer ANTES dele (entradas novas vs layer anterior) e se ele
               esta dentro de pasta recolhida. Faz isso fora do map pra que o
@@ -9196,16 +9198,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         willChange: dragLayerIdx !== null || dragFolderPath ? "transform" : "auto",
                       }
                     })()}
-                    title={`Click: selecionar todos os layers do grupo · arraste pra mover/aninhar · duplo-clique pra renomear`}>
+                    title={`Click: select all layers in group · drag to move/nest · double-click to rename`}>
                     <span
                       onClick={e => { e.stopPropagation(); toggleFolder(h.key) }}
-                      title={h.collapsed ? "Expandir" : "Recolher"}
+                      title={h.collapsed ? "Expand" : "Collapse"}
                       style={{ width: 14, display: "inline-flex", justifyContent: "center", cursor: "pointer" }}
                     >{h.collapsed ? "▶" : "▼"}</span>
                     {/* Olho do folder — toggle em massa pros filhos */}
                     <button
                       onClick={e => { e.stopPropagation(); setGroupAttribute(path, "__hidden", !folderHidden) }}
-                      title={folderHidden ? "Mostrar todos os layers da pasta" : "Esconder todos os layers da pasta"}
+                      title={folderHidden ? "Show all layers in folder" : "Hide all layers in folder"}
                       style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", display: "flex", alignItems: "center", color: folderHidden ? "#444" : "#bbb" }}>
                       {folderHidden ? (
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -9222,7 +9224,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     {/* Cadeado do folder — toggle em massa pros filhos */}
                     <button
                       onClick={e => { e.stopPropagation(); setGroupAttribute(path, "__locked", !folderLocked) }}
-                      title={folderLocked ? "Destravar pasta" : "Travar pasta"}
+                      title={folderLocked ? "Unlock folder" : "Lock folder"}
                       style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", display: "flex", alignItems: "center", color: folderLocked ? "#F5C400" : "#444" }}>
                       {folderLocked ? (
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -9271,10 +9273,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     <button
                       onClick={e => {
                         e.stopPropagation()
-                        const name = window.prompt(`Nome do sub-folder dentro de "${h.name}":`)
+                        const name = window.prompt(`Sub-folder name inside "${h.name}":`)
                         if (name) createFolder(name, path)
                       }}
-                      title="Adicionar sub-folder (move selecao pra ele)"
+                      title="Add sub-folder (moves selection into it)"
                       style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: "#666", fontSize: 11, lineHeight: 1 }}>
                       +
                     </button>
@@ -9284,14 +9286,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         e.stopPropagation()
                         const altClick = (e as any).altKey === true
                         if (altClick) {
-                          if (!confirm(`Apagar folder "${h.name}" E TODOS seus layers do canvas?`)) return
+                          if (!confirm(`Delete folder "${h.name}" AND ALL its layers from the canvas?`)) return
                           deleteFolder(path, true)
                         } else {
-                          if (!confirm(`Apagar folder "${h.name}"? Os layers serao movidos pra pasta pai.`)) return
+                          if (!confirm(`Delete folder "${h.name}"? The layers will be moved to the parent folder.`)) return
                           deleteFolder(path, false)
                         }
                       }}
-                      title="Apagar folder (filhos vao pra parent) · Alt+click pra apagar tudo"
+                      title="Delete folder (children go to parent) · Alt+click to delete everything"
                       style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: "#555", fontSize: 11, lineHeight: 1 }}>
                       ×
                     </button>
@@ -9467,7 +9469,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     leitura). Visual fica discreto mas claro como o que arrastar. */}
                 {!layer.isBg && !isEditingThis && (
                   <div
-                    title="Arraste pra reordenar"
+                    title="Drag to reorder"
                     style={{
                       display: "flex", flexDirection: "column", justifyContent: "center",
                       // pointer pequeno e preciso > grab grande do macOS.
@@ -9484,7 +9486,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 )}
                 {/* Visibilidade (olho) — primeiro da row, igual Photoshop */}
                 <button
-                  title={isHidden ? "Mostrar layer" : "Esconder layer"}
+                  title={isHidden ? "Show layer" : "Hide layer"}
                   onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.obj) }}
                   style={{
                     background: "transparent", border: "none", cursor: "pointer",
@@ -9509,7 +9511,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </button>
                 {/* Cadeado */}
                 <button
-                  title={isLocked ? "Destravar layer" : "Travar layer"}
+                  title={isLocked ? "Unlock layer" : "Lock layer"}
                   onClick={e => { e.stopPropagation(); toggleLayerLock(layer.obj) }}
                   style={{
                     background: "transparent", border: "none", cursor: "pointer",
@@ -9550,7 +9552,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   const linked = obj.__dsLinked !== false
                   return (
                     <div
-                      title={linked ? "Sincronizado com o Design System" : "Customizado — diverge do Design System"}
+                      title={linked ? "Synced with Design System" : "Customized — diverges from Design System"}
                       style={{
                         width: 8, height: 8, borderRadius: "50%",
                         background: linked ? "#22c55e" : "#ef4444",
@@ -9566,7 +9568,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 {/* Botao direito (oncontextmenu) = remover. */}
                 {hasMask && (
                   <div
-                    title={`${maskData.type} mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove`}
+                    title={`${maskData.type} mask · click-toggle · Shift+click disable · Alt+click invert · right-click removes`}
                     onClick={e => {
                       e.stopPropagation()
                       if (e.shiftKey) {
@@ -9669,7 +9671,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   />
                 ) : (
                   <span
-                    title="Duplo clique para renomear"
+                    title="Double click to rename"
                     onDoubleClick={e => { e.stopPropagation(); if (layerAssetId) setEditingLayerAssetId(layerAssetId) }}
                     style={{ fontSize: 12, color: isSel ? "#fff" : "#888", fontWeight: isSel ? 700 : 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
                   >{layer.label}</span>
@@ -9688,8 +9690,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   />
                 )}
                 {!layer.isBg && (
-                  <button title="Remover" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
-                    style={{ color: "#555", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, padding: "2px 4px", lineHeight: 1 }}>✕</button>
+                  <button title="Delete layer" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#e63946"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(230,57,70,0.1)" }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "#888"; (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                    style={{ color: "#888", background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: "3px 6px", lineHeight: 1, borderRadius: 3, transition: "color 120ms, background 120ms" }}
+                    aria-label="Delete layer"
+                  >🗑</button>
                 )}
               </div>
             )}
@@ -9758,16 +9764,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           display: "flex", alignItems: "center", gap: 12,
           boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 200,
         }}>
-          <span>EDITANDO MASCARA</span>
+          <span>EDITING MASK</span>
           <button onClick={() => setMaskFocusAssetId(null)}
             style={{
               background: "#000", color: "#F5C400", padding: "4px 10px",
               border: "none", borderRadius: 4, cursor: "pointer", fontSize: 11, fontWeight: 700,
               fontFamily: "inherit",
-            }}>Sair</button>
+            }}>Exit</button>
         </div>
       )}
-      <div style={{ ...pS, right: 0, width: propsPanelWidth, borderLeft: "1px solid #2a2a2a", paddingTop: TH }}>
+      <div style={{ ...pS, right: 0, width: effPropsPanelWidth, borderLeft: "1px solid #2a2a2a", paddingTop: TH, overflow: panelsHidden ? "hidden" : pS.overflow }}>
         {/* Drag handle de resize do painel Properties — borda ESQUERDA. Mesmo
             padrao do layersPanelWidth (mirrored). */}
         <div
@@ -9795,7 +9801,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             document.body.style.userSelect = "none"
           }}
           onDoubleClick={() => setPropsPanelWidth(PW)}
-          title="Arraste pra redimensionar · duplo-clique pra resetar"
+          title="Drag to resize · double-click to reset"
           style={{
             position: "absolute",
             top: 0, left: -3, bottom: 0,
@@ -9804,13 +9810,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             zIndex: 110,
           }}
         />
-        <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Propriedades</div>
+        <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Properties</div>
         {/* Atalho Assets — botao DIFERENCIAL do ZZOSY (sem analogo direto em
             outros softwares de design). Stroke roxo + fill transparente +
             UPPERCASE pra destaque visual maximo no topo do Properties Panel.
             User pediu 2026-05-22: "Ele e um botao diferencial se relacionado
             aos outros softwares.. Entao vamos dar super destaque para ele". */}
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a2a2a" }}>
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a2a2a", display: "flex", gap: 6, alignItems: "stretch", position: "relative" }}>
           <button onClick={() => {
             const go = () => router.push(`/campaigns/${campaignId}/assets`)
             if (isDirtyRef.current) setConfirmExit(() => go)
@@ -9819,7 +9825,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             onMouseEnter={(e) => { (e.currentTarget.style.background = "rgba(168,85,247,0.12)") }}
             onMouseLeave={(e) => { (e.currentTarget.style.background = "transparent") }}
             style={{
-              width: "100%",
+              flex: 1,
               background: "transparent",
               border: "1px solid #a855f7",
               borderRadius: 6,
@@ -9833,9 +9839,66 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               textAlign: "center",
               transition: "background 0.15s ease",
             }}
-            title="Ir para a pagina de assets desta campanha">
+            title="Go to this campaign's assets page">
             Assets
           </button>
+          {/* + ADD: abre popover com asset picker + add (user pedido 2026-05-23).
+              Substitui a toolbar central. */}
+          <button onClick={() => setShowAddAsset(v => !v)}
+            title="Add an asset to canvas"
+            style={{
+              background: showAddAsset ? "#a855f7" : "transparent",
+              border: "1px solid #a855f7",
+              borderRadius: 6,
+              padding: "0 14px",
+              fontSize: 18,
+              fontWeight: 700,
+              cursor: "pointer",
+              color: showAddAsset ? "#fff" : "#a855f7",
+              lineHeight: 1,
+              transition: "background 0.15s ease, color 0.15s ease",
+            }}>+</button>
+          {showAddAsset && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 16, right: 16,
+              background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.4)", padding: 10, zIndex: 300,
+              display: "flex", flexDirection: "column", gap: 8,
+            }}>
+              <div style={{ fontSize: 10, color: "#666", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Asset</div>
+              <select value={assetId} onChange={e => { setAssetId(e.target.value); assetIdRef.current = e.target.value }}
+                style={{ background: "#0d0d0d", color: "white", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 10px", fontSize: 12, width: "100%" }}>
+                {(campaign.assets ?? []).map((a: Asset) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              </select>
+              {(() => {
+                const currentAsset = (campaign.assets ?? []).find((a: Asset) => a.id === assetId)
+                const isText = currentAsset?.type === "TEXT"
+                const fc = fabricRef.current
+                const alreadyOnCanvas = isText && fc
+                  ? fc.getObjects().some((o: any) => o.__assetId === assetId)
+                  : false
+                void selectedTick
+                const disabled = alreadyOnCanvas
+                return (
+                  <button
+                    onClick={() => { addLayer(); setShowAddAsset(false) }}
+                    disabled={disabled}
+                    title={disabled ? "This text asset is already on the canvas." : undefined}
+                    style={{
+                      background: disabled ? "#3a3a1a" : "#F5C400",
+                      color: disabled ? "#666" : "#111",
+                      border: "none",
+                      padding: "8px 14px",
+                      borderRadius: 4,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                    }}
+                  >+ Add to canvas</button>
+                )
+              })()}
+            </div>
+          )}
         </div>
         {(!selected || (selected as any).__isBg) ? (
           <div style={{ padding: 16 }}>
@@ -9851,10 +9914,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 )}
               </div>
               <div style={{ display: "flex", gap: 4 }}>
-                <button title="Adicionar BG layer" onClick={() => addBgLayer()}
+                <button title="Add BG layer" onClick={() => addBgLayer()}
                   style={{ width: 22, height: 22, borderRadius: 4, background: "#1a1a1a", border: "1px solid #333", color: "#bbb", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>+</button>
                 {bgLayersRef.current.length > 1 && (selected as any)?.__isBg && (
-                  <button title="Remover este BG" onClick={() => removeBgLayer((selected as any).__bgIdx ?? 0)}
+                  <button title="Remove this BG" onClick={() => removeBgLayer((selected as any).__bgIdx ?? 0)}
                     style={{ width: 22, height: 22, borderRadius: 4, background: "#1a1a1a", border: "1px solid #333", color: "#bbb", cursor: "pointer", fontSize: 12, lineHeight: 1, padding: 0 }}>✕</button>
                 )}
               </div>
@@ -9874,7 +9937,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               })
               return (
                 <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
-                  <button style={btnS(kind === "solid")} onClick={() => changeBgKind("solid")}>Sólido</button>
+                  <button style={btnS(kind === "solid")} onClick={() => changeBgKind("solid")}>Solid</button>
                   <button style={btnS(kind === "gradient" && gType === "linear")} onClick={() => changeBgKind("gradient", { gradientType: "linear" })}>Linear</button>
                   <button style={btnS(kind === "gradient" && gType === "radial")} onClick={() => changeBgKind("gradient", { gradientType: "radial" })}>Radial</button>
                   <button style={btnS(kind === "image")} onClick={() => {
@@ -9893,7 +9956,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       }
                       input.click()
                     }
-                  }}>Imagem</button>
+                  }}>Image</button>
                 </div>
               )
             })()}
@@ -9952,7 +10015,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                           style={{ flex: 1 }} />
                         <span style={{ width: 32, textAlign: "right", color: "#bbb", fontFamily: "monospace", fontSize: 11 }}>{Math.round(s.offset * 100)}%</span>
                         {stops.length > 2 && (
-                          <button title="Remover stop" onClick={() => removeBgGradientStop(si)}
+                          <button title="Remove stop" onClick={() => removeBgGradientStop(si)}
                             style={{ width: 18, height: 18, borderRadius: 3, background: "transparent", border: "none", color: "#555", cursor: "pointer", fontSize: 11, padding: 0, lineHeight: 1 }}>✕</button>
                         )}
                       </div>
@@ -9961,7 +10024,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   {/* Angulo (so linear) */}
                   {layer.gradientType === "linear" && (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#888", marginBottom: 14 }}>
-                      <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Ângulo</span>
+                      <span style={{ width: 56, textTransform: "uppercase", letterSpacing: "0.5px" }}>Angle</span>
                       <input type="range" min={0} max={360} step={1}
                         value={Math.round(layer.angle)}
                         onChange={e => changeBgGradientAngle(Number(e.target.value))}
@@ -10000,7 +10063,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   ) : (
                     <div style={{ width: "100%", height: 120, borderRadius: 4, border: "1px dashed #444",
                       marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#555", fontSize: 11 }}>Sem imagem</div>
+                      color: "#555", fontSize: 11 }}>No image</div>
                   )}
                   <button onClick={() => {
                     const input = document.createElement("input")
@@ -10016,8 +10079,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       background: "#1a1a1a", color: "#bbb", border: "1px solid #333",
                       borderRadius: 4, cursor: "pointer", fontFamily: "inherit",
                       textTransform: "uppercase", letterSpacing: "0.5px",
-                    }}>{layer.imageDataUrl ? "Substituir imagem" : "Selecionar imagem"}</button>
-                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Encaixe</div>
+                    }}>{layer.imageDataUrl ? "Replace image" : "Select image"}</button>
+                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Fit</div>
                   <div style={{ display: "flex", gap: 3, marginBottom: 14 }}>
                     {fitBtn("cover", "Cover")}
                     {fitBtn("contain", "Contain")}
@@ -10067,18 +10130,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     {layer.mask ? (
                       <div style={{ flex: 1, display: "flex", gap: 4 }}>
                         <button onClick={() => toggleBgMaskEnabled()}
-                          title={layer.mask.enabled ? "Desativar mascara" : "Ativar mascara"}
+                          title={layer.mask.enabled ? "Disable mask" : "Enable mask"}
                           style={{ flex: 1, padding: "4px 6px", fontSize: 11, background: layer.mask.enabled ? "#1a1a1a" : "#0d0d0d",
                             color: layer.mask.enabled ? "#F5C400" : "#666", border: "1px solid #333", borderRadius: 3, cursor: "pointer", fontFamily: "inherit" }}>
-                          {layer.mask.enabled ? "Ativa" : "Desativada"}
+                          {layer.mask.enabled ? "Active" : "Disabled"}
                         </button>
-                        <button onClick={() => removeBgMask()} title="Remover mascara"
+                        <button onClick={() => removeBgMask()} title="Remove mask"
                           style={{ padding: "4px 8px", fontSize: 11, background: "#1a1a1a", color: "#bbb", border: "1px solid #333", borderRadius: 3, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
                       </div>
                     ) : (
                       <button onClick={() => setBgMaskDefault()}
                         style={{ flex: 1, padding: "4px 6px", fontSize: 11, background: "#1a1a1a", color: "#bbb", border: "1px solid #333", borderRadius: 3, cursor: "pointer", fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        + Adicionar
+                        + Add
                       </button>
                     )}
                   </div>
@@ -10202,42 +10265,50 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             }
             return (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* CAMADA — blend mode + opacidade. PSD-style: cada layer pode ter
-                multiply/screen/overlay/etc e opacidade. Aplicado a todos os tipos
-                (texto/imagem/embedded). Round-trip: persistido no save. */}
+            {/* BLEND MODE — PRIMEIRA prop apos ASSETS (user pedido 2026-05-23).
+                Separado de OPACITY pra cada um ter seu header proprio. */}
             <div>
-              <div style={secS}>Camada</div>
-              <div style={numFieldGrid}>
-                <select
-                  value={(selected as any).globalCompositeOperation ?? "source-over"}
-                  onChange={e => changeObjectBlendMode(e.target.value)}
-                  style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20 }}
-                  title="Modo de mistura do layer (Photoshop-style)"
-                >
-                  <option value="source-over">Normal</option>
-                  <option value="multiply">Multiply</option>
-                  <option value="screen">Screen</option>
-                  <option value="overlay">Overlay</option>
-                  <option value="darken">Darken</option>
-                  <option value="lighten">Lighten</option>
-                  <option value="color-dodge">Color Dodge</option>
-                  <option value="color-burn">Color Burn</option>
-                  <option value="hard-light">Hard Light</option>
-                  <option value="soft-light">Soft Light</option>
-                  <option value="difference">Difference</option>
-                  <option value="exclusion">Exclusion</option>
-                  <option value="hue">Hue</option>
-                  <option value="saturation">Saturation</option>
-                  <option value="color">Color</option>
-                  <option value="luminosity">Luminosity</option>
-                  <option value="lighter">Linear Dodge</option>
-                </select>
+              <div style={secS}>Blend mode</div>
+              <select
+                value={(selected as any).globalCompositeOperation ?? "source-over"}
+                onChange={e => changeObjectBlendMode(e.target.value)}
+                style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
+                title="Layer blend mode (Photoshop-style)"
+              >
+                <option value="source-over">Normal</option>
+                <option value="multiply">Multiply</option>
+                <option value="screen">Screen</option>
+                <option value="overlay">Overlay</option>
+                <option value="darken">Darken</option>
+                <option value="lighten">Lighten</option>
+                <option value="color-dodge">Color Dodge</option>
+                <option value="color-burn">Color Burn</option>
+                <option value="hard-light">Hard Light</option>
+                <option value="soft-light">Soft Light</option>
+                <option value="difference">Difference</option>
+                <option value="exclusion">Exclusion</option>
+                <option value="hue">Hue</option>
+                <option value="saturation">Saturation</option>
+                <option value="color">Color</option>
+                <option value="luminosity">Luminosity</option>
+                <option value="lighter">Linear Dodge</option>
+              </select>
+            </div>
+            <div>
+              <div style={secS}>Opacity</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="range" min={0} max={100} step={1}
+                  value={Math.round(((selected as any).opacity ?? 1) * 100)}
+                  onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
+                  style={{ flex: 1 }}
+                />
                 <div style={numFieldRight}>
                   <input
                     type="number" min={0} max={100} step={1}
                     value={Math.round(((selected as any).opacity ?? 1) * 100)}
                     onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
-                    title="Opacidade (0-100%)"
+                    title="Opacity (0-100%)"
                     style={numInpS}
                   />
                   <span style={numFieldUnit}>%</span>
@@ -10245,7 +10316,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               </div>
             </div>
             <div>
-              <div style={secS}>Trocar asset</div>
+              <div style={secS}>Replace Asset</div>
               <select
                 value={(selected as any).__assetId ?? ""}
                 onChange={e => {
@@ -10269,13 +10340,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     .filter(a => a.type === "TEXT")
                     .filter(a => a.id === currentId || !usedIds.has(a.id))
                     .map(a => (
-                      <option key={a.id} value={a.id}>{a.label || a.value || "Sem nome"}</option>
+                      <option key={a.id} value={a.id}>{a.label || a.value || "Unnamed"}</option>
                     ))
                 })()}
               </select>
             </div>
             <div>
-              <div style={secS}>Fonte {mixedFontFamily && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múltiplas)</span>}</div>
+              <div style={secS}>Font {mixedFontFamily && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(multiple)</span>}</div>
               <FontPicker
                 value={mixedFontFamily ? "" : effectiveFontFamily}
                 onChange={(f) => applyStyle("fontFamily", f)}
@@ -10284,7 +10355,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <div style={secS}>Tamanho {mixedFontSize && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múlt.)</span>}</div>
+                <div style={secS}>Size {mixedFontSize && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(mult.)</span>}</div>
                 <input
                   type="number"
                   value={mixedFontSize ? "" : fontSizeInput}
@@ -10317,7 +10388,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 />
               </div>
               <div>
-                <div style={secS}>Peso</div>
+                <div style={secS}>Weight</div>
                 {/* WeightPicker tem dois modos:
                     - Sistema (Helvetica Neue Bold, Avenir Light): troca fontFamily.
                     - Google/custom (Exo 2, Manrope, fontes do cliente): mesma
@@ -10339,7 +10410,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     key={pct}
                     type="button"
                     onClick={() => scaleLayerToCanvas(pct)}
-                    title={`Escala o layer pra ${Math.round(pct * 100)}% do canvas (centralizado)`}
+                    title={`Scale the layer to ${Math.round(pct * 100)}% of canvas (centered)`}
                     style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 0", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
                     onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
                     onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
@@ -10350,8 +10421,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               </div>
               <button onClick={fitLayerToCanvas}
                 style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
-                title="Escala e centraliza o layer dentro da peça (100%)">
-                Encaixar no canvas
+                title="Scale and center the layer inside the piece (100%)">
+                Fit to canvas
               </button>
             </div>
             {/* Tipografia avancada: entrelinha + entreletra agrupadas (2026-05-23).
@@ -10360,7 +10431,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 abaixo no proximo grid. */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
-                <div style={secS}>Entrelinhas</div>
+                <div style={secS}>Line height</div>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   <input
                     type="number"
@@ -10385,13 +10456,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       if (Number.isFinite(n) && n > 0) setLeading(n)
                     }}
                     onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
-                    title={isLeadingAuto ? `Auto (${Math.round(effectiveLeadingPt)}pt) — Option+↑/↓ ajusta` : "Option+↑/↓ ajusta (Shift = 10pt)"}
+                    title={isLeadingAuto ? `Auto (${Math.round(effectiveLeadingPt)}pt) — Option+↑/↓ adjusts` : "Option+↑/↓ adjusts (Shift = 10pt)"}
                     style={{ ...inpS, color: isLeadingAuto ? "#888" : "white" }}
                   />
                   <button type="button"
                     onClick={() => setLeading(null)}
                     disabled={isLeadingAuto}
-                    title="Resetar pra Auto"
+                    title="Reset to Auto"
                     style={{
                       width: 28, height: 28, fontSize: 11,
                       background: isLeadingAuto ? "#1a1a1a" : "#111",
@@ -10404,7 +10475,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </div>
               </div>
               <div>
-                <div style={secS}>Entreletras</div>
+                <div style={secS}>Letter spacing</div>
                 <input
                   type="number"
                   step="10"
@@ -10428,7 +10499,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     if (Number.isFinite(n)) setCharSpacingProp(n)
                   }}
                   onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
-                  title="Entreletra (tracking) em milesimos de em — mesma unidade do Photoshop"
+                  title="Letter spacing (tracking) in thousandths of em — same unit as Photoshop"
                   style={inpS}
                 />
               </div>
@@ -10437,13 +10508,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             {/* Alinhamento separado num grid full-width pra dar mais espaco */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
               <div>
-                <div style={secS}>Alinhamento</div>
+                <div style={secS}>Alignment</div>
                 <div style={{ display: "flex", gap: 4 }}>
                   {[
-                    { v: "left", icon: "⫷", title: "Esquerda (Cmd+Shift+L)" },
-                    { v: "center", icon: "≡", title: "Centro (Cmd+Shift+C)" },
-                    { v: "right", icon: "⫸", title: "Direita (Cmd+Shift+R)" },
-                    { v: "justify", icon: "☰", title: "Justificar (Cmd+Shift+J)" },
+                    { v: "left", icon: "⫷", title: "Left (Cmd+Shift+L)" },
+                    { v: "center", icon: "≡", title: "Center (Cmd+Shift+C)" },
+                    { v: "right", icon: "⫸", title: "Right (Cmd+Shift+R)" },
+                    { v: "justify", icon: "☰", title: "Justify (Cmd+Shift+J)" },
                   ].map(a => {
                     const active = effectiveTextAlign === a.v
                     return (
@@ -10466,8 +10537,56 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </div>
               </div>
             </div>
+
+            {/* CASE TRANSFORM — UPPERCASE/lowercase/Title (user pedido 2026-05-23).
+                Aplica direto no obj.text (canvas nao suporta CSS text-transform). */}
             <div>
-              <div style={secS}>Cor {mixedFill && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(múltiplas)</span>}</div>
+              <div style={secS}>Case</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[
+                  { kind: "upper", label: "AA", title: "UPPERCASE" },
+                  { kind: "lower", label: "aa", title: "lowercase" },
+                  { kind: "title", label: "Aa", title: "Title Case" },
+                ].map(c => (
+                  <button key={c.kind} type="button"
+                    onClick={() => {
+                      const obj = selected as any
+                      if (!obj || (obj.type !== "textbox" && obj.type !== "i-text")) return
+                      const cur = obj.text ?? ""
+                      let next = cur
+                      if (c.kind === "upper") next = cur.toUpperCase()
+                      else if (c.kind === "lower") next = cur.toLowerCase()
+                      else if (c.kind === "title") next = cur.replace(/\w\S*/g, (w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                      if (next === cur) return
+                      obj.set("text", next)
+                      if (obj.initDimensions) obj.initDimensions()
+                      obj.setCoords()
+                      obj.dirty = true
+                      fabricRef.current?.requestRenderAll()
+                      setSelectedTick(t => t + 1)
+                      isDirtyRef.current = true
+                      setIsDirty(true)
+                      if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+                      doSave()
+                    }}
+                    title={c.title}
+                    style={{
+                      flex: 1, height: 28,
+                      background: "#111",
+                      border: "1px solid #2a2a2a",
+                      color: "white",
+                      borderRadius: 4, cursor: "pointer",
+                      fontSize: 13, fontWeight: 700,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={secS}>Color {mixedFill && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(multiple)</span>}</div>
               <ColorSwatchPicker
                 value={mixedFill ? "" : (effectiveFill || "")}
                 onChange={(hex, brandIdx) => applyStyle("fill", hex, brandIdx)}
@@ -10624,22 +10743,35 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 {/* Label do layer removido (2026-05-22) — redundante com o
                     painel Layers que ja destaca o ativo. */}
 
-                {/* CAMADA — blend + opacidade (paridade com outros tipos). */}
+                {/* BLEND MODE + OPACITY separados (user pedido 2026-05-23). */}
                 <div>
-                  <div style={secS}>Camada</div>
-                  <div style={numFieldGrid}>
-                    <select
-                      value={(selected as any).globalCompositeOperation ?? "source-over"}
-                      onChange={e => changeObjectBlendMode(e.target.value)}
-                      style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20 }}
-                    >
-                      <option value="source-over">Normal</option>
-                      <option value="multiply">Multiply</option>
-                      <option value="screen">Screen</option>
-                      <option value="overlay">Overlay</option>
-                      <option value="darken">Darken</option>
-                      <option value="lighten">Lighten</option>
-                    </select>
+                  <div style={secS}>Blend mode</div>
+                  <select
+                    value={(selected as any).globalCompositeOperation ?? "source-over"}
+                    onChange={e => changeObjectBlendMode(e.target.value)}
+                    style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
+                  >
+                    <option value="source-over">Normal</option>
+                    <option value="multiply">Multiply</option>
+                    <option value="screen">Screen</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="darken">Darken</option>
+                    <option value="lighten">Lighten</option>
+                    <option value="color-dodge">Color Dodge</option>
+                    <option value="color-burn">Color Burn</option>
+                    <option value="hard-light">Hard Light</option>
+                    <option value="soft-light">Soft Light</option>
+                    <option value="difference">Difference</option>
+                    <option value="exclusion">Exclusion</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={secS}>Opacity</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="range" min={0} max={100} step={1}
+                      value={Math.round(((selected as any).opacity ?? 1) * 100)}
+                      onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
+                      style={{ flex: 1 }} />
                     <div style={numFieldRight}>
                       <input type="number" min={0} max={100} step={1}
                         value={Math.round(((selected as any).opacity ?? 1) * 100)}
@@ -10653,7 +10785,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 {/* FILL — ColorSwatchPicker Figma-style. Opacity INDEPENDENTE
                     (encodada em rgba do fill). */}
                 <div>
-                  <div style={secS}>Preenchimento</div>
+                  <div style={secS}>Fill</div>
                   <ColorSwatchPicker
                     value={currentFillHex}
                     onChange={(hex) => setFillHex(hex)}
@@ -10718,12 +10850,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   // ficava disabled pra todo shape importado de PSD.
                   const radiusApplicable = shapeKind !== "ellipse"
                   const disabledTitle = shapeKind === "ellipse"
-                    ? "Corner radius nao se aplica a elipses"
+                    ? "Corner radius does not apply to ellipses"
                     : undefined
                   const displayRadius = radiusApplicable ? Math.min(currentCornerRadius, maxRadius) : 0
                   return (
                     <div>
-                      <div style={secS}>Raio do canto</div>
+                      <div style={secS}>Corner radius</div>
                       <div style={numFieldGrid}>
                         <input type="range"
                           min={0} max={maxRadius} step={1}
@@ -10753,41 +10885,47 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Label do layer removido (2026-05-22) — painel Layers ja indica
                 qual layer esta ativo, sem duplicar info aqui. */}
-            {/* CAMADA — blend mode + opacidade (mesmo controle do painel de texto).
-                PSD-style: imagens, shapes e embedded layers tb suportam multiply/etc. */}
+            {/* BLEND MODE + OPACITY separados (user pedido 2026-05-23). */}
             <div>
-              <div style={secS}>Camada</div>
-              <div style={numFieldGrid}>
-                <select
-                  value={(selected as any).globalCompositeOperation ?? "source-over"}
-                  onChange={e => changeObjectBlendMode(e.target.value)}
-                  style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20 }}
-                  title="Modo de mistura do layer (Photoshop-style)"
-                >
-                  <option value="source-over">Normal</option>
-                  <option value="multiply">Multiply</option>
-                  <option value="screen">Screen</option>
-                  <option value="overlay">Overlay</option>
-                  <option value="darken">Darken</option>
-                  <option value="lighten">Lighten</option>
-                  <option value="color-dodge">Color Dodge</option>
-                  <option value="color-burn">Color Burn</option>
-                  <option value="hard-light">Hard Light</option>
-                  <option value="soft-light">Soft Light</option>
-                  <option value="difference">Difference</option>
-                  <option value="exclusion">Exclusion</option>
-                  <option value="hue">Hue</option>
-                  <option value="saturation">Saturation</option>
-                  <option value="color">Color</option>
-                  <option value="luminosity">Luminosity</option>
-                  <option value="lighter">Linear Dodge</option>
-                </select>
+              <div style={secS}>Blend mode</div>
+              <select
+                value={(selected as any).globalCompositeOperation ?? "source-over"}
+                onChange={e => changeObjectBlendMode(e.target.value)}
+                style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
+                title="Layer blend mode (Photoshop-style)"
+              >
+                <option value="source-over">Normal</option>
+                <option value="multiply">Multiply</option>
+                <option value="screen">Screen</option>
+                <option value="overlay">Overlay</option>
+                <option value="darken">Darken</option>
+                <option value="lighten">Lighten</option>
+                <option value="color-dodge">Color Dodge</option>
+                <option value="color-burn">Color Burn</option>
+                <option value="hard-light">Hard Light</option>
+                <option value="soft-light">Soft Light</option>
+                <option value="difference">Difference</option>
+                <option value="exclusion">Exclusion</option>
+                <option value="hue">Hue</option>
+                <option value="saturation">Saturation</option>
+                <option value="color">Color</option>
+                <option value="luminosity">Luminosity</option>
+                <option value="lighter">Linear Dodge</option>
+              </select>
+            </div>
+            <div>
+              <div style={secS}>Opacity</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="range" min={0} max={100} step={1}
+                  value={Math.round(((selected as any).opacity ?? 1) * 100)}
+                  onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
+                  style={{ flex: 1 }} />
                 <div style={numFieldRight}>
                   <input
                     type="number" min={0} max={100} step={1}
                     value={Math.round(((selected as any).opacity ?? 1) * 100)}
                     onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
-                    title="Opacidade (0-100%)"
+                    title="Opacity (0-100%)"
                     style={numInpS}
                   />
                   <span style={numFieldUnit}>%</span>
@@ -10795,7 +10933,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               </div>
             </div>
             <div>
-              <div style={secS}>Trocar asset</div>
+              <div style={secS}>Replace Asset</div>
               <select
                 value={(selected as any).__assetId ?? ""}
                 onChange={e => {
@@ -10810,19 +10948,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 {(campaign?.assets ?? [])
                   .filter(a => a.type === "IMAGE")
                   .map(a => (
-                    <option key={a.id} value={a.id}>{a.label || "Sem nome"}</option>
+                    <option key={a.id} value={a.id}>{a.label || "Unnamed"}</option>
                   ))
                 }
               </select>
             </div>
-            <div style={{ color: "#444", fontSize: 11 }}>Mova e redimensione no canvas.</div>
+            <div style={{ color: "#444", fontSize: 11 }}>Move and resize on canvas.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
               {[0.2, 0.4, 0.6, 0.8].map(pct => (
                 <button
                   key={pct}
                   type="button"
                   onClick={() => scaleLayerToCanvas(pct)}
-                  title={`Escala o layer pra ${Math.round(pct * 100)}% do canvas (centralizado)`}
+                  title={`Scale the layer to ${Math.round(pct * 100)}% of canvas (centered)`}
                   style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 0", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
                   onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
                   onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
@@ -10833,8 +10971,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             </div>
             <button onClick={fitLayerToCanvas}
               style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
-              title="Escala e centraliza o layer dentro da peça (100%)">
-              Encaixar no canvas
+              title="Scale and center the layer inside the piece (100%)">
+              Fit to canvas
             </button>
 
             {/* ===== MÁSCARA (Photoshop-style) ===== */}
@@ -10861,16 +10999,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 24, width: 420, border: "1px solid #333" }}>
             <div style={{ color: "white", fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
-              {dirty ? "Salvar alterações?" : "Voltar para a campanha?"}
+              {dirty ? "Save changes?" : "Back to campaign?"}
             </div>
             <div style={{ color: "#888", fontSize: 13, marginBottom: 18 }}>
               {dirty
-                ? "Você tem mudanças não salvas. O que deseja fazer?"
-                : "Tudo salvo. Deseja sair do editor?"}
+                ? "You have unsaved changes. What would you like to do?"
+                : "All saved. Do you want to exit the editor?"}
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setConfirmExit(null)}
-                style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "8px 14px", color: "#888", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+                style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "8px 14px", color: "#888", fontSize: 13, cursor: "pointer" }}>Cancel</button>
               {dirty && (
                 <button onClick={() => {
                   const go = confirmExit
@@ -10882,7 +11020,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   setIsDirty(false)
                   if (go) go()
                 }}
-                  style={{ background: "transparent", border: "1px solid #d33", borderRadius: 6, padding: "8px 14px", color: "#d33", fontSize: 13, cursor: "pointer" }}>Descartar</button>
+                  style={{ background: "transparent", border: "1px solid #d33", borderRadius: 6, padding: "8px 14px", color: "#d33", fontSize: 13, cursor: "pointer" }}>Discard</button>
               )}
               <button onClick={async () => {
                 const go = confirmExit
@@ -10900,7 +11038,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 }
               }}
                 style={{ background: accentColor, border: "none", borderRadius: 6, padding: "8px 14px", color: "#111", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                {dirty ? "Salvar" : "Sair"}
+                {dirty ? "Save" : "Exit"}
               </button>
             </div>
           </div>
@@ -10951,7 +11089,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#facc15", marginBottom: 2 }}>
-              Fontes não encontradas — {missingFonts.length} variante{missingFonts.length > 1 ? "s" : ""}
+              Fonts not found — {missingFonts.length} variant{missingFonts.length > 1 ? "s" : ""}
             </div>
             <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {missingFonts.slice(0, 3).map(f => f.label).join(", ")}{missingFonts.length > 3 ? `, +${missingFonts.length - 3}` : ""}
@@ -10960,7 +11098,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           <button
             onClick={() => setFontsModalOpen(true)}
             disabled={!campaign?.client?.id}
-            title={campaign?.client?.id ? "Abrir gerenciador de fontes ausentes" : "Cliente nao identificado"}
+            title={campaign?.client?.id ? "Open missing fonts manager" : "Client not identified"}
             style={{
               background: campaign?.client?.id ? "#facc15" : "#333",
               color: campaign?.client?.id ? "#000" : "#666",
@@ -10969,11 +11107,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               cursor: campaign?.client?.id ? "pointer" : "not-allowed", flexShrink: 0,
             }}
           >
-            Resolver fontes
+            Resolve fonts
           </button>
           <button
             onClick={() => setMissingFonts([])}
-            title="Fechar aviso (nao resolve, apenas oculta)"
+            title="Close notice (does not resolve, only hides)"
             style={{
               background: "transparent", border: "none", color: "#666",
               fontSize: 18, cursor: "pointer", padding: "0 4px", lineHeight: 1, flexShrink: 0,
@@ -11005,12 +11143,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }}>
             <div style={{ padding: "18px 20px", borderBottom: "1px solid #2a2a2a" }}>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
-                Fontes ausentes
+                Missing fonts
               </div>
               <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
-                Cada variante do PSD que não está disponível no browser. Substitua por
-                uma fonte já instalada ou suba o arquivo <code style={{ background: "#0f0f0f", padding: "1px 5px", borderRadius: 3 }}>.ttf</code>/<code style={{ background: "#0f0f0f", padding: "1px 5px", borderRadius: 3 }}>.otf</code> exato.
-                Substituição afeta só os textos que usam essa variante específica.
+                Each variant from the PSD that is not available in the browser. Replace with
+                an already installed font or upload the exact <code style={{ background: "#0f0f0f", padding: "1px 5px", borderRadius: 3 }}>.ttf</code>/<code style={{ background: "#0f0f0f", padding: "1px 5px", borderRadius: 3 }}>.otf</code> file.
+                Replacement affects only the texts that use this specific variant.
               </div>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
@@ -11023,9 +11161,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 fontSize: 9, color: "#666", fontWeight: 700,
                 textTransform: "uppercase", letterSpacing: 0.6,
               }}>
-                <div>Fonte ausente</div>
-                <div>Substituir família</div>
-                <div>Peso / estilo</div>
+                <div>Missing font</div>
+                <div>Replace family</div>
+                <div>Weight / style</div>
                 <div></div>
                 <div></div>
               </div>
@@ -11033,16 +11171,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 const familyOptions: Array<{ value: string; label: string; group: string }> = []
                 const brandFont = campaign?.client?.brandFont
                 if (typeof brandFont === "string" && brandFont.trim()) {
-                  familyOptions.push({ value: brandFont, label: brandFont, group: "Marca" })
+                  familyOptions.push({ value: brandFont, label: brandFont, group: "Brand" })
                 }
                 const SYSTEM = ["Arial", "Helvetica", "Times New Roman", "Georgia", "Verdana", "Tahoma", "Courier New"]
                 for (const s of SYSTEM) {
-                  if (s !== brandFont) familyOptions.push({ value: s, label: s, group: "Sistema" })
+                  if (s !== brandFont) familyOptions.push({ value: s, label: s, group: "System" })
                 }
                 for (const g of GOOGLE_FONTS) {
                   if (g.name !== brandFont) familyOptions.push({ value: g.name, label: g.name, group: "Google Fonts" })
                 }
-                const groups = ["Marca", "Sistema", "Google Fonts"] as const
+                const groups = ["Brand", "System", "Google Fonts"] as const
                 // 9 pesos × 2 estilos. Label legivel mantem a paridade com Adobe.
                 const WEIGHT_STYLE_OPTIONS: Array<{ value: string; label: string }> = [
                   { value: "100|normal", label: "Thin" },
@@ -11311,7 +11449,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       </div>
                       <div style={{ fontSize: 10, color: "#f87171", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
                         <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#f87171" }} />
-                        Ausente · cai em fallback
+                        Missing · falls back
                       </div>
                     </div>
                     {/* Coluna 2: dropdown FAMILIA */}
@@ -11331,7 +11469,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         outline: "none", fontFamily: "inherit", minWidth: 0,
                       }}
                     >
-                      <option value="">Família…</option>
+                      <option value="">Family…</option>
                       {groups.map(g => {
                         const inGroup = familyOptions.filter(o => o.group === g)
                         if (inGroup.length === 0) return null
@@ -11374,7 +11512,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         applySubstitution(choice.family, effectiveWeight, effectiveStyle)
                       }}
                       disabled={!canApply}
-                      title={canApply ? `Substituir ${mf.label} por ${choice.family} ${effectiveWeight} ${effectiveStyle === "italic" ? "Italic" : ""}` : "Escolha a familia primeiro"}
+                      title={canApply ? `Replace ${mf.label} with ${choice.family} ${effectiveWeight} ${effectiveStyle === "italic" ? "Italic" : ""}` : "Choose the family first"}
                       style={{
                         background: canApply ? "#facc15" : "#2a2a2a",
                         color: canApply ? "#000" : "#555",
@@ -11383,7 +11521,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         cursor: canApply ? "pointer" : "not-allowed",
                       }}
                     >
-                      Aplicar
+                      Apply
                     </button>
                     {/* Coluna 5: botao SUBIR ARQUIVO */}
                     <button
@@ -11391,7 +11529,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         pendingFontUpload.current = mf
                         fontUploadInputRef.current?.click()
                       }}
-                      title={`Subir arquivo .ttf/.otf de "${mf.label}"`}
+                      title={`Upload .ttf/.otf file for "${mf.label}"`}
                       style={{
                         background: "transparent", color: "#facc15",
                         border: "1px solid #facc15", borderRadius: 6,
@@ -11399,7 +11537,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         cursor: "pointer",
                       }}
                     >
-                      Subir
+                      Upload
                     </button>
                   </div>
                 )
@@ -11407,7 +11545,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             </div>
             <div style={{ padding: "12px 20px", borderTop: "1px solid #2a2a2a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: 11, color: "#666" }}>
-                Substituições e uploads salvam no cliente — disponíveis em futuras campanhas.
+                Replacements and uploads are saved to the client — available in future campaigns.
               </div>
               <button
                 onClick={() => setFontsModalOpen(false)}
@@ -11418,7 +11556,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   cursor: "pointer",
                 }}
               >
-                Fechar
+                Close
               </button>
             </div>
           </div>
@@ -11500,7 +11638,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             }
           } catch (err) {
             console.warn("[font-upload] falhou:", err)
-            alert("Falha ao subir a fonte. Verifique se eh um arquivo .ttf ou .otf valido.")
+            alert("Failed to upload the font. Make sure it is a valid .ttf or .otf file.")
           }
         }}
       />

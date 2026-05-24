@@ -20,7 +20,7 @@ export function ExportAssetButtons({ asset }: { asset?: any }) {
       const { exportAsset } = await import("@/lib/exportAsset")
       await exportAsset(asset, format)
     } catch (e: any) {
-      alert("Falha no export: " + (e?.message ?? e))
+      alert("Export failed: " + (e?.message ?? e))
     } finally {
       setBusy(null)
     }
@@ -42,26 +42,26 @@ export function ExportAssetButtons({ asset }: { asset?: any }) {
   return (
     <div>
       <div style={{ fontSize: 11, fontWeight: 600, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>
-        Exportar asset
+        Export asset
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
         <button
           type="button"
           onClick={() => handle("original")}
           disabled={!!busy}
-          title="Baixar arquivo original (PNG/JPG/SVG ou TXT)"
+          title="Download original file (PNG/JPG/SVG or TXT)"
           style={btnStyle}
         >
-          {busy === "original" ? "Baixando…" : "Original"}
+          {busy === "original" ? "Downloading…" : "Original"}
         </button>
         <button
           type="button"
           onClick={() => handle("psd")}
           disabled={!!busy}
-          title="Baixar PSD com 1 layer (texto editavel ou imagem)"
+          title="Download PSD with 1 layer (editable text or image)"
           style={btnStyle}
         >
-          {busy === "psd" ? "Gerando…" : "PSD"}
+          {busy === "psd" ? "Generating…" : "PSD"}
         </button>
       </div>
     </div>

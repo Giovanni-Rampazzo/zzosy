@@ -150,7 +150,7 @@ export function ColorSwatchPicker({
         {/* Trigger swatch — click abre popup */}
         <button
           type="button"
-          title={title ?? (value || "Sem cor")}
+          title={title ?? (value || "No color")}
           onClick={() => setOpen(o => !o)}
           style={{
             width: size, height: size, borderRadius: 4,
@@ -192,7 +192,7 @@ export function ColorSwatchPicker({
               type="number" min={0} max={100} step={1}
               value={Math.round(opacity!)}
               onChange={e => onOpacityChange!(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
-              title="Opacidade %"
+              title="Opacity %"
               style={{
                 ...inlineInpS, width: 50, flex: "0 0 50px",
                 // Text alignment LEFT pra '100' ficar a esquerda do input.
@@ -236,7 +236,7 @@ export function ColorSwatchPicker({
                 outline: "none", textTransform: "uppercase",
               }} />
             {allowEmpty && (
-              <button type="button" title="Sem cor"
+              <button type="button" title="No color"
                 onClick={() => { setHex(""); onChange("", undefined); setOpen(false) }}
                 style={{
                   width: 28, height: 28, padding: 0, cursor: "pointer",
@@ -250,7 +250,7 @@ export function ColorSwatchPicker({
           <div style={{ overflowY: "auto" }}>
             {brandColors.length > 0 && (
               <>
-                <div style={groupLabelS}>Cores da marca</div>
+                <div style={groupLabelS}>Brand colors</div>
                 {brandColors.map((bc, i) => {
                   const activeByRef = activeBrandIdx === i
                   const activeByHex = !activeByRef && value.toLowerCase() === bc.hex.toLowerCase()
@@ -287,7 +287,7 @@ export function ColorSwatchPicker({
             )}
             {defaultSwatches.length > 0 && (
               <>
-                <div style={groupLabelS}>Padrão</div>
+                <div style={groupLabelS}>Default</div>
                 {defaultSwatches.map(c => {
                   const active = value.toLowerCase() === c.toLowerCase()
                   // Default swatches nunca tem nome — sempre mostra hex direto.

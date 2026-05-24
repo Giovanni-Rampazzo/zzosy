@@ -59,7 +59,7 @@ export function MaskPanel({
 
   return (
     <div style={{ marginTop: 4, paddingTop: 14, borderTop: "1px solid #2a2a2a" }}>
-      <div style={secS}>Máscara</div>
+      <div style={secS}>Mask</div>
 
       {!mask && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -69,7 +69,7 @@ export function MaskPanel({
             onMouseEnter={btnHover}
             onMouseLeave={btnLeave}
             style={btnS}
-            title="Cria uma máscara vetorial retangular cobrindo todo o layer"
+            title="Creates a rectangular vector mask covering the entire layer"
           >
             <span style={{ width: 16, fontWeight: 700 }}>▭</span>
             Vector Mask – Reveal All
@@ -80,7 +80,7 @@ export function MaskPanel({
             onMouseEnter={btnHover}
             onMouseLeave={btnLeave}
             style={btnS}
-            title="Cria uma máscara vetorial invertida (esconde tudo)"
+            title="Creates an inverted vector mask (hides everything)"
           >
             <span style={{ width: 16, fontWeight: 700 }}>▮</span>
             Vector Mask – Hide All
@@ -91,7 +91,7 @@ export function MaskPanel({
             onMouseEnter={btnHover}
             onMouseLeave={btnLeave}
             style={btnS}
-            title="Cria uma máscara vetorial elíptica"
+            title="Creates an elliptical vector mask"
           >
             <span style={{ width: 16, fontWeight: 700 }}>○</span>
             Ellipse Vector Mask
@@ -102,7 +102,7 @@ export function MaskPanel({
             onMouseEnter={btnHover}
             onMouseLeave={btnLeave}
             style={btnS}
-            title="Recorta este layer no contorno do layer abaixo (Cmd+Opt+G)"
+            title="Clips this layer to the outline of the layer below (Cmd+Opt+G)"
           >
             <span style={{ width: 16, fontWeight: 700 }}>⌐</span>
             Clip to Layer Below
@@ -162,7 +162,7 @@ export function MaskPanel({
               onMouseEnter={btnHover}
               onMouseLeave={btnLeave}
               style={btnS}
-              title="Habilita ou desabilita a máscara (Shift+clique no thumb)"
+              title="Enable or disable the mask (Shift+click on thumb)"
             >
               <span style={{ width: 16 }}>{mask.enabled ? "✓" : "○"}</span>
               {mask.enabled ? "Disable Mask" : "Enable Mask"}
@@ -174,7 +174,7 @@ export function MaskPanel({
                 onMouseEnter={btnHover}
                 onMouseLeave={btnLeave}
                 style={btnS}
-                title="Inverte preto/branco da máscara"
+                title="Inverts black/white of the mask"
               >
                 <span style={{ width: 16 }}>↔</span>
                 Invert Mask
@@ -186,7 +186,7 @@ export function MaskPanel({
               onMouseEnter={btnHover}
               onMouseLeave={btnLeave}
               style={{ ...btnS, color: "#d33" }}
-              title="Remove a máscara"
+              title="Removes the mask"
             >
               <span style={{ width: 16 }}>×</span>
               Delete Mask

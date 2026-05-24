@@ -844,6 +844,14 @@ function AddMenu({
             onClick={() => { setOpen(false); fileRef.current?.click() }}>
             + Imagem (PNG/JPG/SVG)
           </button>
+          {/* PSD entra como subitem de Imagem (user pedido 2026-05-23) — PSD eh
+              outro formato de arquivo de imagem, nao precisa de secao propria. */}
+          <button type="button" style={itemS}
+            onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}
+            onClick={() => { setOpen(false); psdRef.current?.click() }}
+            title="Importar arquivo PSD (substitui Key Vision atual)">
+            + Importar PSD
+          </button>
           <div style={{ borderTop: "1px solid #F0F0F0", margin: "6px 0" }} />
           <div style={sectionLabel}>Forma</div>
           {shapes.map(s => (
@@ -853,14 +861,6 @@ function AddMenu({
               + {s.label}
             </button>
           ))}
-          <div style={{ borderTop: "1px solid #F0F0F0", margin: "6px 0" }} />
-          <div style={sectionLabel}>PSD</div>
-          <button type="button" style={itemS}
-            onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}
-            onClick={() => { setOpen(false); psdRef.current?.click() }}
-            title="Importar arquivo PSD (substitui Key Vision atual)">
-            + Importar PSD
-          </button>
         </div>
       )}
     </div>
