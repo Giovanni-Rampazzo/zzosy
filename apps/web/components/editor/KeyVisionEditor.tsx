@@ -10195,37 +10195,44 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               display: "flex", flexDirection: "column", gap: 8,
             }}>
               <div style={{ fontSize: 10, color: "#666", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Asset</div>
-              <select value={assetId} onChange={e => { setAssetId(e.target.value); assetIdRef.current = e.target.value }}
-                style={{ background: "#0d0d0d", color: "white", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 10px", fontSize: 12, width: "100%" }}>
-                {(campaign.assets ?? []).map((a: Asset) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              {/* Selecionar asset no dropdown = adiciona DIRETO ao canvas e fecha
+                  popover (user pedido 2026-05-24). Sem botao "Add to canvas"
+                  intermediario — atalho UX. TEXT ja no canvas: noop + warning. */}
+              <select
+                value=""
+                onChange={e => {
+                  const newId = e.target.value
+                  if (!newId) return
+                  setAssetId(newId); assetIdRef.current = newId
+                  const currentAsset = (campaign.assets ?? []).find((a: Asset) => a.id === newId)
+                  const isText = currentAsset?.type === "TEXT"
+                  const fc = fabricRef.current
+                  const alreadyOnCanvas = isText && fc
+                    ? fc.getObjects().some((o: any) => o.__assetId === newId)
+                    : false
+                  if (alreadyOnCanvas) {
+                    console.warn("[asset-add] TEXT asset ja no canvas, ignorado:", currentAsset?.label)
+                  } else {
+                    void selectedTick
+                    addLayer()
+                  }
+                  setShowAddAsset(false)
+                }}
+                style={{ background: "#0d0d0d", color: "white", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 10px", fontSize: 12, width: "100%" }}
+              >
+                <option value="" disabled>Selecione um asset…</option>
+                {(campaign.assets ?? []).map((a: Asset) => {
+                  const fc = fabricRef.current
+                  const alreadyOnCanvas = a.type === "TEXT" && fc
+                    ? fc.getObjects().some((o: any) => o.__assetId === a.id)
+                    : false
+                  return (
+                    <option key={a.id} value={a.id} disabled={alreadyOnCanvas}>
+                      {a.label}{alreadyOnCanvas ? " (já no canvas)" : ""}
+                    </option>
+                  )
+                })}
               </select>
-              {(() => {
-                const currentAsset = (campaign.assets ?? []).find((a: Asset) => a.id === assetId)
-                const isText = currentAsset?.type === "TEXT"
-                const fc = fabricRef.current
-                const alreadyOnCanvas = isText && fc
-                  ? fc.getObjects().some((o: any) => o.__assetId === assetId)
-                  : false
-                void selectedTick
-                const disabled = alreadyOnCanvas
-                return (
-                  <button
-                    onClick={() => { addLayer(); setShowAddAsset(false) }}
-                    disabled={disabled}
-                    title={disabled ? "This text asset is already on the canvas." : undefined}
-                    style={{
-                      background: disabled ? "#3a3a1a" : "#F5C400",
-                      color: disabled ? "#666" : "#111",
-                      border: "none",
-                      padding: "8px 14px",
-                      borderRadius: 4,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      cursor: disabled ? "not-allowed" : "pointer",
-                    }}
-                  >+ Add to canvas</button>
-                )
-              })()}
             </div>
           )}
         </div>
