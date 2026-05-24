@@ -357,11 +357,21 @@ export default function CampaignOverviewPage() {
           </div>
         </div>
 
-        {/* Preview KV + sidebar 2026-05-24: subnav movido pro TOPO DA SIDEBAR
-            DIREITA (user pedido "subnav vai pra direita do KV"). Reduzido
-            paddings/margins pra peças aparecerem no fold sem scroll. */}
+        {/* Subnav horizontal no topo — voltei pra esse layout 2026-05-24 apos
+            tentativa anterior de colocar dentro do box / na direita do KV
+            ficar visualmente ruim. Mais simples = melhor. */}
+        <CampaignSubnav
+          campaignId={id}
+          clientId={campaign.client?.id}
+          clientName={campaign.client?.name}
+          activeTab="campaign"
+          hasAssets={!!campaign.assets && campaign.assets.length > 0}
+          hasPieces={pieces.length > 0}
+        />
+
+        {/* Preview KV + actions sidebar */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px", marginBottom: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 16, alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 16, alignItems: "start" }}>
           <div>
             <div
               onClick={() => router.push(`/editor?campaignId=${id}`)}
@@ -427,15 +437,9 @@ export default function CampaignOverviewPage() {
               !hasAssets ? "import" : !hasPieces ? "generate" : "deliver"
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {/* Subnav no TOPO da sidebar direita 2026-05-24 (user pedido) */}
-                <CampaignSubnav
-                  campaignId={id}
-                  clientId={campaign.client?.id}
-                  clientName={campaign.client?.name}
-                  activeTab="campaign"
-                  hasAssets={!!campaign.assets && campaign.assets.length > 0}
-                  hasPieces={pieces.length > 0}
-                />
+                {/* Apenas acoes que MODIFICAM dados — navegacao ja esta no subnav.
+                    Apresentacao removida daqui (duplicava o botao no subnav).
+                    Entrega permanece — e acao destrutiva/final, vale destaque. */}
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0 }}>Matriz</div>
                 <PsdImporter
                   ref={psdMatrixImporterRef}
@@ -462,15 +466,6 @@ export default function CampaignOverviewPage() {
                   + Gerar peça
                 </Button>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0, marginTop: 4 }}>Entrega</div>
-                <Button
-                  variant="secondary"
-                  size="md"
-                  onClick={() => router.push(`/campaigns/${id}/presentation`)}
-                  disabled={!hasPieces}
-                  title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}
-                >
-                  Apresentação
-                </Button>
                 <Button
                   variant={primaryStep === "deliver" ? "primary" : "secondary"}
                   size="md"
