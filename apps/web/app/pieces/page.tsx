@@ -141,19 +141,26 @@ function PiecesContent() {
     }
   }, [campaignId])
 
-  // LAZY THUMB REGEN — peças sem imageUrl ganham preview em background.
-  // regeneratePieceThumb broadcasta piece-updated → lista refetch.
+  // AGGRESSIVE THUMB REGEN — prerrogativa ZZOSY (realtime_preview_everywhere):
+  // regen TODAS pieces ao montar, nao so as sem imageUrl. Garante que cards
+  // sempre refletem estado atual (user pediu 2026-05-23: preview realtime em
+  // tudo). Session flag por piece evita re-regen no mesmo load.
   useEffect(() => {
     if (pieces.length === 0) return
-    const missing = pieces.filter(p => !p.imageUrl).map(p => p.id)
-    if (missing.length === 0) return
     let cancelled = false
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      for (const pid of missing) {
+      for (const p of pieces) {
         if (cancelled) break
-        try { await regeneratePieceThumb(pid) }
-        catch (e) { console.warn("[lazy-regen]", pid, e) }
+        const sessionKey = `zzosy:regen:${p.id}`
+        try {
+          if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(sessionKey)) continue
+        } catch {}
+        try {
+          await regeneratePieceThumb(p.id)
+          try { sessionStorage.setItem(sessionKey, String(Date.now())) } catch {}
+        }
+        catch (e) { console.warn("[aggro-regen]", p.id, e) }
       }
     })()
     return () => { cancelled = true }

@@ -222,20 +222,29 @@ export default function PresentationPage() {
     }
   }, [id])
 
-  // LAZY THUMB REGEN — pieces sem imageUrl/thumbnailUrl ganham preview em
-  // background. regeneratePieceThumb broadcasta piece-updated → este listener
-  // refaz fetch e renderiza. Cobre pieces antigos gerados antes dos fixes.
+  // AGGRESSIVE THUMB REGEN — prerrogativa ZZOSY (memoria realtime_preview_everywhere):
+  // preview tem que ser realtime SEMPRE. Regen TODAS as pieces em background ao
+  // montar a presentation. Thumb stale > thumb missing como problema (user pediu
+  // 2026-05-23: 'preview precisa ser em tudo realtime').
+  //
+  // Throttle: 1 por vez sequencial pra nao saturar canvas / API. Session flag
+  // por piece evita re-regen no mesmo ciclo de visita (so faz uma vez por load).
   useEffect(() => {
     if (pieces.length === 0) return
-    const missing = pieces.filter((p: any) => !p.imageUrl && !p.thumbnailUrl).map((p: any) => p.id)
-    if (missing.length === 0) return
     let cancelled = false
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      for (const pid of missing) {
+      for (const p of pieces as any[]) {
         if (cancelled) break
-        try { await regeneratePieceThumb(pid) }
-        catch (e) { console.warn("[lazy-regen]", pid, e) }
+        const sessionKey = `zzosy:regen:${p.id}`
+        try {
+          if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(sessionKey)) continue
+        } catch {}
+        try {
+          await regeneratePieceThumb(p.id)
+          try { sessionStorage.setItem(sessionKey, String(Date.now())) } catch {}
+        }
+        catch (e) { console.warn("[aggro-regen]", p.id, e) }
       }
     })()
     return () => { cancelled = true }
