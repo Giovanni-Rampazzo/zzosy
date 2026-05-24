@@ -2921,6 +2921,110 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             return
           }
         }
+        // ===== TOP PHOTOSHOP SHORTCUTS (user pedido 2026-05-23) =====
+        const fcEd = fabricRef.current
+        const activeObj = fcEd?.getActiveObject() as any
+        const cmdOnly = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey
+        const cmdShift = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey
+        const cmdAlt = (e.metaKey || e.ctrlKey) && !e.shiftKey && e.altKey
+        // Cmd+0 — Fit to screen
+        if (!inField && cmdOnly && (e.key === "0" || e.code === "Digit0")) {
+          e.preventDefault(); centerView(); return
+        }
+        // Cmd+1 — Zoom 100%
+        if (!inField && cmdOnly && (e.key === "1" || e.code === "Digit1")) {
+          e.preventDefault(); if (fcEd) applyZoom(fcEd, 1); return
+        }
+        // Cmd+= / Cmd++ — Zoom in (Photoshop usa Cmd+=)
+        if (!inField && cmdOnly && (e.key === "=" || e.key === "+")) {
+          e.preventDefault(); changeZoom(+0.1); return
+        }
+        // Cmd+- — Zoom out
+        if (!inField && cmdOnly && e.key === "-") {
+          e.preventDefault(); changeZoom(-0.1); return
+        }
+        // Cmd+J — Duplicate active object (Photoshop: Cmd+J = New Layer via Copy)
+        if (!inField && cmdOnly && (e.key === "j" || e.key === "J")) {
+          if (activeObj && !activeObj.__isBg && !activeObj.isEditing && fcEd) {
+            e.preventDefault()
+            activeObj.clone(["__assetId","__assetLabel","__isShape","__shapeKind","__cornerRadius","__pathBbox","__maskData","__psdEffects","__groupPath","leadingPt"]).then((cloned: any) => {
+              cloned.set({ left: (activeObj.left ?? 0) + 20, top: (activeObj.top ?? 0) + 20 })
+              ;(cloned as any).__assetId = activeObj.__assetId
+              fcEd.add(cloned)
+              fcEd.setActiveObject(cloned)
+              fcEd.requestRenderAll()
+              if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+              doSave()
+            }).catch((err: any) => console.warn("[cmd+j duplicate]", err))
+            return
+          }
+        }
+        // Cmd+] / Cmd+[ — Z-order forward / backward
+        if (!inField && cmdOnly && (e.key === "]" || e.key === "[")) {
+          if (activeObj && !activeObj.__isBg) {
+            e.preventDefault()
+            moveLayer(activeObj, e.key === "]" ? "up" : "down")
+            return
+          }
+        }
+        // Cmd+Shift+] / Cmd+Shift+[ — Send to front / back
+        if (!inField && cmdShift && (e.key === "]" || e.key === "{" || e.key === "}" || e.key === "[")) {
+          if (activeObj && !activeObj.__isBg && fcEd) {
+            e.preventDefault()
+            const toFront = e.key === "]" || e.key === "}"
+            if (toFront) fcEd.bringObjectToFront(activeObj)
+            else fcEd.sendObjectToBack(activeObj)
+            const bgObj = fcEd.getObjects().find((o: any) => o.__isBg)
+            if (bgObj) fcEd.sendObjectToBack(bgObj)
+            fcEd.requestRenderAll()
+            if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+            doSave()
+            return
+          }
+        }
+        // Cmd+A — Select all (multi-selection com ActiveSelection)
+        if (!inField && cmdOnly && (e.key === "a" || e.key === "A")) {
+          if (fcEd) {
+            e.preventDefault()
+            const sels = fcEd.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__hidden && !o.__locked)
+            if (sels.length > 0) {
+              const fabric = require("fabric")
+              const ActiveSelection = (fabric as any).ActiveSelection
+              if (ActiveSelection) {
+                const sel = new ActiveSelection(sels, { canvas: fcEd })
+                fcEd.setActiveObject(sel)
+                fcEd.requestRenderAll()
+              }
+            }
+            return
+          }
+        }
+        // Cmd+D — Deselect
+        if (!inField && cmdOnly && (e.key === "d" || e.key === "D")) {
+          if (fcEd) {
+            e.preventDefault()
+            fcEd.discardActiveObject()
+            fcEd.requestRenderAll()
+            return
+          }
+        }
+        // Arrow keys — Nudge 1px (Shift = 10px)
+        if (!inField && activeObj && !activeObj.__isBg && !activeObj.isEditing
+            && !cmdOnly && !cmdShift && !cmdAlt
+            && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+          e.preventDefault()
+          const step = e.shiftKey ? 10 : 1
+          const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0
+          const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0
+          activeObj.set({ left: (activeObj.left ?? 0) + dx, top: (activeObj.top ?? 0) + dy })
+          activeObj.setCoords()
+          fcEd?.requestRenderAll()
+          if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+          doSave()
+          return
+        }
+        // ===== END PS SHORTCUTS =====
+
         // Delete/Backspace remove objeto selecionado
         if (e.key !== "Delete" && e.key !== "Backspace") return
         if (inField) return
