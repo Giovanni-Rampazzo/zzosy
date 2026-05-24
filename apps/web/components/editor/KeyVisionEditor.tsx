@@ -10466,28 +10466,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 />
               </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
-                {[0.2, 0.4, 0.6, 0.8].map(pct => (
-                  <button
-                    key={pct}
-                    type="button"
-                    onClick={() => scaleLayerToCanvas(pct)}
-                    title={`Scale the layer to ${Math.round(pct * 100)}% of canvas (centered)`}
-                    style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 0", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
-                  >
-                    {Math.round(pct * 100)}%
-                  </button>
-                ))}
-              </div>
-              <button onClick={fitLayerToCanvas}
-                style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
-                title="Scale and center the layer inside the piece (100%)">
-                Fit to canvas
-              </button>
-            </div>
             {/* Tipografia avancada: entrelinha + entreletra agrupadas (2026-05-23).
                 Ambas sao propriedades de TYPESETTING — fazem parte do mesmo bloco
                 visual junto com fonte/peso/tamanho acima. Alinhamento ficou logo
@@ -10522,7 +10500,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     title={isLeadingAuto ? `Auto (${Math.round(effectiveLeadingPt)}pt) — Option+↑/↓ adjusts` : "Option+↑/↓ adjusts (Shift = 10pt)"}
                     style={{ ...inpS, color: isLeadingAuto ? "#888" : "white" }}
                   />
-                  <button type="button"
+                  <button type="button" tabIndex={-1}
                     onClick={() => setLeading(null)}
                     disabled={isLeadingAuto}
                     title="Reset to Auto"
@@ -10581,7 +10559,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   ].map(a => {
                     const active = effectiveTextAlign === a.v
                     return (
-                      <button key={a.v} type="button"
+                      <button key={a.v} type="button" tabIndex={-1}
                         onClick={() => applyTextboxStyle("textAlign", a.v)}
                         title={a.title}
                         style={{
@@ -10611,7 +10589,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   { kind: "lower", label: "aa", title: "lowercase" },
                   { kind: "title", label: "Aa", title: "Title Case" },
                 ].map(c => (
-                  <button key={c.kind} type="button"
+                  <button key={c.kind} type="button" tabIndex={-1}
                     onClick={() => {
                       const obj = selected as any
                       if (!obj || (obj.type !== "textbox" && obj.type !== "i-text")) return
@@ -10671,6 +10649,35 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   }
                 }}
               />
+            </div>
+
+            {/* SCALE PRESETS + FIT TO CANVAS — movido pra BAIXO de todas as
+                settings de texto (user pedido 2026-05-23): "passe esse fit
+                canvas para baixo de todos os settings de texto". tabIndex=-1
+                pra Tab pular esses controles (Size→Line height→Letter spacing
+                vai direto). */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+                {[0.2, 0.4, 0.6, 0.8].map(pct => (
+                  <button
+                    key={pct}
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => scaleLayerToCanvas(pct)}
+                    title={`Scale the layer to ${Math.round(pct * 100)}% of canvas (centered)`}
+                    style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 0", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                  >
+                    {Math.round(pct * 100)}%
+                  </button>
+                ))}
+              </div>
+              <button onClick={fitLayerToCanvas} tabIndex={-1}
+                style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
+                title="Scale and center the layer inside the piece (100%)">
+                Fit to canvas
+              </button>
             </div>
 
             {/* ===== MÁSCARA (Photoshop-style) ===== */}
