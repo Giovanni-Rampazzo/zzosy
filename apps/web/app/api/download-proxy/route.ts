@@ -1,74 +1,77 @@
 import { NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
+import { writeFile, readFile, unlink, mkdir } from "fs/promises"
+import { existsSync } from "fs"
+import { join } from "path"
+import { tmpdir } from "os"
 
 /**
- * Download proxy — resolve problema de Chrome bloqueando <a>.click() programatico
- * fora de user gesture direto. Em vez de baixar client-side via blob URL, o
- * client faz POST do blob aqui e GET via window.location.href — browser
- * SEMPRE baixa quando response tem Content-Disposition: attachment.
+ * Download proxy — resolve problema de Chrome bloqueando <a>.click() programatico.
+ * Persiste em DISCO (nao memoria) porque Next Fast Refresh recarrega o module
+ * entre POST e GET, resetando o Map. Disco persiste sempre.
  *
  * Flow:
- *  1. Client POST blob (multipart) com ?filename=X → server cacheia em memoria
- *     com UUID, retorna { id }
- *  2. Client navigates window.location.href = /api/download-proxy/{id}
- *     → server stream do blob com Content-Disposition
- *
- * Cache: in-memory Map. TTL 60s — blob auto-removido apos download ou timeout.
- * Aceitavel pra arquivos < 100MB (limit do Next route).
+ *  1. Client POST blob multipart + filename → server salva /tmp/zzosy-download-{id}.bin
+ *     + .meta.json com filename/mime, retorna { url }
+ *  2. Client cria <iframe src=url> → GET stream do disco com Content-Disposition
+ *  3. Apos GET, arquivos sao deletados (single-use)
  */
 
-type CacheEntry = {
-  buffer: Buffer
-  filename: string
-  mime: string
-  expiresAt: number
-}
-
-// Module-level Map — persiste enquanto o server roda. Em prod com multi-instancia
-// precisaria Redis, mas pra dev/single-instance OK.
-const CACHE: Map<string, CacheEntry> = (globalThis as any).__downloadProxyCache ?? new Map()
-;(globalThis as any).__downloadProxyCache = CACHE
-
+const TMP_DIR = join(tmpdir(), "zzosy-downloads")
 const TTL_MS = 60 * 1000
 
-function purgeExpired() {
-  const now = Date.now()
-  for (const [id, entry] of CACHE.entries()) {
-    if (entry.expiresAt < now) CACHE.delete(id)
-  }
+async function ensureTmpDir() {
+  if (!existsSync(TMP_DIR)) await mkdir(TMP_DIR, { recursive: true })
 }
 
+function fileFor(id: string) { return join(TMP_DIR, `${id}.bin`) }
+function metaFor(id: string) { return join(TMP_DIR, `${id}.json`) }
+
 export async function POST(req: NextRequest) {
-  purgeExpired()
+  await ensureTmpDir()
   const form = await req.formData()
   const file = form.get("file") as File | null
   if (!file) return NextResponse.json({ error: "missing file" }, { status: 400 })
   const filename = (form.get("filename") as string) || "download.bin"
   const buf = Buffer.from(await file.arrayBuffer())
   const id = randomUUID()
-  CACHE.set(id, {
-    buffer: buf,
+  await writeFile(fileFor(id), buf)
+  await writeFile(metaFor(id), JSON.stringify({
     filename,
     mime: file.type || "application/octet-stream",
-    expiresAt: Date.now() + TTL_MS,
-  })
+    createdAt: Date.now(),
+  }))
   return NextResponse.json({ id, url: `/api/download-proxy?id=${id}` })
 }
 
 export async function GET(req: NextRequest) {
-  purgeExpired()
   const id = req.nextUrl.searchParams.get("id")
-  if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 })
-  const entry = CACHE.get(id)
-  if (!entry) return NextResponse.json({ error: "not found or expired" }, { status: 404 })
-  // Apos servir, remove do cache (single-use)
-  CACHE.delete(id)
-  return new NextResponse(entry.buffer as any, {
+  if (!id || !/^[a-f0-9-]{36}$/.test(id)) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 })
+  }
+  const dataPath = fileFor(id)
+  const metaPath = metaFor(id)
+  if (!existsSync(dataPath) || !existsSync(metaPath)) {
+    return NextResponse.json({ error: "not found or expired" }, { status: 404 })
+  }
+  const meta = JSON.parse(await readFile(metaPath, "utf-8"))
+  if (Date.now() - (meta.createdAt ?? 0) > TTL_MS) {
+    await unlink(dataPath).catch(() => {})
+    await unlink(metaPath).catch(() => {})
+    return NextResponse.json({ error: "expired" }, { status: 404 })
+  }
+  const buf = await readFile(dataPath)
+  // Cleanup single-use: agenda delete async (nao bloqueia response)
+  setTimeout(async () => {
+    await unlink(dataPath).catch(() => {})
+    await unlink(metaPath).catch(() => {})
+  }, 1000)
+  return new NextResponse(buf as any, {
     status: 200,
     headers: {
-      "Content-Type": entry.mime,
-      "Content-Disposition": `attachment; filename="${entry.filename.replace(/"/g, '')}"`,
-      "Content-Length": String(entry.buffer.length),
+      "Content-Type": meta.mime ?? "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${(meta.filename ?? "download.bin").replace(/"/g, "")}"`,
+      "Content-Length": String(buf.length),
       "Cache-Control": "no-store",
     },
   })
