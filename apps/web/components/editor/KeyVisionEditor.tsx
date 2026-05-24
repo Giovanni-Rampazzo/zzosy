@@ -1076,6 +1076,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [selected, setSelected] = useState<any>(null)
   // Toggle do popover "+ Add asset" ao lado do botao ASSETS no Properties.
   const [showAddAsset, setShowAddAsset] = useState(false)
+  // Toggle do seletor SOLID/LINEAR/RADIAL no Background panel — so aparece
+  // quando user clica no swatch da cor (user pedido 2026-05-23).
+  const [showBgTypeSelector, setShowBgTypeSelector] = useState(false)
   // Tab key toggle: esconde Layers + Properties pra preview limpo (Photoshop-style).
   // User pedido 2026-05-23. effLayersPanelWidth/effPropsPanelWidth computados
   // mais abaixo (depois que layersPanelWidth/propsPanelWidth foram declarados).
@@ -9011,7 +9014,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   title="Previous step"
                   style={{ background: "transparent", border: "none", color: activeStepIndex === 0 ? "#333" : "#aaa", cursor: activeStepIndex === 0 ? "not-allowed" : "pointer", fontSize: 12, padding: "2px 6px", lineHeight: 1 }}
                 >Previous</button>
-                <span style={{ fontSize: 11, color: "#bbb", fontWeight: 600, minWidth: 60, textAlign: "center" }}>
+                {/* Step X of Y — destaque pra info crítica (user pediu
+                    2026-05-23: "destava Step 2, eh muito importante essa info").
+                    Pill amarelo + texto bold. */}
+                <span style={{
+                  fontSize: 12, color: "#F5C400", fontWeight: 800,
+                  background: "rgba(245,196,0,0.12)",
+                  border: "1px solid rgba(245,196,0,0.4)",
+                  borderRadius: 4,
+                  padding: "3px 10px",
+                  minWidth: 84, textAlign: "center",
+                  letterSpacing: "0.3px",
+                }}>
                   Step {activeStepIndex + 1} of {stepCount}
                 </span>
                 <button
@@ -10095,8 +10109,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 )}
               </div>
             </div>
-            {/* Tipo do BG: Sólido / Gradiente Linear / Gradiente Radial */}
-            {(() => {
+            {/* Tipo do BG: Solid / Linear / Radial — so aparece quando user
+                clica no swatch da cor (showBgTypeSelector toggle).
+                User pedido 2026-05-23:
+                  - "imagem nao existe para Background, igual photoshop"
+                    → Image button REMOVIDO (PS bg eh cor pura)
+                  - "solid/linear/radial so aparece depois que clico no box
+                    da cor ou na linha com o codigo"
+                    → escondido por default, expande ao click no swatch */}
+            {showBgTypeSelector && (() => {
               const layer = bgLayersRef.current[currentBgIdx()]
               const kind = layer?.kind ?? "solid"
               const gType = layer?.kind === "gradient" ? layer.gradientType : null
@@ -10113,23 +10134,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   <button style={btnS(kind === "solid")} onClick={() => changeBgKind("solid")}>Solid</button>
                   <button style={btnS(kind === "gradient" && gType === "linear")} onClick={() => changeBgKind("gradient", { gradientType: "linear" })}>Linear</button>
                   <button style={btnS(kind === "gradient" && gType === "radial")} onClick={() => changeBgKind("gradient", { gradientType: "radial" })}>Radial</button>
-                  <button style={btnS(kind === "image")} onClick={() => {
-                    // Se ja eh image, mantem; senao pede upload imediato
-                    const layer = bgLayersRef.current[currentBgIdx()]
-                    if (layer?.kind === "image" && layer.imageDataUrl) {
-                      changeBgKind("image")
-                    } else {
-                      // dispara file picker programaticamente
-                      const input = document.createElement("input")
-                      input.type = "file"
-                      input.accept = "image/*"
-                      input.onchange = () => {
-                        const f = input.files?.[0]
-                        if (f) uploadBgImage(f)
-                      }
-                      input.click()
-                    }
-                  }}>Image</button>
                 </div>
               )
             })()}
@@ -10140,7 +10144,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const bgStr = typeof bgColor === "string" ? bgColor : "#ffffff"
               const activeBrand = layer?.colorBrandIdx
               return (
-                <div style={{ marginBottom: 14 }}>
+                <div style={{ marginBottom: 14 }} onMouseDown={() => setShowBgTypeSelector(true)}>
                   <ColorSwatchPicker
                     value={bgStr}
                     onChange={(hex, brandIdx) => changeBg(hex, brandIdx)}
