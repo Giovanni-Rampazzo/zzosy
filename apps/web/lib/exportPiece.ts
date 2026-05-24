@@ -66,6 +66,44 @@ const MIME_BY_EXT: Record<string, string> = {
   zip: "application/zip",
 }
 
+/**
+ * Toast visivel com link manual pra download. Mostra QUANDO o iframe automatico
+ * pode ter sido bloqueado (adblocker, content blocker, etc — sintoma classico:
+ * funciona em janela anonima mas nao no browser normal). User clica = gesture
+ * direto = browser sempre permite. Auto-some em 15s.
+ */
+function showDownloadFallbackToast(url: string, filename: string): void {
+  if (typeof document === "undefined") return
+  // Remove toast anterior se existir
+  document.getElementById("__zzosy-download-toast")?.remove()
+  const toast = document.createElement("div")
+  toast.id = "__zzosy-download-toast"
+  toast.style.cssText = `
+    position: fixed; bottom: 20px; right: 20px; z-index: 99999;
+    background: #1a1a1a; color: white;
+    padding: 14px 18px; border-radius: 8px;
+    font-family: 'DM Sans', system-ui, sans-serif; font-size: 13px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid #F5C400;
+    display: flex; flex-direction: column; gap: 10px; max-width: 360px;
+  `
+  toast.innerHTML = `
+    <div style="font-weight:600;color:#F5C400">Download iniciado</div>
+    <div style="color:#bbb;font-size:12px;line-height:1.4">Se não apareceu em Downloads (extensões podem bloquear), clique abaixo:</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a id="__zzosy-download-link" href="${url}" download="${filename.replace(/"/g, "")}" target="_blank"
+        style="background:#F5C400;color:#111;padding:8px 14px;border-radius:4px;text-decoration:none;font-weight:700;font-size:12px">
+        Baixar manualmente
+      </a>
+      <button id="__zzosy-download-close" style="background:transparent;color:#888;border:none;cursor:pointer;font-size:14px;padding:4px 8px">Fechar</button>
+    </div>
+  `
+  document.body.appendChild(toast)
+  const close = () => toast.remove()
+  toast.querySelector("#__zzosy-download-close")?.addEventListener("click", close)
+  toast.querySelector("#__zzosy-download-link")?.addEventListener("click", () => setTimeout(close, 500))
+  setTimeout(close, 15000)
+}
+
 async function downloadBlob(blob: Blob, filename: string): Promise<void> {
   // SERVER-SIDE PROXY 2026-05-24: client-side download (.click() programatico)
   // bloqueado pelo Chrome quando user gesture ja se perdeu na chain async do
@@ -86,16 +124,17 @@ async function downloadBlob(blob: Blob, filename: string): Promise<void> {
     const { url } = await res.json()
     if (!url) throw new Error("proxy returned no url")
     console.log("[downloadBlob] proxy OK, baixando via iframe", url)
-    // IFRAME hidden em vez de window.location.href: navegacao quebraria o
-    // SPA (perde estado). Iframe carrega a URL, browser ve Content-Disposition
-    // e baixa SEM navegar a pagina principal. Mesmo trick que ferramentas tipo
-    // jsPDF/exceljs usam pra forcar download sem confiar em <a>.click().
+    // IFRAME hidden — browser ve Content-Disposition e baixa sem navegar SPA.
     const iframe = document.createElement("iframe")
     iframe.style.display = "none"
     iframe.src = url
     document.body.appendChild(iframe)
-    // Remove apos 30s (tempo de download pra arquivos grandes + safety margin)
     setTimeout(() => { try { iframe.remove() } catch {} }, 30000)
+    // FALLBACK VISIVEL 2026-05-24: se user tem adblocker/extension bloqueando
+    // iframe download (sintoma: funciona em incognito mas nao no browser
+    // normal), mostra toast com link MANUAL — click direto do user passa pq
+    // e gesture nativo. Toast desaparece em 15s OU quando user clica.
+    showDownloadFallbackToast(url, safeFilename)
   } catch (e) {
     console.warn("[downloadBlob] proxy falhou, fallback file-saver:", e)
     try {
