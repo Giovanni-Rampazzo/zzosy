@@ -10276,44 +10276,38 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             }
             return (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* BLEND MODE — PRIMEIRA prop apos ASSETS (user pedido 2026-05-23).
-                Separado de OPACITY pra cada um ter seu header proprio. */}
-            <div>
-              <div style={secS}>Blend mode</div>
-              <select
-                value={(selected as any).globalCompositeOperation ?? "source-over"}
-                onChange={e => changeObjectBlendMode(e.target.value)}
-                style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
-                title="Layer blend mode (Photoshop-style)"
-              >
-                <option value="source-over">Normal</option>
-                <option value="multiply">Multiply</option>
-                <option value="screen">Screen</option>
-                <option value="overlay">Overlay</option>
-                <option value="darken">Darken</option>
-                <option value="lighten">Lighten</option>
-                <option value="color-dodge">Color Dodge</option>
-                <option value="color-burn">Color Burn</option>
-                <option value="hard-light">Hard Light</option>
-                <option value="soft-light">Soft Light</option>
-                <option value="difference">Difference</option>
-                <option value="exclusion">Exclusion</option>
-                <option value="hue">Hue</option>
-                <option value="saturation">Saturation</option>
-                <option value="color">Color</option>
-                <option value="luminosity">Luminosity</option>
-                <option value="lighter">Linear Dodge</option>
-              </select>
-            </div>
-            <div>
-              <div style={secS}>Opacity</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="range" min={0} max={100} step={1}
-                  value={Math.round(((selected as any).opacity ?? 1) * 100)}
-                  onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
-                  style={{ flex: 1 }}
-                />
+            {/* BLEND MODE + OPACITY — padrao ZZOSY: blend left, opacity right
+                na MESMA linha (user pedido 2026-05-23). */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 8 }}>
+              <div>
+                <div style={secS}>Blend mode</div>
+                <select
+                  value={(selected as any).globalCompositeOperation ?? "source-over"}
+                  onChange={e => changeObjectBlendMode(e.target.value)}
+                  style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
+                  title="Layer blend mode (Photoshop-style)"
+                >
+                  <option value="source-over">Normal</option>
+                  <option value="multiply">Multiply</option>
+                  <option value="screen">Screen</option>
+                  <option value="overlay">Overlay</option>
+                  <option value="darken">Darken</option>
+                  <option value="lighten">Lighten</option>
+                  <option value="color-dodge">Color Dodge</option>
+                  <option value="color-burn">Color Burn</option>
+                  <option value="hard-light">Hard Light</option>
+                  <option value="soft-light">Soft Light</option>
+                  <option value="difference">Difference</option>
+                  <option value="exclusion">Exclusion</option>
+                  <option value="hue">Hue</option>
+                  <option value="saturation">Saturation</option>
+                  <option value="color">Color</option>
+                  <option value="luminosity">Luminosity</option>
+                  <option value="lighter">Linear Dodge</option>
+                </select>
+              </div>
+              <div>
+                <div style={secS}>Opacity</div>
                 <div style={numFieldRight}>
                   <input
                     type="number" min={0} max={100} step={1}
@@ -10754,35 +10748,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 {/* Label do layer removido (2026-05-22) — redundante com o
                     painel Layers que ja destaca o ativo. */}
 
-                {/* BLEND MODE + OPACITY separados (user pedido 2026-05-23). */}
-                <div>
-                  <div style={secS}>Blend mode</div>
-                  <select
-                    value={(selected as any).globalCompositeOperation ?? "source-over"}
-                    onChange={e => changeObjectBlendMode(e.target.value)}
-                    style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
-                  >
-                    <option value="source-over">Normal</option>
-                    <option value="multiply">Multiply</option>
-                    <option value="screen">Screen</option>
-                    <option value="overlay">Overlay</option>
-                    <option value="darken">Darken</option>
-                    <option value="lighten">Lighten</option>
-                    <option value="color-dodge">Color Dodge</option>
-                    <option value="color-burn">Color Burn</option>
-                    <option value="hard-light">Hard Light</option>
-                    <option value="soft-light">Soft Light</option>
-                    <option value="difference">Difference</option>
-                    <option value="exclusion">Exclusion</option>
-                  </select>
-                </div>
-                <div>
-                  <div style={secS}>Opacity</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="range" min={0} max={100} step={1}
-                      value={Math.round(((selected as any).opacity ?? 1) * 100)}
-                      onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
-                      style={{ flex: 1 }} />
+                {/* BLEND MODE + OPACITY na mesma linha — padrao ZZOSY. */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 8 }}>
+                  <div>
+                    <div style={secS}>Blend mode</div>
+                    <select
+                      value={(selected as any).globalCompositeOperation ?? "source-over"}
+                      onChange={e => changeObjectBlendMode(e.target.value)}
+                      style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
+                    >
+                      <option value="source-over">Normal</option>
+                      <option value="multiply">Multiply</option>
+                      <option value="screen">Screen</option>
+                      <option value="overlay">Overlay</option>
+                      <option value="darken">Darken</option>
+                      <option value="lighten">Lighten</option>
+                      <option value="color-dodge">Color Dodge</option>
+                      <option value="color-burn">Color Burn</option>
+                      <option value="hard-light">Hard Light</option>
+                      <option value="soft-light">Soft Light</option>
+                      <option value="difference">Difference</option>
+                      <option value="exclusion">Exclusion</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div style={secS}>Opacity</div>
                     <div style={numFieldRight}>
                       <input type="number" min={0} max={100} step={1}
                         value={Math.round(((selected as any).opacity ?? 1) * 100)}
@@ -10896,41 +10886,37 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Label do layer removido (2026-05-22) — painel Layers ja indica
                 qual layer esta ativo, sem duplicar info aqui. */}
-            {/* BLEND MODE + OPACITY separados (user pedido 2026-05-23). */}
-            <div>
-              <div style={secS}>Blend mode</div>
-              <select
-                value={(selected as any).globalCompositeOperation ?? "source-over"}
-                onChange={e => changeObjectBlendMode(e.target.value)}
-                style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
-                title="Layer blend mode (Photoshop-style)"
-              >
-                <option value="source-over">Normal</option>
-                <option value="multiply">Multiply</option>
-                <option value="screen">Screen</option>
-                <option value="overlay">Overlay</option>
-                <option value="darken">Darken</option>
-                <option value="lighten">Lighten</option>
-                <option value="color-dodge">Color Dodge</option>
-                <option value="color-burn">Color Burn</option>
-                <option value="hard-light">Hard Light</option>
-                <option value="soft-light">Soft Light</option>
-                <option value="difference">Difference</option>
-                <option value="exclusion">Exclusion</option>
-                <option value="hue">Hue</option>
-                <option value="saturation">Saturation</option>
-                <option value="color">Color</option>
-                <option value="luminosity">Luminosity</option>
-                <option value="lighter">Linear Dodge</option>
-              </select>
-            </div>
-            <div>
-              <div style={secS}>Opacity</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input type="range" min={0} max={100} step={1}
-                  value={Math.round(((selected as any).opacity ?? 1) * 100)}
-                  onChange={e => changeObjectOpacity((Number(e.target.value) || 0) / 100)}
-                  style={{ flex: 1 }} />
+            {/* BLEND MODE + OPACITY na mesma linha — padrao ZZOSY. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 8 }}>
+              <div>
+                <div style={secS}>Blend mode</div>
+                <select
+                  value={(selected as any).globalCompositeOperation ?? "source-over"}
+                  onChange={e => changeObjectBlendMode(e.target.value)}
+                  style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 20, width: "100%" }}
+                  title="Layer blend mode (Photoshop-style)"
+                >
+                  <option value="source-over">Normal</option>
+                  <option value="multiply">Multiply</option>
+                  <option value="screen">Screen</option>
+                  <option value="overlay">Overlay</option>
+                  <option value="darken">Darken</option>
+                  <option value="lighten">Lighten</option>
+                  <option value="color-dodge">Color Dodge</option>
+                  <option value="color-burn">Color Burn</option>
+                  <option value="hard-light">Hard Light</option>
+                  <option value="soft-light">Soft Light</option>
+                  <option value="difference">Difference</option>
+                  <option value="exclusion">Exclusion</option>
+                  <option value="hue">Hue</option>
+                  <option value="saturation">Saturation</option>
+                  <option value="color">Color</option>
+                  <option value="luminosity">Luminosity</option>
+                  <option value="lighter">Linear Dodge</option>
+                </select>
+              </div>
+              <div>
+                <div style={secS}>Opacity</div>
                 <div style={numFieldRight}>
                   <input
                     type="number" min={0} max={100} step={1}
