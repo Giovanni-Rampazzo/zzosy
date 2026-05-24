@@ -574,35 +574,9 @@ export default function CampaignOverviewPage() {
             </div>
           )}
 
-          {/* Abas de filtro por status */}
-          {pieces.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-              <FilterPill
-                active={statusFilter === "ALL"}
-                onClick={() => { setStatusFilter("ALL"); setSelected([]) }}
-                accent="#111111"
-                accentBg="#F5F5F5"
-                accentText="#111111"
-              >
-                Todas <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts.ALL})</span>
-              </FilterPill>
-              {PIECE_STATUS_LIST.map(s => {
-                const meta = statusMeta(s)
-                return (
-                  <FilterPill
-                    key={s}
-                    active={statusFilter === s}
-                    onClick={() => { setStatusFilter(s); setSelected([]) }}
-                    accent={meta.color}
-                    accentBg={meta.bg}
-                    accentText={meta.color}
-                  >
-                    {meta.label} <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts[s]})</span>
-                  </FilterPill>
-                )
-              })}
-            </div>
-          )}
+          {/* Filtros por status REMOVIDOS 2026-05-24 (user pedido):
+              "isso se refere a aprovacao, entao nao deve estar nessa pagina".
+              Status filter agora vive na pagina /approvals (contexto correto). */}
 
           {visiblePieces.length === 0 ? (
             <div style={{ background: "white", border: "1px dashed #E0E0E0", borderRadius: 10, padding: 40, textAlign: "center", color: "#888", fontSize: 13 }}>
