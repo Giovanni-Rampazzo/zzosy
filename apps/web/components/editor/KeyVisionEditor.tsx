@@ -9486,7 +9486,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: "#666", fontSize: 11, lineHeight: 1 }}>
                       +
                     </button>
-                    {/* Botao deletar folder: move filhos pra parent (Alt+click apaga conteudo). */}
+                    {/* Botao deletar folder: move filhos pra parent (Alt+click apaga conteudo).
+                        User pedido 2026-05-23: "lixo precisa aparecer pros grupos tambem" —
+                        mesmo trash icon que layers individuais. */}
                     <button
                       onClick={e => {
                         e.stopPropagation()
@@ -9499,9 +9501,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                           deleteFolder(path, false)
                         }
                       }}
-                      title="Delete folder (children go to parent) · Alt+click to delete everything"
-                      style={{ background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", color: "#555", fontSize: 11, lineHeight: 1 }}>
-                      ×
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#e63946"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(230,57,70,0.1)" }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "#888"; (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                      title="Delete folder (children move to parent) · Alt+click to delete folder + all layers"
+                      aria-label="Delete folder"
+                      style={{ background: "transparent", border: "none", cursor: "pointer", padding: "3px 6px", color: "#888", fontSize: 14, lineHeight: 1, borderRadius: 3, transition: "color 120ms, background 120ms" }}>
+                      🗑
                     </button>
                   </div>
                   )
