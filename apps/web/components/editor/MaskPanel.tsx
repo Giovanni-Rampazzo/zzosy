@@ -6,7 +6,7 @@
 // Mostra controles secundarios quando ja existe mascara: Toggle Enabled,
 // Invert, Delete.
 
-import React from "react"
+import React, { useState } from "react"
 
 type Props = {
   selected: any
@@ -56,12 +56,27 @@ export function MaskPanel({
   secS,
 }: Props) {
   const mask = (selected as any)?.__maskData ?? null
+  // Mask collapsado por DEFAULT (user pedido 2026-05-23). Quando ja existe
+  // mask, abre automatico pra mostrar o thumbnail/controles.
+  const [open, setOpen] = useState(!!mask)
 
   return (
     <div style={{ marginTop: 4, paddingTop: 14, borderTop: "1px solid #2a2a2a" }}>
-      <div style={secS}>Mask</div>
+      {/* Header clicavel com chevron */}
+      <div
+        role="button"
+        tabIndex={-1}
+        onClick={() => setOpen(o => !o)}
+        style={{ ...secS, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: open ? secS.marginBottom : 0, userSelect: "none" }}
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+          style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.12s", flexShrink: 0 }}>
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+        Mask
+      </div>
 
-      {!mask && (
+      {open && !mask && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <button
             type="button"
@@ -111,7 +126,7 @@ export function MaskPanel({
         </div>
       )}
 
-      {mask && (
+      {open && mask && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div
             style={{
