@@ -38,7 +38,36 @@ function sanitizeFilename(label: string): string {
     .slice(0, 80)
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+const MIME_BY_EXT: Record<string, string> = {
+  psd: "image/vnd.adobe.photoshop",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  zip: "application/zip",
+}
+
+async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  // Save As dialog (Chrome/Edge 86+) com fallback pra <a download>.
+  const ext = (filename.split(".").pop() ?? "").toLowerCase()
+  const mime = MIME_BY_EXT[ext] ?? blob.type ?? "application/octet-stream"
+  const showSaveFilePicker = (window as any).showSaveFilePicker
+  if (typeof showSaveFilePicker === "function") {
+    try {
+      const handle = await showSaveFilePicker({
+        suggestedName: filename,
+        types: ext ? [{ description: ext.toUpperCase(), accept: { [mime]: [`.${ext}`] } }] : undefined,
+      })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return
+    } catch (e: any) {
+      if (e?.name === "AbortError") return
+      console.warn("[downloadBlob] showSaveFilePicker falhou, fallback:", e)
+    }
+  }
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url

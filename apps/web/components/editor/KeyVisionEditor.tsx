@@ -1146,6 +1146,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // 2026-05-23: shortcut Tab esconde Layers + Properties (Photoshop-style).
   const effLayersPanelWidth = panelsHidden ? 0 : layersPanelWidth
   const effPropsPanelWidth = panelsHidden ? 0 : propsPanelWidth
+  // Quando panelsHidden muda, re-dimensiona o Fabric canvas pra preencher a nova
+  // area visivel (fullscreen quando hidden). Sem isso, o canvas DOM mantem o
+  // tamanho calculado antes do toggle e nao expande. User pedido 2026-05-23.
+  const effLayersRef = useRef(effLayersPanelWidth)
+  const effPropsRef = useRef(effPropsPanelWidth)
+  useEffect(() => {
+    effLayersRef.current = effLayersPanelWidth
+    effPropsRef.current = effPropsPanelWidth
+    const fc = fabricRef.current
+    if (!fc) return
+    const newAvailW = window.innerWidth - effLayersPanelWidth - effPropsPanelWidth
+    const newAvailH = window.innerHeight - TH - BH
+    ;(fabricRef as any).__canvasFullW = Math.max(1, newAvailW)
+    ;(fabricRef as any).__canvasFullH = Math.max(1, newAvailH)
+    fc.setDimensions({ width: Math.round(newAvailW), height: Math.round(newAvailH) })
+    applyZoom(fc, zoomRef.current)
+  }, [effLayersPanelWidth, effPropsPanelWidth])
   // Estado do drag-and-drop no painel Layers (visualIndex sendo arrastado / sobre)
   const [dragLayerIdx, setDragLayerIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
@@ -2828,7 +2845,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // captura essa closure nao re-roda quando layersPanelWidth muda.
           // Canvas DOM = area visivel total (ver init pra contexto). Margem
           // pros handles eh reservada no zoom calc, nao no tamanho do canvas.
-          const newAvailW = window.innerWidth - layersPanelWidthRef.current - propsPanelWidthRef.current
+          // Usa effLayers/effPropsRef pra respeitar panelsHidden (canvas
+          // fullscreen quando paineis estao escondidos via Tab).
+          const newAvailW = window.innerWidth - effLayersRef.current - effPropsRef.current
           const newAvailH = window.innerHeight - TH - BH
           const fcRef = fabricRef.current
           ;(fabricRef as any).__canvasFullW = Math.max(1, newAvailW)

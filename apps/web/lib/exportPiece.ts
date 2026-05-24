@@ -56,7 +56,43 @@ async function bakeRasterMaskExport(
   return canvas
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+// MIME type por extensao — usado pelo Save As dialog do showSaveFilePicker.
+const MIME_BY_EXT: Record<string, string> = {
+  psd: "image/vnd.adobe.photoshop",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  pdf: "application/pdf",
+  zip: "application/zip",
+}
+
+async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  // Tenta showSaveFilePicker (Chrome/Edge 86+) — abre dialog "Salvar como"
+  // pra user escolher pasta + nome. Fallback pra <a download> em browsers
+  // sem suporte (Firefox/Safari) — salva direto na pasta Downloads.
+  // User pedido 2026-05-23: "nao pergunta onde quero salvar".
+  const ext = (filename.split(".").pop() ?? "").toLowerCase()
+  const mime = MIME_BY_EXT[ext] ?? blob.type ?? "application/octet-stream"
+  const showSaveFilePicker = (window as any).showSaveFilePicker
+  if (typeof showSaveFilePicker === "function") {
+    try {
+      const handle = await showSaveFilePicker({
+        suggestedName: filename,
+        types: ext ? [{ description: ext.toUpperCase(), accept: { [mime]: [`.${ext}`] } }] : undefined,
+      })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return
+    } catch (e: any) {
+      // AbortError = user cancelou. NotAllowedError = bloqueado (HTTPS req?).
+      // Em ambos, NAO faz fallback automatico pra <a download> — se user
+      // cancelou, nao deve baixar; se bloqueou, problema de contexto.
+      if (e?.name === "AbortError") return
+      console.warn("[downloadBlob] showSaveFilePicker falhou, fallback <a download>:", e)
+    }
+  }
+  // Fallback: <a download> classico (salva direto em Downloads/, sem dialog)
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
@@ -2140,7 +2176,7 @@ export async function exportPieces(
     const fmt = formats[0]
     onProgress?.(`Gerando ${piece.name} (${fmt})`)
     const blob = await buildBlob(piece, fmt)
-    downloadBlob(blob, `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`)
+    await downloadBlob(blob, `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`)
     return
   }
 
@@ -2165,7 +2201,7 @@ export async function exportPieces(
   const zipBlob = await zip.generateAsync({ type: "blob" })
   const zipBase = campaignName ? safeName(campaignName) : "export"
   const zipName = `${zipBase}_${new Date().toISOString().slice(0, 10)}.zip`
-  downloadBlob(zipBlob, zipName)
+  await downloadBlob(zipBlob, zipName)
 }
 
 export async function exportPiece(
