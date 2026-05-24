@@ -9869,8 +9869,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       if (!el || (el as any).__renameCommitted) return
                       ;(el as any).__renameCommitted = true
                       const v = (el.value ?? "").trim()
-                      if (v && v !== layer.label) await renameLayer(layer.obj, v)
+                      // Fecha edit mode PRIMEIRO (sync), depois async rename.
+                      // Sem isso, rename mexe layers state mas input continua
+                      // montado com defaultValue stale do layer antigo —
+                      // proximo render mostra label antigo no span.
                       setEditingLayerAssetId(null)
+                      if (v && v !== layer.label) await renameLayer(layer.obj, v)
                     }}
                     onKeyDown={async e => {
                       e.stopPropagation()
@@ -9879,8 +9883,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         const el = e.currentTarget
                         ;(el as any).__renameCommitted = true
                         const v = (el.value ?? "").trim()
-                        if (v && v !== layer.label) await renameLayer(layer.obj, v)
                         setEditingLayerAssetId(null)
+                        if (v && v !== layer.label) await renameLayer(layer.obj, v)
                       } else if (e.key === "Escape") {
                         e.preventDefault()
                         ;(e.currentTarget as any).__renameCommitted = true
@@ -9891,6 +9895,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   />
                 ) : (
                   <span
+                    // KEY com layer.label: forca re-mount do span quando label muda.
+                    // Sem isso, defensive in case React reuse o DOM node antigo com
+                    // textContent stale (visto em rename → preview nao atualizava).
+                    key={`label-${layer.label}-${layerVersion}`}
                     title="Double click to rename"
                     onDoubleClick={e => { e.stopPropagation(); if (layerAssetId) setEditingLayerAssetId(layerAssetId) }}
                     style={{ fontSize: 12, color: isSel ? "#fff" : "#888", fontWeight: isSel ? 700 : 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "text" }}
