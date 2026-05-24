@@ -434,33 +434,18 @@ export default function CampaignAssetsPage() {
             Assets, KV, Peças, Apresentação). Linha 2 (actions) tem APENAS
             acoes que MODIFICAM dados: + Texto / + Imagem / Importar PSD.
             Removido "Editar Matriz" — duplicado com botao "KV" da navegacao. */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative", marginBottom: 4 }}>
-          <CampaignSubnav
-            campaignId={id}
-            clientId={campaign.client?.id}
-            clientName={campaign.client?.name}
-            activeTab="assets"
-            hasAssets={campaign.assets.length > 0}
-            hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
-            actions={
-              <>
-                {/* Botao unico "+ Adicionar" agrupa Texto/Imagem/Forma/PSD.
-                    Alinhado a direita via marginLeft:auto dentro do AddMenu.
-                    PsdImporter renderizado hidden — usa ref pra disparar
-                    importFile() quando user clica "Importar PSD" no menu. */}
-                <AddMenu
-                  onPickText={addTextAsset}
-                  onPickShape={addShapeAsset}
-                  onAddImage={addImageAsset}
-                  onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
-                />
-                <div style={{ display: "none" }}>
-                  <PsdImporter ref={psdImporterRef} campaignId={id} onImported={load} />
-                </div>
-              </>
-            }
+        {/* Sub-nav removido (user pedido 2026-05-23) — agora so o + Adicionar
+            asset alinhado a direita. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", position: "relative", marginBottom: 4 }}>
+          <AddMenu
+            onPickText={addTextAsset}
+            onPickShape={addShapeAsset}
+            onAddImage={addImageAsset}
+            onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
           />
-          {/* input file removido — agora vive dentro de AddMenu (ref proprio). */}
+          <div style={{ display: "none" }}>
+            <PsdImporter ref={psdImporterRef} campaignId={id} onImported={load} />
+          </div>
         </div>
 
         {campaign.assets.length === 0 ? (

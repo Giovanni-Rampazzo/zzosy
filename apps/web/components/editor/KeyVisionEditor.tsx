@@ -9037,9 +9037,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               onDrop={e => {
                 e.preventDefault()
                 setDragOverIdx(null); setDropPosition(null)
-                // Topo = posicao visual 0 (mais acima no painel = topo do z-stack).
-                // Preserva o groupPath do layer atualmente no topo (entra na pasta).
-                const topPath: string[] = Array.isArray(layers[0]?.groupPath) ? layers[0].groupPath : []
+                // Drop no TOPO do painel = sempre ROOT (Photoshop-style).
+                // Antes herdava groupPath do primeiro layer — se topo era de
+                // dentro de folder, drop "ao topo" levava layer pra DENTRO desse
+                // folder, contra-intuitivo. Sintoma 2026-05-23: "drag layer
+                // pra fora de folder volta sozinho" — user dropou no topo
+                // esperando root, mas entrava em folder.
+                const topPath: string[] = []
                 if (dragFolderPath) {
                   const dragged = dragFolderPath
                   setDragFolderPath(null)
@@ -9760,7 +9764,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 e.preventDefault()
                 setDragOverIdx(null); setDropPosition(null)
                 const lastIdx = layers.length - 1
-                const bottomPath: string[] = Array.isArray(layers[lastIdx]?.groupPath) ? layers[lastIdx].groupPath : []
+                // Drop no FUNDO do painel = sempre ROOT (mesmo fix do topo).
+                const bottomPath: string[] = []
                 if (dragFolderPath) {
                   const dragged = dragFolderPath
                   setDragFolderPath(null)
