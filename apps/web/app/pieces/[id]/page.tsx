@@ -215,8 +215,18 @@ export default function PiecePage() {
           </label>
           <textarea
             value={copy}
-            onChange={e => setCopy(e.target.value)}
-            placeholder="Ex: Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black"
+            onChange={e => {
+              const v = e.target.value
+              // Quick-accept: digitar "." num field vazio aceita a sugestao
+              // do placeholder (sem o prefixo "Ex: "). User pedido 2026-05-23.
+              if (v === "." && copy === "") {
+                const sug = "Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black"
+                setCopy(sug)
+              } else {
+                setCopy(v)
+              }
+            }}
+            placeholder="Ex: Aproveite as ofertas exclusivas! 🛍️ Compre já no link da bio. #promo #black (digite . pra aceitar sugestão)"
             rows={6}
             style={{
               width: "100%",
@@ -243,9 +253,13 @@ export default function PiecePage() {
             <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Nome da peça</label>
             <input
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => {
+                const v = e.target.value
+                if (v === "." && name === "") setName("Instagram Feed - Versão A")
+                else setName(v)
+              }}
               style={{ width: "100%", padding: "10px 12px", border: "1px solid #E0E0E0", borderRadius: 6, fontSize: 14, outline: "none", boxSizing: "border-box" }}
-              placeholder="Ex: Instagram Feed - Versão A"
+              placeholder="Ex: Instagram Feed - Versão A (digite . pra aceitar)"
             />
           </div>
 
@@ -264,9 +278,13 @@ export default function PiecePage() {
             <label style={{ fontSize: 12, fontWeight: 600, color: "#888", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Segmento</label>
             <input
               value={segment}
-              onChange={e => setSegment(e.target.value)}
+              onChange={e => {
+                const v = e.target.value
+                if (v === "." && segment === "") setSegment("WhatsApp")
+                else setSegment(v)
+              }}
               list="piece-segments"
-              placeholder="Ex: WhatsApp, Stories, Email…"
+              placeholder="Ex: WhatsApp, Stories, Email… (digite . pra aceitar)"
               style={{ width: "100%", padding: "10px 12px", border: "1px solid #E0E0E0", borderRadius: 6, fontSize: 14, outline: "none", boxSizing: "border-box" }}
             />
             <datalist id="piece-segments">
