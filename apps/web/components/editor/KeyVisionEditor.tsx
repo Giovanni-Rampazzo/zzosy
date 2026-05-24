@@ -6345,8 +6345,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             })
           }
           applyPsdLayerMetadata(o, layer)
-          // DEBUG: log do que tah indo pra matriz
-          console.log("[SAVE-MATRIX] layer", i, "type:", o.type, "label:", o.__assetLabel, "fill:", o.fill, "stroke:", o.stroke, "strokeWidth:", o.strokeWidth, "psdEffects:", o.__psdEffects, "__hidden:", o.__hidden, "__locked:", o.__locked)
+          // editorLog (so em dev) — antes era console.log direto, poluia prod
+          editorLog("[SAVE-MATRIX] layer", i, "type:", o.type, "label:", o.__assetLabel, "fill:", o.fill, "stroke:", o.stroke, "strokeWidth:", o.strokeWidth, "psdEffects:", o.__psdEffects, "__hidden:", o.__hidden, "__locked:", o.__locked)
           // Espelha a logica do modo PECA: salva overrides per-instancia (fill,
           // fontSize, styles per-char, leadingPt, etc) pra preservar formatacao
           // ao alternar entre KV/Assets/Campanha. Sem isso, recarregar o KV
