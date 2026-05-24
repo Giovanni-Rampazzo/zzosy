@@ -123,15 +123,19 @@ export function Button({ variant = "secondary", size = "md", loading, className,
           disabled={overlayDisabled}
           // Ocupa a area inteira do button irmao, transparente. user clica "no
           // botao" mas tecnicamente clica neste input — gesto nativo do browser.
+          // z-index 1 garante que fica SOBRE o <button> (que tem z-index auto).
+          // pointerEvents auto garante que captura clicks mesmo em variantes
+          // com cls/className que setem pointer-events:none. 2026-05-24.
           style={{
             position: "absolute",
             inset: 0,
             opacity: 0,
             cursor: overlayDisabled ? "not-allowed" : "pointer",
-            // Aceita click events normais; nao queremos disabled-via-CSS porque
-            // o atributo HTML disabled ja cobre.
+            zIndex: 1,
+            pointerEvents: overlayDisabled ? "none" : "auto",
           }}
           tabIndex={-1}
+          onClick={() => { if (typeof window !== "undefined") console.log("[Button-input-click] picker should open", { accept }) }}
           onChange={e => {
             const f = e.target.files?.[0]
             if (typeof window !== "undefined") console.log("[Button-onFileSelect]", { hasFile: !!f, name: f?.name, accept })
