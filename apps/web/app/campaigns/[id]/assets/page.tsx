@@ -6,8 +6,6 @@ import TopNav from "@/components/TopNav"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
-import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
-import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 import {
   BrandPresetKey, BrandPreset, BrandTypography,
@@ -411,49 +409,27 @@ export default function CampaignAssetsPage() {
       <TopNav />
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
 
-        {/* Header limpo: breadcrumb compacto inline com contador. Titulo
-            "Assets" removido — subnav abaixo ja destaca a tab ativa. */}
-        <div style={{ fontSize: 13, color: "#666", marginBottom: 12, display:"flex", alignItems:"center", gap: 8 }}>
-          <ClientLogoBadge
-            client={{ id: campaign.client.id, name: campaign.client.name, brandLogoUrl: campaign.client.brandLogoUrl }}
-            size={20}
-            radius={3}
-          />
-          <span style={{ cursor: "pointer" }} onClick={() => router.push(`/clients/${campaign.client.id}`)}>
-            {campaign.client.name}
-          </span>
-          <span style={{ color: "#bbb" }}>/</span>
-          <span style={{ cursor: "pointer", color: "#111", fontWeight: 600 }} onClick={() => router.push(`/campaigns/${id}`)}>
-            {campaign.name}
-          </span>
-          <span style={{ color: "#bbb" }}>·</span>
-          <span style={{ color: "#888" }}>{campaign.assets.length} {campaign.assets.length === 1 ? "asset" : "assets"}</span>
-        </div>
-
-        {/* Sub-nav contextual da campanha (Campanha/Assets/KV/Pecas/Apresentacao)
-            restaurada por pedido user 2026-05-23 ("aqui faltou o menu de
-            navegacao"). + Adicionar fica alinhado a direita NA MESMA linha
-            (padrao "+ X dentro da lista" via prop actions). */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative", marginBottom: 4 }}>
-          <CampaignSubnav
-            campaignId={id}
-            clientId={campaign.client?.id}
-            clientName={campaign.client?.name}
-            activeTab="assets"
-            hasAssets={campaign.assets.length > 0}
-            hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
-            actions={
-              <AddMenu
-                onPickText={addTextAsset}
-                onPickShape={addShapeAsset}
-                onAddImage={addImageAsset}
-                onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
-              />
-            }
-          />
-          <div style={{ display: "none" }}>
-            <PsdImporter ref={psdImporterRef} campaignId={id} onImported={load} />
+        {/* Header REMOVIDO 2026-05-24 (user pedido "tira isso tudo daqui"):
+            breadcrumb ZZOSY/cliente/campanha + CampaignSubnav tabs eram
+            poluicao visual. AddMenu mantido (acao essencial) no header da
+            lista de assets — padrao [[feedback_action_button_inside_list]]. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#111" }}>
+            Assets <span style={{ fontSize: 13, fontWeight: 400, color: "#888", marginLeft: 6 }}>
+              {campaign.assets.length} {campaign.assets.length === 1 ? "item" : "itens"}
+            </span>
           </div>
+          <div style={{ position: "relative" }}>
+            <AddMenu
+              onPickText={addTextAsset}
+              onPickShape={addShapeAsset}
+              onAddImage={addImageAsset}
+              onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
+            />
+          </div>
+        </div>
+        <div style={{ display: "none" }}>
+          <PsdImporter ref={psdImporterRef} campaignId={id} onImported={load} />
         </div>
 
         {campaign.assets.length === 0 ? (
