@@ -288,7 +288,12 @@ export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
       fd.append("thumbnail", mainBlob, "thumb.png")
       const r = await fetch(`/api/pieces/${pieceId}/thumbnail`, { method: "POST", body: fd })
       if (!r.ok) return false
-      broadcastPieceUpdated(pieceId, campaignId)
+      // NAO broadcastar daqui (2026-05-24): regen e uma OPERACAO INTERNA de
+      // cada page (auto-regen no useEffect) — broadcastar disparava refetch
+      // em outras pages → updatedAt mudava → smart-regen guard achava que
+      // piece foi modificada → re-regen → LOOP entre tabs com mesma campanha.
+      // Broadcasts reais sao do EDITOR ao salvar (mudanca user-driven) e do
+      // GeneratePiecesModal ao criar piece.
     }
     return !!mainBlob
   } catch (e) {
