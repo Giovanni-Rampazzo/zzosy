@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
-import { writeFile, readFile, unlink, mkdir } from "fs/promises"
+import { writeFile, mkdir } from "fs/promises"
 import { existsSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
@@ -41,38 +41,10 @@ export async function POST(req: NextRequest) {
     mime: file.type || "application/octet-stream",
     createdAt: Date.now(),
   }))
-  return NextResponse.json({ id, url: `/api/download-proxy?id=${id}` })
+  // URL com filename como PATH segment — Chrome respeita o ultimo segmento
+  // mesmo se ignorar Content-Disposition. Sem isso baixava com nome UUID.
+  return NextResponse.json({ id, url: `/api/download-proxy/${encodeURIComponent(filename)}?id=${id}` })
 }
 
-export async function GET(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get("id")
-  if (!id || !/^[a-f0-9-]{36}$/.test(id)) {
-    return NextResponse.json({ error: "invalid id" }, { status: 400 })
-  }
-  const dataPath = fileFor(id)
-  const metaPath = metaFor(id)
-  if (!existsSync(dataPath) || !existsSync(metaPath)) {
-    return NextResponse.json({ error: "not found or expired" }, { status: 404 })
-  }
-  const meta = JSON.parse(await readFile(metaPath, "utf-8"))
-  if (Date.now() - (meta.createdAt ?? 0) > TTL_MS) {
-    await unlink(dataPath).catch(() => {})
-    await unlink(metaPath).catch(() => {})
-    return NextResponse.json({ error: "expired" }, { status: 404 })
-  }
-  const buf = await readFile(dataPath)
-  // Cleanup single-use: agenda delete async (nao bloqueia response)
-  setTimeout(async () => {
-    await unlink(dataPath).catch(() => {})
-    await unlink(metaPath).catch(() => {})
-  }, 1000)
-  return new NextResponse(buf as any, {
-    status: 200,
-    headers: {
-      "Content-Type": meta.mime ?? "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${(meta.filename ?? "download.bin").replace(/"/g, "")}"`,
-      "Content-Length": String(buf.length),
-      "Cache-Control": "no-store",
-    },
-  })
-}
+// GET movido pra rota dinamica [name]/route.ts — filename no PATH garante
+// que Chrome use o nome certo mesmo ignorando Content-Disposition.
