@@ -430,23 +430,34 @@ function LayerRender({ layer, asset }: { layer: Layer; asset: Asset }) {
   }
   const defaultStyle = asset.content[0]?.style ?? {}
 
+  // Mapeamento subsequence-based 2026-05-24: pra cada char do textToRender,
+  // procura o proximo char igual no assetText a partir de um cursor avancante.
+  // Robusto pra desalinhamentos (asset cresce/encolhe, override tem \n extras).
+  // Antes usava prefix+suffix diff que quebrava se asset terminava com whitespace
+  // diferente do override — "World" perdia verde quando user adicionava espaco
+  // no final do asset.
   const charStyles: Style[] = useMemo(() => {
     if (!useOverrideText) return assetStyles
-    // Diff prefix/suffix entre assetText e textToRender
-    let prefixLen = 0
-    const minLen = Math.min(assetText.length, textToRender.length)
-    while (prefixLen < minLen && assetText[prefixLen] === textToRender[prefixLen]) prefixLen++
-    let suffixLen = 0
-    while (
-      suffixLen < assetText.length - prefixLen &&
-      suffixLen < textToRender.length - prefixLen &&
-      assetText[assetText.length - 1 - suffixLen] === textToRender[textToRender.length - 1 - suffixLen]
-    ) suffixLen++
     const out: Style[] = []
+    let cursor = 0
     for (let i = 0; i < textToRender.length; i++) {
-      if (i < prefixLen) out.push(assetStyles[i] ?? defaultStyle)
-      else if (i >= textToRender.length - suffixLen) out.push(assetStyles[assetText.length - (textToRender.length - i)] ?? defaultStyle)
-      else out.push(defaultStyle)
+      const ch = textToRender[i]
+      if (ch === "\n") {
+        out.push(defaultStyle)
+        continue
+      }
+      // Procura ch no assetText a partir do cursor
+      let found = -1
+      for (let j = cursor; j < assetText.length; j++) {
+        if (assetText[j] === ch) { found = j; break }
+      }
+      if (found !== -1) {
+        out.push(assetStyles[found] ?? defaultStyle)
+        cursor = found + 1
+      } else {
+        // Char nao existe no resto do assetText — usa default (char novo no override)
+        out.push(defaultStyle)
+      }
     }
     return out
   }, [useOverrideText, assetText, textToRender, JSON.stringify(assetStyles)])
