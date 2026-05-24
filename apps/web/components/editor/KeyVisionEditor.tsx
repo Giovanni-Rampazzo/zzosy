@@ -16,6 +16,9 @@ import { buildShapePath, type ShapeKind } from "@/lib/shapePaths"
 import { inpS, numInpS, secS, numFieldGrid, numFieldRight, numFieldUnit } from "@/lib/editorFieldStyles"
 import { leadingPtToFabricLineHeight, applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
 import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
+// Monkey-patch Fabric pra suportar charSpacing per-char (Adobe-style letter
+// spacing por trecho). Side-effect import — roda no module init UMA VEZ.
+import "@/lib/fabricCharSpacingPatch"
 
 // Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
 // poluem o console sem valor pro user final. Em dev, sao essenciais pra diagnostico.
