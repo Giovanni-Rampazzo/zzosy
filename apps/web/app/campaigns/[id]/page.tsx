@@ -382,7 +382,7 @@ export default function CampaignOverviewPage() {
                 await psdMatrixImporterRef.current?.importFile(file)
               }}
               style={{
-                maxHeight: 260, display: "flex", alignItems: "center", justifyContent: "center",
+                maxHeight: 130, display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#aaa", fontSize: 13,
                 cursor: "pointer",
                 transition: "transform 0.15s ease, box-shadow 0.15s ease, outline 0.15s ease",
@@ -401,10 +401,10 @@ export default function CampaignOverviewPage() {
             >
               {campaign.keyVision?.thumbnailUrl ? (
                 <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
-                  style={{ maxWidth: "100%", maxHeight: 260, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+                  style={{ maxWidth: "100%", maxHeight: 130, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
               ) : (
                 <div style={{
-                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 260, width: "auto", maxWidth: "100%",
+                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 130, width: "auto", maxWidth: "100%",
                   background: kvBg, borderRadius: 6, border: "1px solid #E0E0E0",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
@@ -429,26 +429,8 @@ export default function CampaignOverviewPage() {
               !hasAssets ? "import" : !hasPieces ? "generate" : "deliver"
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {/* Reorganizado 2026-05-24 (user pedido):
-                    - Assets + KV vao em MATRIZ (sao recursos da matriz)
-                    - Pecas removido (ja tem lista PECAS GERADAS embaixo)
-                    - Apresentacao vai em ENTREGA (e formato de delivery)
-                    Todos size="sm" (igual botoes Legenda/Apagar). */}
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0 }}>Matriz</div>
-                <PsdImporter
-                  ref={psdMatrixImporterRef}
-                  campaignId={id}
-                  onImported={loadAll}
-                  size="sm"
-                />
-                {hasAssets && (
-                  <PsdPieceImporter
-                    ref={psdPieceImporterRef}
-                    campaignId={id}
-                    campaignAssets={campaign.assets}
-                    onImported={loadAll}
-                  />
-                )}
+                {/* 2026-05-24: removidos Importar PSD, Reimportar PSD, labels
+                    MATRIZ/CONTEUDO/ENTREGA. So botoes essenciais. */}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -466,7 +448,6 @@ export default function CampaignOverviewPage() {
                 >
                   KV
                 </Button>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0, marginTop: 4 }}>Conteúdo</div>
                 <Button
                   variant={primaryStep === "generate" ? "primary" : "secondary"}
                   size="sm"
@@ -476,7 +457,6 @@ export default function CampaignOverviewPage() {
                 >
                   + Gerar peça
                 </Button>
-                <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#888", marginBottom: 0, marginTop: 4 }}>Entrega</div>
                 <Button
                   variant="secondary"
                   size="sm"
