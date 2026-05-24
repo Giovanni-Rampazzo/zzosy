@@ -4520,10 +4520,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // continua funcionando pra ajustar raio absoluto manualmente.
     if (asset.type === "SHAPE") {
       try {
-        const shape = (asset as any).content ?? null
-        const parsedShape = typeof shape === "string" ? JSON.parse(shape) : shape
+        // Fallback chain (2026-05-24): asset.content (formato V2 persistido) →
+        // asset.shape (legacy direto do importer, antes do persist transferir
+        // pra content). Sem isso, shapes recem-importados via /api/pieces/
+        // import-psd que ainda nao moveram dados pro content sumiam do editor.
+        const rawShape = (asset as any).content ?? (asset as any).shape ?? null
+        const parsedShape = typeof rawShape === "string" ? JSON.parse(rawShape) : rawShape
         if (!parsedShape?.path) {
-          console.warn("[shape] asset sem path data:", asset.label)
+          console.warn("[shape] asset sem path data:", {
+            label: asset.label,
+            contentType: typeof (asset as any).content,
+            contentLen: typeof (asset as any).content === "string" ? (asset as any).content.length : null,
+            hasShape: !!(asset as any).shape,
+            parsedKeys: parsedShape ? Object.keys(parsedShape) : null,
+            rawSample: typeof rawShape === "string" ? rawShape.slice(0, 200) : JSON.stringify(rawShape ?? null).slice(0, 200),
+          })
           return
         }
         const layerOv = layer?.overrides ?? {}
