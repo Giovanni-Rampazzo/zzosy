@@ -6,7 +6,7 @@
 // Mostra controles secundarios quando ja existe mascara: Toggle Enabled,
 // Invert, Delete.
 
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 
 type Props = {
   selected: any
@@ -59,6 +59,11 @@ export function MaskPanel({
   // Mask collapsado por DEFAULT (user pedido 2026-05-23). Quando ja existe
   // mask, abre automatico pra mostrar o thumbnail/controles.
   const [open, setOpen] = useState(!!mask)
+  // Auto-abre quando mask aparece numa nova selecao (sem isso, useState(!!mask)
+  // so rodava no MOUNT — selecionar outro layer com mask deixava o panel
+  // colapsado. User pedido 2026-05-24: "clico no quadradinho da mask e nao
+  // mostra a mask").
+  useEffect(() => { if (mask) setOpen(true) }, [mask])
 
   return (
     <div style={{ marginTop: 4, paddingTop: 14, borderTop: "1px solid #2a2a2a" }}>

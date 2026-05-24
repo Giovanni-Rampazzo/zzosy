@@ -9898,10 +9898,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                           doSave()
                         })()
                       } else {
-                        // Clique normal: seleciona o layer (no PS seleciona a mascara
-                        // pra editar; aqui apenas selecionamos por enquanto).
+                        // Clique normal: seleciona layer + ativa mask edit mode
+                        // (banner "EDITING MASK" no topo). MaskPanel ja abre
+                        // automatico via useEffect quando mask aparece.
+                        // User pedido 2026-05-24: "clico no quadradinho da
+                        // mask e nao mostra a mask" — antes so selecionava o
+                        // layer sem indicacao visual de mask.
                         fabricRef.current?.setActiveObject(layer.obj)
                         setSelected(layer.obj)
+                        if (layerAssetId) setMaskFocusAssetId(layerAssetId)
                       }
                     }}
                     onContextMenu={e => {
