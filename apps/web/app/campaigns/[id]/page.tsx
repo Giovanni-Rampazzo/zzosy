@@ -14,7 +14,6 @@ import { RowThumb } from "@/components/ui/RowThumb"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { PsdPieceImporter, type PsdPieceImporterHandle } from "@/components/campaign/PsdPieceImporter"
 import { Button } from "@/components/ui/Button"
-import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
 
@@ -309,45 +308,34 @@ export default function CampaignOverviewPage() {
       <TopNav />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
 
-        {/* Header com titulo a esquerda + voltar a direita */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 24 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: "#888", marginBottom: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              {campaign.client?.id && (
-                <ClientLogoBadge
-                  client={{
-                    id: campaign.client.id,
-                    name: campaign.client.name ?? "Empresa",
-                    brandLogoUrl: (campaign.client as any)?.brandLogoUrl,
-                  }}
-                  size={24}
-                  radius={4}
-                />
-              )}
-              <span style={{ cursor: "pointer" }} onClick={() => campaign.client?.id && router.push(`/clients/${campaign.client.id}`)}>
-                {campaign.client?.name ?? "—"}
-              </span>
-              <span>/</span>
-              {campaign.client?.id && (
-                <button
-                  onClick={() => router.push(`/clients/${campaign.client!.id}/design-system`)}
-                  title="Abrir o Design System da empresa (cores, fontes, tipografia, logo)"
-                  style={{
-                    background:"transparent", border:"1px solid #D0D0D0", color:"#666",
-                    fontSize:11, padding:"3px 10px", borderRadius:4, cursor:"pointer",
-                  }}>
-                  Design System
-                </button>
-              )}
-            </div>
-            {/* Linha unica: codigo na esquerda + nome da campanha na direita.
-                Sem label "Codigo" — o campo edita inline e fala por si. */}
-            <div style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ flexShrink: 0 }}>
+        {/* Header limpo 2026-05-24 (user pedido "tira ZZOSY/Design System"):
+            - Botao voltar pra lista de campanhas do cliente (subnavegacao)
+            - Nome da campanha alinhado esquerda
+            - Codigo SO aparece se existir (sem placeholder permanente)
+            - Sem breadcrumb cliente/Design System (poluicao) */}
+        <div style={{ marginBottom: 24 }}>
+          {/* Voltar pra /campaigns?clientId=X */}
+          {campaign.client?.id && (
+            <button
+              onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
+              style={{
+                background: "transparent", border: "none", color: "#888",
+                fontSize: 13, padding: 0, cursor: "pointer",
+                display: "inline-flex", alignItems: "center", gap: 6,
+                marginBottom: 8,
+              }}
+              title={`Voltar para campanhas de ${campaign.client.name ?? "cliente"}`}
+            >
+              ← Campanhas de {campaign.client.name ?? "cliente"}
+            </button>
+          )}
+          {/* Linha titulo: codigo (se existir) + nome */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            {campaign.code && campaign.code.trim() && (
+              <div style={{ flexShrink: 0, color: "#999" }}>
                 <EditableText
-                  value={campaign.code ?? ""}
+                  value={campaign.code}
                   variant="h1"
-                  placeholder="Código"
                   suggestions={codeSuggestions}
                   onSave={async (v) => {
                     const newCode = v.trim() || null
@@ -360,27 +348,45 @@ export default function CampaignOverviewPage() {
                   }}
                 />
               </div>
-              <h1 style={{ margin: 0, flex: 1, minWidth: 0 }}>
-                <EditableText
-                  value={campaign.name}
-                  variant="h1"
-                  onSave={async (newName) => {
-                    const res = await fetch(`/api/campaigns/${id}`, {
-                      method: "PATCH", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ name: newName }),
-                    })
-                    if (!res.ok) throw new Error()
-                    setCampaign(c => c ? { ...c, name: newName } : c)
-                  }}
-                />
-              </h1>
-            </div>
-            {campaign.psdName && (
-              <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
-                PSD: <strong>{campaign.psdName}</strong> · {campaign.assets?.length ?? 0} assets · {pieces.length} peça{pieces.length !== 1 ? "s" : ""}
-              </p>
             )}
+            <h1 style={{ margin: 0, textAlign: "left" }}>
+              <EditableText
+                value={campaign.name}
+                variant="h1"
+                onSave={async (newName) => {
+                  const res = await fetch(`/api/campaigns/${id}`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: newName }),
+                  })
+                  if (!res.ok) throw new Error()
+                  setCampaign(c => c ? { ...c, name: newName } : c)
+                }}
+              />
+            </h1>
           </div>
+          {/* Botao add codigo (so quando NAO tem codigo) — discreto, fora do header principal */}
+          {(!campaign.code || !campaign.code.trim()) && (
+            <button
+              onClick={async () => {
+                const v = window.prompt("Código da campanha (curto, ex: '2026Q1')")
+                if (!v || !v.trim()) return
+                const res = await fetch(`/api/campaigns/${id}`, {
+                  method: "PATCH", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ code: v.trim() }),
+                })
+                if (res.ok) setCampaign(c => c ? { ...c, code: v.trim() } : c)
+              }}
+              style={{ background: "transparent", border: "none", color: "#bbb", fontSize: 11, padding: "4px 0", cursor: "pointer", marginTop: 4 }}
+              title="Adicionar código curto (opcional)"
+            >
+              + adicionar código
+            </button>
+          )}
+          {campaign.psdName && (
+            <p style={{ fontSize: 12, color: "#888", margin: "8px 0 0" }}>
+              PSD: <strong>{campaign.psdName}</strong> · {campaign.assets?.length ?? 0} assets · {pieces.length} peça{pieces.length !== 1 ? "s" : ""}
+            </p>
+          )}
         </div>
 
         <CampaignSubnav

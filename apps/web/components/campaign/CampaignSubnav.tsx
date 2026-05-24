@@ -64,9 +64,10 @@ export function CampaignSubnav({ campaignId, actions, inlineActions, activeTab, 
       marginBottom: 16,
       paddingBottom: 0,
     }}>
-      {/* Tabs — esquerda */}
+      {/* Tabs — esquerda. Tab "Campanha" REMOVIDA 2026-05-24 (user pedido):
+          quando user esta na page da campanha, ja sabe disso — tab redundante.
+          Pra navegar entre campanhas use TopNav > Campanhas. */}
       <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-        <Tab label="Campanha" tab="campaign" href={`/campaigns/${campaignId}`} title="Visao geral da campanha" />
         <Tab label="Assets" tab="assets" href={`/campaigns/${campaignId}/assets`} title="Lista de assets desta campanha" />
         <Tab
           label="KV"
