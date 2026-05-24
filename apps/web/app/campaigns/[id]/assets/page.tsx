@@ -430,18 +430,26 @@ export default function CampaignAssetsPage() {
           <span style={{ color: "#888" }}>{campaign.assets.length} {campaign.assets.length === 1 ? "asset" : "assets"}</span>
         </div>
 
-        {/* Sub-nav contextual da campanha. Navegacao no topo (Cliente, Campanha,
-            Assets, KV, Peças, Apresentação). Linha 2 (actions) tem APENAS
-            acoes que MODIFICAM dados: + Texto / + Imagem / Importar PSD.
-            Removido "Editar Matriz" — duplicado com botao "KV" da navegacao. */}
-        {/* Sub-nav removido (user pedido 2026-05-23) — agora so o + Adicionar
-            asset alinhado a direita. */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", position: "relative", marginBottom: 4 }}>
-          <AddMenu
-            onPickText={addTextAsset}
-            onPickShape={addShapeAsset}
-            onAddImage={addImageAsset}
-            onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
+        {/* Sub-nav contextual da campanha (Campanha/Assets/KV/Pecas/Apresentacao)
+            restaurada por pedido user 2026-05-23 ("aqui faltou o menu de
+            navegacao"). + Adicionar fica alinhado a direita NA MESMA linha
+            (padrao "+ X dentro da lista" via prop actions). */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative", marginBottom: 4 }}>
+          <CampaignSubnav
+            campaignId={id}
+            clientId={campaign.client?.id}
+            clientName={campaign.client?.name}
+            activeTab="assets"
+            hasAssets={campaign.assets.length > 0}
+            hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
+            actions={
+              <AddMenu
+                onPickText={addTextAsset}
+                onPickShape={addShapeAsset}
+                onAddImage={addImageAsset}
+                onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
+              />
+            }
           />
           <div style={{ display: "none" }}>
             <PsdImporter ref={psdImporterRef} campaignId={id} onImported={load} />
