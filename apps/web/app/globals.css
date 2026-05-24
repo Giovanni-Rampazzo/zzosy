@@ -14,14 +14,18 @@ html, body { margin:0; padding:0; background:#F5F5F0; color:#111111; }
 }
 
 /* Setas dos inputs numericos ESCONDIDAS (2026-05-24): stepper nativo
-   macOS/Chrome eh branco/destacado e destoa do dark theme do editor —
-   visualmente ruidoso. User pediu padronizacao. Inputs continuam
-   aceitando setas do teclado (up/down) e scroll wheel pra incrementar. */
+   macOS/Chrome eh branco/destacado e destoa do dark theme do editor.
+   Combinacao webkit-appearance:none + appearance:none (standard) +
+   moz textfield necessaria pra cobrir todos os browsers. !important
+   pra sobrescrever inline styles legacy que setavam appearance. */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  margin: 0 !important;
+  display: none !important;
 }
 input[type="number"] {
-  -moz-appearance: textfield;
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
 }
