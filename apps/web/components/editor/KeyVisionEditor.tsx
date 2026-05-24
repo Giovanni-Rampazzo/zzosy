@@ -8889,22 +8889,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         {/* Resolução {canvasW} × {canvasH} removida a pedido do user (2026-05-22) —
             info ruidosa na topbar. Undo/Redo botoes tambem removidos (atalhos
             Cmd+Z / Cmd+Shift+Z continuam funcionando). */}
-        {/* Acoes secundarias alinhadas a direita: Importar PSD / Assets / Legendas */}
-        <label
-          title="Import PSD for this campaign (replaces current Key Vision)"
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer", color: "#aaa", userSelect: "none" }}
-        >
-          {psdImporterRef.current?.isLoading() ? "Importing…" : "Import PSD"}
+        {/* Importar PSD — overlay pattern (input absolute opacity:0 sobre
+            <button>). Pattern <label><input display:none> parou de disparar
+            picker no Next 16+React 19. 2026-05-24. Style mantem look dark
+            transparente da topbar (Button secondary nao serve aqui). */}
+        <span style={{ position: "relative", display: "inline-block" }}>
+          <button
+            type="button"
+            title="Import PSD for this campaign (replaces current Key Vision)"
+            disabled={psdImporterRef.current?.isLoading() || false}
+            style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer", color: "#aaa", userSelect: "none" }}
+          >
+            {psdImporterRef.current?.isLoading() ? "Importing…" : "Import PSD"}
+          </button>
           <input
             type="file"
             accept=".psd"
-            style={{ display: "none" }}
+            disabled={psdImporterRef.current?.isLoading() || false}
+            tabIndex={-1}
+            style={{ position: "absolute", inset: 0, opacity: 0, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer" }}
             onChange={async (e) => {
               const f = e.target.files?.[0]
               e.target.value = ""
               if (!f) return
               if (psdImporterRef.current?.isLoading()) return
-              // Pergunta se ha mudancas pendentes antes de substituir KV.
               const doImport = async () => {
                 try { await psdImporterRef.current?.importFile(f) }
                 catch (err) { console.error("[Importar PSD] falhou:", err) }
@@ -8913,7 +8921,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               else doImport()
             }}
           />
-        </label>
+        </span>
         {/* Botao Assets movido pro topo do Properties Panel (2026-05-22)
             pra reduzir poluicao visual da topbar. */}
         {isPieceMode && pieceId && (
