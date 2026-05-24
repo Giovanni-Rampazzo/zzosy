@@ -222,18 +222,30 @@ export default function PresentationPage() {
     }
   }, [id])
 
-  // REGEN ROLLBACK 2026-05-23: ver /campaigns/[id] pra explicacao do loop.
+  // REGEN INTELIGENTE 2026-05-24: ref-guard por piece.id+updatedAt impede
+  // loop com watcher e re-regen redundante; re-dispara quando piece muda.
+  const regenSeenRef = useRef<Map<string, string>>(new Map())
   useEffect(() => {
     if (pieces.length === 0) return
-    const missing = pieces.filter((p: any) => !p.imageUrl && !p.thumbnailUrl).map((p: any) => p.id)
-    if (missing.length === 0) return
+    const seen = regenSeenRef.current
+    const toRegen = pieces.filter((p: any) => {
+      const key = String(p.updatedAt ?? "")
+      return seen.get(p.id) !== key
+    })
+    if (toRegen.length === 0) return
     let cancelled = false
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      for (const pid of missing) {
+      const BATCH = 3
+      for (let i = 0; i < toRegen.length; i += BATCH) {
         if (cancelled) break
-        try { await regeneratePieceThumb(pid) }
-        catch (e) { console.warn("[lazy-regen]", pid, e) }
+        const chunk = toRegen.slice(i, i + BATCH)
+        await Promise.allSettled(chunk.map(async (p: any) => {
+          try {
+            const ok = await regeneratePieceThumb(p.id)
+            if (ok) seen.set(p.id, String(p.updatedAt ?? ""))
+          } catch (e) { console.warn("[smart-regen]", p.id, e) }
+        }))
       }
     })()
     return () => { cancelled = true }

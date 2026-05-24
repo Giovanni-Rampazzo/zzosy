@@ -8371,26 +8371,50 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (!fc || !obj) return
     const isText = obj.type === "textbox" || obj.type === "i-text"
     if (!isText) return
-    // Detecta range selection: prioridade pra edit mode atual, fallback pra
-    // savedTextSelection (capturada onMouseDown do input — o foco no input
-    // tira isEditing antes do onChange disparar). User pedido 2026-05-23:
-    // "letter spacing nao esta per-char, apenas box" — bug era setCharSpacingProp
-    // checar SO isEditing/selection live, que ja era false quando user mexia
-    // no panel.
+    // Detecta range selection. Como o foco no input tira isEditing antes do
+    // onChange disparar, fallback pra savedTextSelection (capturada onMouseDown).
     const saved = savedTextSelection.current
     const hasLiveRange = obj.isEditing && obj.selectionStart !== obj.selectionEnd
     const hasSavedRange = !!(saved && saved.obj === obj && saved.start !== saved.end)
     const useRange = hasLiveRange || hasSavedRange
     const rangeStart = hasLiveRange ? obj.selectionStart : (hasSavedRange ? saved!.start : 0)
     const rangeEnd = hasLiveRange ? obj.selectionEnd : (hasSavedRange ? saved!.end : 0)
+
+    // Helper: mapeia char-index ABSOLUTO (sem \n) pra {line, col} respeitando
+    // quebras de linha do texto. setSelectionStyles do Fabric ja faz isso
+    // internamente, mas mutamos obj.styles diretamente como fallback pra
+    // garantir que per-char persista no save (savedSelectionStyles as vezes
+    // limpa styles "redundantes" em alguns codepaths).
+    function indexToLineCol(text: string, absIdx: number): { line: number; col: number } {
+      let line = 0, col = 0
+      for (let i = 0; i < absIdx && i < text.length; i++) {
+        if (text[i] === "\n") { line++; col = 0 } else { col++ }
+      }
+      return { line, col }
+    }
+
     if (useRange) {
-      // Edit mode + range (live ou saved): APENAS per-char na selecao (Adobe).
-      // Preserva charSpacing dos chars FORA da selecao.
-      obj.setSelectionStyles({ charSpacing: units }, rangeStart, rangeEnd)
+      // PER-CHAR no range. Aplica via setSelectionStyles (API oficial Fabric)
+      // E TAMBEM mutacao manual pra garantir que persiste no obj.styles —
+      // setSelectionStyles em algumas versoes do Fabric "limpa" styles
+      // identicos ao default, removendo o per-char.
+      try { obj.setSelectionStyles({ charSpacing: units }, rangeStart, rangeEnd) }
+      catch (e) { console.warn("[setCharSpacingProp] setSelectionStyles falhou:", e) }
+      const text: string = obj.text ?? ""
+      if (!obj.styles) obj.styles = {}
+      for (let i = rangeStart; i < rangeEnd; i++) {
+        if (text[i] === "\n") continue
+        const { line, col } = indexToLineCol(text, i)
+        if (!obj.styles[line]) obj.styles[line] = {}
+        const existing = obj.styles[line][col] && typeof obj.styles[line][col] === "object"
+          ? obj.styles[line][col]
+          : {}
+        existing.charSpacing = units
+        obj.styles[line][col] = existing
+      }
     } else {
-      // No range: aplica ao box-level E propaga pra TODOS os per-char.
-      // PSD imports gravam charSpacing per-char (Fabric prioriza per-char sobre
-      // box) — sem propagar, mudar box nao tem efeito visual.
+      // Sem range: aplica box-level + propaga pra TODOS per-char existentes.
+      // Sem propagar, PSD imports (que gravam per-char) ignoram mudanca no box.
       obj.set("charSpacing", units)
       const styles = obj.styles
       if (styles && typeof styles === "object") {
@@ -8406,7 +8430,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
     }
     obj.__dsLinked = false
-    if (obj.initDimensions) obj.initDimensions()
+    // NAO chamar initDimensions aqui — algumas versoes do Fabric resetam
+    // styles per-char durante recompute de _textLines. _forceClearCache
+    // forca re-medicao na proxima render sem mexer em styles.
+    if (obj._forceClearCache !== undefined) obj._forceClearCache = true
     obj.setCoords()
     obj.dirty = true
     fc.requestRenderAll()

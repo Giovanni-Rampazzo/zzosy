@@ -210,6 +210,39 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
  * Roda no client em background — busca a peca + assets, renderiza headlessly
  * via Fabric StaticCanvas, e faz upload pro endpoint de thumbnail.
  */
+/**
+ * Renderiza piece via buildPieceCanvas (mesmo renderer do export PSD/PNG).
+ * Garante que thumb bate com o que o user ve no editor / vai pro PSD.
+ *
+ * Substitui buildThumbnailFromPieceData (renderer simplificado que faltava
+ * SHAPE branch, mask raster correto, layer effects, etc). Bug fix 2026-05-24:
+ * 'preview nao bate com editor — green box some, masks erradas'.
+ */
+async function renderPieceThumbViaExport(pieceLike: { data: any; width: number; height: number }, assets: Asset[]): Promise<Blob | null> {
+  try {
+    const { buildPieceCanvas } = await import("@/lib/exportPiece")
+    const fc = await buildPieceCanvas({
+      id: undefined,
+      name: "thumb",
+      data: pieceLike.data,
+      width: pieceLike.width,
+      height: pieceLike.height,
+    } as any, assets)
+    if (!fc) return null
+    const W = pieceLike.width
+    const H = pieceLike.height
+    // Thumb compacto pra UI: max 1920 px no maior lado. Preserva alpha (PNG).
+    const scale = Math.min(1920 / W, 1920 / H, 1)
+    const dataUrl = fc.toDataURL({ format: "png", multiplier: scale })
+    try { fc.dispose() } catch {}
+    const res = await fetch(dataUrl)
+    return await res.blob()
+  } catch (e) {
+    console.warn("[renderPieceThumbViaExport]", e)
+    return null
+  }
+}
+
 export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
   try {
     const pieceRes = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
@@ -223,7 +256,6 @@ export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
     const assets: Asset[] = Array.isArray(camp?.assets) ? camp.assets : []
     const pdata = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
     if (!pdata) return false
-    // Multi-step: usa o step ATIVO pro thumb principal; tambem gera step thumbs.
     const steps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
     const activeIdx = typeof pdata.activeStepIndex === "number" ? pdata.activeStepIndex : 0
     const W = pdata.width ?? 1080
@@ -237,9 +269,10 @@ export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
           version: 2,
           width: W, height: H,
           bgColor: step.bgColor ?? pdata.bgColor ?? "#ffffff",
+          bgLayers: step.bgLayers ?? pdata.bgLayers,
           layers: Array.isArray(step.layers) ? step.layers : [],
         }
-        const blob = await buildThumbnailFromPieceData(pseudoStep, assets)
+        const blob = await renderPieceThumbViaExport({ data: pseudoStep, width: W, height: H }, assets)
         if (!blob) continue
         const fd = new FormData()
         fd.append("thumbnail", blob, `step${i}.png`)
@@ -248,7 +281,7 @@ export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
         if (i === activeIdx) mainBlob = blob
       }
     } else {
-      mainBlob = await buildThumbnailFromPieceData(pdata, assets)
+      mainBlob = await renderPieceThumbViaExport({ data: pdata, width: W, height: H }, assets)
     }
     if (mainBlob) {
       const fd = new FormData()
