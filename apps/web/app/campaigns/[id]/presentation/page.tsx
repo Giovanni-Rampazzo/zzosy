@@ -222,29 +222,18 @@ export default function PresentationPage() {
     }
   }, [id])
 
-  // AGGRESSIVE THUMB REGEN — prerrogativa ZZOSY (memoria realtime_preview_everywhere):
-  // preview tem que ser realtime SEMPRE. Regen TODAS as pieces em background ao
-  // montar a presentation. Thumb stale > thumb missing como problema (user pediu
-  // 2026-05-23: 'preview precisa ser em tudo realtime').
-  //
-  // Throttle: 1 por vez sequencial pra nao saturar canvas / API. Session flag
-  // por piece evita re-regen no mesmo ciclo de visita (so faz uma vez por load).
+  // REALTIME THUMB REGEN — sem session flag, paraleliza em batches de 5.
+  // Mesmo padrao em /campaigns/[id] e /pieces.
   useEffect(() => {
     if (pieces.length === 0) return
     let cancelled = false
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      for (const p of pieces as any[]) {
+      const BATCH = 5
+      for (let i = 0; i < pieces.length; i += BATCH) {
         if (cancelled) break
-        const sessionKey = `zzosy:regen:${p.id}`
-        try {
-          if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(sessionKey)) continue
-        } catch {}
-        try {
-          await regeneratePieceThumb(p.id)
-          try { sessionStorage.setItem(sessionKey, String(Date.now())) } catch {}
-        }
-        catch (e) { console.warn("[aggro-regen]", p.id, e) }
+        const chunk = pieces.slice(i, i + BATCH) as any[]
+        await Promise.allSettled(chunk.map(p => regeneratePieceThumb(p.id).catch((e: any) => console.warn("[realtime-regen]", p.id, e))))
       }
     })()
     return () => { cancelled = true }

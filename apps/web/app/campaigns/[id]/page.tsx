@@ -125,25 +125,21 @@ export default function CampaignOverviewPage() {
 
   useEffect(() => { loadAll() }, [id])
 
-  // AGGRESSIVE THUMB REGEN — prerrogativa ZZOSY (realtime_preview_everywhere):
-  // regen TODAS pieces, nao so missing imageUrl. Session flag por piece
-  // evita re-regen no mesmo load. Garante preview sempre realtime.
+  // REALTIME THUMB REGEN — prerrogativa ZZOSY. Sem session flag (era anti-
+  // realtime: depois da primeira visita, regen parava). Paraleliza em batches
+  // de 5 simultaneos pra reduzir latencia (10 pieces × 5s seq = 50s; em
+  // batch de 5 = ~10s). User feedback 2026-05-23: 'preview desatualizado,
+  // lembra do realtime padrao zzosy'.
   useEffect(() => {
     if (pieces.length === 0) return
     let cancelled = false
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      for (const p of pieces) {
+      const BATCH = 5
+      for (let i = 0; i < pieces.length; i += BATCH) {
         if (cancelled) break
-        const sessionKey = `zzosy:regen:${p.id}`
-        try {
-          if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(sessionKey)) continue
-        } catch {}
-        try {
-          await regeneratePieceThumb(p.id)
-          try { sessionStorage.setItem(sessionKey, String(Date.now())) } catch {}
-        }
-        catch (e) { console.warn("[aggro-regen]", p.id, e) }
+        const chunk = pieces.slice(i, i + BATCH)
+        await Promise.allSettled(chunk.map(p => regeneratePieceThumb(p.id).catch((e: any) => console.warn("[realtime-regen]", p.id, e))))
       }
     })()
     return () => { cancelled = true }
