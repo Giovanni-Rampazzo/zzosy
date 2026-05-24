@@ -14,7 +14,7 @@
  *
  * Edita textos e overrides e vê o resultado renderizar imediatamente.
  */
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 type Style = { color?: string; fontSize?: number; fontWeight?: string; fontFamily?: string }
 type Span = { text: string; style: Style }
@@ -33,6 +33,8 @@ interface Layer {
     text?: string      // override local (com \n)
     fill?: string      // cor padrão local
     fontSize?: number  // tamanho local
+    /** Cor PER-CHAR override (chave = índice no textToRender). 2026-05-24. */
+    charFills?: Record<number, string>
   }
 }
 
@@ -148,6 +150,59 @@ export default function OverridesPlayground() {
       ],
     },
   ])
+
+  // Selection per-char nas pecas (igual editor matriz/pecas).
+  // Click+drag em chars seleciona range. Color picker aplica nos selecionados.
+  const [pieceSelection, setPieceSelection] = useState<{ layerKey: string; start: number; end: number } | null>(null)
+  // Para drag global no mouseup
+  useEffect(() => {
+    const stop = () => { (window as any).__zzosyDragging = false }
+    window.addEventListener("mouseup", stop)
+    return () => window.removeEventListener("mouseup", stop)
+  }, [])
+
+  // Aplica cor pros chars selecionados via overrides.charFills
+  function applyColorToSelection(color: string) {
+    if (!pieceSelection) return
+    const { layerKey, start, end } = pieceSelection
+    const [pieceId, layerIdxStr] = layerKey.split(":")
+    const layerIdx = Number(layerIdxStr)
+    const lo = Math.min(start, end)
+    const hi = Math.max(start, end)
+    setPieces(prev => prev.map(p => {
+      if (p.id !== pieceId) return p
+      return {
+        ...p,
+        layers: p.layers.map((l, i) => {
+          if (i !== layerIdx) return l
+          const charFills = { ...(l.overrides.charFills ?? {}) }
+          for (let k = lo; k <= hi; k++) charFills[k] = color
+          return { ...l, overrides: { ...l.overrides, charFills } }
+        }),
+      }
+    }))
+  }
+
+  function clearColorSelection() {
+    if (!pieceSelection) return
+    const { layerKey, start, end } = pieceSelection
+    const [pieceId, layerIdxStr] = layerKey.split(":")
+    const layerIdx = Number(layerIdxStr)
+    const lo = Math.min(start, end)
+    const hi = Math.max(start, end)
+    setPieces(prev => prev.map(p => {
+      if (p.id !== pieceId) return p
+      return {
+        ...p,
+        layers: p.layers.map((l, i) => {
+          if (i !== layerIdx) return l
+          const charFills = { ...(l.overrides.charFills ?? {}) }
+          for (let k = lo; k <= hi; k++) delete charFills[k]
+          return { ...l, overrides: { ...l.overrides, charFills } }
+        }),
+      }
+    }))
+  }
 
   // Atualiza style de UM char especifico (per-char editing)
   function updateCharStyle(assetId: string, charIdx: number, patch: Partial<Style>) {
@@ -346,13 +401,45 @@ export default function OverridesPlayground() {
           {/* ============ DIREITA: Peças ============ */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: "#F5C400", margin: 0, textTransform: "uppercase", letterSpacing: "0.5px" }}>Peças (renderizadas em tempo real)</h2>
-            {pieces.map(piece => (
+            {pieces.map(piece => {
+              const myLayerSelected = pieceSelection?.layerKey.startsWith(`${piece.id}:`)
+              return (
               <div key={piece.id} style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: 14 }}>
-                <div style={{ fontSize: 11, color: "#888", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>{piece.name}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>{piece.name}</div>
+                  {/* Color picker pra selecao char-level (igual editor real). Aparece quando ha selecao nesta peca. */}
+                  {myLayerSelected && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#aaa" }}>
+                      <span>Cor:</span>
+                      <input
+                        type="color"
+                        onChange={e => applyColorToSelection(e.target.value)}
+                        style={{ width: 36, height: 22, padding: 0, border: "1px solid #2a2a2a", background: "transparent", cursor: "pointer" }}
+                        title="Aplica cor nos chars selecionados"
+                      />
+                      <button onClick={clearColorSelection}
+                        style={{ padding: "2px 8px", background: "#2a2a2a", border: "1px solid #444", borderRadius: 3, color: "#aaa", cursor: "pointer", fontSize: 10 }}
+                        title="Remove override de cor dos chars selecionados">
+                        Limpar
+                      </button>
+                      <button onClick={() => setPieceSelection(null)}
+                        style={{ padding: "2px 8px", background: "transparent", border: "1px solid #333", borderRadius: 3, color: "#666", cursor: "pointer", fontSize: 10 }}>
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
                 {/* Render visual */}
                 <div style={{ background: "#fff", borderRadius: 6, padding: "20px 16px", marginBottom: 12, minHeight: 120 }}>
                   {piece.layers.map((layer, lidx) => (
-                    <LayerRender key={lidx} layer={layer} asset={assets.find(a => a.id === layer.assetId)!} />
+                    <LayerRender
+                      key={lidx}
+                      layer={layer}
+                      asset={assets.find(a => a.id === layer.assetId)!}
+                      layerKey={`${piece.id}:${lidx}`}
+                      selection={pieceSelection}
+                      onSelectionChange={setPieceSelection}
+                    />
                   ))}
                 </div>
                 {/* Editor de overrides */}
@@ -400,7 +487,8 @@ export default function OverridesPlayground() {
                   })}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
@@ -418,8 +506,21 @@ export default function OverridesPlayground() {
   )
 }
 
-// Renderiza UM layer da peça: aplica overrides.text + overrides.fill/fontSize.
-function LayerRender({ layer, asset }: { layer: Layer; asset: Asset }) {
+// Renderiza UM layer da peça: aplica overrides.text + overrides.fill/fontSize +
+// overrides.charFills (per-char). Suporta SELEÇÃO de chars via click+drag.
+function LayerRender({
+  layer,
+  asset,
+  layerKey,
+  selection,
+  onSelectionChange,
+}: {
+  layer: Layer
+  asset: Asset
+  layerKey: string
+  selection: { layerKey: string; start: number; end: number } | null
+  onSelectionChange: (sel: { layerKey: string; start: number; end: number } | null) => void
+}) {
   const overrides = layer.overrides
   // Se override.text setado: usa esse (com \n local). Senão usa asset.content render direto.
   const useOverrideText = typeof overrides.text === "string" && overrides.text.length > 0
@@ -466,34 +567,70 @@ function LayerRender({ layer, asset }: { layer: Layer; asset: Asset }) {
     return out
   }, [useOverrideText, assetText, textToRender, JSON.stringify(assetStyles)])
 
-  // Aplica overrides.fill/fontSize SOBRESCREVENDO no char level
-  const lines: Array<Array<{ ch: string; style: Style }>> = []
-  let currentLine: Array<{ ch: string; style: Style }> = []
+  // Aplica overrides.fill/fontSize/charFills SOBRESCREVENDO no char level.
+  // Ordem de precedencia (maior → menor):
+  //   1. overrides.charFills[i] (per-char especifico)
+  //   2. overrides.fill (cor global da layer)
+  //   3. charStyles[i] (do asset)
+  const lines: Array<Array<{ ch: string; style: Style; idx: number }>> = []
+  let currentLine: Array<{ ch: string; style: Style; idx: number }> = []
   for (let i = 0; i < textToRender.length; i++) {
     const ch = textToRender[i]
     if (ch === "\n") { lines.push(currentLine); currentLine = []; continue }
     const baseStyle = charStyles[i] ?? defaultStyle
+    const charFill = overrides.charFills?.[i]
     const finalStyle: Style = {
       ...baseStyle,
       ...(typeof overrides.fill === "string" ? { color: overrides.fill } : {}),
       ...(typeof overrides.fontSize === "number" ? { fontSize: overrides.fontSize } : {}),
+      ...(typeof charFill === "string" ? { color: charFill } : {}),
     }
-    currentLine.push({ ch, style: finalStyle })
+    currentLine.push({ ch, style: finalStyle, idx: i })
   }
   lines.push(currentLine)
 
+  // Selection state (drag handlers)
+  const isMine = selection?.layerKey === layerKey
+  const selStart = isMine ? Math.min(selection!.start, selection!.end) : -1
+  const selEnd = isMine ? Math.max(selection!.start, selection!.end) : -1
+  const isCharSelected = (i: number) => isMine && i >= selStart && i <= selEnd
+
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div
+      style={{ marginBottom: 8, userSelect: "none", cursor: "text" }}
+      onMouseLeave={() => { (window as any).__zzosyDragging = false }}
+    >
       {lines.map((line, li) => (
         <div key={li} style={{ lineHeight: asset.lineHeight ?? 1.1 }}>
-          {line.map(({ ch, style }, ci) => (
-            <span key={ci} style={{
-              color: style.color ?? "#111",
-              fontSize: style.fontSize ?? 16,
-              fontWeight: style.fontWeight ?? "normal",
-              fontFamily: style.fontFamily ?? "inherit",
-            }}>{ch}</span>
-          ))}
+          {line.map(({ ch, style, idx }, ci) => {
+            const sel = isCharSelected(idx)
+            return (
+              <span
+                key={ci}
+                data-char-idx={idx}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  ;(window as any).__zzosyDragging = true
+                  onSelectionChange({ layerKey, start: idx, end: idx })
+                }}
+                onMouseEnter={() => {
+                  if ((window as any).__zzosyDragging && isMine) {
+                    onSelectionChange({ layerKey, start: selection!.start, end: idx })
+                  }
+                }}
+                onMouseUp={() => { (window as any).__zzosyDragging = false }}
+                style={{
+                  color: style.color ?? "#111",
+                  fontSize: style.fontSize ?? 16,
+                  fontWeight: style.fontWeight ?? "normal",
+                  fontFamily: style.fontFamily ?? "inherit",
+                  background: sel ? "rgba(245,196,0,0.35)" : undefined,
+                  borderRadius: sel ? 2 : undefined,
+                  cursor: "text",
+                }}
+              >{ch}</span>
+            )
+          })}
         </div>
       ))}
     </div>
