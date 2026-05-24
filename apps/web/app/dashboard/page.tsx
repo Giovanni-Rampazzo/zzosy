@@ -63,22 +63,25 @@ export default function DashboardPage() {
   return (
     <PageShell>
       <div className="p-8">
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
-          <div>
-            <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Empresas</h1>
-            <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Gerencie todas as empresas da sua agência</p>
-          </div>
-          <Button onClick={() => setShowModal(true)}>+ Nova Empresa</Button>
+        <div style={{marginBottom:24}}>
+          <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Empresas</h1>
+          <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Gerencie todas as empresas da sua agência</p>
         </div>
 
+        {/* Padrao ZZOSY: botao de acao primaria dentro da box da lista, nao
+            em header separado acima. Header da tabela: titulos das colunas
+            + botao + Nova Empresa alinhado a direita. */}
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr style={{borderBottom:"1px solid #E0E0E0"}}>
                 <th style={{padding:"8px 8px",width:72}}></th>
-                {["Empresa","Contato","E-mail","Campanhas",""].map(h => (
+                {["Empresa","Contato","E-mail","Campanhas"].map(h => (
                   <th key={h} style={{textAlign:"left",fontSize:11,fontWeight:600,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",padding:"8px 16px"}}>{h}</th>
                 ))}
+                <th style={{textAlign:"right",padding:"6px 16px"}}>
+                  <Button size="sm" onClick={() => setShowModal(true)}>+ Nova Empresa</Button>
+                </th>
               </tr>
             </thead>
             <tbody>
