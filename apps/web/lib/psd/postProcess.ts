@@ -15,23 +15,25 @@ import type { PsdDocument, PsdLayer, PsdSmartObjectLayer, PsdBBox } from "./type
 // Wrapper SO Detection
 // ────────────────────────────────────────────────────────────────────
 
-// Heuristica wrapper afinada apos caso Sicredi (commit 0ada9fb seguinte):
-// PA (PDF 44KB — barras verdes do design) e ALY01784 (JPG 28MB — foto) estavam
-// sendo marcados como wrappers e auto-hidden, removendo elementos visuais
-// criticos. O detector agora exige formato PSB/PSD (composite Photoshop
-// aninhado) + threshold mais alto + mais layers contidos.
-const WRAPPER_COVERAGE_THRESHOLD = 0.70 // cobre >= 70% do canvas (era 40)
+// Heuristica wrapper afinada 2026-05-24 (caso Sicredi Tag de Passagem + Seguro
+// Viagem): "Foto 7 JPG" (foto do casal cobrindo canvas) e "Foto homem terno"
+// estavam sendo marcados wrapper e auto-hidden — a foto era o CONTEUDO
+// PRINCIPAL da peca, nao wrapper. Detector agora aceita SOMENTE PSB/PSD
+// (nested Photoshop files — wrappers REAIS de design completo). JPG/PNG
+// cobrindo canvas e tipicamente background/foto principal, nunca mockup
+// wrapper.
+const WRAPPER_COVERAGE_THRESHOLD = 0.70 // cobre >= 70% do canvas
 const WRAPPER_OVERLAP_THRESHOLD = 0.5   // outros layers com >= 50% bbox dentro
-const WRAPPER_OVERLAPPING_COUNT = 3      // pelo menos 3 layers acima sobrepondo (era 2)
+const WRAPPER_OVERLAPPING_COUNT = 3      // pelo menos 3 layers acima sobrepondo
 const WRAPPER_MIN_AREA = 100              // ignora layers minusculos no count
 
 // Formatos que PODEM ser wrapper.
-//   - PSB/PSD: Photoshop nested files — TIPICAMENTE contem o design todo.
-//   - JPG/PNG: foto/raster — pode duplicar um Background image (ex: ALY01784
-//              do Sicredi que repete a foto da mulher). Marcamos como
-//              wrapper APENAS se tem Background image de tamanho similar.
-//   - PDF/AI:  vetor isolado (icone, logo, formas) — NUNCA wrapper.
-const WRAPPER_ELIGIBLE_FORMATS = new Set(["psb", "psd", "jpg", "png"])
+//   - PSB/PSD: Photoshop nested files — design completo embedded como SO de
+//              preview enquanto layers reais editaveis ficam acima. UNICO
+//              caso seguro pra auto-hide.
+//   - JPG/PNG/PDF/AI: NUNCA wrapper. Removidos 2026-05-24 apos foto principal
+//              ser auto-hidden em 2 campanhas Sicredi.
+const WRAPPER_ELIGIBLE_FORMATS = new Set(["psb", "psd"])
 const COMPOSITE_FORMATS = new Set(["psb", "psd"])
 const RASTER_FORMATS = new Set(["jpg", "png"])
 
