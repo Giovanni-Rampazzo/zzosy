@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
+import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
@@ -409,17 +410,19 @@ export default function CampaignAssetsPage() {
       <TopNav />
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
 
-        {/* Header REMOVIDO 2026-05-24 (user pedido "tira isso tudo daqui"):
-            breadcrumb ZZOSY/cliente/campanha + CampaignSubnav tabs eram
-            poluicao visual. AddMenu mantido (acao essencial) no header da
-            lista de assets — padrao [[feedback_action_button_inside_list]]. */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#111" }}>
-            Assets <span style={{ fontSize: 13, fontWeight: 400, color: "#888", marginLeft: 6 }}>
-              {campaign.assets.length} {campaign.assets.length === 1 ? "item" : "itens"}
-            </span>
-          </div>
-          <div style={{ position: "relative" }}>
+        {/* Subnav 2026-05-24: re-adicionado depois que user perguntou "como
+            volto pro editor?" — header limpo mas precisava de navegacao entre
+            tabs. CampaignSubnav ja nao tem "Campanha" tab (removida globalmente). */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16 }}>
+          <CampaignSubnav
+            campaignId={id}
+            clientId={campaign.client?.id}
+            clientName={campaign.client?.name}
+            activeTab="assets"
+            hasAssets={campaign.assets.length > 0}
+            hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
+          />
+          <div style={{ position: "relative", flexShrink: 0 }}>
             <AddMenu
               onPickText={addTextAsset}
               onPickShape={addShapeAsset}
