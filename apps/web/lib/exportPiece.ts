@@ -88,10 +88,43 @@ async function downloadBlob(blob: Blob, filename: string): Promise<void> {
   const a = document.createElement("a")
   a.href = url
   a.download = safeFilename
-  a.style.display = "none"
+  a.rel = "noopener"
+  // FIX 2026-05-24: Chrome as vezes ignora .click() programatico em <a download>
+  // quando dispara fora de user gesture direto (chain async longa do export).
+  // dispatchEvent com MouseEvent explicito + bubbles e mais robusto.
+  a.style.position = "fixed"
+  a.style.top = "0"
+  a.style.left = "0"
+  a.style.opacity = "0"
+  a.style.pointerEvents = "none"
   document.body.appendChild(a)
-  a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 1000)
+  try {
+    // Tenta dispatchEvent primeiro — funciona mais consistente que .click()
+    const ev = new MouseEvent("click", {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+    })
+    a.dispatchEvent(ev)
+    console.log("[downloadBlob] click dispatched via MouseEvent")
+  } catch (e) {
+    console.warn("[downloadBlob] MouseEvent falhou, tentando .click():", e)
+    a.click()
+  }
+  // Fallback adicional: se o download nao iniciar em 3s, abre URL em nova aba
+  // pra user salvar manualmente. Detecta via window.onblur (browser foca janela
+  // de download quando inicia) — se nao blurou, provavelmente bloqueado.
+  let downloadStarted = false
+  const onBlur = () => { downloadStarted = true; window.removeEventListener("blur", onBlur) }
+  window.addEventListener("blur", onBlur)
+  setTimeout(() => {
+    window.removeEventListener("blur", onBlur)
+    if (!downloadStarted) {
+      console.warn("[downloadBlob] download nao iniciou em 3s — abrindo blob em nova aba como fallback")
+      try { window.open(url, "_blank") } catch {}
+    }
+  }, 3000)
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove() }, 5000)
 }
 
 function safeName(s: string) {
