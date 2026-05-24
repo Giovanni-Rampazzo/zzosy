@@ -13,14 +13,15 @@ html, body { margin:0; padding:0; background:#F5F5F0; color:#111111; }
   margin: 0 auto !important;
 }
 
-/* Setas dos inputs numericos SEMPRE visiveis (nao somem quando o mouse sai).
-   Default do Chrome/Safari mostra so no hover/focus — preferencia do usuario
-   eh sempre visivel. */
+/* Setas dos inputs numericos ESCONDIDAS (2026-05-24): stepper nativo
+   macOS/Chrome eh branco/destacado e destoa do dark theme do editor —
+   visualmente ruidoso. User pediu padronizacao. Inputs continuam
+   aceitando setas do teclado (up/down) e scroll wheel pra incrementar. */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
-  opacity: 1 !important;
-  -webkit-appearance: inner-spin-button;
+  -webkit-appearance: none;
+  margin: 0;
 }
 input[type="number"] {
-  -moz-appearance: number-input;
+  -moz-appearance: textfield;
 }
