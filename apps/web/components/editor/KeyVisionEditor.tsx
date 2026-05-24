@@ -8203,26 +8203,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const isText = obj.type === "textbox" || obj.type === "i-text"
     if (!isText) return
     if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+      // Edit mode + range selected: APENAS per-char na selecao (Adobe-style).
+      // Preserva charSpacing dos chars FORA da selecao.
       obj.setSelectionStyles({ charSpacing: units })
     } else {
+      // No edit / no range: aplica ao box-level E propaga pra TODOS os per-char.
+      // PSD imports gravam charSpacing per-char (Fabric prioriza per-char sobre
+      // box) — sem propagar, mudar box nao tem efeito visual. Propagar mantem
+      // per-char preservado (Adobe-style estrutura) e visualmente uniforme.
+      // User pedido 2026-05-23: "letter spacing nao esta per-char, apenas box".
       obj.set("charSpacing", units)
-      // PSD imports gravam charSpacing PER-CHAR em styles[line][col]. Fabric
-      // usa per-char ANTES de box-level, entao mudar box.charSpacing aqui
-      // sozinho nao afeta o visual. Sintoma reportado 2026-05-23: "entreletras
-      // nao muda". Strip per-char pra que o box-level prevaleca. Mesmo pattern
-      // que applyStyle aplica pra fontSize/fontFamily/fontWeight/fontStyle.
       const styles = obj.styles
       if (styles && typeof styles === "object") {
         for (const lineKey of Object.keys(styles)) {
           const line = styles[lineKey]
           if (!line || typeof line !== "object") continue
           for (const colKey of Object.keys(line)) {
-            if (line[colKey] && Object.prototype.hasOwnProperty.call(line[colKey], "charSpacing")) {
-              delete line[colKey].charSpacing
+            if (line[colKey] && typeof line[colKey] === "object") {
+              line[colKey].charSpacing = units
             }
-            if (line[colKey] && Object.keys(line[colKey]).length === 0) delete line[colKey]
           }
-          if (Object.keys(line).length === 0) delete styles[lineKey]
         }
       }
     }
