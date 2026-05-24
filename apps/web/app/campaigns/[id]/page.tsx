@@ -50,7 +50,7 @@ export default function CampaignOverviewPage() {
   const [loading, setLoading] = useState(true)
   const [loadTs, setLoadTs] = useState(Date.now())
   const [deliveryOpen, setDeliveryOpen] = useState(false)
-  const [view, setView] = useState<"grid" | "list">("grid")
+  const [view, setView] = useState<"grid" | "list">("list")
   const [selected, setSelectedRaw] = useState<string[]>([])
   // Wrapper de debug temporario pra rastrear quem zera selected
   const setSelected = (next: string[] | ((prev: string[]) => string[])) => {
@@ -390,7 +390,7 @@ export default function CampaignOverviewPage() {
                 await psdMatrixImporterRef.current?.importFile(file)
               }}
               style={{
-                maxHeight: 220, display: "flex", alignItems: "center", justifyContent: "center",
+                maxHeight: 110, display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#aaa", fontSize: 13,
                 cursor: "pointer",
                 transition: "transform 0.15s ease, box-shadow 0.15s ease, outline 0.15s ease",
@@ -409,10 +409,10 @@ export default function CampaignOverviewPage() {
             >
               {campaign.keyVision?.thumbnailUrl ? (
                 <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
-                  style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+                  style={{ maxWidth: "100%", maxHeight: 110, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
               ) : (
                 <div style={{
-                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 220, width: "auto", maxWidth: "100%",
+                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 110, width: "auto", maxWidth: "100%",
                   background: kvBg, borderRadius: 6, border: "1px solid #E0E0E0",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
