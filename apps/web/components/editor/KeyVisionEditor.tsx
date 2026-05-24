@@ -8221,16 +8221,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (!fc || !obj) return
     const isText = obj.type === "textbox" || obj.type === "i-text"
     if (!isText) return
-    if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
-      // Edit mode + range selected: APENAS per-char na selecao (Adobe-style).
+    // Detecta range selection: prioridade pra edit mode atual, fallback pra
+    // savedTextSelection (capturada onMouseDown do input — o foco no input
+    // tira isEditing antes do onChange disparar). User pedido 2026-05-23:
+    // "letter spacing nao esta per-char, apenas box" — bug era setCharSpacingProp
+    // checar SO isEditing/selection live, que ja era false quando user mexia
+    // no panel.
+    const saved = savedTextSelection.current
+    const hasLiveRange = obj.isEditing && obj.selectionStart !== obj.selectionEnd
+    const hasSavedRange = !!(saved && saved.obj === obj && saved.start !== saved.end)
+    const useRange = hasLiveRange || hasSavedRange
+    const rangeStart = hasLiveRange ? obj.selectionStart : (hasSavedRange ? saved!.start : 0)
+    const rangeEnd = hasLiveRange ? obj.selectionEnd : (hasSavedRange ? saved!.end : 0)
+    if (useRange) {
+      // Edit mode + range (live ou saved): APENAS per-char na selecao (Adobe).
       // Preserva charSpacing dos chars FORA da selecao.
-      obj.setSelectionStyles({ charSpacing: units })
+      obj.setSelectionStyles({ charSpacing: units }, rangeStart, rangeEnd)
     } else {
-      // No edit / no range: aplica ao box-level E propaga pra TODOS os per-char.
+      // No range: aplica ao box-level E propaga pra TODOS os per-char.
       // PSD imports gravam charSpacing per-char (Fabric prioriza per-char sobre
-      // box) — sem propagar, mudar box nao tem efeito visual. Propagar mantem
-      // per-char preservado (Adobe-style estrutura) e visualmente uniforme.
-      // User pedido 2026-05-23: "letter spacing nao esta per-char, apenas box".
+      // box) — sem propagar, mudar box nao tem efeito visual.
       obj.set("charSpacing", units)
       const styles = obj.styles
       if (styles && typeof styles === "object") {
