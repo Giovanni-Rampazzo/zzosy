@@ -125,21 +125,25 @@ export default function CampaignOverviewPage() {
 
   useEffect(() => { loadAll() }, [id])
 
-  // REALTIME THUMB REGEN — prerrogativa ZZOSY. Sem session flag (era anti-
-  // realtime: depois da primeira visita, regen parava). Paraleliza em batches
-  // de 5 simultaneos pra reduzir latencia (10 pieces × 5s seq = 50s; em
-  // batch de 5 = ~10s). User feedback 2026-05-23: 'preview desatualizado,
-  // lembra do realtime padrao zzosy'.
+  // REGEN ROLLBACK 2026-05-23: regen agressivo causava LOOP INFINITO no dev:
+  // thumbnail endpoint escreve em public/uploads/, Next watcher detecta,
+  // Fast Refresh rebuilds, componente remonta, useEffect dispara regen DE
+  // NOVO → loop. Pagina ficava em 'Carregando...' eterno.
+  //
+  // Solucao definitiva (deferida): mover thumbs pra fora de public/ OU
+  // configurar Next webpack ignored watch path. Por agora, regen apenas
+  // pieces SEM imageUrl (conservador, evita loop).
   useEffect(() => {
     if (pieces.length === 0) return
+    const missing = pieces.filter(p => !p.imageUrl).map(p => p.id)
+    if (missing.length === 0) return
     let cancelled = false
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      const BATCH = 5
-      for (let i = 0; i < pieces.length; i += BATCH) {
+      for (const pid of missing) {
         if (cancelled) break
-        const chunk = pieces.slice(i, i + BATCH)
-        await Promise.allSettled(chunk.map(p => regeneratePieceThumb(p.id).catch((e: any) => console.warn("[realtime-regen]", p.id, e))))
+        try { await regeneratePieceThumb(pid) }
+        catch (e) { console.warn("[lazy-regen]", pid, e) }
       }
     })()
     return () => { cancelled = true }

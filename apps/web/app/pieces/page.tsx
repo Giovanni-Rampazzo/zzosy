@@ -141,18 +141,19 @@ function PiecesContent() {
     }
   }, [campaignId])
 
-  // REALTIME THUMB REGEN — sem session flag (era anti-realtime), paraleliza
-  // em batches de 5. Mesmo padrao em /campaigns/[id] e /presentation.
+  // REGEN ROLLBACK 2026-05-23: ver /campaigns/[id] pra explicacao do loop.
+  // Conservador: regen apenas pieces SEM imageUrl.
   useEffect(() => {
     if (pieces.length === 0) return
+    const missing = pieces.filter(p => !p.imageUrl).map(p => p.id)
+    if (missing.length === 0) return
     let cancelled = false
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      const BATCH = 5
-      for (let i = 0; i < pieces.length; i += BATCH) {
+      for (const pid of missing) {
         if (cancelled) break
-        const chunk = pieces.slice(i, i + BATCH)
-        await Promise.allSettled(chunk.map(p => regeneratePieceThumb(p.id).catch((e: any) => console.warn("[realtime-regen]", p.id, e))))
+        try { await regeneratePieceThumb(pid) }
+        catch (e) { console.warn("[lazy-regen]", pid, e) }
       }
     })()
     return () => { cancelled = true }
