@@ -1,6 +1,7 @@
 "use client"
 import { SessionProvider } from "next-auth/react"
 import { useEffect } from "react"
+import { ActiveClientProvider } from "@/lib/activeClientContext"
 
 /**
  * Listener global: Shift+ArrowUp/Down em <input type="number"> incrementa/decrementa
@@ -38,5 +39,9 @@ function useGlobalShiftStepBoost() {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useGlobalShiftStepBoost()
-  return <SessionProvider>{children}</SessionProvider>
+  return (
+    <SessionProvider>
+      <ActiveClientProvider>{children}</ActiveClientProvider>
+    </SessionProvider>
+  )
 }

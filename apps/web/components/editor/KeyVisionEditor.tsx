@@ -16,6 +16,7 @@ import { buildShapePath, type ShapeKind } from "@/lib/shapePaths"
 import { inpS, numInpS, secS, numFieldGrid, numFieldRight, numFieldUnit } from "@/lib/editorFieldStyles"
 import { leadingPtToFabricLineHeight, applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
 import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
+import { useSetActiveClient } from "@/lib/activeClientContext"
 // Monkey-patch Fabric pra suportar charSpacing per-char (Adobe-style letter
 // spacing por trecho). Side-effect import — roda no module init UMA VEZ.
 import "@/lib/fabricCharSpacingPatch"
@@ -1029,6 +1030,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const assetContentPutTimer = useRef<any>(null)
   const assetContentPendingPayload = useRef<{ aid: string; payload: any } | null>(null)
   const [campaign, setCampaign] = useState<Campaign | null>(null)
+  // Hookea cliente da campaign no TopNav (logo da empresa substitui ZZOSY)
+  useSetActiveClient((campaign?.client as any) ? {
+    id: (campaign!.client as any).id,
+    name: (campaign!.client as any).name ?? "",
+    brandLogoUrl: (campaign!.client as any).brandLogoUrl,
+  } : null)
   const [piece, setPiece] = useState<any>(null)
   const pieceRef = useRef<any>(null)
   const isPieceMode = !!pieceId

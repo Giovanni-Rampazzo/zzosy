@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
+import { useSetActiveClient } from "@/lib/activeClientContext"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { SegmentPicker } from "@/components/pieces/SegmentPicker"
 import { DeliveryDialog } from "@/components/deliveries/DeliveryDialog"
@@ -45,6 +46,12 @@ export default function CampaignOverviewPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [campaign, setCampaign] = useState<Campaign | null>(null)
+  // Hookea cliente da campaign no TopNav (logo da empresa substitui ZZOSY)
+  useSetActiveClient(campaign?.client ? {
+    id: campaign.client.id,
+    name: campaign.client.name ?? "",
+    brandLogoUrl: (campaign.client as any)?.brandLogoUrl,
+  } : null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
   const [loadTs, setLoadTs] = useState(Date.now())

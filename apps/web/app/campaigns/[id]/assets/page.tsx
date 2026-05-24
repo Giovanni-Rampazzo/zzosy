@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
+import { useSetActiveClient } from "@/lib/activeClientContext"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
@@ -64,6 +65,11 @@ export default function CampaignAssetsPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [campaign, setCampaign] = useState<Campaign | null>(null)
+  useSetActiveClient(campaign?.client ? {
+    id: campaign.client.id,
+    name: campaign.client.name ?? "",
+    brandLogoUrl: (campaign.client as any)?.brandLogoUrl,
+  } : null)
   const [loading, setLoading] = useState(true)
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({})
   // Cores da marca (Client.brandColors). Carregadas quando a campanha resolve

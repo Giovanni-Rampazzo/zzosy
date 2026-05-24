@@ -8,6 +8,7 @@ import { RowThumb } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
 import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
+import { useSetActiveClient } from "@/lib/activeClientContext"
 
 
 interface Campaign {
@@ -33,6 +34,7 @@ export default function ClientPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [client, setClient] = useState<Client | null>(null)
+  useSetActiveClient(client ? { id, name: client.name, brandLogoUrl: client.brandLogoUrl } : null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null) // campanha id

@@ -2,6 +2,7 @@
 import { signOut, useSession } from "next-auth/react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useActiveClient } from "@/lib/activeClientContext"
 
 // Formatos = catalogo GLOBAL de formatos de midia (dimensoes/veiculos) do
 // tenant. Tambem acessivel via /clients/[id]/edit > card "Formatos de midia".
@@ -18,10 +19,24 @@ const links = [
 export default function TopNav() {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const activeClient = useActiveClient()
+
+  // Logo da empresa ativa substitui o "ZZOSY". Se cliente nao tem logo,
+  // nao mostra NADA (regra user 2026-05-24). Sem cliente ativo (paginas
+  // globais como /dashboard, /campaigns lista), tambem fica vazio.
+  const showClientLogo = !!activeClient?.brandLogoUrl
+  const logoSlot = showClientLogo ? (
+    <img
+      src={activeClient!.brandLogoUrl!}
+      alt={activeClient!.name}
+      title={activeClient!.name}
+      style={{ height: 28, maxWidth: 120, objectFit: "contain", marginRight: 8 }}
+    />
+  ) : null
 
   return (
     <nav style={{height:52,background:"#111111",display:"flex",alignItems:"center",padding:"0 24px",gap:28,flexShrink:0,zIndex:50,fontFamily:"inherit"}}>
-      <span style={{color:"#F5C400",fontWeight:700,fontSize:15,letterSpacing:2,marginRight:8}}>ZZOSY</span>
+      {logoSlot}
       {links.map(link => {
         const active = pathname?.startsWith(link.href)
         return (
