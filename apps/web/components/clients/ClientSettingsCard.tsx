@@ -122,44 +122,58 @@ export function ClientSettingsCard({ initial, onStatusChange }: Props) {
         em qualquer entidade são adicionados aqui automaticamente. Edite ou remova
         a qualquer momento.
       </p>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:16}}>
-        {FIELDS.map(({key, label, placeholder}) => {
+      {/* Layout vertical (2026-05-24): cada lista em sua propria row full-width.
+          Antes era grid 4 colunas que overflowava + faltava espaco pros chips. */}
+      <div style={{display:"flex",flexDirection:"column",gap:0}}>
+        {FIELDS.map(({key, label, placeholder}, idx) => {
           const list = Array.isArray(data[key]) ? data[key]! : []
           const inputValue = (inputs[key]?.[0]) ?? ""
           return (
-            <div key={key} style={{display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",color:"#666"}}>{label}</div>
-              <div style={{display:"flex",gap:4}}>
-                <input
-                  value={inputValue}
-                  onChange={e => setInputs(prev => ({...prev, [key]: [e.target.value]}))}
-                  onKeyDown={e => {
-                    if (e.key === "Enter") {
-                      e.preventDefault()
-                      addItem(key, inputValue)
-                    }
-                  }}
-                  placeholder={placeholder}
-                  style={{flex:1,padding:"6px 8px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:12,outline:"none",fontFamily:"inherit",minWidth:0}}
-                />
-                <button
-                  type="button"
-                  onClick={() => addItem(key, inputValue)}
-                  disabled={!inputValue.trim()}
-                  style={{
-                    padding:"6px 10px",
-                    border:"1px solid #D0D0D0", borderRadius:6,
-                    background: inputValue.trim() ? "#F5C400" : "#F0F0F0",
-                    color: inputValue.trim() ? "#111" : "#999",
-                    fontSize:12, fontWeight:700,
-                    cursor: inputValue.trim() ? "pointer" : "not-allowed",
-                  }}
-                >+</button>
-              </div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {list.length === 0
-                  ? <div style={{fontSize:11,color:"#aaa",fontStyle:"italic",padding:"4px 0"}}>Vazio</div>
-                  : list.map((v, i) => (
+            <div
+              key={key}
+              style={{
+                display:"grid",
+                gridTemplateColumns:"110px 1fr",
+                gap:16,
+                alignItems:"start",
+                padding:"14px 0",
+                borderTop: idx === 0 ? "none" : "1px solid #F0F0F0",
+              }}
+            >
+              {/* Coluna esquerda: titulo da lista (label uppercase) */}
+              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",color:"#666",paddingTop:6}}>{label}</div>
+              {/* Coluna direita: input + botao + chips empilhados */}
+              <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:0}}>
+                <div style={{display:"flex",gap:6}}>
+                  <input
+                    value={inputValue}
+                    onChange={e => setInputs(prev => ({...prev, [key]: [e.target.value]}))}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        addItem(key, inputValue)
+                      }
+                    }}
+                    placeholder={placeholder}
+                    style={{flex:1,padding:"7px 10px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit",minWidth:0}}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addItem(key, inputValue)}
+                    disabled={!inputValue.trim()}
+                    style={{
+                      padding:"7px 14px",
+                      border:"1px solid #D0D0D0", borderRadius:6,
+                      background: inputValue.trim() ? "#F5C400" : "#F0F0F0",
+                      color: inputValue.trim() ? "#111" : "#999",
+                      fontSize:13, fontWeight:700,
+                      cursor: inputValue.trim() ? "pointer" : "not-allowed",
+                    }}
+                  >+ Adicionar</button>
+                </div>
+                {list.length > 0 && (
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {list.map((v, i) => (
                       <div key={`${key}-${i}-${v}`} style={{
                         display:"inline-flex",alignItems:"center",gap:4,
                         padding:"3px 4px 3px 10px",borderRadius:14,
@@ -176,8 +190,9 @@ export function ClientSettingsCard({ initial, onStatusChange }: Props) {
                             color:"#999",fontSize:14,padding:"0 4px",lineHeight:1,
                           }}>×</button>
                       </div>
-                    ))
-                }
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )
