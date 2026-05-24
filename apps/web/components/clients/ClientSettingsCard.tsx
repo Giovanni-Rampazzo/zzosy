@@ -18,6 +18,7 @@ interface Taxonomy {
   segments?: string[]
   categories?: string[]
   filters?: string[]
+  statuses?: string[]
 }
 
 interface Props {
@@ -30,6 +31,7 @@ const FIELDS: Array<{ key: keyof Taxonomy; label: string; placeholder: string }>
   { key: "segments", label: "Segmentos", placeholder: "Ex: Black Friday, Volta às Aulas" },
   { key: "categories", label: "Áreas", placeholder: "Ex: Marketing, Comercial, RH" },
   { key: "filters", label: "Filtros", placeholder: "Ex: Storytelling, Lançamento" },
+  { key: "statuses", label: "Status", placeholder: "Ex: Em revisão, Aprovado, Entregue" },
 ]
 
 export function ClientSettingsCard({ initial, onStatusChange }: Props) {
@@ -37,8 +39,9 @@ export function ClientSettingsCard({ initial, onStatusChange }: Props) {
     segments: Array.isArray(initial?.segments) ? initial!.segments! : [],
     categories: Array.isArray(initial?.categories) ? initial!.categories! : [],
     filters: Array.isArray(initial?.filters) ? initial!.filters! : [],
+    statuses: Array.isArray(initial?.statuses) ? initial!.statuses! : [],
   })
-  const [inputs, setInputs] = useState<Taxonomy>({ segments: [""], categories: [""], filters: [""] })
+  const [inputs, setInputs] = useState<Taxonomy>({ segments: [""], categories: [""], filters: [""], statuses: [""] })
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   // dirty = user mexeu (addItem/removeItem) APOS o fetch inicial dar OK.
@@ -60,6 +63,7 @@ export function ClientSettingsCard({ initial, onStatusChange }: Props) {
           segments: Array.isArray(json.segments) ? json.segments : [],
           categories: Array.isArray(json.categories) ? json.categories : [],
           filters: Array.isArray(json.filters) ? json.filters : [],
+          statuses: Array.isArray(json.statuses) ? json.statuses : [],
         })
       })
     return () => { cancelled = true }
@@ -118,7 +122,7 @@ export function ClientSettingsCard({ initial, onStatusChange }: Props) {
         em qualquer entidade são adicionados aqui automaticamente. Edite ou remova
         a qualquer momento.
       </p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:16}}>
         {FIELDS.map(({key, label, placeholder}) => {
           const list = Array.isArray(data[key]) ? data[key]! : []
           const inputValue = (inputs[key]?.[0]) ?? ""
