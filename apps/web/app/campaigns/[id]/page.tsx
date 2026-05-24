@@ -425,54 +425,41 @@ export default function CampaignOverviewPage() {
           {(() => {
             const hasAssets = !!campaign.assets && campaign.assets.length > 0
             const hasPieces = pieces.length > 0
-            const primaryStep: "import" | "generate" | "deliver" =
-              !hasAssets ? "import" : !hasPieces ? "generate" : "deliver"
             return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {/* 2026-05-24: removidos Importar PSD, Reimportar PSD, labels
-                    MATRIZ/CONTEUDO/ENTREGA. So botoes essenciais. */}
-                <Button
-                  variant="secondary"
-                  size="sm"
+              {/* Layout final 2026-05-24 (mockup user): TODOS botoes mesmo
+                  estilo (secondary), com gap maior separando grupos visuais. */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/assets`)}
-                  title="Lista de assets desta campanha"
-                >
+                  title="Lista de assets desta campanha">
                   Assets
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
+                <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/editor?campaignId=${id}`)}
                   disabled={!hasAssets}
-                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Editor da Matriz (Key Vision)"}
-                >
+                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Editor da Matriz (Key Vision)"}>
                   KV
                 </Button>
-                <Button
-                  variant={primaryStep === "generate" ? "primary" : "secondary"}
-                  size="sm"
+                {/* gap maior separa Conteudo do Matriz */}
+                <div style={{ height: 8 }} />
+                <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
                   disabled={!hasAssets}
-                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}
-                >
+                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}>
                   + Gerar peça
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
+                {/* gap maior separa Entrega de Conteudo */}
+                <div style={{ height: 8 }} />
+                <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/presentation`)}
                   disabled={!hasPieces}
-                  title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}
-                >
+                  title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}>
                   Apresentação
                 </Button>
-                <Button
-                  variant={primaryStep === "deliver" ? "primary" : "secondary"}
-                  size="sm"
+                <Button variant="secondary" size="sm"
                   onClick={() => setDeliveryOpen(true)}
                   disabled={!hasPieces}
-                  title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}
-                >
+                  title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}>
                   Entrega
                 </Button>
               </div>
