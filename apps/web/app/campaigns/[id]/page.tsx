@@ -358,17 +358,20 @@ export default function CampaignOverviewPage() {
           </div>
         </div>
 
-        <CampaignSubnav
-          campaignId={id}
-          clientId={campaign.client?.id}
-          clientName={campaign.client?.name}
-          activeTab="campaign"
-          hasAssets={!!campaign.assets && campaign.assets.length > 0}
-          hasPieces={pieces.length > 0}
-        />
-
-        {/* Preview KV + botões */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "14px 24px", marginBottom: 28, display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>
+        {/* Preview KV + botões. Subnav ANTES Mexido pra DENTRO do box 2026-05-24
+            (user pedido "isso aqui deve estar tudo no box do kv"): subnav +
+            preview + actions concentrados num so card pra hierarquia visual
+            unica. */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "14px 24px", marginBottom: 28 }}>
+          <CampaignSubnav
+            campaignId={id}
+            clientId={campaign.client?.id}
+            clientName={campaign.client?.name}
+            activeTab="campaign"
+            hasAssets={!!campaign.assets && campaign.assets.length > 0}
+            hasPieces={pieces.length > 0}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 24, alignItems: "center" }}>
           <div>
             <div
               onClick={() => router.push(`/editor?campaignId=${id}`)}
@@ -481,6 +484,7 @@ export default function CampaignOverviewPage() {
               </div>
             )
           })()}
+          </div>
         </div>
 
         {/* Lista de peças */}
