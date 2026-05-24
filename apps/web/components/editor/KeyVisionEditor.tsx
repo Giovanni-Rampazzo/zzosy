@@ -10227,52 +10227,63 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               lineHeight: 1,
               transition: "background 0.15s ease, color 0.15s ease",
             }}>+</button>
+          {/* Lista direta 2026-05-24 (user pedido "mais agilidade"): click
+              no + mostra lista de assets imediato. Click em asset = adiciona +
+              fecha. Sem popover "Selecione um asset" intermediario. */}
           {showAddAsset && (
             <div style={{
               position: "absolute", top: "calc(100% + 4px)", left: 16, right: 16,
               background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.4)", padding: 10, zIndex: 300,
-              display: "flex", flexDirection: "column", gap: 8,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.4)", padding: 4, zIndex: 300,
+              display: "flex", flexDirection: "column", maxHeight: 360, overflowY: "auto",
             }}>
-              <div style={{ fontSize: 10, color: "#666", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>Asset</div>
-              {/* Selecionar asset no dropdown = adiciona DIRETO ao canvas e fecha
-                  popover (user pedido 2026-05-24). Sem botao "Add to canvas"
-                  intermediario — atalho UX. TEXT ja no canvas: noop + warning. */}
-              <select
-                value=""
-                onChange={e => {
-                  const newId = e.target.value
-                  if (!newId) return
-                  setAssetId(newId); assetIdRef.current = newId
-                  const currentAsset = (campaign.assets ?? []).find((a: Asset) => a.id === newId)
-                  const isText = currentAsset?.type === "TEXT"
-                  const fc = fabricRef.current
-                  const alreadyOnCanvas = isText && fc
-                    ? fc.getObjects().some((o: any) => o.__assetId === newId)
-                    : false
-                  if (alreadyOnCanvas) {
-                    console.warn("[asset-add] TEXT asset ja no canvas, ignorado:", currentAsset?.label)
-                  } else {
-                    void selectedTick
-                    addLayer()
-                  }
-                  setShowAddAsset(false)
-                }}
-                style={{ background: "#0d0d0d", color: "white", border: "1px solid #2a2a2a", borderRadius: 4, padding: "6px 10px", fontSize: 12, width: "100%" }}
-              >
-                <option value="" disabled>Selecione um asset…</option>
-                {(campaign.assets ?? []).map((a: Asset) => {
+              {(campaign.assets ?? []).length === 0 ? (
+                <div style={{ padding: 12, fontSize: 12, color: "#666", textAlign: "center" }}>Nenhum asset</div>
+              ) : (
+                (campaign.assets ?? []).map((a: Asset) => {
                   const fc = fabricRef.current
                   const alreadyOnCanvas = a.type === "TEXT" && fc
                     ? fc.getObjects().some((o: any) => o.__assetId === a.id)
                     : false
+                  const typeColor = a.type === "TEXT" ? "#F5C400" : a.type === "SHAPE" ? "#86efac" : "#a855f7"
                   return (
-                    <option key={a.id} value={a.id} disabled={alreadyOnCanvas}>
-                      {a.label}{alreadyOnCanvas ? " (já no canvas)" : ""}
-                    </option>
+                    <button
+                      key={a.id}
+                      disabled={alreadyOnCanvas}
+                      onClick={() => {
+                        if (alreadyOnCanvas) return
+                        setAssetId(a.id); assetIdRef.current = a.id
+                        void selectedTick
+                        addLayer()
+                        setShowAddAsset(false)
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        padding: "8px 10px",
+                        borderRadius: 4,
+                        fontSize: 12,
+                        color: alreadyOnCanvas ? "#555" : "#ddd",
+                        cursor: alreadyOnCanvas ? "not-allowed" : "pointer",
+                        textAlign: "left",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        opacity: alreadyOnCanvas ? 0.5 : 1,
+                        transition: "background 0.12s",
+                      }}
+                      onMouseEnter={e => { if (!alreadyOnCanvas) e.currentTarget.style.background = "#2a2a2a" }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "transparent" }}
+                    >
+                      <span style={{ width: 7, height: 7, borderRadius: 2, background: typeColor, flexShrink: 0 }} />
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {a.label}
+                      </span>
+                      {alreadyOnCanvas && <span style={{ fontSize: 10, color: "#666" }}>no canvas</span>}
+                    </button>
                   )
-                })}
-              </select>
+                })
+              )}
             </div>
           )}
         </div>
