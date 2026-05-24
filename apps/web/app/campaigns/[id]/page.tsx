@@ -308,13 +308,9 @@ export default function CampaignOverviewPage() {
       <TopNav />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
 
-        {/* Header limpo 2026-05-24 (user pedido "tira ZZOSY/Design System"):
-            - Botao voltar pra lista de campanhas do cliente (subnavegacao)
-            - Nome da campanha alinhado esquerda
-            - Codigo SO aparece se existir (sem placeholder permanente)
-            - Sem breadcrumb cliente/Design System (poluicao) */}
+        {/* Header limpo 2026-05-24. Padrao ZZOSY: botoes concisos, nao
+            didaticos. PSD name + counters removidos (info ruidosa). */}
         <div style={{ marginBottom: 24 }}>
-          {/* Voltar pra /campaigns?clientId=X */}
           {campaign.client?.id && (
             <button
               onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
@@ -324,12 +320,11 @@ export default function CampaignOverviewPage() {
                 display: "inline-flex", alignItems: "center", gap: 6,
                 marginBottom: 8,
               }}
-              title={`Voltar para campanhas de ${campaign.client.name ?? "cliente"}`}
+              title="Voltar para Campanhas"
             >
-              ← Campanhas de {campaign.client.name ?? "cliente"}
+              ← Campanhas
             </button>
           )}
-          {/* Linha titulo: codigo (se existir) + nome */}
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             {campaign.code && campaign.code.trim() && (
               <div style={{ flexShrink: 0, color: "#999" }}>
@@ -364,29 +359,6 @@ export default function CampaignOverviewPage() {
               />
             </h1>
           </div>
-          {/* Botao add codigo (so quando NAO tem codigo) — discreto, fora do header principal */}
-          {(!campaign.code || !campaign.code.trim()) && (
-            <button
-              onClick={async () => {
-                const v = window.prompt("Código da campanha (curto, ex: '2026Q1')")
-                if (!v || !v.trim()) return
-                const res = await fetch(`/api/campaigns/${id}`, {
-                  method: "PATCH", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ code: v.trim() }),
-                })
-                if (res.ok) setCampaign(c => c ? { ...c, code: v.trim() } : c)
-              }}
-              style={{ background: "transparent", border: "none", color: "#bbb", fontSize: 11, padding: "4px 0", cursor: "pointer", marginTop: 4 }}
-              title="Adicionar código curto (opcional)"
-            >
-              + adicionar código
-            </button>
-          )}
-          {campaign.psdName && (
-            <p style={{ fontSize: 12, color: "#888", margin: "8px 0 0" }}>
-              PSD: <strong>{campaign.psdName}</strong> · {campaign.assets?.length ?? 0} assets · {pieces.length} peça{pieces.length !== 1 ? "s" : ""}
-            </p>
-          )}
         </div>
 
         <CampaignSubnav
