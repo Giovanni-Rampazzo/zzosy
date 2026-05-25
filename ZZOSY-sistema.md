@@ -768,6 +768,26 @@ npx tsc --noEmit            # type check
 
 ---
 
+## 🐛 BUG EM ABERTO — chromatic aberration em previews (2026-05-25)
+
+**Sintoma**: Todos os previews/thumbs de matriz mostram texto com ghosting RGB-split-like (pink + cyan + verde + preto sobrepostos com offset horizontal). User confirmou: persiste após Cmd+Shift+R (não é cache do browser — thumb está bugado no server).
+
+**Screenshot exemplo**: texto "Título legal." rendered com chromatic aberration severo.
+
+### Suspeitos (em ordem de probabilidade)
+1. **`lib/fabricCharSpacingPatch.ts`** — patch `_renderChars` faz `this.charSpacing = 1e-9` temporário pra forçar char-by-char render. Subpixel drift de 1e-9 pode acumular em chars seguintes produzindo offset visível em scaled-up renders. **Tentar primeiro**: trocar 1e-9 por 0.001 ou desabilitar o hack quando per-char charSpacing realmente não existe.
+2. **`applyFabricEffects` com `overlaysOnly:true`** — BlendColor.tint pode estar acumulando filter passes em images de smart object.
+3. **`obj.dirty = true` em `applyStyle` (commit 28d3680)** — pode causar partial double-paint se render pass em curso. Tentar mover pra antes do setSelectionStyles.
+4. **`getHeightOfLine` override (paragraph spaceAfter)** + **`deltaY` per-char (baseline shift)** combo — quebra cálculo de posicionamento de chars/linhas.
+
+### Próximo passo de debug
+1. Reproduzir bug isoladamente (importar Sicredi PSD que tem o issue)
+2. Inspecionar `obj.styles[line][col]` no live canvas — quais props estão setadas?
+3. Tentar disable temporário do patch _renderChars + ver se bug some
+4. Investigar exportPiece's buildPieceCanvas — onde thumb é gerado
+
+---
+
 ## Status
 
 Editor + PSD round-trip em produção interno. Sessão 2026-05-24/25:
