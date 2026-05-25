@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
+import { broadcastLibrary } from "@/lib/libraryBroadcast"
 
 interface LibraryAsset {
   id: string
@@ -49,8 +50,10 @@ export default function EditLibraryAssetPage() {
       body: JSON.stringify({ name, slotKey: slotKey.trim() || null, tags, notes: notes.trim() || null }),
     })
     setSaving(false)
-    if (res.ok) router.push(`/clients/${id}/library`)
-    else alert("Falha ao salvar")
+    if (res.ok) {
+      broadcastLibrary({ kind: "asset-updated", clientId: id, assetId })
+      router.push(`/clients/${id}/library`)
+    } else alert("Falha ao salvar")
   }
 
   if (!asset) return <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}><TopNav /><div style={{ padding: 32, color: "#888" }}>Carregando...</div></div>

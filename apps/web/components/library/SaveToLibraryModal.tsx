@@ -9,6 +9,8 @@ interface Props {
   defaultSlotKey?: string
   /** Lista de slotKeys ja em uso no client (pra warning real-time) */
   existingSlotKeys?: string[]
+  /** Lista de names ja usados no library (M4: warning UX, sem bloquear). */
+  existingNames?: string[]
   onSave: (payload: { name: string; slotKey: string | null; tags: string[]; notes: string | null }) => Promise<void>
   onClose: () => void
 }
@@ -20,7 +22,7 @@ interface Props {
  * UX: name (required), slotKey (optional + warning se ja em uso), tags
  * (comma-separated free-text), notes (textarea).
  */
-export function SaveToLibraryModal({ defaultName, defaultSlotKey, existingSlotKeys, onSave, onClose }: Props) {
+export function SaveToLibraryModal({ defaultName, defaultSlotKey, existingSlotKeys, existingNames, onSave, onClose }: Props) {
   const [name, setName] = useState(defaultName)
   const [slotKey, setSlotKey] = useState(defaultSlotKey ?? "")
   const [tagsRaw, setTagsRaw] = useState("")
@@ -29,6 +31,10 @@ export function SaveToLibraryModal({ defaultName, defaultSlotKey, existingSlotKe
   useModalEscape(!saving, onClose)
 
   const slotConflict = slotKey.trim() && (existingSlotKeys ?? []).includes(slotKey.trim())
+  // M4: warning soft (nao bloqueia) quando nome ja existe. Library permite
+  // names duplicados (ex: "Logo" em dois clientes do mesmo tenant — wait,
+  // library e per-client, mas user pode acidentalmente criar 2 "Logo Sicredi").
+  const nameConflict = name.trim() && (existingNames ?? []).includes(name.trim()) && name.trim() !== defaultName
 
   async function submit() {
     if (!name.trim()) return
@@ -62,8 +68,13 @@ export function SaveToLibraryModal({ defaultName, defaultSlotKey, existingSlotKe
               type="text" value={name} autoFocus
               onChange={e => setName(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) submit() }}
-              style={inpStyle}
+              style={{ ...inpStyle, border: nameConflict ? "1px solid #d97706" : inpStyle.border }}
             />
+            {nameConflict && (
+              <div style={{ fontSize: 11, color: "#d97706", marginTop: 4 }}>
+                ⚠ Nome ja em uso no library (permitido, mas pode confundir)
+              </div>
+            )}
           </Field>
           <Field label="Slot key (opcional)" sub="Chave estável pra match em cartridges. Ex: logo-primary, headline-text">
             <input

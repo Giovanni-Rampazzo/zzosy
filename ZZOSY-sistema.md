@@ -314,6 +314,9 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 10. ✅ U4: ExportCartridgeModal oferece escolha "filtered" vs "all" quando há filtro ativo (antes exportava silently só filtered).
 11. ✅ U5: busca por tag em LibraryPickerModal (antes só nome/slot).
 12. ✅ P7+S2: `lib/sizeGuards.ts` com `SIZE_LIMITS` + `checkBodySizes()`. Aplica caps em name/slotKey/content/lastOverride/tags/meta/notes em POST/PATCH/PUT library. `cartridgeFile` cap (100MB) em upload (file.size check ANTES de arrayBuffer — previne bomb attack OOM).
+13. ✅ U6: `lib/libraryBroadcast.ts` com `broadcastLibrary()` + `subscribeLibrary()` no channel `zzosy:library`. Library page + /campaigns/[id]/assets escutam → auto-refetch quando outra tab edita. Eventos: asset-created/updated/deleted, cartridge-imported/applied.
+14. ✅ M5: `lib/cartridgeFormat.ts` com `CARTRIDGE_FORMAT_LATEST/SUPPORTED`, `parseCartridgeManifest()` (auto-upgrade in-memory), `CartridgeFormatError` (mensagem clara). Cartucho com format fora de SUPPORTED → 400 com `receivedFormat` no body. Forward-compat pra v2.
+15. ✅ M4: warning UX em `SaveToLibraryModal` quando nome duplica algum já no library (soft — não bloqueia, só amarelo + msg).
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)

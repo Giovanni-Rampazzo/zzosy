@@ -29,6 +29,7 @@ import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { SIZE_LIMITS } from "@/lib/sizeGuards"
+import { parseCartridgeManifest, CartridgeFormatError } from "@/lib/cartridgeFormat"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -70,8 +71,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (mp) { try { mapping = JSON.parse(mp) } catch {} }
     const cm = fd.get("createMissing") as string | null
     if (cm !== null) createMissing = cm === "true" || cm === "1"
-    const parsed = await parseCartridge(file, clientId)
-    cartridgeAssets = parsed
+    try {
+      const parsed = await parseCartridge(file, clientId)
+      cartridgeAssets = parsed
+    } catch (e) {
+      if (e instanceof CartridgeFormatError) {
+        return NextResponse.json({ error: e.message, receivedFormat: e.receivedFormat }, { status: 400 })
+      }
+      return NextResponse.json({ error: "Falha ao parsear cartridge" }, { status: 400 })
+    }
   } else {
     const body = await req.json()
     mapping = body.mapping ?? {}
@@ -246,9 +254,8 @@ async function parseCartridge(file: File, clientId: string): Promise<any[]> {
   const ab = await file.arrayBuffer()
   const zip = await JSZip.loadAsync(ab)
   const manifestFile = zip.file("manifest.json")
-  if (!manifestFile) throw new Error("manifest.json missing")
-  const manifest = safeParse(await manifestFile.async("string"))
-  if (!manifest) throw new Error("manifest invalido")
+  if (!manifestFile) throw new CartridgeFormatError("manifest.json missing")
+  const manifest = parseCartridgeManifest(await manifestFile.async("string"))
 
   // Persiste binaries em /uploads/clients/{clientId}/library/ pra que o
   // CampaignAsset.imageUrl e o SmartObjectFile.filePath fiquem disponiveis.

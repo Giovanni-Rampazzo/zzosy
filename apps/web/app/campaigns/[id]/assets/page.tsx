@@ -10,6 +10,7 @@ import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 import { SaveToLibraryModal } from "@/components/library/SaveToLibraryModal"
+import { broadcastLibrary, subscribeLibrary } from "@/lib/libraryBroadcast"
 import {
   BrandPresetKey, BrandPreset, BrandTypography,
   PRESET_LABELS, PRESET_ORDER, DEFAULT_TYPOGRAPHY, normalizeTypography,
@@ -91,6 +92,7 @@ export default function CampaignAssetsPage() {
   // U3 fix: modal SaveToLibrary substitui prompt() native
   const [saveLibTarget, setSaveLibTarget] = useState<string | null>(null) // assetId
   const [existingSlots, setExistingSlots] = useState<string[]>([])
+  const [existingNames, setExistingNames] = useState<string[]>([]) // M4 warning
 
   async function loadLibrary() {
     if (!campaign?.client?.id) return
@@ -103,12 +105,13 @@ export default function CampaignAssetsPage() {
   async function saveAssetToLibrary(assetId: string) {
     const clientId = campaign?.client?.id
     if (!clientId) return
-    // Pre-busca slotKeys ja em uso pra warning real-time no modal
+    // Pre-busca slotKeys + names em uso pra warning real-time no modal (M3 + M4)
     try {
       const lr = await fetch(`/api/clients/${clientId}/library/assets`)
       if (lr.ok) {
-        const list = await lr.json()
-        setExistingSlots((list as any[]).map(a => a.slotKey).filter(Boolean))
+        const list = await lr.json() as any[]
+        setExistingSlots(list.map(a => a.slotKey).filter(Boolean))
+        setExistingNames(list.map(a => a.name).filter(Boolean))
       }
     } catch {}
     setSaveLibTarget(assetId)
@@ -127,8 +130,11 @@ export default function CampaignAssetsPage() {
       }),
     })
     if (res.ok) {
+      const lib = await res.json()
       setSaveLibTarget(null)
       load()
+      const clientId = campaign?.client?.id
+      if (clientId) broadcastLibrary({ kind: "asset-created", clientId, assetId: lib.id })
     } else {
       const err = await res.json().catch(() => ({}))
       alert("Falha ao salvar no library: " + (err.error ?? res.status))
@@ -357,6 +363,15 @@ export default function CampaignAssetsPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  // U6: subscribe library broadcasts pra refetch quando library mudar
+  // (afeta content/imageUrl propagado, badge Update available, etc).
+  useEffect(() => {
+    const clientId = campaign?.client?.id
+    if (!clientId) return
+    const unsub = subscribeLibrary(clientId, () => { load() })
+    return unsub
+  }, [campaign?.client?.id])
 
   // Carrega brandColors do cliente quando a campanha resolve. Refetch no
   // evento 'zzosy:client-brand-updated' (disparado pelo /clients/[id]/edit ao
@@ -662,6 +677,7 @@ export default function CampaignAssetsPage() {
           <SaveToLibraryModal
             defaultName={tgt.label}
             existingSlotKeys={existingSlots}
+            existingNames={existingNames}
             onSave={doSaveToLibrary}
             onClose={() => setSaveLibTarget(null)}
           />

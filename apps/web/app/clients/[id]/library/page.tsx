@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button"
 import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { useSetActiveClient } from "@/lib/activeClientContext"
 import { ExportCartridgeModal } from "@/components/library/ExportCartridgeModal"
+import { broadcastLibrary, subscribeLibrary } from "@/lib/libraryBroadcast"
 
 interface LibraryAsset {
   id: string
@@ -63,6 +64,12 @@ export default function ClientLibraryPage() {
   }
   useEffect(() => { load() }, [id])
 
+  // U6: cross-tab realtime — outra tab editou library → refetch.
+  useEffect(() => {
+    const unsub = subscribeLibrary(id, () => { load() })
+    return unsub
+  }, [id])
+
   const filtered = assets.filter(a => {
     if (filterType !== "ALL" && a.type !== filterType) return false
     if (search) {
@@ -83,6 +90,7 @@ export default function ClientLibraryPage() {
         alert(`Asset apagado. ${data.detachedInstances} instância(s) em campanhas viraram independentes.`)
       }
       setAssets(prev => prev.filter(a => a.id !== assetId))
+      broadcastLibrary({ kind: "asset-deleted", clientId: id, assetId })
     } else {
       alert("Falha ao apagar")
     }
@@ -99,6 +107,7 @@ export default function ClientLibraryPage() {
         const data = await res.json()
         alert(`Cartucho importado: ${data.created} asset(s) adicionado(s) ao library.`)
         await load()
+        broadcastLibrary({ kind: "cartridge-imported", clientId: id, meta: { count: data.created } })
       } else {
         const err = await res.json().catch(() => ({}))
         alert("Falha ao importar: " + (err.error ?? res.status))

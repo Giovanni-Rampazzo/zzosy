@@ -32,14 +32,13 @@ import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { SIZE_LIMITS } from "@/lib/sizeGuards"
+import { buildCartridgeManifest, parseCartridgeManifest, CartridgeFormatError } from "@/lib/cartridgeFormat"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 export const maxDuration = 60
 
 type Ctx = { params: Promise<{ id: string }> }
-
-const FORMAT = "zzosy-cartridge-v1"
 
 async function assertClient(clientId: string, tenantId: string) {
   const c = await prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true, name: true } })
@@ -124,13 +123,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     manifestAssets.push(manifestEntry)
   }
 
-  const manifest = {
-    format: FORMAT,
+  const manifest = buildCartridgeManifest({
     name,
     sourceClient: client.name,
-    createdAt: new Date().toISOString(),
     assets: manifestAssets,
-  }
+  })
   zip.file("manifest.json", JSON.stringify(manifest, null, 2))
 
   const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
@@ -168,9 +165,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const zip = await JSZip.loadAsync(arrayBuf)
   const manifestFile = zip.file("manifest.json")
   if (!manifestFile) return NextResponse.json({ error: "manifest.json missing in cartridge" }, { status: 400 })
-  const manifest = safeParse(await manifestFile.async("string"))
-  if (!manifest || manifest.format !== FORMAT) {
-    return NextResponse.json({ error: `formato invalido (esperado ${FORMAT})` }, { status: 400 })
+  let manifest
+  try {
+    manifest = parseCartridgeManifest(await manifestFile.async("string"))
+  } catch (e) {
+    if (e instanceof CartridgeFormatError) {
+      return NextResponse.json({ error: e.message, receivedFormat: e.receivedFormat }, { status: 400 })
+    }
+    return NextResponse.json({ error: "Falha ao parsear manifest" }, { status: 400 })
   }
 
   const uploadDir = path.join(process.cwd(), "public", "uploads", "clients", clientId, "library")
@@ -243,9 +245,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         imageUrl,
         thumbnailUrl,
         smartObjectId,
-        tags: Array.isArray(m.tags) ? m.tags : [],
+        tags: (Array.isArray(m.tags) ? m.tags : []) as any,
         notes: m.notes ?? null,
-        meta: m.meta ?? {},
+        meta: (m.meta ?? {}) as any,
         version: 1,
         createdBy: userId,
       },
