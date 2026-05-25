@@ -8333,6 +8333,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Mudar cor (fill) nao muda layout — chamar initDimensions a toa pode trigger bugs
       // (ex: ate observado que pode "comer" espacos em algumas situacoes de styles per-char).
       if (styleKey !== "fill" && (obj as any).initDimensions) (obj as any).initDimensions()
+      // CRITICO: Fabric objectCaching default=true → fc.renderAll() blita o
+      // cache antigo sem refletir a mudanca de cor per-char. Marca dirty pra
+      // invalidar cache + re-render real. Sem isso, color picker parece
+      // "preview only" — save persiste mas canvas mostra cor antiga ate
+      // close+reopen do editor. Bug reportado 2026-05-25.
+      ;(obj as any).dirty = true
     } else if (isText) {
       // Aplica como default do textbox. Caracteres com override per-char MANTEM
       // seu estilo PRA COR (Photoshop: mudar cor padrao nao apaga cores das
@@ -8364,6 +8370,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // precisa recalcular pra renderizar com o leading correto.
       if (styleKey === "fontSize") syncLineHeightFromLeading(obj)
       if (styleKey !== "fill" && (obj as any).initDimensions) (obj as any).initDimensions()
+      // Fabric objectCaching: marca dirty pra invalidar cache em mudancas de fill.
+      ;(obj as any).dirty = true
     } else {
       obj.set(styleKey, value)
     }
