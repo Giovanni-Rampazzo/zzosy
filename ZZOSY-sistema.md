@@ -524,4 +524,10 @@ npx tsc --noEmit            # type check
 
 ## Status
 
-Editor + PSD round-trip em produção interno. Fidelidade PSD significativamente melhorada na sessão 2026-05-24/25 (point/box text, spaceAfter, baseline shift, font fallback tracking clamp). Próximo grande capítulo: **Global Asset Management** (biblioteca de assets por cliente).
+Editor + PSD round-trip em produção interno. Sessão 2026-05-24/25:
+- ✅ Fidelidade PSD significativamente melhorada (point/box text, spaceAfter, baseline shift, font fallback tracking clamp, Exo2 normalization, SO color overlay)
+- ✅ **Global Asset Management (GAM)** implementado fim-a-fim (schema, API, UI library + edit + cartridge export/import + apply)
+- ✅ UX sweep (4-button outline pattern, design tokens, settings number arrows)
+- 🚨 **PENDENTE USER**: `cd apps/web && npx prisma db push` (1 comando, additive only) pra ativar tabelas do GAM
+
+Commit único da sessão: `7a57e91`. Branch: `claude/piece-card-zero-padding`.
