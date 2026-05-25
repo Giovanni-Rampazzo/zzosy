@@ -1,15 +1,18 @@
-# Nixpacks config pra Railway. Monorepo: app em apps/web/.
-# Build/start commands estao em railway.json — esse arquivo so seta o node version
-# e habilita o cache do npm pra builds rapidos.
+# Nixpacks config pra Railway. Monorepo npm workspaces — install no root
+# (instala todos workspaces juntos), build via --workspace=web.
+# Cache do npm vai pra /tmp pra evitar conflito EBUSY com cache mount do Docker.
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["cd apps/web && npm ci"]
+cmds = ["npm ci --include=dev --cache /tmp/.npm-cache"]
 
 [phases.build]
-cmds = ["cd apps/web && npm run build"]
+cmds = ["npm run build --workspace=web"]
 
 [start]
-cmd = "cd apps/web && npm start"
+cmd = "npm run start --workspace=web"
+
+[variables]
+NPM_CONFIG_CACHE = "/tmp/.npm-cache"
