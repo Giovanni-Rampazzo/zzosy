@@ -780,6 +780,9 @@ npx tsc --noEmit            # type check
 3. **`obj.dirty = true` em `applyStyle` (commit 28d3680)** — pode causar partial double-paint se render pass em curso. Tentar mover pra antes do setSelectionStyles.
 4. **`getHeightOfLine` override (paragraph spaceAfter)** + **`deltaY` per-char (baseline shift)** combo — quebra cálculo de posicionamento de chars/linhas.
 
+### Tentativas registradas
+- **2026-05-25 (sessão restart)**: aplicado suspeito 1, troca `1e-9 → 0.001` em `lib/fabricCharSpacingPatch.ts`. Análise técnica: matematicamente os dois valores são sub-pixel (`fontSize*cs/1000` = 8e-11 vs 8e-5 — ambos invisíveis no rendering), mas `1e-9` está perto do underflow de f.p. que pode ser arredondado pra 0 em algum cast/comparação downstream do Fabric, causando inconsistência entre passes. `0.001` está bem acima do underflow. **STATUS**: aguardando validação visual do user — abrir editor + verificar se thumb da matriz ainda mostra ghosting. Se persistir, próximo: suspeito 2 ou 3.
+
 ### Próximo passo de debug
 1. Reproduzir bug isoladamente (importar Sicredi PSD que tem o issue)
 2. Inspecionar `obj.styles[line][col]` no live canvas — quais props estão setadas?

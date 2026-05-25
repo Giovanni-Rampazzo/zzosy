@@ -173,9 +173,15 @@ if (Text && !Text.__zzosyPerCharCharSpacingPatched) {
    * Override _renderChars: se ha QUALQUER per-char charSpacing nessa linha,
    * desabilita o `shortCut` de render do Fabric (que pula char-by-char loop
    * quando charSpacing object-level === 0). Truque: setar this.charSpacing
-   * temporariamente pra um valor negligible-mas-nao-zero (1e-9) que desliga
-   * o shortCut sem afetar visual. Per-char styles ainda dominam via patches
-   * acima.
+   * temporariamente pra um valor pequeno-mas-nao-zero que desliga o shortCut.
+   * Per-char styles dominam visualmente via patches acima.
+   *
+   * 2026-05-25: valor era 1e-9 (mat. negligível mas próximo a underflow
+   * f.p.). Tentativa de fix pro chromatic-aberration em previews/thumbs:
+   * trocado por 0.001 (ainda invisivel: 0.001 * fontSize/1000 = 1e-4 px,
+   * sub-pixel garantido). Suspeita: alguma comparacao downstream do Fabric
+   * tratava 1e-9 como zero (ou rounded), produzindo render inconsistente
+   * entre passes (shadow/fill/stroke) e gerando ghosting.
    */
   Text.prototype._renderChars = function (
     method: any,
@@ -199,11 +205,11 @@ if (Text && !Text.__zzosyPerCharCharSpacingPatched) {
     if (!hasPerCharCs || this.charSpacing !== 0) {
       return orig_renderChars.call(this, method, ctx, line, left, top, lineIndex)
     }
-    // Hack: charSpacing temporariamente nao-zero (negligible) pra Fabric
+    // Hack: charSpacing temporariamente non-zero (sub-pixel) pra Fabric
     // pular shortCut e renderizar char-by-char (cada char usa nossa
     // _getWidthOfCharSpacing patched que le per-char).
     const saved = this.charSpacing
-    this.charSpacing = 1e-9
+    this.charSpacing = 0.001
     try {
       return orig_renderChars.call(this, method, ctx, line, left, top, lineIndex)
     } finally {
