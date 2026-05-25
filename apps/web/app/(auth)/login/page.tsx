@@ -102,6 +102,9 @@ export default function LoginPage() {
             {error && <p className="text-red-400 text-[12px]">{error}</p>}
             <Button type="submit" variant="primary" loading={loading} className="w-full mt-2">{loading ? "Entrando..." : "Entrar"}</Button>
           </form>
+          <p className="text-center text-[12px] text-[#888] mt-3">
+            <Link href="/forgot-password" className="hover:text-[#F5C400]">Esqueci minha senha</Link>
+          </p>
           <p className="text-center text-[12px] text-[#444] mt-4">
             Não tem conta?{" "}
             <Link href="/register" className="text-[#F5C400]">Criar conta</Link>

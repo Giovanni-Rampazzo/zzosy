@@ -41,6 +41,10 @@ const schema = z.object({
   SENTRY_DSN: z.string().url().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
 
+  // ── Email (Resend) ──
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),  // ex: "ZZOSY <noreply@zzosy.com>" — formato livre
+
   // ── Rate limiting (Upstash Redis) ──
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
