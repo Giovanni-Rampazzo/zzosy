@@ -106,6 +106,12 @@ export default function LoginPage() {
             Não tem conta?{" "}
             <Link href="/register" className="text-[#F5C400]">Criar conta</Link>
           </p>
+          <p className="text-center text-[11px] text-[#666] mt-3">
+            Ao entrar, você concorda com os{" "}
+            <Link href="/legal/terms" className="underline">Termos de Uso</Link>
+            {" "}e a{" "}
+            <Link href="/legal/privacy" className="underline">Política de Privacidade</Link>.
+          </p>
         </div>
       </div>
     </div>
