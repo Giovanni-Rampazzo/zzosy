@@ -358,7 +358,7 @@ Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem moni
 
 **🔴 PROD-08. Rate limiting** — `@upstash/ratelimit` em endpoints sensíveis (upload, login, criar campanha). **1 dia**
 
-**🔴 PROD-09. Variáveis de ambiente per-stage** — `.env.production` vs `.env.staging` vs `.env.development`. Validation via `zod` no boot. **0.5 dia**
+**✅ PROD-09. Variáveis de ambiente validadas** — `lib/env.ts` com schema zod. Crash fast em config invalida (DATABASE_URL malformado, NEXTAUTH_SECRET < 16 chars, STORAGE_DRIVER=s3 sem S3_BUCKET, NODE_ENV=production sem NEXTAUTH_URL). Typed access via `env.X` em vez de `process.env.X`. Storage factory já consumindo `env`. Pendente: stack `.env.production`/`.env.staging` separadas (decisão de deploy).
 
 **🔴 PROD-10. Logs estruturados** — `console.log` espalhado vai pra `/dev/null`. Usar Pino + log aggregator (Axiom/Logtail). **1 dia**
 
@@ -461,10 +461,47 @@ Pública pra dev, interna pra Railway-hosted.
 
 ## Variáveis (`apps/web/.env`)
 
+Validadas via zod em `lib/env.ts` — app crash fast com erro claro se config invalida.
+
+### Required (sempre)
 ```env
-DATABASE_URL="mysql://root:YwkxxacsibywDQoOlJJdXhnmniUQKgTO@tramway.proxy.rlwy.net:27292/railway"
-NEXTAUTH_SECRET="5w00QFuAKAmWIZVI5reDuXld3jBUqeSChj1+uGFpqa8="
-NEXTAUTH_URL="http://localhost:3000"
+DATABASE_URL="mysql://..."
+NEXTAUTH_SECRET="..." # mínimo 16 chars; gere com: openssl rand -base64 32
+```
+
+### Required em produção
+```env
+NEXTAUTH_URL="https://zzosy.com" # obrigatório quando NODE_ENV=production (OAuth callbacks)
+```
+
+### Storage (opcional, default=local)
+```env
+STORAGE_DRIVER="local" # OU "s3" | "r2" | "bunny"
+# Quando STORAGE_DRIVER != local, OBRIGATÓRIO:
+S3_BUCKET="zzosy"
+S3_ACCESS_KEY_ID="..."
+S3_SECRET_ACCESS_KEY="..."
+S3_REGION="us-east-1"        # opcional, default da AWS
+S3_ENDPOINT="https://..."     # opcional, custom endpoint (R2/Bunny)
+S3_PUBLIC_URL_BASE="https://cdn.zzosy.com" # opcional, CDN custom (senão usa S3 URL direta)
+```
+
+### Stripe (billing, opcional ainda)
+```env
+STRIPE_SECRET_KEY="sk_..."
+STRIPE_WEBHOOK_SECRET="whsec_..."
+```
+
+### Migration guard (opcional)
+```env
+MIGRATE_SECRET="..." # protege endpoint custom de migration
+```
+
+### Uso typed
+```ts
+import { env } from "@/lib/env"
+const db = env.DATABASE_URL  // string validada
+const driver = env.STORAGE_DRIVER  // "local" | "s3" | "r2" | "bunny"
 ```
 
 ---

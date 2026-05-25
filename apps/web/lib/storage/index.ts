@@ -12,12 +12,13 @@
  */
 import type { StorageAdapter } from "./types"
 import { LocalFileStorageAdapter } from "./localFile"
+import { env } from "@/lib/env"
 
 let instance: StorageAdapter | null = null
 
 export function getStorage(): StorageAdapter {
   if (instance) return instance
-  const driver = (process.env.STORAGE_DRIVER ?? "local").toLowerCase()
+  const driver = env.STORAGE_DRIVER // typed + validated por env.ts
   switch (driver) {
     case "local":
       instance = new LocalFileStorageAdapter()
