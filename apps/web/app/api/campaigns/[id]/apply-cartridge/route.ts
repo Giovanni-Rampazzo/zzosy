@@ -24,12 +24,11 @@ import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import { addLayersToKv, type KvLayerInput } from "@/lib/kvLayers"
 import JSZip from "jszip"
-import { readFile, writeFile, mkdir } from "fs/promises"
-import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { SIZE_LIMITS, isCartridgeMimeAllowed } from "@/lib/sizeGuards"
 import { parseCartridgeManifest, CartridgeFormatError } from "@/lib/cartridgeFormat"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -107,6 +106,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           filePath: l.smartObject.filePath,
           mime: l.smartObject.mime,
           originalName: l.smartObject.originalName,
+          sizeBytes: l.smartObject.sizeBytes,
           width: l.smartObject.width,
           height: l.smartObject.height,
           guid: l.smartObject.guid,
@@ -262,14 +262,8 @@ async function parseCartridge(file: File, clientId: string): Promise<any[]> {
   if (!manifestFile) throw new CartridgeFormatError("manifest.json missing")
   const manifest = parseCartridgeManifest(await manifestFile.async("string"))
 
-  // Persiste binaries em /uploads/clients/{clientId}/library/ pra que o
-  // CampaignAsset.imageUrl e o SmartObjectFile.filePath fiquem disponiveis.
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "clients", clientId, "library")
-  if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true })
-  const smartDir = path.join(uploadDir, "smart")
-  if (!existsSync(smartDir)) await mkdir(smartDir, { recursive: true })
-  const imageDir = path.join(uploadDir, "images")
-  if (!existsSync(imageDir)) await mkdir(imageDir, { recursive: true })
+  // P1: storage abstraction
+  const storage = getStorage()
 
   const out: any[] = []
   for (const m of manifest.assets ?? []) {
@@ -293,9 +287,9 @@ async function parseCartridge(file: File, clientId: string): Promise<any[]> {
       if (f) {
         const bytes = await f.async("nodebuffer")
         const ext = path.extname(m.binary) || ".png"
-        const fname = `${randomUUID()}${ext}`
-        await writeFile(path.join(imageDir, fname), bytes)
-        entry.imageUrl = `/uploads/clients/${clientId}/library/images/${fname}`
+        const key = `clients/${clientId}/library/images/${randomUUID()}${ext}`
+        const put = await storage.put(key, bytes)
+        entry.imageUrl = put.url
       }
     }
     if (m.smartObject?.binary) {
@@ -303,10 +297,10 @@ async function parseCartridge(file: File, clientId: string): Promise<any[]> {
       if (f) {
         const bytes = await f.async("nodebuffer")
         const ext = path.extname(m.smartObject.binary) || ".psb"
-        const fname = `${randomUUID()}${ext}`
-        await writeFile(path.join(smartDir, fname), bytes)
+        const key = `clients/${clientId}/library/smart/${randomUUID()}${ext}`
+        const put = await storage.put(key, bytes, m.smartObject.mime)
         entry.smartObject = {
-          filePath: `/uploads/clients/${clientId}/library/smart/${fname}`,
+          filePath: put.url,
           mime: m.smartObject.mime,
           originalName: m.smartObject.originalName,
           sizeBytes: bytes.length,

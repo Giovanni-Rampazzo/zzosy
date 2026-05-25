@@ -27,12 +27,11 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import JSZip from "jszip"
-import { readFile, writeFile, mkdir } from "fs/promises"
-import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { SIZE_LIMITS, isCartridgeMimeAllowed } from "@/lib/sizeGuards"
 import { buildCartridgeManifest, parseCartridgeManifest, CartridgeFormatError } from "@/lib/cartridgeFormat"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -181,14 +180,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: "Falha ao parsear manifest" }, { status: 400 })
   }
 
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "clients", clientId, "library")
-  if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true })
-  const smartDir = path.join(uploadDir, "smart")
-  if (!existsSync(smartDir)) await mkdir(smartDir, { recursive: true })
-  const imageDir = path.join(uploadDir, "images")
-  if (!existsSync(imageDir)) await mkdir(imageDir, { recursive: true })
-  const thumbDir = path.join(uploadDir, "thumbs")
-  if (!existsSync(thumbDir)) await mkdir(thumbDir, { recursive: true })
+  // P1: storage abstraction — sem fs.writeFile/mkdir aqui. Adapter cuida de
+  // diretorios + URL canonico. Swap pra S3/R2 = trocar STORAGE_DRIVER env.
+  const storage = getStorage()
 
   let created = 0
   const createdAssets: any[] = []
@@ -202,18 +196,18 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (f) {
         const bytes = await f.async("nodebuffer")
         const ext = path.extname(m.binary) || ".png"
-        const fname = `${randomUUID()}${ext}`
-        await writeFile(path.join(imageDir, fname), bytes)
-        imageUrl = `/uploads/clients/${clientId}/library/images/${fname}`
+        const key = `clients/${clientId}/library/images/${randomUUID()}${ext}`
+        const put = await storage.put(key, bytes)
+        imageUrl = put.url
       }
     }
     if (m.thumbnail) {
       const f = zip.file(m.thumbnail)
       if (f) {
         const bytes = await f.async("nodebuffer")
-        const fname = `${randomUUID()}.png`
-        await writeFile(path.join(thumbDir, fname), bytes)
-        thumbnailUrl = `/uploads/clients/${clientId}/library/thumbs/${fname}`
+        const key = `clients/${clientId}/library/thumbs/${randomUUID()}.png`
+        const put = await storage.put(key, bytes, "image/png")
+        thumbnailUrl = put.url
       }
     }
     if (m.smartObject?.binary) {
@@ -221,16 +215,15 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (f) {
         const bytes = await f.async("nodebuffer")
         const ext = path.extname(m.smartObject.binary) || ".psb"
-        const fname = `${randomUUID()}${ext}`
-        await writeFile(path.join(smartDir, fname), bytes)
-        const filePath = `/uploads/clients/${clientId}/library/smart/${fname}`
+        const key = `clients/${clientId}/library/smart/${randomUUID()}${ext}`
+        const put = await storage.put(key, bytes, m.smartObject.mime)
         const so = await prisma.clientLibrarySmartObjectFile.create({
           data: {
             clientId,
             guid: randomUUID(),
-            filePath,
+            filePath: put.url,
             mime: m.smartObject.mime ?? "application/octet-stream",
-            originalName: m.smartObject.originalName ?? fname,
+            originalName: m.smartObject.originalName ?? path.basename(key),
             sizeBytes: bytes.length,
             width: m.smartObject.width ?? null,
             height: m.smartObject.height ?? null,
@@ -275,12 +268,13 @@ function guessExt(urlOrName: string): string {
 
 async function readLocalUpload(url: string): Promise<Buffer | null> {
   if (!url) return null
-  // Suporta URLs locais /uploads/... → resolve pra public/uploads/...
-  if (url.startsWith("/uploads/")) {
-    const p = path.join(process.cwd(), "public", url)
-    try { return await readFile(p) } catch { return null }
+  // P1: usa storage adapter pra resolver URL → bytes. Funciona pra qualquer
+  // provider (local FS, S3, R2) sem branching no caller.
+  const storage = getStorage()
+  if (storage.keyFromUrl(url)) {
+    return storage.get(url)
   }
-  // URLs absolutas externas (R2, S3) — fetch
+  // URLs absolutas externas (CDN diferente, ou storage trocou no meio) — fetch
   try {
     const res = await fetch(url)
     if (!res.ok) return null

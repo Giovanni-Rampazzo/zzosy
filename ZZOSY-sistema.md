@@ -320,6 +320,7 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 16. ✅ S1: MIME validation em upload cartridge (POST + apply-cartridge) — aceita apenas `application/zip`, `application/x-zip-compressed`, `application/octet-stream`, ou vazio. Status 415 quando outro.
 17. ✅ S3: validação `imageUrl/thumbnailUrl` — regex `/^\/uploads\/[\w\-./]+$/` ou `https?://...`. Bloqueia `javascript:`, `data:`, `vbscript:`. Aplicado em POST direct + PUT content + PATCH.
 18. ✅ P6: `Cache-Control: private, max-age=10, stale-while-revalidate=60` em GET library/assets. Balance entre realtime (BroadcastChannel invalida UI) e load de DB.
+19. ✅ P1: `lib/storage/` com `StorageAdapter` interface + `LocalFileStorageAdapter` + factory `getStorage()` por env `STORAGE_DRIVER`. Cartridge POST/PUT + apply-cartridge refactored — sem `fs.writeFile/mkdir` direto. Trocar pra S3/R2 = adicionar nova classe + STORAGE_DRIVER=s3 no env. URLs antigos `/uploads/*` continuam servindo (next.js public/) durante transição.
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)
@@ -340,7 +341,7 @@ Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem moni
 
 ### Bloqueadores hard (não tem como ir pro ar sem)
 
-**🔴 PROD-01. Storage abstrato (S3/R2)** — hoje `public/uploads/` quebra em qualquer container ephemeral (Vercel/Railway). Refactor em `lib/storage.ts` com adapter pattern. Touchpoints: `import-psd`, library, cartridge, asset image upload, brand logos, brand fonts. ~20 sites. **3-5 dias**
+**🟡 PROD-01. Storage abstrato (S3/R2)** — `lib/storage/` com `StorageAdapter` interface + `LocalFileStorageAdapter` IMPLEMENTADOS. GAM (cartridge POST/PUT + apply-cartridge) já usa adapter. Falta refactor de legacy paths: `import-psd`, asset image upload, key-vision thumbnail, deliveries, step-thumbnails. ~10 sites pra portar. Quando STORAGE_DRIVER mudar pra "s3"/"r2" no env, basta plugar nova classe. **GAM já production-ready pra qualquer storage; legacy paths precisam migration script + sweep ~2 dias.**
 
 **🔴 PROD-02. Migrations strategy** — hoje usamos `prisma db push` (sem migration files). Pra prod precisa `prisma migrate dev/deploy` workflow. Migration baseline + commit `_prisma/migrations/`. **1 dia**
 
