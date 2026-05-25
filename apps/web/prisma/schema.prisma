@@ -32,6 +32,52 @@ model Tenant {
   users                 User[]
   clients               Client[]
   mediaFormats          MediaFormat[]
+  subscription          Subscription?
+}
+
+/// Plano de billing — 3 tiers hardcoded inicialmente (Starter free, Pro, Agency).
+/// `stripePriceId` aponta pro Price object no Stripe (mensal). Limits sao
+/// enforced no app layer (lib/planLimits.ts futura).
+model Plan {
+  id              String          @id @default(cuid())
+  key             String          @unique // "starter" | "pro" | "agency"
+  name            String          // "Starter" | "Pro" | "Agency"
+  stripePriceId   String?         @unique // null = free tier (Starter)
+  monthlyPriceCents Int           @default(0) // em centavos R$ (0 = free)
+  maxClients      Int             @default(1)
+  maxCampaigns   Int             @default(3)
+  maxUsersPerTenant Int           @default(1)
+  hasLibrary      Boolean         @default(false)  // GAM library + cartridges
+  hasMultiStep    Boolean         @default(false)  // pecas multi-step
+  hasCustomDomain Boolean         @default(false)  // white-label dominio proprio
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  subscriptions   Subscription[]
+}
+
+/// Subscription liga 1 Tenant a 1 Plan via Stripe. Status reflete o Subscription
+/// do Stripe (active/trialing/past_due/canceled/incomplete/etc).
+/// Tenant.subscription opcional — se ausente, considerar Starter free.
+model Subscription {
+  id                     String   @id @default(cuid())
+  tenantId               String   @unique
+  planId                 String
+  stripeCustomerId       String?  @unique
+  stripeSubscriptionId   String?  @unique
+  status                 String   // "active" | "trialing" | "past_due" | "canceled" | "incomplete" | "incomplete_expired" | "unpaid"
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean  @default(false)
+  canceledAt             DateTime?
+  trialEnd               DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan                   Plan     @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+  @@index([status])
 }
 
 model User {

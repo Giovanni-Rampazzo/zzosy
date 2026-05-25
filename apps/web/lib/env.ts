@@ -36,6 +36,9 @@ const schema = z.object({
   // ── Stripe (billing) ──
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_PRO: z.string().optional(),     // price_xxx do plano Pro
+  STRIPE_PRICE_AGENCY: z.string().optional(),  // price_xxx do plano Agency
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 
   // ── Sentry (error tracking) ──
   SENTRY_DSN: z.string().url().optional(),

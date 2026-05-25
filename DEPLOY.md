@@ -120,12 +120,38 @@ railway run mysqldump --all-databases > backup-$(date +%F).sql
 | Uploads somem após deploy | Volume não montado | Settings → Volumes |
 | OAuth callbacks falham | `NEXTAUTH_URL` errado | Atualizar pra domínio real |
 
-## 8. Próximos passos PROD
+## 8. Setup Stripe billing (PROD-05)
 
-Status detalhado no `ZZOSY-sistema.md` seção "ROADMAP PRODUÇÃO". Bloqueadores hard ainda pendentes:
+Pra ativar checkout + webhooks:
 
-- PROD-03: Email transacional (Resend)
-- PROD-05: Stripe billing real
-- PROD-07: CDN
-- PROD-08: Rate limiting
-- PROD-10: Logs estruturados
+1. Criar conta em https://dashboard.stripe.com/register (suporta BRL).
+2. Em Products → "+ Add product":
+   - **Pro**: preço mensal recorrente R$ 99 → copiar `price_xxx`
+   - **Agency**: preço mensal recorrente R$ 299 → copiar `price_xxx`
+3. Webhooks → "+ Add endpoint":
+   - URL: `https://app.zzosy.com/api/webhooks/stripe`
+   - Events: `checkout.session.completed`, `customer.subscription.*`, `invoice.payment_succeeded`, `invoice.payment_failed`
+   - Copiar `whsec_xxx` (Signing secret)
+4. Setar env vars no Railway:
+   ```
+   STRIPE_SECRET_KEY=sk_live_...
+   STRIPE_WEBHOOK_SECRET=whsec_...
+   STRIPE_PRICE_PRO=price_...
+   STRIPE_PRICE_AGENCY=price_...
+   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
+   ```
+5. **Importante**: rodar 1x após primeiro deploy:
+   ```bash
+   railway run npm run db:seed:plans
+   ```
+   Popula Plan rows (starter free / pro / agency) + linka pros stripePriceId.
+
+Local dev: usar `sk_test_*` + Stripe CLI pra encaminhar webhooks (`stripe listen --forward-to localhost:3000/api/webhooks/stripe`).
+
+## 9. Próximos passos PROD
+
+Status detalhado no `ZZOSY-sistema.md` seção "ROADMAP PRODUÇÃO". Items ainda pendentes:
+
+- PROD-07: CDN (Cloudflare na frente do storage)
+- PROD-12 full: mobile responsive completo (dashboards/listings)
+- PROD-21 full: E2E critical paths (signup → import PSD → export)
