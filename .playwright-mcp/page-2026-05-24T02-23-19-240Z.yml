@@ -1,0 +1,316 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e4]: ZZOSY
+      - link "Empresas" [ref=e5] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Campanhas" [ref=e6] [cursor=pointer]:
+        - /url: /campaigns
+      - link "Peças" [ref=e7] [cursor=pointer]:
+        - /url: /pieces
+      - link "Formatos" [ref=e8] [cursor=pointer]:
+        - /url: /medias
+      - link "Aprovação" [ref=e9] [cursor=pointer]:
+        - /url: /approvals
+      - link "Entregas" [ref=e10] [cursor=pointer]:
+        - /url: /deliveries
+      - link "Admin" [ref=e11] [cursor=pointer]:
+        - /url: /admin/users
+      - link "Account" [ref=e12] [cursor=pointer]:
+        - /url: /account
+      - generic [ref=e13] [cursor=pointer]: G
+    - generic [ref=e14]:
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic "Abrir pagina da empresa" [ref=e18] [cursor=pointer]:
+            - img "ZZOSY" [ref=e19]
+          - generic [ref=e20] [cursor=pointer]: ZZOSY
+          - generic [ref=e21]: /
+          - button "Design System" [ref=e22] [cursor=pointer]
+        - generic [ref=e23]:
+          - generic "Clique para editar" [ref=e26]: "001"
+          - heading "Verão" [level=1] [ref=e27]:
+            - generic "Clique para editar" [ref=e29]: Verão
+        - paragraph [ref=e30]:
+          - text: "PSD:"
+          - strong [ref=e31]: PLANO-BRASIL-SOBERANO-COMPETITIVIDADE-FASE-2_Apresentacao-KV_1920x1080 2.psd
+          - text: · 8 assets · 10 peças
+      - generic [ref=e33]:
+        - button "Campanha" [ref=e34]
+        - button "Assets" [ref=e35] [cursor=pointer]
+        - button "KV" [ref=e36] [cursor=pointer]
+        - button "Peças" [ref=e37] [cursor=pointer]
+        - button "Apresentação" [ref=e38] [cursor=pointer]
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic "Abrir editor da matriz (ou arraste um .psd pra importar)" [ref=e41] [cursor=pointer]:
+            - img "KV preview" [ref=e42]
+          - generic [ref=e43]: Key Vision (Matriz)
+        - generic [ref=e44]:
+          - generic [ref=e45]: Matriz
+          - generic [ref=e46]:
+            - button "Importar PSD" [ref=e47] [cursor=pointer]
+            - button "Choose File" [ref=e48] [cursor=pointer]
+          - button "Reimportar PSD" [ref=e49] [cursor=pointer]
+          - generic [ref=e50]: Conteúdo
+          - button "+ Gerar peça" [ref=e51] [cursor=pointer]
+          - generic [ref=e52]: Entrega
+          - button "Apresentação" [ref=e53] [cursor=pointer]
+          - button "Entrega" [ref=e54] [cursor=pointer]
+      - generic [ref=e55]:
+        - generic [ref=e56]:
+          - generic [ref=e57]: Peças geradas (10)
+          - generic [ref=e58]:
+            - button "Selecionar tudo" [ref=e59] [cursor=pointer]
+            - generic [ref=e60]:
+              - button "Grid" [ref=e61] [cursor=pointer]
+              - button "Lista" [ref=e62] [cursor=pointer]
+            - button "Ver todas" [ref=e63] [cursor=pointer]
+        - generic [ref=e64]:
+          - button "Todas (10)" [ref=e65] [cursor=pointer]:
+            - text: Todas
+            - generic [ref=e66]: (10)
+          - button "Standby (9)" [ref=e67] [cursor=pointer]:
+            - text: Standby
+            - generic [ref=e68]: (9)
+          - button "Criação (0)" [ref=e69] [cursor=pointer]:
+            - text: Criação
+            - generic [ref=e70]: (0)
+          - button "Cliente (1)" [ref=e71] [cursor=pointer]:
+            - text: Cliente
+            - generic [ref=e72]: (1)
+          - button "Aprovado (0)" [ref=e73] [cursor=pointer]:
+            - text: Aprovado
+            - generic [ref=e74]: (0)
+          - button "Reprovado (0)" [ref=e75] [cursor=pointer]:
+            - text: Reprovado
+            - generic [ref=e76]: (0)
+          - button "Entregue (0)" [ref=e77] [cursor=pointer]:
+            - text: Entregue
+            - generic [ref=e78]: (0)
+        - generic [ref=e79]:
+          - generic [ref=e80]:
+            - generic "Selecionar" [ref=e81] [cursor=pointer]
+            - generic "Editar peça" [ref=e82] [cursor=pointer]:
+              - img "Sicredi — Telas Agência" [ref=e83]
+            - generic [ref=e84]:
+              - generic [ref=e85]:
+                - generic [ref=e86]: Sicredi — Telas Agência
+                - generic [ref=e87]: 1920 × 1080
+                - button "Standby ▾" [ref=e89] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e91] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e92]:
+                - button "Apagar" [ref=e93] [cursor=pointer]
+                - generic [ref=e94]:
+                  - button "Duplicar" [ref=e95] [cursor=pointer]
+                  - button "Editar" [ref=e96] [cursor=pointer]
+          - generic [ref=e97]:
+            - generic "Selecionar" [ref=e98] [cursor=pointer]
+            - generic "Editar peça" [ref=e99] [cursor=pointer]:
+              - img "Instagram — Reels" [ref=e100]
+            - generic [ref=e101]:
+              - generic [ref=e102]:
+                - generic [ref=e103]: Instagram — Reels
+                - generic [ref=e104]: 1080 × 1440
+                - button "Standby ▾" [ref=e106] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e108] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e109]:
+                - button "Apagar" [ref=e110] [cursor=pointer]
+                - generic [ref=e111]:
+                  - button "Duplicar" [ref=e112] [cursor=pointer]
+                  - button "Editar" [ref=e113] [cursor=pointer]
+          - generic [ref=e114]:
+            - generic "Selecionar" [ref=e115] [cursor=pointer]
+            - generic "Editar peça" [ref=e116] [cursor=pointer]:
+              - img "Instagram — Reels" [ref=e117]
+            - generic [ref=e118]:
+              - generic [ref=e119]:
+                - generic [ref=e120]: Instagram — Reels
+                - generic [ref=e121]: 1080 × 1440
+                - button "Standby ▾" [ref=e123] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e125] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e126]:
+                - button "Apagar" [ref=e127] [cursor=pointer]
+                - generic [ref=e128]:
+                  - button "Duplicar" [ref=e129] [cursor=pointer]
+                  - button "Editar" [ref=e130] [cursor=pointer]
+          - generic [ref=e131]:
+            - generic "Selecionar" [ref=e132] [cursor=pointer]
+            - generic "Editar peça" [ref=e133] [cursor=pointer]:
+              - img "Sicredi — Display de mesa" [ref=e134]
+            - generic [ref=e135]:
+              - generic [ref=e136]:
+                - generic [ref=e137]: Sicredi — Display de mesa
+                - generic [ref=e138]: 1772 × 2480
+                - button "Standby ▾" [ref=e140] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e142] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e143]:
+                - button "Apagar" [ref=e144] [cursor=pointer]
+                - generic [ref=e145]:
+                  - button "Duplicar" [ref=e146] [cursor=pointer]
+                  - button "Editar" [ref=e147] [cursor=pointer]
+          - generic [ref=e148]:
+            - generic "Selecionar" [ref=e149] [cursor=pointer]
+            - generic "Editar peça" [ref=e150] [cursor=pointer]:
+              - img "Google — 1200x1200" [ref=e151]
+            - generic [ref=e152]:
+              - generic [ref=e153]:
+                - generic [ref=e154]: Google — 1200x1200
+                - generic [ref=e155]: 1200 × 1200
+                - button "Standby ▾" [ref=e157] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e159] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e160]:
+                - button "Apagar" [ref=e161] [cursor=pointer]
+                - generic [ref=e162]:
+                  - button "Duplicar" [ref=e163] [cursor=pointer]
+                  - button "Editar" [ref=e164] [cursor=pointer]
+          - generic [ref=e165]:
+            - generic "Selecionar" [ref=e166] [cursor=pointer]
+            - generic "Editar peça" [ref=e167] [cursor=pointer]:
+              - img "Google — 1200x628" [ref=e168]
+            - generic [ref=e169]:
+              - generic [ref=e170]:
+                - generic [ref=e171]: Google — 1200x628
+                - generic [ref=e172]: 1200 × 628
+                - button "Standby ▾" [ref=e174] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e176] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e177]:
+                - button "Apagar" [ref=e178] [cursor=pointer]
+                - generic [ref=e179]:
+                  - button "Duplicar" [ref=e180] [cursor=pointer]
+                  - button "Editar" [ref=e181] [cursor=pointer]
+          - generic [ref=e182]:
+            - generic "Selecionar" [ref=e183] [cursor=pointer]
+            - generic "Editar peça" [ref=e184] [cursor=pointer]:
+              - img "Google — 1200x628" [ref=e185]
+              - generic [ref=e186]: 2 steps
+            - generic [ref=e187]:
+              - generic [ref=e188]:
+                - generic [ref=e189]: Google — 1200x628
+                - generic [ref=e190]: 1200 × 628
+                - button "Cliente ▾" [ref=e192] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e194] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e195]:
+                - button "Apagar" [ref=e196] [cursor=pointer]
+                - generic [ref=e197]:
+                  - button "Duplicar" [ref=e198] [cursor=pointer]
+                  - button "Editar" [ref=e199] [cursor=pointer]
+          - generic [ref=e200]:
+            - generic "Selecionar" [ref=e201] [cursor=pointer]
+            - generic "Editar peça" [ref=e202] [cursor=pointer]:
+              - img "Google — 1200x628" [ref=e203]
+            - generic [ref=e204]:
+              - generic [ref=e205]:
+                - generic [ref=e206]: Google — 1200x628
+                - generic [ref=e207]: 1200 × 628
+                - button "Standby ▾" [ref=e209] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e211] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e212]:
+                - button "Apagar" [ref=e213] [cursor=pointer]
+                - generic [ref=e214]:
+                  - button "Duplicar" [ref=e215] [cursor=pointer]
+                  - button "Editar" [ref=e216] [cursor=pointer]
+          - generic [ref=e217]:
+            - generic "Selecionar" [ref=e218] [cursor=pointer]
+            - generic "Editar peça" [ref=e219] [cursor=pointer]:
+              - img "Instagram — Reels" [ref=e220]
+            - generic [ref=e221]:
+              - generic [ref=e222]:
+                - generic [ref=e223]: Instagram — Reels
+                - generic [ref=e224]: 1080 × 1440
+                - button "Standby ▾" [ref=e226] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e228] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e229]:
+                - button "Apagar" [ref=e230] [cursor=pointer]
+                - generic [ref=e231]:
+                  - button "Duplicar" [ref=e232] [cursor=pointer]
+                  - button "Editar" [ref=e233] [cursor=pointer]
+          - generic [ref=e234]:
+            - generic "Selecionar" [ref=e235] [cursor=pointer]
+            - generic "Editar peça" [ref=e236] [cursor=pointer]:
+              - img "Interno — 16/9" [ref=e237]
+              - generic [ref=e238]: 2 steps
+            - generic [ref=e239]:
+              - generic [ref=e240]:
+                - generic [ref=e241]: Interno — 16/9
+                - generic [ref=e242]: 1920 × 1080
+                - button "Standby ▾" [ref=e244] [cursor=pointer]
+              - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e246] [cursor=pointer]:
+                - option "Sem segmento" [selected]
+                - option "Comunicação Interna"
+                - option "Demand Gen"
+                - option "Key Vision"
+                - option "Redes Sociais"
+                - option "Social Media"
+                - option "+ Novo segmento…"
+              - generic [ref=e247]:
+                - button "Apagar" [ref=e248] [cursor=pointer]
+                - generic [ref=e249]:
+                  - button "Duplicar" [ref=e250] [cursor=pointer]
+                  - button "Editar" [ref=e251] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=e257] [cursor=pointer]:
+    - img [ref=e258]
+  - alert [ref=e261]

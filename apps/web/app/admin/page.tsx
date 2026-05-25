@@ -11,7 +11,7 @@ type Metrics = { totalUsers:number; totalCampaigns:number; totalPieces:number; m
 
 export default function AdminPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"overview"|"users"|"email">("overview");
+  const [tab, setTab] = useState<"overview"|"users"|"email"|"settings">("overview");
   const [metrics, setMetrics] = useState<Metrics|null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
@@ -66,9 +66,9 @@ export default function AdminPage() {
       <div style={{ background:"#111", color:"#FFF", padding:"0 40px", display:"flex", alignItems:"center", justifyContent:"space-between", height:"56px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:"24px" }}>
           <span style={{ fontWeight:900, fontSize:"1.1rem", letterSpacing:"-0.03em" }}>ZZOSY Admin</span>
-          {(["overview","users","email"] as const).map(t=>(
+          {(["overview","users","email","settings"] as const).map(t=>(
             <button key={t} onClick={()=>setTab(t)} style={{ background:"none", border:"none", color:tab===t?"#F5C400":"rgba(255,255,255,0.5)", fontWeight:tab===t?700:400, fontSize:"0.875rem", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", padding:"4px 0", borderBottom:tab===t?"2px solid #F5C400":"2px solid transparent" }}>
-              {t==="overview"?"Visão Geral":t==="users"?"Usuários":"E-mail"}
+              {t==="overview"?"Visão Geral":t==="users"?"Usuários":t==="email"?"E-mail":"Settings"}
             </button>
           ))}
         </div>
@@ -145,8 +145,8 @@ export default function AdminPage() {
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.875rem" }}>
                   <thead>
                     <tr style={{ borderBottom:"1px solid #E5E5E5", background:"#FAFAFA" }}>
-                      {["Usuário","Agência","Plano","Status","Criado em","Ações"].map(h=>(
-                        <th key={h} style={{ padding:"12px 16px", textAlign:"left", fontSize:"0.75rem", fontWeight:700, color:"#888", textTransform:"uppercase", letterSpacing:"0.05em" }}>{h}</th>
+                      {["Usuário","Agência","Plano","Status","Criado em",""].map((h,i)=>(
+                        <th key={i} style={{ padding:"12px 16px", textAlign:"left", fontSize:"0.75rem", fontWeight:700, color:"#888", textTransform:"uppercase", letterSpacing:"0.05em" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -220,6 +220,37 @@ export default function AdminPage() {
               </Button>
             </div>
             <p style={{ fontSize:"0.78rem", color:"#AAA", marginTop:"12px" }}>⚠️ Integração com Resend/SendGrid pendente. Por enquanto registra no console.</p>
+          </div>
+        )}
+
+        {/* SETTINGS — area de ferramentas internas / testes / configs */}
+        {tab==="settings" && (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:"16px", maxWidth:"1000px" }}>
+            {[
+              { href:"/admin/settings/design-tokens", title:"Design Tokens", desc:"Edita cores, bordas e raios do sistema. Mudancas aplicam ao vivo em todo ZZOSY." },
+              { href:"/admin/settings/typography", title:"Tipografia", desc:"Hierarquia de textos do ZZOSY (h1 a xs). Edita tamanhos e familia da fonte." },
+              { href:"/admin/settings/overrides", title:"Overrides Playground", desc:"Sandbox pra estudar comportamento de matriz, pecas e per-char styles." },
+            ].map(item => (
+              <button
+                key={item.href}
+                onClick={()=>router.push(item.href)}
+                style={{
+                  textAlign:"left",
+                  background:"#FFF",
+                  border:"1px solid #E5E5E5",
+                  borderRadius:"12px",
+                  padding:"20px",
+                  cursor:"pointer",
+                  fontFamily:"'DM Sans',sans-serif",
+                  transition:"border-color 0.15s",
+                }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = "#F5C400")}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = "#E5E5E5")}
+              >
+                <div style={{ fontSize:"1rem", fontWeight:700, color:"#111", marginBottom:"6px" }}>{item.title}</div>
+                <div style={{ fontSize:"0.8rem", color:"#666", lineHeight:1.4 }}>{item.desc}</div>
+              </button>
+            ))}
           </div>
         )}
       </div>

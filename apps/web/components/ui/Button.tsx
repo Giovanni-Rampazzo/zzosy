@@ -49,20 +49,22 @@ export function Button({ variant = "secondary", size = "md", loading, className,
   // existe; nos outros casos fica idle.
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const base = "inline-flex items-center justify-center font-semibold rounded-md transition-all cursor-pointer font-['DM_Sans',sans-serif] whitespace-nowrap"
+  const base = "inline-flex items-center justify-center font-semibold rounded-[var(--zz-radius-md)] transition-all cursor-pointer font-['DM_Sans',sans-serif] whitespace-nowrap"
 
   // Outline style por padrao — todos com fundo branco precisam de stroke visivel.
+  // Cores e radius via CSS vars editaveis em /design-tokens.
+  const sw = "border-[length:var(--zz-stroke-medio)]"
   const variants = {
-    primary:   "bg-[#F5C400] text-[#111111] border-2 border-[#F5C400] hover:bg-[#e0b000] hover:border-[#e0b000]",
-    secondary: "bg-white text-[#111111] border-2 border-[#555555] hover:bg-[#F5F5F0]",
-    dark:      "bg-[#111111] text-white border-2 border-[#111111] hover:bg-[#000]",
-    danger:    "bg-white text-[#111111] border-2 border-[#dc2626] hover:bg-[#fef2f2]",
-    success:   "bg-white text-[#111111] border-2 border-[#15803d] hover:bg-[#f0fdf4]",
-    warning:   "bg-white text-[#111111] border-2 border-[#d97706] hover:bg-[#fffbeb]",
-    info:      "bg-white text-[#111111] border-2 border-[#2563eb] hover:bg-[#eff6ff]",
-    ghost:     "bg-white text-[#111111] border-2 border-[#D0D0D0] hover:border-[#888888]",
-    view:      "bg-white text-[#111111] border-2 border-[#F5C400] hover:bg-[#FFFBE6]",
-    link:      "bg-transparent text-[#F5C400] border-0 hover:text-[#e0b000] underline-offset-2",
+    primary:   `bg-[var(--zz-brand-primary)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-brand-primary)] hover:bg-[var(--zz-brand-primary-hover)] hover:border-[var(--zz-brand-primary-hover)]`,
+    secondary: `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-border-strong)] hover:bg-[var(--zz-bg-page)]`,
+    dark:      `bg-[var(--zz-text-primary)] text-white ${sw} border-[var(--zz-text-primary)] hover:opacity-90`,
+    danger:    `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-danger)] hover:bg-[#fef2f2]`,
+    success:   `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-success)] hover:bg-[#f0fdf4]`,
+    warning:   `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-warning)] hover:bg-[#fffbeb]`,
+    info:      `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-info)] hover:bg-[#eff6ff]`,
+    ghost:     `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[#D0D0D0] hover:border-[var(--zz-text-muted)]`,
+    view:      `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-brand-primary)] hover:bg-[#FFFBE6]`,
+    link:      "bg-transparent text-[var(--zz-brand-primary)] border-0 hover:text-[var(--zz-brand-primary-hover)] underline-offset-2",
   }
   const sizes = {
     sm: "px-3 py-1.5 text-xs",

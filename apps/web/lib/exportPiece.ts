@@ -104,17 +104,19 @@ function showDownloadFallbackToast(url: string, filename: string): void {
   setTimeout(close, 15000)
 }
 
-async function downloadBlob(blob: Blob, filename: string): Promise<void> {
-  // SERVER-SIDE PROXY 2026-05-24: client-side download (.click() programatico)
-  // bloqueado pelo Chrome quando user gesture ja se perdeu na chain async do
-  // export. Solucao DEFINITIVA: POST do blob pra /api/download-proxy → server
-  // armazena temporariamente → client navega via window.location.href que
-  // serve com Content-Disposition: attachment. Browser SEMPRE baixa response
-  // com esse header — nao da pra bloquear.
+async function downloadBlob(blob: Blob, filename: string, targetWindow?: Window | null): Promise<void> {
+  // PLANO A+B 2026-05-24: adblockers bloqueiam iframe.src e .click() programatico
+  // pq o user gesture se perdeu na chain async do export. Solucao:
+  //   B) targetWindow = tab vazia aberta SYNC no click do user (gesture vivo).
+  //      Setamos targetWindow.location.href = url quando o proxy retorna.
+  //   A) fallback: window.location.href = url. Browser ve Content-Disposition
+  //      e baixa sem realmente navegar a SPA — extensions raramente bloqueiam
+  //      navegacao (seria quebrar o site).
+  //   Toast manual SEMPRE visivel se nada disparar.
   let safeFilename = (filename ?? "").trim()
   if (!safeFilename || /^\.+$/.test(safeFilename)) safeFilename = `download-${Date.now()}.bin`
   if (!/\.[a-zA-Z0-9]+$/.test(safeFilename)) safeFilename = `${safeFilename}.bin`
-  console.log("[downloadBlob]", { filename: safeFilename, size: blob.size, mime: blob.type })
+  console.log("[downloadBlob]", { filename: safeFilename, size: blob.size, mime: blob.type, hasTargetWindow: !!targetWindow })
   try {
     const fd = new FormData()
     fd.append("file", blob, safeFilename)
@@ -123,17 +125,31 @@ async function downloadBlob(blob: Blob, filename: string): Promise<void> {
     if (!res.ok) throw new Error(`proxy upload failed: ${res.status}`)
     const { url } = await res.json()
     if (!url) throw new Error("proxy returned no url")
-    console.log("[downloadBlob] proxy OK, baixando via iframe", url)
-    // IFRAME hidden — browser ve Content-Disposition e baixa sem navegar SPA.
-    const iframe = document.createElement("iframe")
-    iframe.style.display = "none"
-    iframe.src = url
-    document.body.appendChild(iframe)
-    setTimeout(() => { try { iframe.remove() } catch {} }, 30000)
-    // FALLBACK VISIVEL 2026-05-24: se user tem adblocker/extension bloqueando
-    // iframe download (sintoma: funciona em incognito mas nao no browser
-    // normal), mostra toast com link MANUAL — click direto do user passa pq
-    // e gesture nativo. Toast desaparece em 15s OU quando user clica.
+    console.log("[downloadBlob] proxy OK, url:", url)
+    let triggered = false
+    // PLANO B: tab dedicada com gesture preservado
+    if (targetWindow && !targetWindow.closed) {
+      try {
+        targetWindow.location.href = url
+        // Content-Disposition: attachment faz browser baixar SEM navegar a tab.
+        // A tab fica em about:blank — fechamos apos 3s. Se o download falhou
+        // ela navega pro URL e mostra; user pode fechar manualmente.
+        setTimeout(() => { try { if (targetWindow && !targetWindow.closed) targetWindow.close() } catch {} }, 3000)
+        triggered = true
+      } catch (e) {
+        console.warn("[downloadBlob] targetWindow.location.href falhou:", e)
+      }
+    }
+    // PLANO A: navegar a SPA (browser pega Content-Disposition e baixa, sem navegar)
+    if (!triggered) {
+      try {
+        window.location.href = url
+        triggered = true
+      } catch (e) {
+        console.warn("[downloadBlob] window.location.href falhou:", e)
+      }
+    }
+    // Toast manual sempre — fallback visivel se algum metodo falhou silenciosamente.
     showDownloadFallbackToast(url, safeFilename)
   } catch (e) {
     console.warn("[downloadBlob] proxy falhou, fallback file-saver:", e)
@@ -1186,7 +1202,12 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
     // marcados como italico individualmente perdiam o estilo no PSD. Reader
     // ja le `fauxItalic` per-run em mapCharStylePartial.
     const fontStyle = cs?.fontStyle ?? (textbox as any).fontStyle ?? "normal"
-    const styleKey = `${fill}|${fontSize}|${fontFamily}|${fontWeight}|${fontStyle}`
+    // Baseline shift per-char: Fabric deltaY (positive=down) → PSD baselineShift
+    // (positive=up). Sinal invertido. Sem isso, chars elevados via subscript/
+    // superscript no editor voltariam invertidos no PSD.
+    const deltaY = typeof cs?.deltaY === "number" ? cs.deltaY : 0
+    const baselineShift = deltaY !== 0 ? -deltaY / scale : 0
+    const styleKey = `${fill}|${fontSize}|${fontFamily}|${fontWeight}|${fontStyle}|${baselineShift}`
     if (styleKey !== prevStyleKey) {
       if (runLength > 0 && runStyle) runs.push({ length: runLength, style: runStyle })
       const isBold = (fontWeight === "bold" || fontWeight === 700)
@@ -1212,6 +1233,7 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
         autoLeading: false,
         leading,
         tracking,
+        ...(baselineShift !== 0 ? { baselineShift } : {}),
         autoKerning: true,
       }
       prevStyleKey = styleKey
@@ -2216,19 +2238,22 @@ export async function exportPieces(
   formats: ExportFormat[],
   onProgress?: (msg: string) => void,
   campaignName?: string,
+  /** Tab vazia aberta SYNC no click do user — preserva gesture pra disparar download
+   *  mesmo apos toda a chain async do export. Ver downloadBlob (Plano B). */
+  targetWindow?: Window | null,
 ): Promise<void> {
   // Expande pecas multi-step ANTES de iniciar o export. Cada step vira uma
   // peca virtual com nome _StepN. O resto do pipeline trata como peca normal.
   pieces = expandSteps(pieces)
   const total = pieces.length * formats.length
-  if (total === 0) return
+  if (total === 0) { try { targetWindow?.close() } catch {} ; return }
 
   if (total === 1) {
     const piece = pieces[0]
     const fmt = formats[0]
     onProgress?.(`Gerando ${piece.name} (${fmt})`)
     const blob = await buildBlob(piece, fmt)
-    await downloadBlob(blob, `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`)
+    await downloadBlob(blob, `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`, targetWindow)
     return
   }
 
@@ -2253,14 +2278,15 @@ export async function exportPieces(
   const zipBlob = await zip.generateAsync({ type: "blob" })
   const zipBase = campaignName ? safeName(campaignName) : "export"
   const zipName = `${zipBase}_${new Date().toISOString().slice(0, 10)}.zip`
-  await downloadBlob(zipBlob, zipName)
+  await downloadBlob(zipBlob, zipName, targetWindow)
 }
 
 export async function exportPiece(
   piece: { id?: string; name: string; data: any; width: number; height: number },
-  format: ExportFormat
+  format: ExportFormat,
+  targetWindow?: Window | null,
 ) {
-  return exportPieces([piece], [format])
+  return exportPieces([piece], [format], undefined, undefined, targetWindow)
 }
 
 

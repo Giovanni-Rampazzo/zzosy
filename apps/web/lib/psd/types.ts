@@ -120,6 +120,22 @@ export interface PsdTextLayer extends PsdLayerCommon {
    * Round-trip: PSD importado com 'lyr ' eh re-exportado como 'lyr '.
    */
   nameSource?: string
+  /**
+   * Tipo de caixa do PSD:
+   *   'point' = Point Text — sem caixa de wrap. Quebra SO em \n explicito.
+   *             Layer bbox eh do TEXTO RENDERIZADO (rendered bounds).
+   *   'box'   = Paragraph Text — wrappa dentro de boxBounds (que pode ser
+   *             diferente do layer bbox).
+   * Default = 'point' (ag-psd usa quando nao detecta).
+   */
+  shapeType?: "point" | "box"
+  /**
+   * Caixa de texto pra wrap (so existe em shapeType='box'). 4 numeros em
+   * pontos pre-transform: [left, top, right, bottom]. Editor multiplica por
+   * transform.scale pra obter dimensoes no canvas. Sem isso, text wrap diverge
+   * do PSD.
+   */
+  boxBounds?: [number, number, number, number]
 }
 
 export interface PsdTextStyleRun {
@@ -144,6 +160,12 @@ export interface PsdCharStyle {
   color: string
   /** Tracking em 1/1000 em (igual Fabric charSpacing). */
   tracking: number
+  /**
+   * Baseline shift em PONTOS PSD (Adobe positive = char SUBE, negative = DESCE).
+   * Editor mapeia pra Fabric textbox.styles[line][col].deltaY com sinal INVERTIDO
+   * (Fabric deltaY positive = desce, negative = sobe).
+   */
+  baselineShift?: number
   /**
    * Leading em pontos PSD (Adobe-style — leading absoluto).
    * undefined = auto-leading (1.2x fontSize).

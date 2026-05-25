@@ -1,0 +1,80 @@
+- generic [active]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e13]:
+    - generic [ref=e19]:
+      - button "← Back to campaign" [ref=e20] [cursor=pointer]
+      - button "Save" [disabled] [ref=e21]
+      - generic [ref=e22]:
+        - button "Import PSD" [ref=e23] [cursor=pointer]
+        - button "Choose File" [ref=e24] [cursor=pointer]
+      - button "📋 Piece details" [ref=e25] [cursor=pointer]:
+        - generic [ref=e26]: 📋
+        - text: Piece details
+      - button "Export" [ref=e27] [cursor=pointer]
+      - button "Presentation" [ref=e28] [cursor=pointer]
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - button "+ Step" [ref=e31] [cursor=pointer]
+        - generic [ref=e33]:
+          - button "PSD" [ref=e34] [cursor=pointer]
+          - button "Choose File" [ref=e35] [cursor=pointer]
+        - button "External edit" [ref=e36] [cursor=pointer]
+      - button "Center" [ref=e37] [cursor=pointer]
+      - button "Fit" [ref=e38] [cursor=pointer]
+      - button "Focus selection" [ref=e39] [cursor=pointer]
+      - generic [ref=e40]:
+        - button "−" [ref=e41] [cursor=pointer]
+        - spinbutton "Zoom (5–300%)" [ref=e42]: "29"
+        - button "+" [ref=e43] [cursor=pointer]
+      - button "▢" [ref=e44] [cursor=pointer]
+    - generic [ref=e45]:
+      - generic "Drag to resize · double-click to reset" [ref=e46]
+      - generic [ref=e47]:
+        - generic [ref=e48]: Layers
+        - button "+ Folder" [ref=e49] [cursor=pointer]:
+          - generic [ref=e50]: + Folder
+      - generic [ref=e52]:
+        - button "Hide layer" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+        - button "Lock layer" [ref=e57] [cursor=pointer]:
+          - img [ref=e58]
+        - generic "Double click to rename" [ref=e62]: Background
+    - generic [ref=e63]:
+      - generic "Drag to resize · double-click to reset" [ref=e64]
+      - generic [ref=e65]: Properties
+      - generic [ref=e66]:
+        - button "Assets" [ref=e67] [cursor=pointer]
+        - button "+" [ref=e68] [cursor=pointer]
+      - generic [ref=e69]:
+        - generic [ref=e70]:
+          - generic [ref=e71]: Background
+          - button "+" [ref=e73] [cursor=pointer]
+        - generic [ref=e74]:
+          - generic [ref=e75]: Blend
+          - combobox [ref=e76]:
+            - option "Normal" [selected]
+            - option "Multiply"
+            - option "Screen"
+            - option "Overlay"
+            - option "Darken"
+            - option "Lighten"
+            - option "Color Dodge"
+            - option "Color Burn"
+            - option "Hard Light"
+            - option "Soft Light"
+            - option "Difference"
+            - option "Exclusion"
+            - option "Hue"
+            - option "Saturation"
+            - option "Color"
+            - option "Luminosity"
+        - generic [ref=e79]:
+          - button "#ffffff" [ref=e80] [cursor=pointer]
+          - textbox "#RRGGBB" [ref=e81]: "#ffffff"
+          - spinbutton "Opacity %" [ref=e83]: "100"
+          - generic [ref=e84]: "%"
+        - generic [ref=e85]:
+          - generic [ref=e86]: Mask
+          - button "+ Add" [ref=e87] [cursor=pointer]

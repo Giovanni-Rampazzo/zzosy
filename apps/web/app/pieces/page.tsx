@@ -341,9 +341,8 @@ function PiecesContent() {
           />
         )}
         <PageHeader
-          title="Peças"
+          title=""
           count={pieces.length}
-          subtitle="Gerencie e exporte as peças geradas"
           actions={
             <>
               {selected.length > 0 && (
@@ -483,9 +482,11 @@ function PiecesContent() {
                       }}
                     />
                   </div>
-                  <div className="flex items-center gap-1 mt-2 pt-2 border-t border-[#F0F0F0]">
-                    <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça">Duplicar</Button>
+                  <div className="flex items-center gap-1 mt-2 pt-2 border-t border-[#F0F0F0] flex-wrap">
                     <Button variant="danger" size="sm" onClick={(e) => deleteOne(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                    <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça">Duplicar</Button>
+                    <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                    <Button variant="view" size="sm" onClick={() => router.push(`/editor?campaignId=${p.campaignId}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                   </div>
                 </div>
               </div>
@@ -547,9 +548,10 @@ function PiecesContent() {
                     <td className="px-4 py-1.5"><StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} /></td>
                     <td className="px-4 py-1.5 text-right">
                       <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                        <Button variant="view" size="sm" onClick={() => router.push(`/pieces/${p.id}`)}>Ver</Button>
-                        <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça">Duplicar</Button>
                         <Button variant="danger" size="sm" onClick={(e) => deleteOne(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                        <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça">Duplicar</Button>
+                        <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                        <Button variant="view" size="sm" onClick={() => router.push(`/editor?campaignId=${p.campaignId}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                       </div>
                     </td>
                   </tr>

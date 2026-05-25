@@ -1,0 +1,58 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - link "ZZOSY" [ref=e4] [cursor=pointer]:
+        - /url: /dashboard
+        - generic [ref=e5]: ZZOSY
+      - link "Empresas" [ref=e6] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Campanhas" [ref=e7] [cursor=pointer]:
+        - /url: /campaigns
+      - link "Peças" [ref=e8] [cursor=pointer]:
+        - /url: /pieces
+      - link "Formatos" [ref=e9] [cursor=pointer]:
+        - /url: /medias
+      - link "Aprovação" [ref=e10] [cursor=pointer]:
+        - /url: /approvals
+      - link "Entregas" [ref=e11] [cursor=pointer]:
+        - /url: /deliveries
+      - link "Account" [ref=e12] [cursor=pointer]:
+        - /url: /account
+      - generic [ref=e13] [cursor=pointer]: G
+    - main [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]:
+            - heading "Peças (0)" [level=1] [ref=e18]:
+              - generic [ref=e19]: Peças
+              - generic [ref=e20]: (0)
+            - paragraph [ref=e21]: Gerencie e exporte as peças geradas
+          - generic [ref=e23]:
+            - button "Grid" [ref=e24] [cursor=pointer]
+            - button "Lista" [ref=e25] [cursor=pointer]
+        - generic [ref=e26]:
+          - button "Todas (0)" [ref=e27] [cursor=pointer]:
+            - text: Todas
+            - generic [ref=e28]: (0)
+          - button "Standby (0)" [ref=e29] [cursor=pointer]:
+            - text: Standby
+            - generic [ref=e30]: (0)
+          - button "Criação (0)" [ref=e31] [cursor=pointer]:
+            - text: Criação
+            - generic [ref=e32]: (0)
+          - button "Cliente (0)" [ref=e33] [cursor=pointer]:
+            - text: Cliente
+            - generic [ref=e34]: (0)
+          - button "Aprovado (0)" [ref=e35] [cursor=pointer]:
+            - text: Aprovado
+            - generic [ref=e36]: (0)
+          - button "Reprovado (0)" [ref=e37] [cursor=pointer]:
+            - text: Reprovado
+            - generic [ref=e38]: (0)
+          - button "Entregue (0)" [ref=e39] [cursor=pointer]:
+            - text: Entregue
+            - generic [ref=e40]: (0)
+        - generic [ref=e41]: Carregando...
+  - button "Open Next.js Dev Tools" [ref=e47] [cursor=pointer]:
+    - img [ref=e48]
+  - alert [ref=e51]

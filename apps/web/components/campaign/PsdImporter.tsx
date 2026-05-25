@@ -21,6 +21,8 @@ interface Props {
  *  externo (ex: preview do KV na pagina da campanha). */
 export interface PsdImporterHandle {
   importFile: (file: File) => Promise<void>
+  /** Abre o file picker nativo (mesmo que clicar o botao). Para usar em CTAs externos. */
+  openFilePicker: () => void
   isLoading: () => boolean
 }
 
@@ -1252,9 +1254,16 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
   // segundo PATCH sobrescreve o primeiro (audit C5).
   const fontUploadLock = useRef<Promise<void>>(Promise.resolve())
 
+  // Input fisico permanente no DOM — mais confiavel que document.createElement
+  // (Chrome pode bloquear click em element nao-mounted apos await chain).
+  const externalPickerRef = useRef<HTMLInputElement | null>(null)
+
   useImperativeHandle(ref, () => ({
     importFile: (file: File) => handleFile(file),
     isLoading: () => loading,
+    openFilePicker: () => {
+      externalPickerRef.current?.click()
+    },
   }), [loading])
 
   async function handleFile(file: File) {
@@ -2264,15 +2273,28 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
 
   return (
     <>
+      {/* Input dedicado pra openFilePicker() externo (botoes em outras pages). */}
+      <input
+        ref={externalPickerRef}
+        type="file"
+        accept=".psd"
+        style={{ position: "absolute", left: -9999, width: 0, height: 0, opacity: 0 }}
+        tabIndex={-1}
+        onChange={e => {
+          const f = e.target.files?.[0]
+          e.target.value = ""
+          if (f) handleFile(f)
+        }}
+      />
       <Button
         variant="primary"
         size={size}
         accept=".psd"
         onFileSelect={(f) => handleFile(f)}
         loading={loading}
-        title="Importar arquivo PSD"
+        title="Import PSD file"
       >
-        {loading ? (progress || "Processando...") : "Importar PSD"}
+        {loading ? (progress || "Processing...") : "Import PSD"}
       </Button>
       {error && <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>{error}</div>}
       {missingFontsModal && (

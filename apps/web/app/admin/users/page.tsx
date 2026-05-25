@@ -85,7 +85,6 @@ export default function AdminUsersPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Usuários do Sistema</h1>
-            <p className="text-sm text-[#888888] mt-1">Gerencie quem tem acesso ao ZZOSY</p>
           </div>
           <div className="flex gap-2">
             <input
@@ -115,7 +114,7 @@ export default function AdminUsersPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Role</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Criado em</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#666]">Ações</th>
+                  <th className="px-4 py-3 text-right"></th>
                 </tr>
               </thead>
               <tbody>

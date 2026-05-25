@@ -49,13 +49,6 @@ export default function DeliveriesPage() {
   return (
     <PageShell>
       <div style={{ padding: 32 }}>
-        <div style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Entregas</h1>
-          <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0" }}>
-            Histórico de entregas. Para criar uma nova, vá até a campanha desejada.
-          </p>
-        </div>
-
         {loading ? (
           <div style={{ color: "#888", fontSize: 13 }}>Carregando...</div>
         ) : deliveries.length === 0 ? (
@@ -72,7 +65,7 @@ export default function DeliveriesPage() {
                 <th style={{ padding: 10 }}>Entregue por</th>
                 <th style={{ padding: 10 }}>Peças</th>
                 <th style={{ padding: 10 }}>Tamanho</th>
-                <th style={{ padding: 10, textAlign: "right" }}>Ações</th>
+                <th style={{ padding: 10, textAlign: "right" }}></th>
               </tr>
             </thead>
             <tbody>

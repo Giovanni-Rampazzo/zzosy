@@ -1,0 +1,115 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e4]: ZZOSY
+      - link "Empresas" [ref=e5] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Campanhas" [ref=e6] [cursor=pointer]:
+        - /url: /campaigns
+      - link "Peças" [ref=e7] [cursor=pointer]:
+        - /url: /pieces
+      - link "Formatos" [ref=e8] [cursor=pointer]:
+        - /url: /medias
+      - link "Aprovação" [ref=e9] [cursor=pointer]:
+        - /url: /approvals
+      - link "Entregas" [ref=e10] [cursor=pointer]:
+        - /url: /deliveries
+      - link "Admin" [ref=e24] [cursor=pointer]:
+        - /url: /admin/users
+      - link "Account" [ref=e11] [cursor=pointer]:
+        - /url: /account
+      - generic [ref=e12] [cursor=pointer]: G
+    - generic [ref=e13]:
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic "Abrir pagina da empresa" [ref=e28] [cursor=pointer]:
+            - img "ZZOSY" [ref=e29]
+          - generic [ref=e30] [cursor=pointer]: ZZOSY
+          - generic [ref=e31]: /
+          - button "Design System" [ref=e32] [cursor=pointer]
+        - generic [ref=e33]:
+          - generic "Clique para editar" [ref=e36]: Código
+          - heading "Verão" [level=1] [ref=e37]:
+            - generic "Clique para editar" [ref=e39]: Verão
+        - paragraph [ref=e40]:
+          - text: "PSD:"
+          - strong [ref=e41]: PLANO-BRASIL-SOBERANO-COMPETITIVIDADE-FASE-2_Apresentacao-KV_1920x1080 2.psd
+          - text: · 8 assets · 1 peça
+      - generic [ref=e43]:
+        - button "Campanha" [ref=e44]
+        - button "Assets" [ref=e45] [cursor=pointer]
+        - button "KV" [ref=e46] [cursor=pointer]
+        - button "Peças" [ref=e47] [cursor=pointer]
+        - button "Apresentação" [ref=e48] [cursor=pointer]
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - generic "Abrir editor da matriz (ou arraste um .psd pra importar)" [ref=e51] [cursor=pointer]:
+            - img "KV preview" [ref=e52]
+          - generic [ref=e53]: Key Vision (Matriz)
+        - generic [ref=e54]:
+          - generic [ref=e55]: Matriz
+          - generic [ref=e56]:
+            - button "Importar PSD" [ref=e57] [cursor=pointer]
+            - button "Choose File" [ref=e58] [cursor=pointer]
+          - button "Reimportar PSD" [ref=e59] [cursor=pointer]
+          - generic [ref=e60]: Conteúdo
+          - button "+ Gerar peça" [ref=e61] [cursor=pointer]
+          - generic [ref=e62]: Entrega
+          - button "Apresentação" [ref=e63] [cursor=pointer]
+          - button "Entrega" [ref=e64] [cursor=pointer]
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: Peças geradas (1)
+          - generic [ref=e68]:
+            - button "Selecionar tudo" [ref=e69] [cursor=pointer]
+            - generic [ref=e70]:
+              - button "Grid" [ref=e71] [cursor=pointer]
+              - button "Lista" [ref=e72] [cursor=pointer]
+            - button "Ver todas" [ref=e73] [cursor=pointer]
+        - generic [ref=e74]:
+          - button "Todas (1)" [ref=e75] [cursor=pointer]:
+            - text: Todas
+            - generic [ref=e76]: (1)
+          - button "Standby (1)" [ref=e77] [cursor=pointer]:
+            - text: Standby
+            - generic [ref=e78]: (1)
+          - button "Criação (0)" [ref=e79] [cursor=pointer]:
+            - text: Criação
+            - generic [ref=e80]: (0)
+          - button "Cliente (0)" [ref=e81] [cursor=pointer]:
+            - text: Cliente
+            - generic [ref=e82]: (0)
+          - button "Aprovado (0)" [ref=e83] [cursor=pointer]:
+            - text: Aprovado
+            - generic [ref=e84]: (0)
+          - button "Reprovado (0)" [ref=e85] [cursor=pointer]:
+            - text: Reprovado
+            - generic [ref=e86]: (0)
+          - button "Entregue (0)" [ref=e87] [cursor=pointer]:
+            - text: Entregue
+            - generic [ref=e88]: (0)
+        - generic [ref=e90]:
+          - generic "Selecionar" [ref=e91] [cursor=pointer]
+          - generic "Editar peça" [ref=e92] [cursor=pointer]:
+            - img "Interno — 16/9" [ref=e93]
+          - generic [ref=e94]:
+            - generic [ref=e95]:
+              - generic [ref=e96]: Interno — 16/9
+              - generic [ref=e97]: 1920 × 1080
+              - button "Standby ▾" [ref=e99] [cursor=pointer]
+            - combobox "Segmento da peca (usado pra agrupar na apresentacao)" [ref=e101] [cursor=pointer]:
+              - option "Sem segmento" [selected]
+              - option "Comunicação Interna"
+              - option "Demand Gen"
+              - option "Key Vision"
+              - option "Redes Sociais"
+              - option "Social Media"
+              - option "+ Novo segmento…"
+            - generic [ref=e102]:
+              - button "Apagar" [ref=e103] [cursor=pointer]
+              - generic [ref=e104]:
+                - button "Duplicar" [ref=e105] [cursor=pointer]
+                - button "Editar" [ref=e106] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=e19] [cursor=pointer]:
+    - img [ref=e20]
+  - alert [ref=e23]

@@ -1,0 +1,65 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e49] [cursor=pointer]:
+    - img [ref=e50]
+  - alert [ref=e53]
+  - generic [ref=e73]:
+    - navigation [ref=e74]:
+      - generic [ref=e75]: ZZOSY
+      - link "Empresas" [ref=e76] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Campanhas" [ref=e77] [cursor=pointer]:
+        - /url: /campaigns
+      - link "Peças" [ref=e78] [cursor=pointer]:
+        - /url: /pieces
+      - link "Formatos" [ref=e79] [cursor=pointer]:
+        - /url: /medias
+      - link "Aprovação" [ref=e80] [cursor=pointer]:
+        - /url: /approvals
+      - link "Entregas" [ref=e81] [cursor=pointer]:
+        - /url: /deliveries
+      - link "Admin" [ref=e82] [cursor=pointer]:
+        - /url: /admin/users
+      - link "Account" [ref=e83] [cursor=pointer]:
+        - /url: /account
+      - generic [ref=e84] [cursor=pointer]: G
+    - generic [ref=e85]:
+      - generic [ref=e87]:
+        - generic [ref=e88]:
+          - generic "Abrir pagina da empresa" [ref=e89] [cursor=pointer]:
+            - img "ZZOSY" [ref=e90]
+          - generic [ref=e91] [cursor=pointer]: ZZOSY
+          - generic [ref=e92]: /
+          - button "Design System" [ref=e93] [cursor=pointer]
+        - generic [ref=e94]:
+          - generic "Clique para editar" [ref=e97]: Código
+          - heading "Verão" [level=1] [ref=e98]:
+            - generic "Clique para editar" [ref=e100]: Verão
+        - paragraph [ref=e101]:
+          - text: "PSD:"
+          - strong [ref=e102]: PLANO-BRASIL-SOBERANO-COMPETITIVIDADE-FASE-2_Apresentacao-KV_1920x1080 2.psd
+          - text: · 8 assets · 0 peças
+      - generic [ref=e104]:
+        - button "Campanha" [ref=e105]
+        - button "Assets" [ref=e106] [cursor=pointer]
+        - button "KV" [ref=e107] [cursor=pointer]
+        - button "Peças" [ref=e108] [cursor=pointer]
+        - button "Apresentação" [disabled] [ref=e109]
+      - generic [ref=e110]:
+        - generic [ref=e111]:
+          - generic "Abrir editor da matriz (ou arraste um .psd pra importar)" [ref=e112] [cursor=pointer]:
+            - img "KV preview" [ref=e113]
+          - generic [ref=e114]: Key Vision (Matriz)
+        - generic [ref=e115]:
+          - generic [ref=e116]: Matriz
+          - generic [ref=e117]:
+            - button "Importar PSD" [ref=e118] [cursor=pointer]
+            - button "Choose File" [ref=e119] [cursor=pointer]
+          - button "Reimportar PSD" [ref=e120] [cursor=pointer]
+          - generic [ref=e121]: Conteúdo
+          - button "+ Gerar peça" [ref=e122] [cursor=pointer]
+          - generic [ref=e123]: Entrega
+          - button "Apresentação" [disabled] [ref=e124] [cursor=pointer]
+          - button "Entrega" [disabled] [ref=e125] [cursor=pointer]
+      - generic [ref=e126]:
+        - generic [ref=e128]: Peças geradas (0)
+        - generic [ref=e129]: Nenhuma peça gerada ainda. Abra o editor e clique em "Gerar Peças".

@@ -204,6 +204,10 @@ function charStyleToAgPsd(s: PsdTextLayer["defaultStyle"]): any {
     fontSize: s.fontSize,
     fillColor: hexToRgb(s.color),
     tracking: s.tracking,
+    // baselineShift em PONTOS PSD (positive=up). 0/undefined = sem shift.
+    // Round-trip preserva exatamente o sinal/magnitude do PSD original.
+    ...(typeof s.baselineShift === "number" && s.baselineShift !== 0
+        ? { baselineShift: s.baselineShift } : {}),
     leading: s.leading,
     underline: s.underline,
     strikethrough: s.strikethrough,

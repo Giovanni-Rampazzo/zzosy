@@ -2,8 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/* DESIGN TOKENS — variaveis CSS editaveis em /design-tokens. Persistidas em
+ * localStorage e re-injetadas no :root via DesignTokensInjector. Componentes
+ * (Button, etc) consomem via var(--zz-xxx) pra propagar live. */
+:root {
+  --zz-brand-primary: #F5C400;
+  --zz-brand-primary-hover: #e0b000;
+  --zz-text-primary: #111111;
+  --zz-text-secondary: #666666;
+  --zz-text-muted: #888888;
+  --zz-border-strong: #555555;
+  --zz-border-default: #E0E0E0;
+  --zz-border-light: #f0f0f0;
+  --zz-bg-page: #F5F5F0;
+  --zz-bg-subtle: #fafafa;
+  --zz-bg-card: #ffffff;
+  --zz-radius-sm: 4px;
+  --zz-radius-md: 6px;
+  --zz-radius-lg: 10px;
+  --zz-stroke-fino: 1px;
+  --zz-stroke-medio: 2px;
+  --zz-stroke-forte: 3px;
+  --zz-danger: #dc2626;
+  --zz-success: #15803d;
+  --zz-warning: #d97706;
+  --zz-info: #2563eb;
+  --zz-font-family: 'DM Sans', system-ui, sans-serif;
+  --zz-text-xs: 10px;
+  --zz-text-sm: 11px;
+  --zz-text-base: 12px;
+  --zz-text-md: 13px;
+  --zz-text-lg: 14px;
+  --zz-text-xl: 16px;
+  --zz-text-h2: 18px;
+  --zz-text-h1: 22px;
+  --zz-text-display: 28px;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin:0; padding:0; background:#F5F5F0; color:#111111; }
+html, body { margin:0; padding:0; background: var(--zz-bg-page); color: var(--zz-text-primary); }
 ::-webkit-scrollbar { width:4px; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:#E0E0E0; border-radius:2px; }

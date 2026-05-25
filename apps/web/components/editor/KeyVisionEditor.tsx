@@ -994,8 +994,12 @@ const HISTORY_PROPS_TO_INCLUDE = [
   "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath",
   "__isSmartObject", "__smartObjectGuid", "__smartObjectMime",
   "__smartObjectFilePath", "__smartObjectOriginalName",
-  // text
+  // text — incluindo PSD shape type (point/box) pra round-trip + comportamento
+  // de wrap correto apos reload (sem isso, save → load perdia point text e
+  // textbox voltava a wrappar em width=bbox).
   "styles", "leadingPt", "lineHeight", "charSpacing",
+  "__psdShapeType", "__psdBoxBounds",
+  "__paragraphSpaceAfter", "__psdParagraphSpaceAfter",
   // shape
   "__isShape", "__shapeKind", "__cornerRadius", "__pathBbox",
 ]
@@ -1106,6 +1110,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [fontSizeInput, setFontSizeInput] = useState<string>("80")
   const [leadingInput, setLeadingInput] = useState<string>("96")
   const [charSpacingInput, setCharSpacingInput] = useState<string>("0")
+  // Baseline shift UI input (PSD baselineShift / Fabric deltaY negativo).
+  // Adobe-style: pontos positivos elevam o char, negativos rebaixam.
+  const [baselineShiftInput, setBaselineShiftInput] = useState<string>("0")
   // Ref pra rastrear se algum input numérico do painel está em digitação.
   // Mais confiável que document.activeElement (que pode estar stale em
   // re-renders concorrentes do React 18). Usado pra impedir o useEffect
@@ -1612,7 +1619,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   missingMap.set(family, { family, weight: 400, style: "normal", label: family })
                 }
               }
-              if (alive) setMissingFonts(Array.from(missingMap.values()))
+              if (alive) {
+                setMissingFonts(Array.from(missingMap.values()))
+                // Marca familias missing pra que o fabricCharSpacingPatch clampe
+                // tracking negativo. Sem isso, texto PSD com tracking -50/-100
+                // ficava com letras colando ao cair em fallback Arial.
+                try {
+                  const { markFontFallback } = await import("@/lib/fabricCharSpacingPatch")
+                  for (const mf of missingMap.values()) markFontFallback(mf.family)
+                  // Edge case: textboxes ja podem estar renderizados (re-detect
+                  // pos-init). Forca re-measure pra que tracking clampado seja
+                  // aplicado retroativamente.
+                  const fc = fabricRef.current
+                  if (fc) {
+                    fc.getObjects().forEach((o: any) => {
+                      if (o.type === "textbox" || o.type === "text" || o.type === "i-text") {
+                        o.initDimensions?.()
+                        o.set("dirty", true)
+                      }
+                    })
+                    fc.requestRenderAll()
+                  }
+                } catch (e) { editorLog("[font-fallback-mark] falha:", e) }
+              }
             }
           } catch (e) { editorLog("[font-detection] falha:", e) }
         }
@@ -4375,11 +4404,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     return color
   }
 
-  function applyFabricEffects(obj: any, effects: any, ShadowClass: any) {
+  /**
+   * Aplica layer effects do PSD num Fabric object.
+   *
+   * @param opts.overlaysOnly Quando true, aplica APENAS colorOverlay/gradientOverlay
+   * e pula dropShadow/outerGlow/stroke. Usado pra Smart Objects (pixelsIncludeEffects=true)
+   * onde o composite raster do ag-psd ja vem com shadow/glow/stroke baked, MAS NAO com
+   * colorOverlay/gradientOverlay aplicados (Layer Styles na layer wrapper sao separados
+   * do nested composite). Sem este split, logo branco via Color Overlay sumia no editor
+   * apesar de aparecer perfeito no preview server-side.
+   */
+  function applyFabricEffects(obj: any, effects: any, ShadowClass: any, opts?: { overlaysOnly?: boolean }) {
     if (!effects) return
+    const overlaysOnly = opts?.overlaysOnly === true
     // F12.14: dropShadow + outerGlow agora respeitam opacity per-effect via
     // rgba() composto. Antes hardcoded "0.5" no fallback ignorava o valor.
-    if (effects.dropShadow) {
+    if (!overlaysOnly && effects.dropShadow) {
       const d = effects.dropShadow
       // Adobe angle eh em graus: 0=direita, 90=baixo. Distance + angle viram offsetX/Y.
       const angleRad = ((d.angle ?? 120) * Math.PI) / 180
@@ -4392,7 +4432,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         offsetY,
         blur: d.blur ?? 5,
       }))
-    } else if (effects.outerGlow) {
+    } else if (!overlaysOnly && effects.outerGlow) {
       const g = effects.outerGlow
       obj.set("shadow", new ShadowClass({
         color: effectColorWithOpacity(g.color, g.opacity, "rgba(255,255,255,0.5)"),
@@ -4400,7 +4440,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         blur: g.blur ?? 5,
       }))
     }
-    if (effects.stroke && effects.stroke.color) {
+    if (!overlaysOnly && effects.stroke && effects.stroke.color) {
       // F12.14: stroke effect agora respeita opacity (se diferente de 1)
       // via rgba composto. Sem isso opacity era ignorado.
       //
@@ -4815,12 +4855,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               scaleX: img.scaleX ?? 1, scaleY: img.scaleY ?? 1,
             }
           }
-          // F12: pixelsIncludeEffects=true (Smart Objects) → effects ja estao
-          // no pixel raster do canvas (PS rasterizou com layer styles). NAO
-          // aplica Fabric.Shadow extra senao DOBRA. Pra rasters cruos (default),
-          // aplica normalmente.
+          // F12: pixelsIncludeEffects=true (Smart Objects) → shadow/glow/stroke
+          // ja estao baked no composite raster pelo PS, NAO aplicar de novo (dobra).
+          // PORÉM colorOverlay/gradientOverlay sao Layer Styles APLICADOS NA LAYER
+          // wrapper do SO, e ag-psd NAO os incorpora ao composite nested — entao
+          // devem ser aplicados aqui (via BlendColor.tint pra image), senao
+          // logo branco via Color Overlay nunca aparece no editor.
           const pixelsBaked = (asset as any).pixelsIncludeEffects === true
-          if (!pixelsBaked) applyFabricEffects(img, psdEffects, Shadow)
+          applyFabricEffects(img, psdEffects, Shadow, pixelsBaked ? { overlaysOnly: true } : undefined)
           fc.add(img)
           if (skewX !== 0 || skewY !== 0) { (img as any).set({ skewX, skewY }); (img as any).setCoords() }
           fc.requestRenderAll()
@@ -4990,9 +5032,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const initialLineHeight = (typeof effLeadingPt === "number" && effFontSize > 0)
         ? leadingPtToFabricLineHeight(effLeadingPt, effFontSize)
         : (typeof ov?.lineHeight === "number" ? ov.lineHeight : 1.2)
+      // PSD POINT TEXT detection: lastOverride.__psdShapeType === "point" significa
+      // que o texto no PSD nao wrappa (so quebra em \n explicito). Fabric textbox
+      // sempre wrappa pelo width — se passamos width=bbox.width e font cai em
+      // fallback, mede mais largo e wrappa onde nao deveria.
+      // Solucao: pra point text, criar com width ENORME (sem wrap), depois o
+      // shrink-to-content abaixo encolhe pro tamanho real do texto renderizado.
+      const psdShapeType = (asset as any).lastOverride?.__psdShapeType
+      const isPointText = psdShapeType === "point" || psdShapeType === undefined
+      const initialWidth = isPointText
+        ? 99999
+        : Math.max(effWidth, 200)
       const t = new Textbox(initialText, {
         left: posX, top: posY,
-        width: Math.max(effWidth, 200),
+        width: initialWidth,
         fontSize: effFontSize,
         fontFamily: (ov?.fontFamily ?? def.fontFamily ?? "Arial"),
         fontWeight: (ov?.fontWeight ?? def.fontWeight ?? "normal"),
@@ -5007,6 +5060,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         scaleX: effScaleX, scaleY: effScaleY, angle,
         ...psdExtraProps,
       })
+      // Marca como point/box pra round-trip e UI futura. Round-trip: writer le
+      // pra recriar Point/Paragraph Text correto no PSD.
+      ;(t as any).__psdShapeType = isPointText ? "point" : "box"
+      if ((asset as any).lastOverride?.__psdBoxBounds) {
+        ;(t as any).__psdBoxBounds = (asset as any).lastOverride.__psdBoxBounds
+      }
+      // PSD paragraph spaceAfter — gap entre paragrafos. Convertido de pts
+      // pra pixels canvas (fontSize ja vem em px no Fabric). Fabric patch
+      // intercepta getHeightOfLine pra adicionar esse extra apos linhas de
+      // paragrafo. Sem isso, paragrafos colam no editor (PSD do Sicredi tem
+      // spaceAfter=15.59pt no titulo, gerando ~23px de gap visivel).
+      const psdSpaceAfter = (asset as any).lastOverride?.__psdParagraphSpaceAfter
+      if (typeof psdSpaceAfter === "number" && psdSpaceAfter > 0) {
+        // PSD pt = pixel em 72dpi. Canvas opera em px direto. Scale ja foi
+        // aplicado nos fontSize/leading no toCampaign — spaceAfter NAO escala
+        // (eh medida do paragrafo, nao do texto). Multiplica por scale local
+        // do textbox pra compensar Fabric scale.
+        ;(t as any).__paragraphSpaceAfter = psdSpaceAfter * effScaleY
+        ;(t as any).__psdParagraphSpaceAfter = psdSpaceAfter
+      }
       // Aplica overrides do layer (estilos editados pelo usuário no editor)
       if (ov) {
         if (ov.charSpacing !== undefined) t.set("charSpacing", ov.charSpacing)
@@ -7942,6 +8015,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // charSpacing (entreletra, PSD tracking) — 0 = sem espaco extra
       const cs = typeof obj.charSpacing === "number" ? obj.charSpacing : 0
       setCharSpacingInput(String(Math.round(cs)))
+      // Baseline shift: le do range selecionado (per-char deltaY) ou box-level.
+      // Fabric deltaY (positive=down) → PSD-style baselineShift (positive=up).
+      // Inverte o sinal pra exibir Adobe-style no input.
+      let bs = 0
+      try {
+        if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
+          const styles = obj.getSelectionStyles?.(obj.selectionStart, obj.selectionEnd) ?? []
+          const dys = new Set(styles.map((s: any) => s?.deltaY ?? 0))
+          if (dys.size === 1) bs = -([...dys][0] as number)
+        } else if (obj.isEditing) {
+          const idx = (obj.selectionStart ?? 1) > 0 ? obj.selectionStart - 1 : 0
+          const text: string = obj.text ?? ""
+          if (idx < text.length) {
+            const styles = obj.getSelectionStyles?.(idx, idx + 1) ?? []
+            if (styles[0]?.deltaY !== undefined) bs = -styles[0].deltaY
+          }
+        }
+      } catch {}
+      setBaselineShiftInput(String(Math.round(bs)))
     }
   }, [selected, selectedTick])
 
@@ -8473,6 +8565,57 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // NAO chamar initDimensions aqui — algumas versoes do Fabric resetam
     // styles per-char durante recompute de _textLines. _forceClearCache
     // forca re-medicao na proxima render sem mexer em styles.
+    if (obj._forceClearCache !== undefined) obj._forceClearCache = true
+    obj.setCoords()
+    obj.dirty = true
+    fc.requestRenderAll()
+    doSave()
+  }
+
+  /**
+   * Define baseline shift per-char (Adobe-style PSD baselineShift). Input em
+   * PONTOS positivos = char SUBE, negativos = char DESCE (igual Photoshop).
+   * Mapeado pra Fabric textbox.styles[line][col].deltaY com SINAL INVERTIDO
+   * (Fabric deltaY positive = desce). Per-char only — sem aplicacao box-level
+   * (Adobe nao tem baseline shift box-wide, so per-char).
+   */
+  function setBaselineShiftProp(pts: number) {
+    const fc = fabricRef.current; const obj = selected as any
+    if (!fc || !obj) return
+    const isText = obj.type === "textbox" || obj.type === "i-text"
+    if (!isText) return
+    const saved = savedTextSelection.current
+    const hasLiveRange = obj.isEditing && obj.selectionStart !== obj.selectionEnd
+    const hasSavedRange = !!(saved && saved.obj === obj && saved.start !== saved.end)
+    const useRange = hasLiveRange || hasSavedRange
+    if (!useRange) return // baselineShift sem range nao faz sentido (Adobe parity)
+    const rangeStart = hasLiveRange ? obj.selectionStart : (hasSavedRange ? saved!.start : 0)
+    const rangeEnd = hasLiveRange ? obj.selectionEnd : (hasSavedRange ? saved!.end : 0)
+    // PSD positive = up → Fabric deltaY negative = up. Inverte.
+    const deltaY = -pts
+    function indexToLineCol(text: string, absIdx: number): { line: number; col: number } {
+      let line = 0, col = 0
+      for (let i = 0; i < absIdx && i < text.length; i++) {
+        if (text[i] === "\n") { line++; col = 0 } else { col++ }
+      }
+      return { line, col }
+    }
+    try { obj.setSelectionStyles({ deltaY }, rangeStart, rangeEnd) }
+    catch (e) { console.warn("[setBaselineShiftProp] setSelectionStyles falhou:", e) }
+    const text: string = obj.text ?? ""
+    if (!obj.styles) obj.styles = {}
+    for (let i = rangeStart; i < rangeEnd; i++) {
+      if (text[i] === "\n") continue
+      const { line, col } = indexToLineCol(text, i)
+      if (!obj.styles[line]) obj.styles[line] = {}
+      const existing = obj.styles[line][col] && typeof obj.styles[line][col] === "object"
+        ? obj.styles[line][col]
+        : {}
+      if (deltaY === 0) delete existing.deltaY
+      else existing.deltaY = deltaY
+      obj.styles[line][col] = existing
+    }
+    obj.__dsLinked = false
     if (obj._forceClearCache !== undefined) obj._forceClearCache = true
     obj.setCoords()
     obj.dirty = true
@@ -10797,11 +10940,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 />
               </div>
             </div>
-            {/* Tipografia avancada: entrelinha + entreletra agrupadas (2026-05-23).
-                Ambas sao propriedades de TYPESETTING — fazem parte do mesmo bloco
-                visual junto com fonte/peso/tamanho acima. Alinhamento ficou logo
-                abaixo no proximo grid. */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {/* Tipografia avancada: entrelinha + entreletra + baseline shift.
+                Adobe-style 3-col layout (Photoshop Char Panel: leading, tracking,
+                baseline shift). Baseline shift per-char-only via Fabric deltaY. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
               <div>
                 <div style={secS}>Line height</div>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -10872,6 +11014,35 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   }}
                   onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
                   title="Letter spacing (tracking) in thousandths of em — same unit as Photoshop"
+                  style={inpS}
+                />
+              </div>
+              <div>
+                <div style={secS}>Baseline</div>
+                <input
+                  type="number"
+                  step="1"
+                  value={baselineShiftInput}
+                  onFocus={(e) => {
+                    numericInputFocusedRef.current = true
+                    e.currentTarget.select()
+                  }}
+                  onBlur={() => { numericInputFocusedRef.current = false }}
+                  onMouseDown={() => {
+                    const fc = fabricRef.current
+                    const active = fc?.getActiveObject() as any
+                    if (active?.isEditing && active.selectionStart !== active.selectionEnd) {
+                      savedTextSelection.current = { obj: active, start: active.selectionStart, end: active.selectionEnd }
+                    }
+                  }}
+                  onChange={e => {
+                    const raw = e.target.value
+                    setBaselineShiftInput(raw)
+                    const n = Number(raw)
+                    if (Number.isFinite(n)) setBaselineShiftProp(n)
+                  }}
+                  onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
+                  title="Baseline shift in points — Adobe-style (positive raises, negative lowers). Per-char only — select chars first."
                   style={inpS}
                 />
               </div>
@@ -11821,6 +11992,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
                   setMissingFonts(prev => prev.filter(x => x.label !== mf.label))
                   setReplacementChoices(prev => { const c = { ...prev }; delete c[mf.label]; return c })
+                  // Familia substituida → libera o clamp de tracking negativo.
+                  // Forca re-render de todos os textboxes pra que o novo
+                  // measureText calcule largura correta.
+                  try {
+                    const { clearFontFallback } = await import("@/lib/fabricCharSpacingPatch")
+                    clearFontFallback(mf.family)
+                    const fc = fabricRef.current
+                    if (fc) {
+                      fc.getObjects().forEach((o: any) => {
+                        if (o.type === "textbox" || o.type === "text" || o.type === "i-text") {
+                          o.initDimensions?.()
+                          o.set("dirty", true)
+                        }
+                      })
+                      fc.requestRenderAll()
+                    }
+                  } catch (e) { editorLog("[font-fallback-clear] falha:", e) }
                 }
 
                 return (

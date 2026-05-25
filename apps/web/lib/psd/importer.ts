@@ -153,6 +153,10 @@ export async function importPsdToCampaign(
     type: a.type,
     content: a.content,
     imageIndex: a.imageIndex,
+    // Smart Object bytes embedded — endpoint cria SmartObjectFile + linka via
+    // CampaignAsset.smartObjectId. Sem isso o asset vinha como IMAGE puro e
+    // perdia o vetor original (PSB/AI) no round-trip de volta pro Photoshop.
+    linkedIndex: a.linkedIndex,
     // SHAPE assets carregam path/fill/stroke em `shape`. O endpoint le esse
     // field e armazena como content JSON (route:200-205). Sem isso o BOX
     // (Grid.psd: SHAPE solid) sumia entre toCampaign e API → editor nao tinha
@@ -193,6 +197,24 @@ export async function importPsdToCampaign(
   for (let i = 0; i < build.imageBlobs.length; i++) {
     const blob = build.imageBlobs[i]
     fd.append("images", blob, `image-${i}.png`)
+  }
+
+  // Smart Object linked files — bytes embedded (PSB/AI/PDF/PNG/JPG) preservados
+  // pra round-trip. Endpoint /import-psd:33 le como `linked[]` + `linkedMeta`.
+  // Mesma ordem do array, linkedIndex em apiAssets aponta aqui.
+  if (build.linkedBlobs.length > 0) {
+    fd.append("linkedMeta", JSON.stringify(build.linkedMeta))
+    for (let i = 0; i < build.linkedBlobs.length; i++) {
+      const blob = build.linkedBlobs[i]
+      const meta = build.linkedMeta[i]
+      const ext = meta?.mime === "image/vnd.adobe.photoshop" ? "psb"
+        : meta?.mime === "application/pdf" ? "pdf"
+        : meta?.mime === "application/postscript" ? "ai"
+        : meta?.mime === "image/png" ? "png"
+        : meta?.mime === "image/jpeg" ? "jpg"
+        : "bin"
+      fd.append("linked", blob, `linked-${i}.${ext}`)
+    }
   }
 
   // PSD master: so manda se nao for muito grande (evita stall do edge / 413).

@@ -5,6 +5,225 @@ Arquitetura: agência (tenant) → cliente → campanha → key vision (matriz) 
 
 ---
 
+## 🎯 CAPÍTULO ATUAL EM IMPLEMENTAÇÃO — Global Asset Management (GAM) + Cartridges
+
+**Conceito:** biblioteca de assets por cliente (modelo Figma — main component + instances) **+ Cartridges**: pacotes exportáveis/importáveis (.zzosy ZIP) que re-skinnam campanhas inteiras automaticamente.
+
+### Plano TRAVADO (sessão 2026-05-24 madrugada, user dormindo, autonomous build)
+
+**Decisões alinhadas:**
+1. **Modelo Figma**: library asset = main component. CampaignAsset criado dele guarda `libraryAssetId` FK + `slotKey` herdado. Editar library propaga pra TODAS instâncias preservando overrides per-peça (text local com \n, cor per-char, etc).
+2. **Detach**: botão "Detach" em qualquer instância nulifica `libraryAssetId` → asset vira independente.
+3. **Update notification**: badge "Update available" na instância quando library mudou após a criação.
+4. **Smart Objects**: SIM, com FK SHARED ao `ClientSmartObjectFile`. Apagar library asset que tem instances = warning "X campanhas usam".
+5. **Todos os tipos**: TEXT/IMAGE/SHAPE/SMART_OBJECT.
+6. **Migration legacy**: botão bulk "Publicar todos da campanha no library" + botão por asset.
+7. **UI**: subnav "Library" dentro de `/clients/[id]`. Modal "Importar do Library" em `/campaigns/[id]/assets`.
+8. **Tags**: array free-text.
+9. **Sem quota**, qualquer ADMIN pode editar.
+10. **Naming**: pre-fill com `asset.label`, editável.
+11. **Cartridge**:
+    - **Match**: por `slotKey` explícito (Figma-style robust). Fallback: modal manual mapping quando slot não auto-bate.
+    - **Escopo**: aplicável em QUALQUER campanha (slots não-match: skip + warning).
+    - **UI**: botão "Aplicar cartucho" em `/campaigns/[id]` header + "Import cartridge" em `/clients/[id]/library`.
+    - **Formato**: `.zzosy` (ZIP internamente: `manifest.json` + `/assets/` binários). Extensão proprietária + interop preservada.
+
+### Modelo de dados
+
+```prisma
+model ClientLibraryAsset {
+  id            String   @id @default(cuid())
+  clientId      String
+  name          String   // user-defined ("Logo Sicredi")
+  slotKey       String?  // "logo-primary", "headline-text" — match em cartridges. Optional pra MVP.
+  type          String   // TEXT, IMAGE, SHAPE, SMART_OBJECT
+  content       String?  @db.LongText  // mesma estrutura de CampaignAsset.content
+  lastOverride  Json?    // template visual (cor, fonte, etc)
+  imageUrl      String?  @db.LongText
+  thumbnailUrl  String?  @db.LongText
+  smartObjectId String?
+  tags          Json?    // ["logo", "marca-principal"]
+  notes         String?  @db.Text
+  meta          Json?    // dimensões, cores extras
+  version       Int      @default(1)  // bump em cada edit; instances usam pra "update available" detection
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String?
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  smartObject   ClientSmartObjectFile? @relation(fields: [smartObjectId], references: [id], onDelete: SetNull)
+  instances     CampaignAsset[]
+
+  @@index([clientId, type])
+  @@index([clientId, updatedAt])
+  @@index([slotKey])
+}
+
+model ClientSmartObjectFile {
+  // Mirror de SmartObjectFile mas com clientId (não campaignId).
+  // Bytes embedded (PSB/AI/PDF/PNG/JPG) sobrevivem a apagar campanhas.
+  id            String   @id @default(cuid())
+  clientId      String
+  guid          String   @db.VarChar(64)
+  filePath      String   @db.LongText
+  mime          String   @db.VarChar(100)
+  originalName  String   @db.VarChar(500)
+  sizeBytes     Int
+  width         Int?
+  height        Int?
+  createdAt     DateTime @default(now())
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  libraryAssets ClientLibraryAsset[]
+
+  @@index([clientId])
+  @@index([guid])
+}
+
+// CampaignAsset ganha:
+//   libraryAssetId      String?    @db.VarChar(30)
+//   libraryAssetVersion Int?       // versao do library ao instanciar; <library.version = "update available"
+//   libraryAssetDetached Boolean?  // user clicou Detach
+//   slotKey             String?    // herdado da library OU manual
+//
+// Index: @@index([libraryAssetId])
+```
+
+### Cartucho (.zzosy) — formato
+
+```
+arquivo.zzosy  (ZIP)
+├── manifest.json        // metadata + slots[]
+├── assets/
+│   ├── {slotKey1}.png   // imagem do asset
+│   ├── {slotKey2}.psb   // smart object binário
+│   ├── ...
+└── meta.json            // versão do formato, autor, data
+```
+
+`manifest.json`:
+```json
+{
+  "format": "zzosy-cartridge-v1",
+  "name": "Sicredi 2026 Q1",
+  "createdAt": "2026-05-25T03:00:00Z",
+  "assets": [
+    {
+      "slotKey": "logo-primary",
+      "name": "Logo Sicredi Branco",
+      "type": "SMART_OBJECT",
+      "binary": "assets/logo-primary.psb",
+      "thumbnail": "assets/logo-primary.thumb.png",
+      "content": {...},
+      "lastOverride": {...},
+      "tags": ["logo", "primary"],
+      "meta": {...}
+    }
+  ]
+}
+```
+
+### Fluxo UX
+
+#### 1. Salvar no library (campanha → library)
+- Botão "Salvar no Library" em cada asset card de `/campaigns/[id]/assets`
+- Modal: nome (pre-fill asset.label) + slotKey opcional + tags
+- API: `POST /api/clients/[id]/library/assets` (com body do asset clonado)
+- Toast: "Salvo na library de {cliente}"
+
+#### 2. Adicionar do library → campanha (instanciar)
+- Botão "+ Do Library" no `/campaigns/[id]/assets` header
+- Modal: lista assets do cliente, busca + filtro tipo/tag
+- Click: cria `CampaignAsset` com `libraryAssetId = X` + `libraryAssetVersion = X.version` + `slotKey = X.slotKey`
+- Asset card mostra badge "Library"
+
+#### 3. Editar library → propagar (Figma sync)
+- User edita asset em `/clients/[id]/library` → `library.version++`
+- Backend trigger: para TODAS `CampaignAsset` com `libraryAssetId = X`:
+  - Atualiza `content` + `lastOverride` (preservando layer overrides per-peça)
+  - NÃO atualiza `libraryAssetVersion` ainda (espera user clicar "Update")
+- UI: instâncias com `libraryAssetVersion < library.version` mostram badge "Update available"
+- User clica Update → consolida (libraryAssetVersion = library.version)
+
+**Decisão técnica**: o "preservar layer overrides per-peça" significa: editing library = update CampaignAsset.content (asset-level). Per-piece overrides em `piece.data.layers[].overrides` continuam intactos (text local, cor per-char). Igual o pipeline atual de update de asset funciona.
+
+#### 4. Detach
+- Botão "Detach from library" em CampaignAsset com libraryAssetId
+- API: nulifica libraryAssetId + libraryAssetVersion + libraryAssetDetached=true
+- Asset vira independente, edits futuros não propagam.
+
+#### 5. Aplicar cartucho (cartridge → campanha)
+- Botão "Aplicar cartucho" no header `/campaigns/[id]`
+- Modal: lista cartuchos disponíveis (na library do cliente OU upload .zzosy file)
+- Backend: parseia manifest.json + binários
+- Auto-match por slotKey: cartridge.assets[i].slotKey == campaign.assets[j].slotKey → update content + lastOverride
+- Slots não-encontrados na campanha: cria novos assets (com libraryAssetId)
+- Slots existentes na campanha sem match no cartridge: skip + warning
+- Conflitos/ambiguidade: modal manual mapping (cartridge slots vs campanha assets, user pareia)
+- Apply: toast com diff ("3 assets atualizados, 1 criado, 2 skipped")
+
+#### 6. Import/Export cartucho
+- **Export** em `/clients/[id]/library`: botão "Export as cartridge" + checkbox dos assets a incluir + nome do cartridge → download .zzosy file
+- **Import** em `/clients/[id]/library` OU `/campaigns/[id]`: upload .zzosy → parseia manifest → cria ClientLibraryAssets (se library import) OU aplica em campanha (se direct apply)
+
+### URLs
+
+| Endpoint | Método | Função |
+|---|---|---|
+| `/clients/[id]/library` | page | Listagem + ações |
+| `/clients/[id]/library/[assetId]` | page | Edit metadata |
+| `/api/clients/[id]/library/assets` | GET | Listar com filtros |
+| `/api/clients/[id]/library/assets` | POST | Criar (upload OR clone CampaignAsset) |
+| `/api/clients/[id]/library/assets/[id]` | PATCH | Editar metadata |
+| `/api/clients/[id]/library/assets/[id]` | PUT | Substituir content (bump version) |
+| `/api/clients/[id]/library/assets/[id]` | DELETE | Apagar |
+| `/api/clients/[id]/library/cartridge` | POST | Generate .zzosy (download) |
+| `/api/clients/[id]/library/cartridge` | PUT | Import .zzosy upload |
+| `/api/campaigns/[id]/assets/from-library` | POST | Clonar library → campaign |
+| `/api/campaigns/[id]/assets/[assetId]/detach` | POST | Detach instance |
+| `/api/campaigns/[id]/apply-cartridge` | POST | Apply .zzosy (com optional mapping override) |
+
+### Storage
+
+```
+/uploads/clients/{clientId}/library/
+├── images/          # imageUrl dos library assets
+├── thumbs/          # thumbnails
+└── smart/           # ClientSmartObjectFile binaries (PSB/AI/etc)
+```
+
+Separado de `/uploads/campaigns/{campaignId}/` pra não acoplar lifecycle.
+
+### Sweep / ordem de implementação (autonomous build — concluído madrugada 2026-05-25)
+
+1. ✅ Plan locked no MD (this section)
+2. ✅ Schema Prisma — modelos `ClientLibraryAsset` + `ClientLibrarySmartObjectFile` + extensão de `CampaignAsset` com `libraryAssetId/libraryAssetVersion/libraryAssetDetached/slotKey`. **🚨 ACTION USER REQUERIDA**: rodar `cd apps/web && npx prisma db push` 1x (foi bloqueado pelo auto-mode classifier — proteção contra schema push autônomo). Prisma client já foi gerado local.
+3. ✅ API endpoints CRUD library (`/api/clients/[id]/library/assets` GET/POST + `/[assetId]` GET/PATCH/PUT/DELETE)
+4. ✅ Página `/clients/[id]/library` (grid + filtros tipo/busca + Apagar/Editar + Export/Import .zzosy)
+5. ✅ Página edit metadata `/clients/[id]/library/[assetId]` (nome/slot/tags/notas)
+6. ✅ Botão "↑ Library" per-asset em `/campaigns/[id]/assets` + "↑ Tudo p/ Library" bulk
+7. ✅ Modal "+ Do Library" em `/campaigns/[id]/assets` (LibraryPickerModal)
+8. ✅ Sync engine: PUT library asset → bump version + transaction propaga content/imageUrl/lastOverride pra todas instances NOT detached
+9. ✅ GamBadgeBar per-row: badge "LIBRARY" + slot + botões Re-sync (↻) e Detach (⊘); "ex-library" se detached
+10. ✅ Cartridge export `.zzosy` (JSZip) — `POST /api/clients/[id]/library/cartridge` retorna ZIP com manifest.json + binários
+11. ✅ Cartridge import `.zzosy` — `PUT /api/clients/[id]/library/cartridge` parseia + persiste binaries em /uploads/clients/[id]/library/ + cria ClientLibraryAsset(s)
+12. ✅ Apply cartridge `POST /api/campaigns/[id]/apply-cartridge` (multipart upload OU libraryAssetIds JSON). Match por slotKey, criar novos pros não-matched, suporte a mapping manual override.
+13. ✅ Apply cartridge UI: `ApplyCartridgeButton` no header `/campaigns/[id]` — modal com upload .zzosy + atalho "aplicar todo library"
+14. ✅ Link "Library" no header de `/clients/[id]` (botão secondary ao lado de "← Empresas")
+15. ⚠️ Manual mapping modal (fallback ambiguidade) — backend já aceita `mapping` param, UI futura
+
+### Pendente (próxima sessão)
+- **🚨 USER ACTION CRÍTICA pós-acordar**: rodar `cd apps/web && npx prisma db push` (1 comando, ~15s, additive only — sem destrutivo)
+- Manual mapping UI modal (backend aceita override, falta UX)
+- "Update available" detection client-side (atualmente o botão Re-sync existe mas badge "tem update novo" não aparece automático — precisa endpoint que retorne `libraryCurrentVersion` em cada asset)
+- Migration de campanhas legacy via UI explícita (botão "Tudo p/ Library" já cobre o caso bulk)
+- Subnav unified (ex: tabs Library/Campanhas/Edit dentro do cliente)
+- Cartridge versioning / changelog
+- Cross-tenant share via link público
+
+### Bypass se `db push` falhar
+Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset (libraryAssetId, libraryAssetVersion, libraryAssetDetached, slotKey — todas nullable). Zero risco a data existente. Se `db push` der algum prompt sobre destructive: NÃO confirmar, mandar log que eu olho.
+
+---
+
 ## Stack
 
 | Camada | Tecnologia |
@@ -228,6 +447,81 @@ npx tsc --noEmit            # type check
 
 ---
 
+## Sessão 2026-05-24/25 — Fidelidade PSD + UX sweep
+
+### Fidelidade total do import PSD (/goal "deixar import = editor")
+1. **Color Overlay/Gradient Overlay agora renderiza em Smart Objects** — `applyFabricEffects` ganhou flag `overlaysOnly`. Pra SO (`pixelsIncludeEffects=true`), shadow/glow/stroke continuam pulados (já baked pelo PS), mas overlays passam via `BlendColor.tint` no Fabric image filter. Logo branco via Color Overlay agora aparece no editor.
+2. **Smart Object preserva bytes embedded** (sem rasterizar) — `toCampaign.ts` agora alimenta `linkedBlobs[] + linkedMeta[]` na build, `importer.ts` envia como `linked[]` no FormData, endpoint `/import-psd` já criava `SmartObjectFile` records, agora alimentados corretamente pelo pipeline novo. Round-trip: editor → exportPiece → writer recria `placedLayer + linkedFiles[]` no PSD. Vetor (PSB/AI) sobrevive intacto.
+3. **Tracking clamp em fonte fallback** — `lib/fabricCharSpacingPatch.ts` ganhou `markFontFallback(family)` / `clearFontFallback(family)`. Quando família detectada como missing (font detection no init), patch CLAMPA `charSpacing < 0` pra `0` apenas nessa família. Sem isso, PSD com tracking -25/-50 ficava com letras COLADAS em fallback Arial. Substituir fonte via UI dispara `initDimensions` global → tracking real volta.
+4. **Mapping `Exo2.0-Bold` → `Exo 2`** (Google Font) — `normalizePsdFontToGoogle` agora strippa sufixo de versão (`.0`). Sem isso virava `Exo 2.0` que não bate com Google → Arial fallback.
+5. **Point Text vs Box Text do PSD** ⭐ *causa raiz da maioria dos wraps errados* — PSD tem 2 shape types: `point` (sem wrap, só `\n` quebra) e `box` (wrappa em `boxBounds`). Editor antes tratava tudo como box com `width=bbox.width` → divergência de medição = wrap onde não devia. Agora `reader.ts` extrai `shapeType + boxBounds`, `toCampaign.ts` persiste em `lastOverride.__psdShapeType / __psdBoxBounds`, editor cria Textbox com `width=99999` pra point text (sem wrap, depois encolhe via shrink-to-content existente). `HISTORY_PROPS_TO_INCLUDE` inclui os flags pra round-trip.
+6. **Paragraph `spaceAfter`** — `fabricCharSpacingPatch.ts` ganhou override de `getHeightOfLine(lineIndex)` que adiciona `__paragraphSpaceAfter` apenas em linhas que terminam paragraph no texto raw. Cache invalidado quando texto muda. Sem isso, paragrafos PSD colam no editor.
+7. **Leading mixed-font-size fix** — `toCampaign.ts` agora usa `Math.max(...styleRuns.fontSize)` como basis pra `lineHeight / leadingPt` quando `defaultStyle.fontSize` está undefined (caso Sicredi text 1: defaultStyle vazio + 2 runs com fontSize 62 e 40). Sem isso, fallback 48px gerava leading errado.
+8. **Baseline shift per-char (round-trip completo)** — novo eixo de typesetting:
+   - `types.ts`: `baselineShift?: number` em PsdCharStyle + TextSpan.style
+   - `reader.ts`: extrai de styleRuns com textScale
+   - `toCampaign.ts`: propaga via `spanStyleFromCharStyle` + `buildLineIndexedStyles` (sinal invertido pra Fabric `deltaY`)
+   - `writer.ts charStyleToAgPsd`: emite no PSD
+   - `exportPiece.ts buildStyleRuns`: lê Fabric `deltaY` → `baselineShift` (sign flip)
+   - `KeyVisionEditor.tsx`: novo input "Baseline" no painel direito (grid 3 colunas: Line height / Letter spacing / Baseline), função `setBaselineShiftProp` per-char only (Adobe parity)
+
+### Bug grave corrigido — duplicação de texto no /assets
+- Anti-padrão: `setCampaign(prev => { newSpans = rebuildSpans(...) })` com SIDE-EFFECT dentro do updater quebrava em React 18 StrictMode (DEV). Updater rodava 2x; a 2ª execução podia receber prev já com content nova → rebuildSpans recompõe ENCIMA do texto novo → "Nem sempre Nem sempre é difícil...".
+- **Fix**: ler estado atual via `campaignRef` (mirror via `useEffect(() => { ref.current = state }, [state])`) FORA do updater, computar `newSpans` UMA vez, setState com objeto puro.
+- **Memória salva**: `feedback_no_side_effects_in_setstate_updater.md`.
+
+### UX sweep
+- **Padrão Row 4 botões outline** (Apagar / Duplicar / Editar / Entrar) aplicado em `/dashboard`, `/campaigns`, `/clients/[id]`, `/campaigns/[id]` (grid+lista), `/pieces` (grid+lista). Primary fill amarelo restrito a CTAs standalone (`/pieces/[id]` "Entrar no Editor") + botão ← Voltar. `CLAUDE.md` PARTE 1.1.B documenta a regra.
+- **Settings pages**: arrow up/down agora funcionam nos campos de size (`design-tokens`, `typography`). Pattern: regex `^(\d+)(\w+)$` parseia número+unit, renderiza `<input type="number">` (setas nativas) + `<span>unit</span>` com gap. Sem match: cai pro text input.
+- **Subnav button style** padronizado: white bg + 2px #555 border + texto preto bold + radius 6. Helper `subnavButtonStyle()` em `CampaignSubnav.tsx`.
+- **Toggle Grid/Lista** movido pra dentro do box "Peças geradas" (top-right do card), com divisor vertical separando das bulk actions.
+- **"Selecionar tudo"** funciona mesmo com seleção parcial (vira "Desmarcar tudo" quando tudo marcado).
+- **Generate Pieces modal**: novo botão "Select all" global no header (além dos per-segmento existentes).
+- **Export Dialog** robusto contra adblock: PLAN A (window.location.href) + PLAN B (sync `window.open` antes do await, redirect quando blob pronto).
+- **PT/EN cleanup**: começou foco em English (Import PSD, Export, Generate Pieces). Sweep completo pendente (próximo passo).
+- **Header limpo**: removido "Ver todas", "Atualizada", labels "Ações", subtítulos repetitivos, "Formatos disponíveis para geração de peças", título duplicado no top nav.
+- **Replace Status column → Segmento** em /campaigns/[id]/lista.
+
+### Design Tokens
+- `lib/designTokens.ts` + `components/shared/DesignTokensInjector.tsx` aplicam CSS vars do localStorage no `<html>`.
+- Token vars (`--zz-brand-primary`, `--zz-text-*`, `--zz-border-*`, `--zz-radius-*`, `--zz-stroke-*`, `--zz-text-*`, `--zz-font-family`) substituem hard-coded.
+- `Button.tsx` consome via `var(--zz-brand-primary)`.
+- Editor de tokens em `/admin/settings/design-tokens` (live preview).
+- Editor de tipografia em `/admin/settings/typography`.
+- Playground overrides em `/admin/settings/overrides`.
+
+### Reorganização admin
+- TopNav: "Admin" movido pra direita (próximo de Account).
+- Antigo `/admin/playground` virou `/admin/settings` (overrides + design-tokens + typography).
+
+---
+
+## Roadmap próximos passos (ordem sugerida)
+
+### 🔥 Prioridade alta
+1. **Global Asset Management** (capítulo no topo deste MD) — biblioteca de assets por cliente, sobrevive a apagar campanhas. Schema + UI + clone bidirecional. ~3-4 dias.
+2. **Validar `/goal fidelidade PSD` em PSDs reais** — testar Sicredi + 2-3 outros PSDs profissionais. Iterar conforme aparecer divergência.
+3. **PT/EN sweep completo** — sistema decisão: tudo English? Tudo PT? Mix coerente? Documentar regra no CLAUDE.md.
+
+### Importante mas não urgente
+4. **Selection toolbar floating no canvas** (sessão anterior playground): trazer pra editor real KeyVision — color picker per-char inline em vez de só painel direito.
+5. **Inner shadow + inner glow rendering** — único piece dos PSD effects que ainda fica só preservado no JSON sem render. Patch via SVG `<filter>` injetado no DOM.
+6. **Bevel + satin + patternOverlay** — completar 100% dos PSD effects. Cada um exige offscreen canvas composition.
+7. **Custom font upload UI auditing** — `/clients/[id]/edit` brand fonts: validar fluxo completo de upload + register + persist + carregamento no editor.
+
+### Refinos
+8. **PSD round-trip systematic test** — automatizar import → export → re-import → diff JSON. Pegar regressões cedo.
+9. **Gradient stops PSD ↔ Fabric** — Fabric v7 aceita literal gradient object; auditar reverse.
+10. **defaultStyle round-trip completo** — quando defaultStyle.font/size estão undefined no PSD (caso Sicredi), reader cai em fallback Arial/48. Considerar gravar `defaultStyle: undefined` explicit pro writer omitir.
+11. **Pre-existing TS errors** — `updatedAt` em Piece foi corrigido (interface local). Verificar outros locais similares.
+
+### Backlog
+12. **/ultrareview** — review multi-agent já existe via comando; usar quando bater milestone GAM.
+13. **Brand color "live"**: já cobre cascade; auditar edge case de undo após brand change.
+14. **Approvals flow**: implementação inicial existe (`/approvals`). Auditar UX completa quando GAM estiver pronto.
+
+---
+
 ## Status
 
-Editor + PSD round-trip em produção interno. Próximos: refinos finos de leading/tracking, gradient stops, defaultStyle round-trip completo.
+Editor + PSD round-trip em produção interno. Fidelidade PSD significativamente melhorada na sessão 2026-05-24/25 (point/box text, spaceAfter, baseline shift, font fallback tracking clamp). Próximo grande capítulo: **Global Asset Management** (biblioteca de assets por cliente).

@@ -23,6 +23,8 @@ export interface SlideBrand {
   logoUrl?: string       // substitui /presentation/suno.png
   secondaryLogoUrl?: string  // substitui /presentation/united-creators.png
   footerText?: string    // substitui "Classificacao..."
+  fontFamily?: string    // fonte do cliente (brandFont). Aplica em TODOS
+                         // os textos dos slides. Fallback system-ui.
 }
 
 // Helper: gera cor 10% mais clara — mesma logica do PPTX (lib/generatePresentation.ts
@@ -51,6 +53,18 @@ function getLogo(brand?: SlideBrand): string {
 function getSecondaryLogo(brand?: SlideBrand): string {
   return (brand?.secondaryLogoUrl?.trim()) || "/presentation/united-creators.png"
 }
+/**
+ * Stack de fontes do slide: fonte do cliente (brandFont) PRIMEIRO, com
+ * fallback no system-ui. User pediu 2026-05-22: "na apresentacao todas
+ * as fontes precisam ser a do cliente". Garante consistencia visual entre
+ * pecas (que usam brandFont nos textos) + chrome dos slides (header,
+ * legenda, footer).
+ */
+function getFontStack(brand?: SlideBrand): string {
+  const custom = brand?.fontFamily?.trim()
+  const fallback = "system-ui, -apple-system, sans-serif"
+  return custom ? `"${custom}", ${fallback}` : fallback
+}
 
 const slideShellBase: React.CSSProperties = {
   position: "relative",
@@ -62,19 +76,21 @@ const slideShellBase: React.CSSProperties = {
   border: "1px solid #E5E5E5",
 }
 
-const footerStyle: React.CSSProperties = {
-  position: "absolute",
-  bottom: "2.2%",
-  left: 0,
-  right: 0,
-  textAlign: "center",
-  fontSize: "1.1cqw", // container query — escala com o card
-  color: TEXT_GRAY,
-  fontFamily: "system-ui, -apple-system, sans-serif",
+function footerStyle(brand?: SlideBrand): React.CSSProperties {
+  return {
+    position: "absolute",
+    bottom: "2.2%",
+    left: 0,
+    right: 0,
+    textAlign: "center",
+    fontSize: "1.1cqw", // container query — escala com o card
+    color: TEXT_GRAY,
+    fontFamily: getFontStack(brand),
+  }
 }
 
 function Footer({ brand }: { brand?: SlideBrand }) {
-  return <div style={footerStyle}>{getFooterText(brand)}</div>
+  return <div style={footerStyle(brand)}>{getFooterText(brand)}</div>
 }
 
 /* ============== Slide 1 — Capa ==============
@@ -161,7 +177,7 @@ export function SlideCode({ campaignName, code, brand, campaignId, onCampaignCha
   // Sem padding/border/background pra input parecer texto puro. uppercase via
   // CSS pra exibir/digitar caixa baixa mas mostrar caixa alta.
   const inputBase: React.CSSProperties = {
-    fontFamily: "system-ui, -apple-system, sans-serif",
+    fontFamily: getFontStack(brand),
     color: "#fff",
     letterSpacing: "-0.01em",
     lineHeight: 1.1,
@@ -200,7 +216,7 @@ export function SlideCode({ campaignName, code, brand, campaignId, onCampaignCha
           />
         ) : (
           <div style={{
-            fontFamily: "system-ui, -apple-system, sans-serif",
+            fontFamily: getFontStack(brand),
             fontSize: "3.2cqw", fontWeight: 800, color: "#fff",
             letterSpacing: "-0.01em", lineHeight: 1.1,
           }}>
@@ -221,7 +237,7 @@ export function SlideCode({ campaignName, code, brand, campaignId, onCampaignCha
           />
         ) : (
           <div style={{
-            fontFamily: "system-ui, -apple-system, sans-serif",
+            fontFamily: getFontStack(brand),
             fontSize: "2.8cqw", fontWeight: 400, color: "#fff",
             letterSpacing: "-0.01em", lineHeight: 1.1, marginTop: "1%",
             textTransform: "uppercase",
@@ -233,7 +249,7 @@ export function SlideCode({ campaignName, code, brand, campaignId, onCampaignCha
           <div style={{
             position: "absolute", top: "0.6cqw", right: "1cqw",
             fontSize: "0.9cqw", color: "rgba(255,255,255,0.7)",
-            fontFamily: "system-ui, -apple-system, sans-serif",
+            fontFamily: getFontStack(brand),
           }}>salvando…</div>
         )}
       </div>
@@ -253,7 +269,7 @@ export function SlideSegment({ segment, brand }: { segment?: string | null; bran
         borderRadius: RADIUS, padding: "2.5% 4%",
       }}>
         <div style={{
-          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontFamily: getFontStack(brand),
           fontSize: "3.2cqw", fontWeight: 700,
           color: "#fff", letterSpacing: "-0.01em",
         }}>
@@ -385,7 +401,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 <div style={{
                   fontSize: "0.75cqw", fontWeight: 700,
                   color: TEXT_DARK, opacity: 0.6,
-                  fontFamily: "system-ui, -apple-system, sans-serif",
+                  fontFamily: getFontStack(brand),
                   textTransform: "uppercase", letterSpacing: 0.5,
                   marginBottom: "0.4cqw",
                 }}>
@@ -503,7 +519,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
         <div style={{
           background: primary, borderRadius: RADIUS,
           padding: "0.6cqw 1.7cqw",
-          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontFamily: getFontStack(brand),
           fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 700, color: TEXT_DARK,
           whiteSpace: "nowrap",
         }}>
@@ -511,7 +527,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
         </div>
         {/* Dimensao em texto puro (sem fundo amarelo) */}
         <div style={{
-          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontFamily: getFontStack(brand),
           fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 500, color: TEXT_DARK,
           whiteSpace: "nowrap",
         }}>
@@ -567,7 +583,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             <div style={{
               background: primary,
               padding: "1.1cqw 1.6cqw",
-              fontFamily: "system-ui, -apple-system, sans-serif",
+              fontFamily: getFontStack(brand),
               fontSize: "1.05cqw", fontWeight: 700,
               color: TEXT_DARK,
               fontStyle: "italic",
@@ -597,7 +613,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                     fontSize: "1.05cqw",
                     lineHeight: 1.5,
                     color: TEXT_DARK,
-                    fontFamily: "system-ui, -apple-system, sans-serif",
+                    fontFamily: getFontStack(brand),
                     background: "transparent",
                     border: "none",
                     outline: "none",
@@ -615,7 +631,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                   fontSize: "1.05cqw",
                   lineHeight: 1.5,
                   color: TEXT_DARK,
-                  fontFamily: "system-ui, -apple-system, sans-serif",
+                  fontFamily: getFontStack(brand),
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}>
@@ -663,7 +679,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 padding: "0.7cqw 1.7cqw",
                 fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 700,
                 cursor: "pointer",
-                fontFamily: "system-ui, -apple-system, sans-serif",
+                fontFamily: getFontStack(brand),
                 zIndex: 3,
               }}
               title="Adicionar legenda a esta peca">
@@ -698,7 +714,7 @@ export function SlideThanks({ brand }: { brand?: SlideBrand } = {}) {
         display: "flex", alignItems: "center", gap: "1.5cqw",
       }}>
         <div style={{
-          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontFamily: getFontStack(brand),
           fontSize: "6.5cqw", fontWeight: 600, color: TEXT_DARK,
           letterSpacing: "-0.02em", lineHeight: 1,
         }}>

@@ -31,7 +31,6 @@ export default function BillingPage() {
             </Button>
           </div>
           <h1 style={{fontSize:"1.8rem",fontWeight:800,color:"#111",margin:0,letterSpacing:"-0.03em"}}>Assinatura</h1>
-          <p style={{color:"#888",marginTop:"6px",fontSize:"0.9rem"}}>Gerencie seu plano e pagamentos</p>
         </div>
         <div style={{background:"#111",borderRadius:"20px",padding:"32px",marginBottom:"16px",color:"#FFF"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"16px"}}>

@@ -39,6 +39,7 @@ interface Piece {
   copy?: string | null
   data?: any
   createdAt: string
+  updatedAt?: string
   stepCount?: number
 }
 
@@ -86,6 +87,10 @@ export default function CampaignOverviewPage() {
   // user teria que clicar nos botoes Importar — drop-zone agiliza fluxo.
   const psdMatrixImporterRef = useRef<PsdImporterHandle>(null)
   const psdPieceImporterRef = useRef<PsdPieceImporterHandle>(null)
+  // Input fisico pra disparar file picker do "Import PSD" da matriz. Ficar
+  // ESCONDIDO via positioning (NAO display:none — Chrome bloqueia click()
+  // programatico em subtree display:none). 2026-05-24 fix.
+  const psdMatrixPickerRef = useRef<HTMLInputElement>(null)
   const [kvDragOver, setKvDragOver] = useState(false)
   const [piecesDragOver, setPiecesDragOver] = useState(false)
 
@@ -350,16 +355,19 @@ export default function CampaignOverviewPage() {
               />
             </h1>
           </div>
-          {campaign.client?.id && (
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
-              title="Voltar para Campanhas"
-            >
-              ← Campanhas
-            </Button>
-          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <ApplyCartridgeButton campaignId={id} clientId={campaign.client?.id} onApplied={loadAll} />
+            {campaign.client?.id && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => router.push(`/campaigns?clientId=${campaign.client!.id}`)}
+                title="Voltar para Campanhas"
+              >
+                ← Campanhas
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Subnav REMOVIDO 2026-05-24 (user pedido). Agora cada botao vai
@@ -368,15 +376,13 @@ export default function CampaignOverviewPage() {
 
         {/* Preview KV + actions sidebar */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px", marginBottom: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 16, alignItems: "start" }}>
-          <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 16, alignItems: "stretch" }}>
+          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
             <div
-              onClick={() => router.push(`/editor?campaignId=${id}`)}
-              title="Abrir editor da matriz (ou arraste um .psd pra importar)"
+              onClick={() => { if (campaign.keyVision?.thumbnailUrl) router.push(`/editor?campaignId=${id}`) }}
+              title={campaign.keyVision?.thumbnailUrl ? "Abrir editor da matriz (ou arraste um .psd pra importar)" : "Arraste um .psd aqui ou clique em Importar PSD"}
               onDragOver={e => { e.preventDefault(); if (!kvDragOver) setKvDragOver(true) }}
               onDragLeave={e => {
-                // Evita flicker quando o cursor passa sobre filhos: so reseta
-                // se o ponteiro REALMENTE saiu do elemento (sem related target dentro).
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) setKvDragOver(false)
               }}
               onDrop={async e => {
@@ -387,37 +393,57 @@ export default function CampaignOverviewPage() {
                 await psdMatrixImporterRef.current?.importFile(file)
               }}
               style={{
-                maxHeight: 130, display: "flex", alignItems: "center", justifyContent: "center",
+                flex: 1, display: "flex", alignItems: "stretch", justifyContent: "center",
                 color: "#aaa", fontSize: 13,
-                cursor: "pointer",
-                transition: "transform 0.15s ease, box-shadow 0.15s ease, outline 0.15s ease",
+                cursor: campaign.keyVision?.thumbnailUrl ? "pointer" : "default",
+                transition: "outline 0.15s ease",
                 outline: kvDragOver ? "2px dashed #F09300" : "2px dashed transparent",
                 outlineOffset: 4,
                 borderRadius: 8,
               }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = "translateY(-1px)"
-                e.currentTarget.style.filter = "brightness(1.02)"
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = "translateY(0)"
-                e.currentTarget.style.filter = "brightness(1)"
-              }}
             >
               {campaign.keyVision?.thumbnailUrl ? (
                 <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
-                  style={{ maxWidth: "100%", maxHeight: 130, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+                  style={{ maxWidth: "100%", maxHeight: 130, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0", margin: "auto" }} />
               ) : (
-                <div style={{
-                  aspectRatio: `${kvW} / ${kvH}`, maxHeight: 130, width: "auto", maxWidth: "100%",
-                  background: kvBg, borderRadius: 6, border: "1px solid #E0E0E0",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <span>{kvW} × {kvH}</span>
+                <div
+                  onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
+                  style={{
+                    flex: 1, width: "100%",
+                    background: "#FAFAFA", borderRadius: 6, border: "1px dashed #C0C0C0",
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    gap: 8, padding: 16, cursor: "pointer",
+                  }}>
+                  <Button variant="primary" size="md"
+                    onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
+                    Import PSD
+                  </Button>
+                  <span style={{ fontSize: 11, color: "#888" }}>or drop a .psd file here</span>
                 </div>
               )}
             </div>
-            <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, marginTop: 12, textAlign: "center" }}>Key Vision (Matriz)</div>
+            {/* PsdImporter montado OFF-SCREEN (NAO display:none — Chrome
+                bloqueia click programatico em input dentro de display:none).
+                Modais (missing fonts) se renderizam via position:fixed entao
+                aparecem normalmente apesar do parent estar off-screen. */}
+            <div style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, overflow: "hidden" }}>
+              <PsdImporter ref={psdMatrixImporterRef} campaignId={id} onImported={loadAll} />
+            </div>
+            {/* Input dedicado pro botao "Import PSD" da matriz. Mais confiavel
+                que delegar pra openFilePicker do PsdImporter (que tinha bugs
+                de timing com refs encadeados). */}
+            <input
+              ref={psdMatrixPickerRef}
+              type="file"
+              accept=".psd"
+              style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, opacity: 0 }}
+              tabIndex={-1}
+              onChange={async e => {
+                const f = e.target.files?.[0]
+                e.target.value = ""
+                if (f) await psdMatrixImporterRef.current?.importFile(f)
+              }}
+            />
           </div>
           {/* Coluna de AÇÕES da campanha (modificam dados — nao sao
               navegacao). Navegacao (Assets/KV/Pecas/Apresentacao) fica no
@@ -511,7 +537,8 @@ export default function CampaignOverviewPage() {
             padding: piecesDragOver ? 4 : 0,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
+          <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #E0E0E0", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
               Peças geradas ({visiblePieces.length})
               {piecesDragOver && <span style={{ marginLeft: 12, color: "#F09300", fontSize: 11 }}>Solte os PSDs aqui</span>}
@@ -522,6 +549,9 @@ export default function CampaignOverviewPage() {
                   {selected.length > 0 ? (
                     <>
                       <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{selected.length} selecionada(s)</span>
+                      <Button variant="secondary" size="sm" onClick={toggleSelectAll}>
+                        {allVisibleSelected ? "Desmarcar tudo" : "Selecionar tudo"}
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Cancelar</Button>
                       <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
                       <Button variant="info" size="sm" onClick={duplicateSelected} title="Duplica as peças selecionadas (status volta para Standby)">Duplicar ({selected.length})</Button>
@@ -531,15 +561,20 @@ export default function CampaignOverviewPage() {
                   ) : (
                     <Button variant="secondary" size="sm" onClick={toggleSelectAll}>Selecionar tudo</Button>
                   )}
+                  {/* Toggle de view (Grid/Lista) — top-right do box, segregado por
+                      separador vertical pra deixar claro que e controle de view,
+                      nao de bulk action. */}
+                  <div style={{ width: 1, height: 20, background: "#E0E0E0", marginInline: 4 }} />
                   <div style={{ display: "flex", gap: 6 }}>
                     <FilterPill active={view === "grid"} onClick={() => setView("grid")} size="sm">Grid</FilterPill>
                     <FilterPill active={view === "list"} onClick={() => setView("list")} size="sm">Lista</FilterPill>
                   </div>
-                  <Button variant="link" size="sm" onClick={() => router.push(`/pieces?campaignId=${id}`)}>Ver todas</Button>
                 </>
               )}
             </div>
           </div>
+
+          <div style={{ padding: 16 }}>
 
           {/* Mini menu pro bulk status */}
           {bulkStatusOpen && (
@@ -636,12 +671,11 @@ export default function CampaignOverviewPage() {
                         }
                       }}
                     />
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: "auto", gap: 6, flexWrap: "wrap" }}>
                       <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
-                        <Button variant="primary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina detalhada da peca (legenda, copy, detalhes, export)">Editar</Button>
-                      </div>
+                      <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
+                      <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                      <Button variant="view" size="sm" onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                     </div>
                   </div>
                 </div>
@@ -680,8 +714,8 @@ export default function CampaignOverviewPage() {
                           <SortHeader col="name" label="Nome" />
                           <SortHeader col="format" label="Formato" />
                           <SortHeader col="size" label="Tamanho" />
-                          <SortHeader col="status" label="Status" />
-                          <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#666" }}>Ações</th>
+                          <SortHeader col="segment" label="Segmento" />
+                          <th style={{ padding: "10px 12px", textAlign: "right" }}></th>
                         </>
                       )
                     })()}
@@ -713,12 +747,24 @@ export default function CampaignOverviewPage() {
                       <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.format}</td>
                       <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.width} × {p.height}</td>
                       <td style={{ padding: "10px 12px" }}>
-                        <StatusBadge pieceId={p.id} status={p.status ?? "STANDBY"} size="sm" onChange={(s) => setPieces(prev => prev.map(x => x.id === p.id ? { ...x, status: s } : x))} />
+                        <SegmentPicker
+                          pieceId={p.id}
+                          initial={p.segment}
+                          suggestions={segmentSuggestions}
+                          onChange={(next) => {
+                            setPieces(prev => prev.map(x => x.id === p.id ? { ...x, segment: next } : x))
+                            if (next && !segmentSuggestions.includes(next)) {
+                              setSegmentSuggestions(prev => [...prev, next])
+                            }
+                          }}
+                        />
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
                         <div style={{ display: "inline-flex", gap: 6 }}>
-                          <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Abrir pagina dedicada da peca (legenda, copy, detalhes)">Legendas</Button>
                           <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                          <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
+                          <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                          <Button variant="view" size="sm" onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                         </div>
                       </td>
                     </tr>
@@ -727,6 +773,8 @@ export default function CampaignOverviewPage() {
               </table>
             </div>
           )}
+          </div>
+          </div>
         </div>
           )
         })()}
@@ -820,5 +868,101 @@ function CopyEditor({ pieceId, initial, onChange }: { pieceId: string; initial: 
         <span style={{ position: "absolute", right: 8, top: 8, fontSize: 9, color: "#aaa" }}>salvando…</span>
       )}
     </div>
+  )
+}
+
+/* ============== GAM Apply Cartridge Button ============== */
+function ApplyCartridgeButton({ campaignId, clientId, onApplied }: {
+  campaignId: string
+  clientId?: string | null
+  onApplied: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [libraryAssets, setLibraryAssets] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!open || !clientId) return
+    fetch(`/api/clients/${clientId}/library/assets`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setLibraryAssets)
+  }, [open, clientId])
+
+  async function applyUpload(file: File) {
+    setBusy(true)
+    const fd = new FormData()
+    fd.append("cartridge", file)
+    const res = await fetch(`/api/campaigns/${campaignId}/apply-cartridge`, {
+      method: "POST",
+      body: fd,
+    })
+    setBusy(false)
+    if (res.ok) {
+      const r = await res.json()
+      alert(`Cartucho aplicado: ${r.updated.length} atualizado(s), ${r.created.length} criado(s), ${r.skipped.length} pulado(s)`)
+      setOpen(false)
+      onApplied()
+    } else {
+      alert("Falha ao aplicar cartucho")
+    }
+  }
+
+  async function applyFromLibrary(assetIds: string[]) {
+    setBusy(true)
+    const res = await fetch(`/api/campaigns/${campaignId}/apply-cartridge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ libraryAssetIds: assetIds }),
+    })
+    setBusy(false)
+    if (res.ok) {
+      const r = await res.json()
+      alert(`Aplicado: ${r.updated.length} atualizado(s), ${r.created.length} criado(s)`)
+      setOpen(false)
+      onApplied()
+    } else {
+      alert("Falha ao aplicar")
+    }
+  }
+
+  return (
+    <>
+      <Button variant="secondary" size="md" onClick={() => setOpen(true)}>Aplicar cartucho</Button>
+      {open && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+          <div style={{ background: "white", borderRadius: 12, width: 560, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "16px 24px", borderBottom: "1px solid #E0E0E0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Aplicar cartucho</div>
+              <button onClick={() => setOpen(false)} style={{ background: "transparent", border: 0, fontSize: 20, color: "#888", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ padding: 24, flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "#888", letterSpacing: 0.5, marginBottom: 8 }}>Upload .zzosy</div>
+                <label style={{ cursor: busy ? "wait" : "pointer", display: "inline-block" }}>
+                  <input type="file" accept=".zzosy,.zip" disabled={busy}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) applyUpload(f); e.target.value = "" }}
+                    style={{ display: "none" }} />
+                  <span style={{ display: "inline-block", padding: "8px 16px", border: "2px solid #555", background: "white", color: "#111", fontWeight: 700, fontSize: 13, borderRadius: 6 }}>
+                    {busy ? "Aplicando..." : "Escolher arquivo .zzosy"}
+                  </span>
+                </label>
+              </div>
+              {libraryAssets.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "#888", letterSpacing: 0.5, marginBottom: 8 }}>OU usar TODO o library do cliente</div>
+                  <Button variant="secondary" size="md" disabled={busy}
+                    onClick={() => applyFromLibrary(libraryAssets.map(a => a.id))}>
+                    Aplicar {libraryAssets.length} asset(s) do library
+                  </Button>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: "#888", lineHeight: 1.5 }}>
+                Match por <code>slotKey</code> (Figma-style). Assets do cartucho com slotKey igual a algum da campanha → atualizam content. Sem slot match → criam novos.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

@@ -1,0 +1,89 @@
+- generic [active]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e13]:
+    - generic [ref=e19]:
+      - button "← Back to campaign" [ref=e20] [cursor=pointer]
+      - button "Save" [disabled] [ref=e21]
+      - generic [ref=e22]:
+        - button "Import PSD" [ref=e23] [cursor=pointer]
+        - button "Choose File" [ref=e24] [cursor=pointer]
+      - button "Export" [ref=e25] [cursor=pointer]
+      - button "Generate Pieces" [ref=e26] [cursor=pointer]
+      - button "Presentation" [ref=e27] [cursor=pointer]
+    - generic [ref=e28]:
+      - button "Center" [ref=e29] [cursor=pointer]
+      - button "Fit" [ref=e30] [cursor=pointer]
+      - button "Focus selection" [ref=e31] [cursor=pointer]
+      - generic [ref=e32]:
+        - button "−" [ref=e33] [cursor=pointer]
+        - spinbutton "Zoom (5–300%)" [ref=e34]: "5"
+        - button "+" [ref=e35] [cursor=pointer]
+      - button "▢" [ref=e36] [cursor=pointer]
+    - generic [ref=e37]:
+      - generic "Drag to resize · double-click to reset" [ref=e38]
+      - generic [ref=e39]:
+        - generic [ref=e40]: Layers
+        - button "+ Folder" [ref=e41] [cursor=pointer]:
+          - generic [ref=e42]: + Folder
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - generic "Drag to reorder" [ref=e45] [cursor=pointer]
+          - button "Hide layer" [ref=e49] [cursor=pointer]:
+            - img [ref=e50]
+          - button "Lock layer" [ref=e53] [cursor=pointer]:
+            - img [ref=e54]
+          - generic "Double click to rename" [ref=e58]: BOX
+          - button "Delete layer" [ref=e59] [cursor=pointer]: 🗑
+        - generic [ref=e60]:
+          - generic "Drag to reorder" [ref=e61] [cursor=pointer]
+          - button "Hide layer" [ref=e65] [cursor=pointer]:
+            - img [ref=e66]
+          - button "Lock layer" [ref=e69] [cursor=pointer]:
+            - img [ref=e70]
+          - generic "Double click to rename" [ref=e74]: BG
+          - button "Delete layer" [ref=e75] [cursor=pointer]: 🗑
+        - generic [ref=e76]:
+          - button "Hide layer" [ref=e77] [cursor=pointer]:
+            - img [ref=e78]
+          - button "Lock layer" [ref=e81] [cursor=pointer]:
+            - img [ref=e82]
+          - generic "Double click to rename" [ref=e86]: Background
+    - generic [ref=e87]:
+      - generic "Drag to resize · double-click to reset" [ref=e88]
+      - generic [ref=e89]: Properties
+      - generic [ref=e90]:
+        - button "Assets" [ref=e91] [cursor=pointer]
+        - button "+" [ref=e92] [cursor=pointer]
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - generic [ref=e95]: Background
+          - button "+" [ref=e97] [cursor=pointer]
+        - generic [ref=e98]:
+          - generic [ref=e99]: Blend
+          - combobox [ref=e100]:
+            - option "Normal" [selected]
+            - option "Multiply"
+            - option "Screen"
+            - option "Overlay"
+            - option "Darken"
+            - option "Lighten"
+            - option "Color Dodge"
+            - option "Color Burn"
+            - option "Hard Light"
+            - option "Soft Light"
+            - option "Difference"
+            - option "Exclusion"
+            - option "Hue"
+            - option "Saturation"
+            - option "Color"
+            - option "Luminosity"
+        - generic [ref=e103]:
+          - button "#ffffff" [ref=e104] [cursor=pointer]
+          - textbox "#RRGGBB" [ref=e105]: "#ffffff"
+          - spinbutton "Opacity %" [ref=e107]: "100"
+          - generic [ref=e108]: "%"
+        - generic [ref=e109]:
+          - generic [ref=e110]: Mask
+          - button "+ Add" [ref=e111] [cursor=pointer]

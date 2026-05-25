@@ -44,6 +44,14 @@ export interface CampaignBuild {
   kvLayers: BuiltLayer[]
   /** Blobs de imagem (PNG bytes) pra upload. imageIndex em BuiltAsset referencia. */
   imageBlobs: Blob[]
+  /**
+   * Smart Object linked files (bytes embedded originais — PSB/PSD/PNG/JPG/AI/PDF).
+   * linkedIndex em BuiltAsset referencia. Persistidos em SmartObjectFile pra
+   * round-trip ZZOSY → Photoshop sem rasterizar nem perder vetor.
+   */
+  linkedBlobs: Blob[]
+  /** Metadata paralela a linkedBlobs (mesmo index). */
+  linkedMeta: LinkedFileMeta[]
   /** Dimensoes do canvas. */
   width: number
   height: number
@@ -59,6 +67,18 @@ export interface CampaignBuild {
   warnings: BuildWarning[]
 }
 
+export interface LinkedFileMeta {
+  /** GUID estavel — derivado do layer.id do PSD. Round-trip via writer.ensureGuid. */
+  guid: string
+  /** MIME — endpoint usa pra escolher extensao no disco. */
+  mime: string
+  /** Nome original do linkedFile no PSD (pra UX de debug). */
+  originalName: string
+  sizeBytes: number
+  width?: number
+  height?: number
+}
+
 export interface BuiltAsset {
   /** Slot temp — back end gera o id real. */
   tempId: string
@@ -68,6 +88,12 @@ export interface BuiltAsset {
   content: TextSpan[] | null
   /** IMAGE: index em imageBlobs. TEXT/SHAPE: undefined. */
   imageIndex?: number
+  /**
+   * Smart Object: index em linkedBlobs do CampaignBuild. Endpoint cria
+   * SmartObjectFile + relaciona CampaignAsset.smartObjectId. Round-trip
+   * preserva bytes originais (PSB/AI/PDF) — sem rasterizar.
+   */
+  linkedIndex?: number
   /** SHAPE: dados vetoriais (path SVG + fill + stroke). */
   shape?: BuiltShape
   /** Override compatibilidade com modelo atual do editor. */
@@ -134,6 +160,13 @@ export interface TextSpan {
     fontStyle: "normal" | "italic"
     fontFamily: string
     tracking?: number
+    /**
+     * Baseline shift em PONTOS PSD (positive = char SUBE, negative = DESCE).
+     * Editor mapeia pra Fabric textbox.styles[line][col].deltaY com SINAL
+     * INVERTIDO (Fabric deltaY positive = desce). Sem sinal invertido, char
+     * elevado no PSD apareceria rebaixado no editor.
+     */
+    baselineShift?: number
     underline?: boolean
     strikethrough?: boolean
   }
@@ -159,6 +192,8 @@ export function buildCampaignFromPsd(doc: PsdDocument): CampaignBuild {
     assets: [],
     layers: [],
     blobs: [],
+    linkedBlobs: [],
+    linkedMeta: [],
     warnings: [],
     fonts: new Set<string>(),
     nextTempId: 0,
@@ -171,6 +206,8 @@ export function buildCampaignFromPsd(doc: PsdDocument): CampaignBuild {
     assets: ctx.assets,
     kvLayers: ctx.layers,
     imageBlobs: ctx.blobs,
+    linkedBlobs: ctx.linkedBlobs,
+    linkedMeta: ctx.linkedMeta,
     width: doc.width,
     height: doc.height,
     bgColor: deriveBgColor(doc),
@@ -187,6 +224,8 @@ interface BuildContext {
   assets: BuiltAsset[]
   layers: BuiltLayer[]
   blobs: Blob[]
+  linkedBlobs: Blob[]
+  linkedMeta: LinkedFileMeta[]
   warnings: BuildWarning[]
   fonts: Set<string>
   nextTempId: number
@@ -245,22 +284,47 @@ function emitTextLayer(l: PsdTextLayer, parentPath: string[], ctx: BuildContext)
 
   // lastOverride: snapshot do estilo "default" pra render rapido + per-char
   // styles indexados por linha (compativel com o que o editor consome hoje).
+  // Width permanece bbox.width — editor decide o que fazer baseado em __psdShapeType:
+  //   point → desabilita wrap (width fica como visual hint apenas)
+  //   box   → wrap normal dentro do boxBounds (preferindo boxBounds.width quando disponivel)
+  // Effective default font size: alguns PSDs (caso Sicredi) tem defaultStyle
+  // SEM fontSize quando styleRuns cobrem todo o texto. Reader cai em fallback
+  // 48px → leadingPt/lineHeight calculados sobre 48 ficavam errados pra
+  // texto cujos chars usam 40/62. Usa o MAIOR fontSize dos runs como basis
+  // pra leading calc — match o comportamento de Photoshop (line height = max
+  // char leading da linha) o mais proximo possivel em Fabric (que so tem
+  // lineHeight global per textbox).
+  const runFontSizes = l.styleRuns
+    .map(r => r.style.fontSize)
+    .filter((n): n is number => typeof n === "number" && n > 0)
+  const maxRunFontSize = runFontSizes.length > 0 ? Math.max(...runFontSizes) : 0
+  const effectiveBasisFontSize = maxRunFontSize > 0 ? maxRunFontSize : l.defaultStyle.fontSize
   const lastOverride: Record<string, unknown> = {
     width: l.bbox.right - l.bbox.left,
     height: l.bbox.bottom - l.bbox.top,
     fontFamily: l.defaultStyle.fontFamily,
-    fontSize: Math.round(l.defaultStyle.fontSize),
+    fontSize: Math.round(effectiveBasisFontSize),
     fontWeight: l.defaultStyle.fontWeight,
     fontStyle: l.defaultStyle.fontStyle,
     fill: l.defaultStyle.color,
     charSpacing: l.defaultStyle.tracking,
     lineHeight: l.defaultStyle.leading
-      ? l.defaultStyle.leading / l.defaultStyle.fontSize
+      ? l.defaultStyle.leading / effectiveBasisFontSize
       : 1.0,
     // Auto leading default 0.9x (padrao ZZOSY tight). Antes era 1.2x Adobe.
-    leadingPt: l.defaultStyle.leading ?? Math.round(l.defaultStyle.fontSize * 0.9),
+    leadingPt: l.defaultStyle.leading ?? Math.round(effectiveBasisFontSize * 0.9),
     textAlign: l.paragraph.align,
     styles: buildLineIndexedStyles(l),
+    // Round-trip: preserva shape type pra writer recriar Point/Box text correto.
+    // Editor le pra decidir wrap behavior (point=sem wrap, box=wrappa em boxBounds).
+    __psdShapeType: l.shapeType ?? "point",
+    ...(l.boxBounds ? { __psdBoxBounds: l.boxBounds } : {}),
+    // PSD paragraph spaceAfter (pontos) — gap entre paragrafos no PSD.
+    // Fabric NAO suporta nativamente; patch em fabricCharSpacingPatch.ts
+    // intercepta getHeightOfLine pra adicionar spaceAfter apos linhas que
+    // terminam em \n no texto raw. Sem isso, paragrafos no editor colam.
+    ...(typeof l.paragraph.spaceAfter === "number" && l.paragraph.spaceAfter > 0
+        ? { __psdParagraphSpaceAfter: l.paragraph.spaceAfter } : {}),
   }
 
   ctx.assets.push({
@@ -310,6 +374,8 @@ function spanStyleFromCharStyle(s: PsdTextLayer["defaultStyle"]): TextSpan["styl
     fontStyle: s.fontStyle,
     fontFamily: s.fontFamily,
     tracking: s.tracking,
+    ...(typeof s.baselineShift === "number" && s.baselineShift !== 0
+        ? { baselineShift: s.baselineShift } : {}),
     underline: s.underline,
     strikethrough: s.strikethrough,
   }
@@ -345,6 +411,10 @@ function buildLineIndexedStyles(l: PsdTextLayer): Record<number, Record<number, 
         fontWeight: style.fontWeight,
         fontStyle: style.fontStyle,
         ...(typeof style.tracking === "number" ? { charSpacing: style.tracking } : {}),
+        // PSD baselineShift (positive=up) → Fabric deltaY (positive=down).
+        // Negative sign mantem visual identico ao Photoshop.
+        ...(typeof style.baselineShift === "number" && style.baselineShift !== 0
+            ? { deltaY: -style.baselineShift } : {}),
       }
     }
     charInLine++
@@ -510,6 +580,34 @@ function emitSmartObjectLayer(l: PsdSmartObjectLayer, parentPath: string[], ctx:
   }
   const imageIndex = ctx.blobs.length
   ctx.blobs.push(blob)
+
+  // Preserva bytes embedded do SO (PSB/AI/PDF/PNG/JPG) num linkedFile separado.
+  // Persistido em SmartObjectFile pelo endpoint via asset.linkedIndex. No
+  // export, fromEditor carrega esses bytes e o writer recria placedLayer +
+  // linkedFiles[] do PSD — round-trip ZZOSY → Photoshop sem rasterizar.
+  let linkedIndex: number | undefined
+  if (l.content.kind === "embedded") {
+    const mime = mimeForSmartObjectFormat(l.content.format)
+    const ext = extForSmartObjectFormat(l.content.format)
+    const linkedBlob = new Blob([(l.content.bytes as any).buffer ?? l.content.bytes], { type: mime })
+    linkedIndex = ctx.linkedBlobs.length
+    ctx.linkedBlobs.push(linkedBlob)
+    ctx.linkedMeta.push({
+      guid: l.id, // writer.ensureGuid eh deterministico — round-trip estavel
+      mime,
+      originalName: `${l.name}.${ext}`,
+      sizeBytes: l.content.bytes.byteLength,
+      width: l.composite?.width,
+      height: l.composite?.height,
+    })
+  } else if (l.content.kind === "linked") {
+    ctx.warnings.push({
+      kind: "fallback-applied",
+      layerName: l.name,
+      message: `Smart Object 'linked externo' (${l.content.filePath}) — sem bytes embedded. Round-trip nao preserva conteudo, so o composite raster.`,
+    })
+  }
+
   const tempId = nextTempId(ctx)
   ctx.assets.push({
     tempId,
@@ -517,10 +615,12 @@ function emitSmartObjectLayer(l: PsdSmartObjectLayer, parentPath: string[], ctx:
     type: "IMAGE",
     content: null,
     imageIndex,
+    linkedIndex,
     effects: hasEffects(l.effects) ? l.effects : undefined,
-    // Smart Object composite SEMPRE vem com effects aplicados pelo PS (ag-psd
-    // rasteriza o nested PSB ja com layer styles do SO + filtros). Editor
-    // NAO deve adicionar Fabric.Shadow extra — evita doubling.
+    // Smart Object composite vem com shadow/glow/stroke aplicados pelo PS no
+    // nested render. PORÉM colorOverlay/gradientOverlay (Layer Styles na layer
+    // wrapper do SO) NAO sao baked — sao aplicados no editor via BlendColor.tint
+    // (KeyVisionEditor.applyFabricEffects com overlaysOnly:true).
     pixelsIncludeEffects: true,
     mask: convertMask(l.mask),
     // isWrapper → hidden default (user re-mostra se quiser).
@@ -528,6 +628,22 @@ function emitSmartObjectLayer(l: PsdSmartObjectLayer, parentPath: string[], ctx:
     locked: l.locked || undefined,
   })
   ctx.layers.push(layerFromLayer(tempId, l, ctx, parentPath))
+}
+
+function mimeForSmartObjectFormat(fmt: "psb" | "psd" | "png" | "jpg" | "ai" | "pdf" | "unknown"): string {
+  switch (fmt) {
+    case "psb":
+    case "psd": return "image/vnd.adobe.photoshop"
+    case "png": return "image/png"
+    case "jpg": return "image/jpeg"
+    case "pdf": return "application/pdf"
+    case "ai":  return "application/postscript"
+    default:    return "application/octet-stream"
+  }
+}
+
+function extForSmartObjectFormat(fmt: "psb" | "psd" | "png" | "jpg" | "ai" | "pdf" | "unknown"): string {
+  return fmt === "unknown" ? "bin" : fmt
 }
 
 // ── Layer position ──────────────────────────────────────────────────

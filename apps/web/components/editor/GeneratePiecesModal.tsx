@@ -477,7 +477,21 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
       <div className="bg-[#1a1a1a] rounded-xl w-[560px] max-h-[80vh] flex flex-col border border-[#333333]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#333333]">
-          <span className="font-bold text-white text-base">Select formats</span>
+          <div className="flex items-center gap-4">
+            <span className="font-bold text-white text-base">Select formats</span>
+            {formats.length > 0 && (
+              <button
+                onClick={() => {
+                  const allIds = formats.map(f => f.id)
+                  const allSelected = allIds.every(id => selected.includes(id))
+                  setSelected(allSelected ? [] : allIds)
+                }}
+                className="text-xs text-[#F5C400] bg-transparent border-0 cursor-pointer hover:underline"
+              >
+                {formats.every(f => selected.includes(f.id)) ? "Deselect all" : "Select all"}
+              </button>
+            )}
+          </div>
           <button onClick={onClose} className="text-[#555555] hover:text-white bg-transparent border-0 text-xl cursor-pointer">✕</button>
         </div>
 

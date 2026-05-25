@@ -1,0 +1,100 @@
+- generic [active]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e13]:
+    - generic [ref=e19]:
+      - button "← Back to campaign" [ref=e20] [cursor=pointer]
+      - button "Save" [disabled] [ref=e21]
+      - generic [ref=e22]:
+        - button "Import PSD" [ref=e23] [cursor=pointer]
+        - button "Choose File" [ref=e24] [cursor=pointer]
+      - button "Export" [ref=e25] [cursor=pointer]
+      - button "Generate Pieces" [ref=e26] [cursor=pointer]
+      - button "Presentation" [ref=e27] [cursor=pointer]
+    - generic [ref=e28]:
+      - button "Center" [ref=e29] [cursor=pointer]
+      - button "Fit" [ref=e30] [cursor=pointer]
+      - button "Focus selection" [ref=e31] [cursor=pointer]
+      - generic [ref=e32]:
+        - button "−" [ref=e33] [cursor=pointer]
+        - spinbutton "Zoom (5–300%)" [ref=e34]: "5"
+        - button "+" [ref=e35] [cursor=pointer]
+      - button "▢" [ref=e36] [cursor=pointer]
+    - generic [ref=e37]:
+      - generic "Drag to resize · double-click to reset" [ref=e38]
+      - generic [ref=e39]:
+        - generic [ref=e40]: Layers
+        - button "+ Folder" [ref=e41] [cursor=pointer]:
+          - generic [ref=e42]: + Folder
+      - generic [ref=e43]:
+        - generic [ref=e112]:
+          - generic "Drag to reorder" [ref=e113] [cursor=pointer]
+          - button "Hide layer" [ref=e117] [cursor=pointer]:
+            - img [ref=e118]
+          - button "Lock layer" [ref=e121] [cursor=pointer]:
+            - img [ref=e122]
+          - generic "Double click to rename" [ref=e126]: BOX
+          - button "Delete layer" [ref=e127] [cursor=pointer]: 🗑
+        - generic [ref=e60]:
+          - generic "Drag to reorder" [ref=e61] [cursor=pointer]
+          - button "Hide layer" [ref=e65] [cursor=pointer]:
+            - img [ref=e66]
+          - button "Lock layer" [ref=e69] [cursor=pointer]:
+            - img [ref=e70]
+          - generic "Double click to rename" [ref=e74]: BG
+          - button "Delete layer" [ref=e75] [cursor=pointer]: 🗑
+        - generic [ref=e76]:
+          - button "Hide layer" [ref=e77] [cursor=pointer]:
+            - img [ref=e78]
+          - button "Lock layer" [ref=e81] [cursor=pointer]:
+            - img [ref=e82]
+          - generic "Double click to rename" [ref=e86]: Background
+    - generic [ref=e87]:
+      - generic "Drag to resize · double-click to reset" [ref=e88]
+      - generic [ref=e89]: Properties
+      - generic [ref=e90]:
+        - button "Assets" [ref=e91] [cursor=pointer]
+        - button "+" [ref=e92] [cursor=pointer]
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - generic [ref=e95]:
+            - generic [ref=e128]: Blend mode
+            - combobox "Layer blend mode (Photoshop-style)" [ref=e129] [cursor=pointer]:
+              - option "Normal" [selected]
+              - option "Multiply"
+              - option "Screen"
+              - option "Overlay"
+              - option "Darken"
+              - option "Lighten"
+              - option "Color Dodge"
+              - option "Color Burn"
+              - option "Hard Light"
+              - option "Soft Light"
+              - option "Difference"
+              - option "Exclusion"
+              - option "Hue"
+              - option "Saturation"
+              - option "Color"
+              - option "Luminosity"
+              - option "Linear Dodge"
+          - generic [ref=e96]:
+            - generic [ref=e130]: Opacity
+            - generic [ref=e131]:
+              - spinbutton "Opacity (0-100%)" [ref=e132]: "100"
+              - generic [ref=e133]: "%"
+        - generic [ref=e134]:
+          - generic [ref=e135]: Replace Asset
+          - combobox [ref=e136] [cursor=pointer]:
+            - option "BG"
+            - option "BOX" [selected]
+        - generic [ref=e98]: Move and resize on canvas.
+        - generic [ref=e101]:
+          - button "20%" [ref=e137] [cursor=pointer]
+          - button "40%" [ref=e138] [cursor=pointer]
+          - button "60%" [ref=e139] [cursor=pointer]
+          - button "80%" [ref=e140] [cursor=pointer]
+        - button "Fit to canvas" [ref=e141] [cursor=pointer]
+        - button "Mask" [ref=e143] [cursor=pointer]:
+          - img [ref=e144]
+          - text: Mask

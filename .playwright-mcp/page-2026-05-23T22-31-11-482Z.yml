@@ -1,0 +1,172 @@
+- generic [active]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e13]:
+    - generic [ref=e19]:
+      - button "← Voltar para campanha" [ref=e20] [cursor=pointer]
+      - button "Salvar" [disabled] [ref=e21]
+      - generic [ref=e22]:
+        - button "+ Step" [ref=e23] [cursor=pointer]
+        - button "PSD" [ref=e24] [cursor=pointer]
+        - button "Editar Externo" [ref=e25] [cursor=pointer]
+      - generic "Importar PSD pra esta campanha (substitui Key Vision atual)" [ref=e26] [cursor=pointer]: Importar PSD
+      - button "Legendas" [ref=e27] [cursor=pointer]
+      - button "Exportar" [ref=e28] [cursor=pointer]
+      - button "Apresentação" [ref=e29] [cursor=pointer]
+    - generic [ref=e30]:
+      - generic [ref=e31]: "Asset:"
+      - combobox [ref=e32]:
+        - option "PONTA VERDE" [selected]
+        - option "Rectangle 1"
+        - option "Rectangle 1 copy"
+        - option "Rectangle 1 copy 2"
+        - option "Rectangle 1 copy 3"
+        - option "Rectangle 1 copy 4"
+        - option "Rectangle 2"
+        - option "Fortalecer a competitividade do seu negócio. Esse é o negócio"
+      - button "+ Adicionar ao canvas" [ref=e33] [cursor=pointer]
+      - button "Centralizar" [ref=e34] [cursor=pointer]
+      - button "Fit" [ref=e35] [cursor=pointer]
+      - button "Focar seleção" [ref=e36] [cursor=pointer]
+      - button "−" [ref=e37] [cursor=pointer]
+      - generic [ref=e38]: 25%
+      - button "+" [ref=e39] [cursor=pointer]
+    - generic [ref=e40]:
+      - generic "Arraste pra redimensionar · duplo-clique pra resetar" [ref=e41]
+      - generic [ref=e42]:
+        - generic [ref=e43]: Layers
+        - button "+ Folder" [ref=e44] [cursor=pointer]:
+          - generic [ref=e45]: + Folder
+      - generic [ref=e46]:
+        - 'generic "Click: selecionar todos os layers do grupo · arraste pra mover/aninhar · duplo-clique pra renomear" [ref=e47] [cursor=pointer]':
+          - generic "Recolher" [ref=e48]: ▼
+          - button "Esconder todos os layers da pasta" [ref=e49]:
+            - img [ref=e50]
+          - button "Travar pasta" [ref=e53]:
+            - img [ref=e54]
+          - generic [ref=e57]: TITULO
+          - button "+" [ref=e58]
+          - button "×" [ref=e59]
+        - generic [ref=e60]:
+          - generic "Arraste pra reordenar" [ref=e61] [cursor=pointer]
+          - button "Esconder layer" [ref=e65] [cursor=pointer]:
+            - img [ref=e66]
+          - button "Travar layer" [ref=e69] [cursor=pointer]:
+            - img [ref=e70]
+          - generic "Duplo clique para renomear" [ref=e74]: Fortalecer a competitividade do seu negócio. Esse é o negócio
+          - button "✕" [ref=e75] [cursor=pointer]
+        - generic [ref=e76]:
+          - generic "Arraste pra reordenar" [ref=e77] [cursor=pointer]
+          - button "Esconder layer" [ref=e81] [cursor=pointer]:
+            - img [ref=e82]
+          - button "Travar layer" [ref=e85] [cursor=pointer]:
+            - img [ref=e86]
+          - generic "vector mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove" [ref=e90] [cursor=pointer]: ▭
+          - generic "Duplo clique para renomear" [ref=e91]: Rectangle 2
+          - button "vector mask — click pra editar" [ref=e92] [cursor=pointer]
+          - button "✕" [ref=e93] [cursor=pointer]
+        - generic [ref=e94]:
+          - generic "Arraste pra reordenar" [ref=e95] [cursor=pointer]
+          - button "Esconder layer" [ref=e99] [cursor=pointer]:
+            - img [ref=e100]
+          - button "Travar layer" [ref=e103] [cursor=pointer]:
+            - img [ref=e104]
+          - generic "raster mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove" [ref=e108] [cursor=pointer]: ▦
+          - generic "Duplo clique para renomear" [ref=e109]: Rectangle 1 copy 4
+          - button "raster mask — click pra editar" [ref=e110] [cursor=pointer]
+          - button "✕" [ref=e111] [cursor=pointer]
+        - generic [ref=e112]:
+          - generic "Arraste pra reordenar" [ref=e113] [cursor=pointer]
+          - button "Esconder layer" [ref=e117] [cursor=pointer]:
+            - img [ref=e118]
+          - button "Travar layer" [ref=e121] [cursor=pointer]:
+            - img [ref=e122]
+          - generic "raster mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove" [ref=e126] [cursor=pointer]: ▦
+          - generic "Duplo clique para renomear" [ref=e127]: Rectangle 1 copy 3
+          - button "raster mask — click pra editar" [ref=e128] [cursor=pointer]
+          - button "✕" [ref=e129] [cursor=pointer]
+        - generic [ref=e130]:
+          - generic "Arraste pra reordenar" [ref=e131] [cursor=pointer]
+          - button "Esconder layer" [ref=e135] [cursor=pointer]:
+            - img [ref=e136]
+          - button "Travar layer" [ref=e139] [cursor=pointer]:
+            - img [ref=e140]
+          - generic "raster mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove" [ref=e144] [cursor=pointer]: ▦
+          - generic "Duplo clique para renomear" [ref=e145]: Rectangle 1 copy 2
+          - button "raster mask — click pra editar" [ref=e146] [cursor=pointer]
+          - button "✕" [ref=e147] [cursor=pointer]
+        - generic [ref=e148]:
+          - generic "Arraste pra reordenar" [ref=e149] [cursor=pointer]
+          - button "Esconder layer" [ref=e153] [cursor=pointer]:
+            - img [ref=e154]
+          - button "Travar layer" [ref=e157] [cursor=pointer]:
+            - img [ref=e158]
+          - generic "raster mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove" [ref=e162] [cursor=pointer]: ▦
+          - generic "Duplo clique para renomear" [ref=e163]: Rectangle 1 copy
+          - button "raster mask — click pra editar" [ref=e164] [cursor=pointer]
+          - button "✕" [ref=e165] [cursor=pointer]
+        - generic [ref=e166]:
+          - generic "Arraste pra reordenar" [ref=e167] [cursor=pointer]
+          - button "Esconder layer" [ref=e171] [cursor=pointer]:
+            - img [ref=e172]
+          - button "Travar layer" [ref=e175] [cursor=pointer]:
+            - img [ref=e176]
+          - generic "raster mask · clique-toggle · Shift+clique disable · Alt+clique invert · botão direito remove" [ref=e180] [cursor=pointer]: ▦
+          - generic "Duplo clique para renomear" [ref=e181]: Rectangle 1
+          - button "raster mask — click pra editar" [ref=e182] [cursor=pointer]
+          - button "✕" [ref=e183] [cursor=pointer]
+        - generic [ref=e184]:
+          - generic "Arraste pra reordenar" [ref=e185] [cursor=pointer]
+          - button "Esconder layer" [ref=e189] [cursor=pointer]:
+            - img [ref=e190]
+          - button "Travar layer" [ref=e193] [cursor=pointer]:
+            - img [ref=e194]
+          - generic "Duplo clique para renomear" [ref=e198]: PONTA VERDE
+          - button "✕" [ref=e199] [cursor=pointer]
+        - generic [ref=e200]:
+          - button "Esconder layer" [ref=e201] [cursor=pointer]:
+            - img [ref=e202]
+          - button "Travar layer" [ref=e205] [cursor=pointer]:
+            - img [ref=e206]
+          - generic "Duplo clique para renomear" [ref=e210]: Background
+    - generic [ref=e211]:
+      - generic "Arraste pra redimensionar · duplo-clique pra resetar" [ref=e212]
+      - generic [ref=e213]: Propriedades
+      - button "Assets" [ref=e215] [cursor=pointer]
+      - generic [ref=e216]:
+        - generic [ref=e217]:
+          - generic [ref=e218]: Background
+          - button "+" [ref=e220] [cursor=pointer]
+        - generic [ref=e221]:
+          - button "Sólido" [ref=e222] [cursor=pointer]
+          - button "Linear" [ref=e223] [cursor=pointer]
+          - button "Radial" [ref=e224] [cursor=pointer]
+          - button "Imagem" [ref=e225] [cursor=pointer]
+        - generic [ref=e228]:
+          - button "#ffffff" [ref=e229] [cursor=pointer]
+          - textbox "#RRGGBB" [ref=e230]: "#ffffff"
+          - spinbutton "Opacidade %" [ref=e232]: "100"
+          - generic [ref=e233]: "%"
+        - generic [ref=e234]:
+          - generic [ref=e235]: Blend
+          - combobox [ref=e236]:
+            - option "Normal" [selected]
+            - option "Multiply"
+            - option "Screen"
+            - option "Overlay"
+            - option "Darken"
+            - option "Lighten"
+            - option "Color Dodge"
+            - option "Color Burn"
+            - option "Hard Light"
+            - option "Soft Light"
+            - option "Difference"
+            - option "Exclusion"
+            - option "Hue"
+            - option "Saturation"
+            - option "Color"
+            - option "Luminosity"
+        - generic [ref=e237]:
+          - generic [ref=e238]: Mask
+          - button "+ Adicionar" [ref=e239] [cursor=pointer]

@@ -2,6 +2,7 @@
 import { SessionProvider } from "next-auth/react"
 import { useEffect } from "react"
 import { ActiveClientProvider } from "@/lib/activeClientContext"
+import { DesignTokensInjector } from "@/components/shared/DesignTokensInjector"
 
 /**
  * Listener global: Shift+ArrowUp/Down em <input type="number"> incrementa/decrementa
@@ -41,6 +42,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   useGlobalShiftStepBoost()
   return (
     <SessionProvider>
+      <DesignTokensInjector />
       <ActiveClientProvider>{children}</ActiveClientProvider>
     </SessionProvider>
   )

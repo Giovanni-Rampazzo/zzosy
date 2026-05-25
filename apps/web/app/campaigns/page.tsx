@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
-import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+import { statusMeta } from "@/lib/pieceStatus"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { Button } from "@/components/ui/Button"
@@ -24,11 +24,11 @@ export default function CampaignsPage() {
   const router = useRouter()
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState<"grid" | "list">("grid")
-  const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  const [view, setView] = useState<"grid" | "list">("list")
   const [q, setQ] = useState("")
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
   // Modal "+ Nova Campanha" (analogo ao "+ Nova Empresa" da dashboard).
   const [showNew, setShowNew] = useState(false)
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
@@ -102,6 +102,36 @@ export default function CampaignsPage() {
     }
   }
 
+  async function duplicateCampaign(id: string) {
+    setDuplicatingId(id)
+    try {
+      const res = await fetch(`/api/campaigns/${id}/duplicate`, { method: "POST" })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert("Falha ao duplicar: " + (err.detail ?? err.error ?? "?"))
+        return
+      }
+      // Recarrega lista pra mostrar a duplicada
+      const r = await fetch("/api/campaigns", { cache: "no-store" })
+      const d = await r.json()
+      setCampaigns(Array.isArray(d) ? d : [])
+    } finally {
+      setDuplicatingId(null)
+    }
+  }
+
+  async function renameCampaign(id: string, currentName: string) {
+    const next = prompt("Novo nome da campanha:", currentName)?.trim()
+    if (!next || next === currentName) return
+    const res = await fetch(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: next }),
+    })
+    if (!res.ok) { alert("Falha ao renomear"); return }
+    setCampaigns(prev => prev.map(c => c.id === id ? { ...c, name: next } : c))
+  }
+
   useEffect(() => {
     fetch("/api/campaigns", { cache: "no-store" }).then(r => r.json()).then(d => {
       setCampaigns(Array.isArray(d) ? d : [])
@@ -110,7 +140,6 @@ export default function CampaignsPage() {
   }, [])
 
   const filtered = campaigns.filter(c => {
-    if (statusFilter !== "ALL" && c.status !== statusFilter) return false
     if (q.trim()) {
       const needle = q.trim().toLowerCase()
       if (!c.name.toLowerCase().includes(needle) && !c.client.name.toLowerCase().includes(needle)) return false
@@ -118,16 +147,12 @@ export default function CampaignsPage() {
     return true
   })
 
-  const counts: Record<string, number> = { ALL: campaigns.length }
-  for (const s of PIECE_STATUS_LIST) counts[s] = campaigns.filter(c => c.status === s).length
-
   return (
     <PageShell>
       <div className="p-8">
         <PageHeader
-          title="Campanhas"
+          title=""
           count={campaigns.length}
-          subtitle="Gerencie suas campanhas em um só lugar"
           actions={
             <>
               <input
@@ -144,30 +169,6 @@ export default function CampaignsPage() {
             </>
           }
         />
-
-        {/* Filtro por status */}
-        <div className="flex flex-wrap gap-2 mb-5">
-          <button
-            onClick={() => setStatusFilter("ALL")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors ${statusFilter === "ALL" ? "bg-[#111] text-white border-[#111]" : "bg-white text-[#888] border-[#E0E0E0] hover:border-[#888]"}`}
-          >
-            Todas <span className="opacity-70">({counts.ALL})</span>
-          </button>
-          {PIECE_STATUS_LIST.map(s => {
-            const meta = statusMeta(s)
-            const active = statusFilter === s
-            return (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                style={active ? { background: meta.bg, color: meta.color, borderColor: meta.color } : {}}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors ${active ? "" : "bg-white text-[#888] border-[#E0E0E0] hover:border-[#888]"}`}
-              >
-                {meta.label} <span className="opacity-70">({counts[s]})</span>
-              </button>
-            )
-          })}
-        </div>
 
         {loading ? (
           <div className="text-center py-16 text-[#888888]">Carregando...</div>
@@ -235,8 +236,7 @@ export default function CampaignsPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Peças</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Assets</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Atualizada</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#666]">Ações</th>
+                  <th className="px-4 py-3 text-right"></th>
                 </tr>
               </thead>
               <tbody>
@@ -262,7 +262,6 @@ export default function CampaignsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-[#666]">{c._count.pieces}</td>
                       <td className="px-4 py-3 text-sm text-[#666]">{c._count.assets}</td>
-                      <td className="px-4 py-3 text-sm text-[#666]">{new Date(c.updatedAt).toLocaleDateString("pt-BR")}</td>
                       <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-2 justify-end">
                           {confirmDelete === c.id ? (
@@ -272,7 +271,14 @@ export default function CampaignsPage() {
                               <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
                             </>
                           ) : (
-                            <Button variant="danger" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>Apagar</Button>
+                            <>
+                              <Button variant="danger" size="sm" title="Option/Alt+click pra apagar sem confirmação" onClick={(e) => deleteCampaign(c.id, e.altKey)}>Apagar</Button>
+                              <Button variant="info" size="sm" loading={duplicatingId === c.id} onClick={() => duplicateCampaign(c.id)}>
+                                {duplicatingId === c.id ? "Duplicando..." : "Duplicar"}
+                              </Button>
+                              <Button variant="secondary" size="sm" onClick={() => renameCampaign(c.id, c.name)}>Editar</Button>
+                              <Button variant="view" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)}>Entrar</Button>
+                            </>
                           )}
                         </div>
                       </td>

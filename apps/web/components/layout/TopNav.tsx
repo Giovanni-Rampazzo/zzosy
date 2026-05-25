@@ -4,11 +4,13 @@ import { usePathname } from "next/navigation"
 import { signOut, useSession } from "next-auth/react"
 import { useBrand } from "@/lib/useBrand"
 
+// Mídias = catalogo GLOBAL de formatos (dimensoes/veiculos) do tenant.
+// Tambem acessivel via /clients/[id]/edit > card "Formatos de midia".
 const navLinks = [
-  { href: "/dashboard", label: "Clientes" },
+  { href: "/dashboard", label: "Empresas" },
   { href: "/campaigns", label: "Campanhas" },
   { href: "/pieces", label: "Peças" },
-  { href: "/medias", label: "Mídias" },
+  { href: "/medias", label: "Formatos" },
   { href: "/approvals", label: "Aprovação" },
   { href: "/deliveries", label: "Entregas" },
 ]
@@ -34,34 +36,49 @@ export function TopNav() {
           key={link.href}
           href={link.href}
           style={{
-            color: pathname?.startsWith(link.href) ? "#ffffff" : "#777777",
+            color: pathname?.startsWith(link.href) ? "#ffffff" : "#B0B0B0",
             textDecoration: "none",
-            fontSize: 12,
-            fontWeight: 500,
+            fontSize: 14,
+            fontWeight: 600,
             paddingBottom: 2,
             borderBottom: pathname?.startsWith(link.href) ? `2px solid ${accent}` : "2px solid transparent",
+            transition: "color 0.15s ease",
           }}
+          onMouseEnter={e => { if (!pathname?.startsWith(link.href)) e.currentTarget.style.color = "#ffffff" }}
+          onMouseLeave={e => { if (!pathname?.startsWith(link.href)) e.currentTarget.style.color = "#B0B0B0" }}
         >
           {link.label}
         </Link>
       ))}
+      <div style={{flex:1}} />
       {(session?.user as any)?.role === "SUPER_ADMIN" && (
         <Link
-          href="/admin/users"
+          href="/admin"
           style={{
-            color: pathname?.startsWith("/admin") ? "#ffffff" : "#777777",
+            color: pathname?.startsWith("/admin") ? "#ffffff" : "#B0B0B0",
             textDecoration: "none",
-            fontSize: 12,
-            fontWeight: 500,
-            paddingBottom: 2,
-            borderBottom: pathname?.startsWith("/admin") ? `2px solid ${accent}` : "2px solid transparent",
+            fontSize: 14,
+            fontWeight: 600,
+            transition: "color 0.15s ease",
           }}
+          onMouseEnter={e => { if (!pathname?.startsWith("/admin")) e.currentTarget.style.color = "#ffffff" }}
+          onMouseLeave={e => { if (!pathname?.startsWith("/admin")) e.currentTarget.style.color = "#B0B0B0" }}
         >
           Admin
         </Link>
       )}
-      <div style={{flex:1}} />
-      <Link href="/account" style={{color: pathname?.startsWith("/account") ? "#ffffff" : "#777777", textDecoration:"none", fontSize:12, fontWeight:500}}>
+      <Link
+        href="/account"
+        style={{
+          color: pathname?.startsWith("/account") ? "#ffffff" : "#B0B0B0",
+          textDecoration: "none",
+          fontSize: 14,
+          fontWeight: 600,
+          transition: "color 0.15s ease",
+        }}
+        onMouseEnter={e => { if (!pathname?.startsWith("/account")) e.currentTarget.style.color = "#ffffff" }}
+        onMouseLeave={e => { if (!pathname?.startsWith("/account")) e.currentTarget.style.color = "#B0B0B0" }}
+      >
         Account
       </Link>
       <div

@@ -254,6 +254,19 @@ function readText(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) =>
     ? (l as any).nameSource
     : undefined
 
+  // PSD text shape type — Point vs Box (Paragraph). ag-psd expoe direto.
+  // Critico pra wrap correto: Point text NAO wrappa (so \n quebra), Box text
+  // wrappa dentro de boxBounds. Editor trata diferente.
+  const shapeType: "point" | "box" | undefined =
+    (l as any).text?.shapeType === "box" ? "box" :
+    (l as any).text?.shapeType === "point" ? "point" : undefined
+  const boxBoundsRaw = (l as any).text?.boxBounds
+  const boxBounds: [number, number, number, number] | undefined =
+    Array.isArray(boxBoundsRaw) && boxBoundsRaw.length === 4 &&
+    boxBoundsRaw.every((n: any) => typeof n === "number")
+      ? [boxBoundsRaw[0], boxBoundsRaw[1], boxBoundsRaw[2], boxBoundsRaw[3]]
+      : undefined
+
   return {
     ...readCommon(l, parentPath),
     type: "text",
@@ -263,6 +276,8 @@ function readText(l: AgPsdLayer, parentPath: string[], warn: (w: ReadWarning) =>
     paragraph,
     transform,
     ...(nameSource ? { nameSource } : {}),
+    ...(shapeType ? { shapeType } : {}),
+    ...(boxBounds ? { boxBounds } : {}),
   }
 }
 
@@ -1084,6 +1099,8 @@ function mapCharStyle(s: any, _warn: (w: ReadWarning) => void, _layerName: strin
     fontSize: rawSize * textScale,
     color: s.fillColor ? rgbToHex(s.fillColor) : "#000000",
     tracking: typeof s.tracking === "number" ? s.tracking : 0,
+    baselineShift: typeof s.baselineShift === "number" && s.baselineShift !== 0
+      ? s.baselineShift * textScale : undefined,
     leading: isAutoLeading ? undefined : (rawLeading! * textScale),
     underline: s.underline === true,
     strikethrough: s.strikethrough === true,
@@ -1104,6 +1121,9 @@ function mapCharStylePartial(s: any, textScale: number = 1): Partial<PsdCharStyl
   if (typeof s.fontSize === "number") out.fontSize = s.fontSize * textScale
   if (s.fillColor) out.color = rgbToHex(s.fillColor)
   if (typeof s.tracking === "number") out.tracking = s.tracking
+  if (typeof s.baselineShift === "number" && s.baselineShift !== 0) {
+    out.baselineShift = s.baselineShift * textScale
+  }
   if (typeof s.leading === "number") out.leading = s.leading * textScale
   if (s.underline) out.underline = true
   if (s.strikethrough) out.strikethrough = true

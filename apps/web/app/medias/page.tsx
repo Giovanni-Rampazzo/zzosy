@@ -186,7 +186,6 @@ export default function MediasPage() {
             </Button>
             <div>
               <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Mídias e Formatos</h1>
-              <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Formatos disponíveis para geração de peças</p>
             </div>
           </div>
           <Button variant="primary" size="md" onClick={openCreate}>+ Novo formato</Button>
@@ -264,42 +263,30 @@ export default function MediasPage() {
                 ))}
                 <div style={{display:"flex",flexDirection:"column",gap:5}}>
                   <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>Categoria</label>
-                  <input
-                    type="text"
+                  <CategorySelect
                     value={form.category}
-                    onChange={e => setForm(f => ({...f,category:e.target.value}))}
-                    placeholder="Ex: Digital, Offline, Vídeo..."
-                    list="media-category-suggestions"
+                    onChange={v => setForm(f => ({...f, category: v}))}
+                    options={categories.filter(c => c !== "Sem categoria")}
+                    placeholder="Selecione..."
+                    inp={inp}
                     required
-                    style={inp}
                   />
-                  <datalist id="media-category-suggestions">
-                    {categories.filter(c => c !== "Sem categoria").map(c => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
                 </div>
               </div>
-              {/* Segmento: opcional. Datalist mostra sugestoes de pecas existentes
-                  + segments ja salvos em outros MediaFormats. */}
+              {/* Segmento: opcional. Dropdown com options inferidas de pecas existentes
+                  + segments ja salvos em outros MediaFormats. "+ Nova" abre input inline. */}
               <div style={{display:"flex",flexDirection:"column",gap:5}}>
                 <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}}>Segmento</label>
-                <input
-                  type="text"
+                <CategorySelect
                   value={form.segment}
-                  onChange={e => setForm(f => ({...f,segment:e.target.value}))}
-                  placeholder="Opcional — ex: Lançamento, Promo..."
-                  list="media-segment-suggestions"
-                  style={inp}
-                />
-                <datalist id="media-segment-suggestions">
-                  {Array.from(new Set([
+                  onChange={v => setForm(f => ({...f, segment: v}))}
+                  options={Array.from(new Set([
                     ...segmentSuggestions,
                     ...formats.map(f => f.segment ?? "").filter(s => s.length > 0),
-                  ])).sort().map(s => (
-                    <option key={s} value={s} />
-                  ))}
-                </datalist>
+                  ])).sort()}
+                  placeholder="Opcional — selecione..."
+                  inp={inp}
+                />
               </div>
               {/* Largura + unidade. Photoshop-style: valor numerico + dropdown de unidade. */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -374,5 +361,82 @@ export default function MediasPage() {
         </div>
       )}
     </PageShell>
+  )
+}
+
+/**
+ * Combobox: dropdown nativo com as opcoes existentes + ultima opcao "+ Adicionar nova"
+ * que troca pra input de texto inline (autoFocus). Esc / Blur com valor vazio volta
+ * pra dropdown. Padrao pra Categoria e Segmento — constrange escolha mas permite
+ * criar nova quando necessario.
+ */
+function CategorySelect({
+  value, onChange, options, placeholder, inp, required,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: string[]
+  placeholder: string
+  inp: React.CSSProperties
+  required?: boolean
+}) {
+  const [creatingNew, setCreatingNew] = useState(false)
+  // Se o valor atual nao existe nas opcoes (ex: edit de um formato antigo com
+  // valor custom), ativa modo de input ao carregar pra mostrar o valor real.
+  const valueInOptions = !value || options.includes(value)
+  const showInput = creatingNew || !valueInOptions
+
+  if (showInput) {
+    return (
+      <div style={{display:"flex",gap:6}}>
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="Digite novo valor..."
+          autoFocus
+          required={required}
+          style={{...inp, flex:1}}
+          onKeyDown={e => {
+            if (e.key === "Escape") {
+              onChange("")
+              setCreatingNew(false)
+            }
+          }}
+        />
+        {options.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { onChange(""); setCreatingNew(false) }}
+            style={{padding:"0 10px",background:"transparent",border:"1px solid #E0E0E0",borderRadius:6,cursor:"pointer",fontSize:11,color:"#888"}}
+            title="Voltar pra lista"
+          >
+            ←
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={e => {
+        if (e.target.value === "__new__") {
+          onChange("")
+          setCreatingNew(true)
+        } else {
+          onChange(e.target.value)
+        }
+      }}
+      required={required}
+      style={inp}
+    >
+      <option value="">{placeholder}</option>
+      {options.map(o => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+      <option value="__new__">+ Adicionar novo...</option>
+    </select>
   )
 }

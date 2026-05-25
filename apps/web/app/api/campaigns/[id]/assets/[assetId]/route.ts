@@ -12,6 +12,8 @@ type Ctx = { params: Promise<{ id: string; assetId: string }> }
 // Whitelist de fields aceitos em PATCH/PUT (audit P1.10).
 const ASSET_PATCH_FIELDS = new Set([
   "imageUrl", "label", "order", "visible", "value", "content", "lastOverride",
+  // GAM: vinculacao com ClientLibraryAsset (modelo Figma main↔instance)
+  "libraryAssetId", "libraryAssetVersion", "libraryAssetDetached", "slotKey",
 ])
 
 // Verifica que o asset pertence a uma campaign no tenant da sessao E que o
@@ -78,6 +80,12 @@ export async function PUT(req: Request, ctx: Ctx) {
 
   const data: any = {}
   for (const k of ["imageUrl", "label", "order", "visible", "value"]) {
+    if (k in body) data[k] = body[k]
+  }
+  // GAM: vinculacao com ClientLibraryAsset (modelo Figma main↔instance).
+  // Setado quando user "Salva no Library" (cria main + linka instance), ou via
+  // /from-library (instancia novo CampaignAsset apontando pro main).
+  for (const k of ["libraryAssetId", "libraryAssetVersion", "libraryAssetDetached", "slotKey"]) {
     if (k in body) data[k] = body[k]
   }
   // lastOverride: template visual aplicado na matriz. Atualizado quando user

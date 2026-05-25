@@ -38,23 +38,28 @@ export async function maskToAgPsd(mask: LayerMask | null | undefined): Promise<{
 
     if (mask.type === "vector" && mask.vector) {
       // V1: extrai os 4 cantos do path retangular pra montar o vectorMask.
-      // ag-psd usa coords como fracoes 0..1 do canvas; precisamos saber as
-      // dimensoes do canvas. Esse helper apenas devolve o esqueleto; o
-      // chamador faz a normalizacao.
+      // ag-psd v18 espera knots com a chave 'points' = array de 6 floats
+      // [cpL_x, cpL_y, anchor_x, anchor_y, cpR_x, cpR_y]. Pra cantos retos
+      // (sem curva), cpL = anchor = cpR — assim o segmento entre dois knots
+      // vira reta. ANTES usavamos { anchor: [x,y] } e ag-psd lia points
+      // como undefined → 'Cannot read properties of undefined (reading 1)'.
       // TODO V2: parseia path SVG completo pra paths arbitrarios.
       const v = mask.vector
+      const mk = (x: number, y: number) => ({ points: [x, y, x, y, x, y] })
       return {
         vectorMask: {
-          // ag-psd structure: { paths: [{ knots: [{ anchor: [x, y] }, ...] }] }
           // Coords aqui em px do canvas - o chamador normaliza pra 0..1.
           paths: [{
             knots: [
-              { anchor: [v.posX, v.posY] },
-              { anchor: [v.posX + v.width, v.posY] },
-              { anchor: [v.posX + v.width, v.posY + v.height] },
-              { anchor: [v.posX, v.posY + v.height] },
+              mk(v.posX,             v.posY),
+              mk(v.posX + v.width,   v.posY),
+              mk(v.posX + v.width,   v.posY + v.height),
+              mk(v.posX,             v.posY + v.height),
             ],
-            closed: true,
+            // ag-psd: open=false => path fechado (knot type linkedKnot=1).
+            // closed:true nao eh propriedade reconhecida; usamos open:false.
+            open: false,
+            fillRule: "even-odd",
           }],
           disabled: !mask.enabled,
           _zzosyPxCoords: true, // flag pro chamador normalizar
@@ -91,19 +96,16 @@ function loadPngToCanvas(dataUrl: string): Promise<HTMLCanvasElement> {
 /**
  * Normaliza coords px → fracao 0..1 do canvas. Chamada pelo export depois
  * que o vectorMask foi gerado, quando o W/H do canvas e conhecido.
+ *
+ * IMPORTANTE: ag-psd writeBezierKnot ja divide por width/height internamente
+ * (escreve writeFixedPointPath32(points[i] / width)), entao na verdade ele
+ * espera coords em PIXEL e divide ele mesmo. Mas com `writeUint16(width)` /
+ * `writeUint16(height)` o ag-psd sabe qual o canvas. NAO devemos pre-dividir.
+ * Esta funcao agora soh remove a flag interna e mantem points em pixel.
  */
-export function normalizeVectorMaskCoords(vectorMask: any, canvasW: number, canvasH: number): any {
+export function normalizeVectorMaskCoords(vectorMask: any, _canvasW: number, _canvasH: number): any {
   if (!vectorMask || !vectorMask._zzosyPxCoords) return vectorMask
-  const out = {
-    ...vectorMask,
-    paths: vectorMask.paths.map((p: any) => ({
-      ...p,
-      knots: p.knots.map((k: any) => ({
-        ...k,
-        anchor: [k.anchor[0] / canvasW, k.anchor[1] / canvasH],
-      })),
-    })),
-  }
+  const out = { ...vectorMask }
   delete out._zzosyPxCoords
   return out
 }

@@ -1,0 +1,306 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - 'heading "Playground: Asset ↔ Overrides ↔ Peças" [level=1] [ref=e5]'
+      - button "Reset" [ref=e6] [cursor=pointer]
+    - paragraph [ref=e7]:
+      - text: Mexe nos assets à esquerda — mudança propaga REALTIME nas peças à direita (sem botão Salvar).
+      - code [ref=e8]: asset.content
+      - text: é fonte da verdade dos chars,
+      - code [ref=e9]: overrides.text
+      - text: sobrescreve LOCAL (com
+      - code [ref=e10]: \n
+      - text: ),
+      - code [ref=e11]: overrides.fill/fontSize
+      - text: sobrescreve estilo padrão. Cores per char do asset são preservadas no texto da peça.
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - heading "Assets (fonte da verdade)" [level=2] [ref=e14]
+        - generic [ref=e15]:
+          - generic [ref=e16]: Título
+          - textbox [ref=e17]: Hello World
+          - generic [ref=e18]:
+            - generic [ref=e19]: Entrelinhas (lineHeight)
+            - spinbutton [ref=e20]: "1.2"
+          - generic [ref=e21]: Editar per-char
+          - generic [ref=e22]:
+            - generic [ref=e23]:
+              - generic [ref=e24]: H
+              - textbox "Cor" [ref=e25] [cursor=pointer]: "#ff006e"
+              - spinbutton "Tamanho" [ref=e26]: "48"
+              - combobox "Peso" [ref=e27]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e28]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e29]:
+              - generic [ref=e30]: e
+              - textbox "Cor" [ref=e31] [cursor=pointer]: "#ff006e"
+              - spinbutton "Tamanho" [ref=e32]: "48"
+              - combobox "Peso" [ref=e33]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e34]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e35]:
+              - generic [ref=e36]: l
+              - textbox "Cor" [ref=e37] [cursor=pointer]: "#ff006e"
+              - spinbutton "Tamanho" [ref=e38]: "48"
+              - combobox "Peso" [ref=e39]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e40]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e41]:
+              - generic [ref=e42]: l
+              - textbox "Cor" [ref=e43] [cursor=pointer]: "#ff006e"
+              - spinbutton "Tamanho" [ref=e44]: "48"
+              - combobox "Peso" [ref=e45]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e46]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e47]:
+              - generic [ref=e48]: o
+              - textbox "Cor" [ref=e49] [cursor=pointer]: "#ff006e"
+              - spinbutton "Tamanho" [ref=e50]: "48"
+              - combobox "Peso" [ref=e51]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e52]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e53]:
+              - generic [ref=e54]: ·
+              - textbox "Cor" [ref=e55] [cursor=pointer]: "#111111"
+              - spinbutton "Tamanho" [ref=e56]: "48"
+              - combobox "Peso" [ref=e57]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e58]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e59]:
+              - generic [ref=e60]: W
+              - textbox "Cor" [ref=e61] [cursor=pointer]: "#06d6a0"
+              - spinbutton "Tamanho" [ref=e62]: "48"
+              - combobox "Peso" [ref=e63]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e64]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e65]:
+              - generic [ref=e66]: o
+              - textbox "Cor" [ref=e67] [cursor=pointer]: "#06d6a0"
+              - spinbutton "Tamanho" [ref=e68]: "48"
+              - combobox "Peso" [ref=e69]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e70]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e71]:
+              - generic [ref=e72]: r
+              - textbox "Cor" [ref=e73] [cursor=pointer]: "#06d6a0"
+              - spinbutton "Tamanho" [ref=e74]: "48"
+              - combobox "Peso" [ref=e75]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e76]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e77]:
+              - generic [ref=e78]: l
+              - textbox "Cor" [ref=e79] [cursor=pointer]: "#06d6a0"
+              - spinbutton "Tamanho" [ref=e80]: "48"
+              - combobox "Peso" [ref=e81]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e82]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+            - generic [ref=e83]:
+              - generic [ref=e84]: d
+              - textbox "Cor" [ref=e85] [cursor=pointer]: "#06d6a0"
+              - spinbutton "Tamanho" [ref=e86]: "48"
+              - combobox "Peso" [ref=e87]:
+                - option "normal"
+                - option "bold" [selected]
+                - option "100"
+                - option "300"
+                - option "500"
+                - option "700"
+                - option "900"
+              - combobox "Família" [ref=e88]:
+                - option "Arial" [selected]
+                - option "Helvetica"
+                - option "Georgia"
+                - option "Courier"
+                - option "Times"
+                - option "DM Sans"
+          - group [ref=e89]:
+            - generic "spans (debug)" [ref=e90] [cursor=pointer]
+      - generic [ref=e91]:
+        - generic [ref=e92]:
+          - heading "Matriz + Peças (realtime)" [level=2] [ref=e93]
+          - button "+ Gerar peça" [ref=e94] [cursor=pointer]
+        - generic [ref=e95]:
+          - generic [ref=e97]:
+            - generic [ref=e98]: Matriz
+            - generic [ref=e99]: Matriz
+          - generic "Duplo-clique pra editar o texto" [ref=e101]:
+            - generic [ref=e102]: Hello
+            - generic [ref=e103]: World
+          - generic [ref=e104]:
+            - generic [ref=e105]:
+              - generic [ref=e106]:
+                - generic [ref=e107]:
+                  - text: Layer 1 → asset
+                  - strong [ref=e108]: Título
+                - button "Remover" [ref=e109] [cursor=pointer]
+              - generic [ref=e110]:
+                - generic [ref=e111]:
+                  - generic [ref=e112]: override.fill
+                  - textbox [ref=e113] [cursor=pointer]: "#111111"
+                  - button "Reset" [ref=e114] [cursor=pointer]
+                - generic [ref=e115]:
+                  - generic [ref=e116]: override.fontSize
+                  - spinbutton [ref=e117]
+            - generic [ref=e118]: (todos os assets ja estao na matriz)
+        - generic [ref=e119]:
+          - generic [ref=e120]:
+            - generic [ref=e122]: Peça 1
+            - button "Apagar" [ref=e124] [cursor=pointer]
+          - generic "Duplo-clique pra editar o texto" [ref=e126]:
+            - generic [ref=e127]: Hello World
+          - generic [ref=e129]:
+            - generic [ref=e131]:
+              - text: Layer 1 → asset
+              - strong [ref=e132]: Título
+            - generic [ref=e133]:
+              - generic [ref=e134]:
+                - generic [ref=e135]: override.fill
+                - textbox [ref=e136] [cursor=pointer]: "#118ab2"
+                - button "Reset" [ref=e137] [cursor=pointer]
+              - generic [ref=e138]:
+                - generic [ref=e139]: override.fontSize
+                - spinbutton [ref=e140]
+    - generic [ref=e141]:
+      - generic [ref=e142]: "Comportamento (100% fiel ao ZZOSY):"
+      - list [ref=e143]:
+        - listitem [ref=e144]:
+          - strong [ref=e145]: Duplo-clique no texto
+          - text: da peça → edita inline. Enter = nova linha. Esc = cancela. Clicar fora = salva (vira overrides.text).
+        - listitem [ref=e146]:
+          - strong [ref=e147]: Click+drag
+          - text: nos chars → seleciona range → color picker aplica cor per-char (overrides.charFills).
+        - listitem [ref=e148]:
+          - strong [ref=e149]: + Gerar peça
+          - text: = CLONA layers + overrides da matriz como snapshot independente.
+        - listitem [ref=e150]:
+          - strong [ref=e151]: Edit override
+          - text: na matriz → NÃO propaga pras geradas. Só base pra futuras gerações.
+        - listitem [ref=e152]:
+          - strong [ref=e153]: Add/Remove layer
+          - text: "na matriz → propaga: pecas geradas ganham/perdem o layer."
+        - listitem [ref=e154]:
+          - strong [ref=e155]: Edit asset
+          - text: (à esquerda) → propaga pra TODAS via migrateOverrideText + remapeamento per-char.
+  - button "Open Next.js Dev Tools" [ref=e161] [cursor=pointer]:
+    - img [ref=e162]
+  - alert [ref=e165]

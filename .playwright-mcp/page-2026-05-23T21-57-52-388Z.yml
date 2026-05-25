@@ -1,0 +1,24 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: ZZOSY
+      - generic [ref=e6]: Sistema de automação de campanhas
+    - generic [ref=e7]:
+      - generic [ref=e8]: Entrar
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]: E-mail
+          - textbox [ref=e12]
+        - generic [ref=e13]:
+          - generic [ref=e14]: Senha
+          - generic [ref=e15]:
+            - textbox [ref=e16]
+            - button "Mostrar senha" [ref=e17] [cursor=pointer]:
+              - img [ref=e18]
+        - button "Entrar" [ref=e21] [cursor=pointer]
+      - paragraph [ref=e22]:
+        - text: Não tem conta?
+        - link "Criar conta" [ref=e23] [cursor=pointer]:
+          - /url: /register
+  - button "Open Next.js Dev Tools" [ref=e29] [cursor=pointer]:
+    - img [ref=e30]

@@ -1,0 +1,54 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e29] [cursor=pointer]:
+    - img [ref=e30]
+  - alert [ref=e33]
+  - generic [ref=e37]:
+    - navigation [ref=e38]:
+      - link "ZZOSY" [ref=e39] [cursor=pointer]:
+        - /url: /dashboard
+        - img "ZZOSY" [ref=e40]
+      - link "Empresas" [ref=e41] [cursor=pointer]:
+        - /url: /dashboard
+      - link "Campanhas" [ref=e42] [cursor=pointer]:
+        - /url: /campaigns
+      - link "Peças" [ref=e43] [cursor=pointer]:
+        - /url: /pieces
+      - link "Formatos" [ref=e44] [cursor=pointer]:
+        - /url: /medias
+      - link "Aprovação" [ref=e45] [cursor=pointer]:
+        - /url: /approvals
+      - link "Entregas" [ref=e46] [cursor=pointer]:
+        - /url: /deliveries
+      - link "Admin" [ref=e47] [cursor=pointer]:
+        - /url: /admin/users
+      - link "Account" [ref=e48] [cursor=pointer]:
+        - /url: /account
+      - generic [ref=e49] [cursor=pointer]: G
+    - main [ref=e50]:
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - heading "Empresas" [level=1] [ref=e53]
+          - paragraph [ref=e54]: Gerencie todas as empresas da sua agência
+        - table [ref=e56]:
+          - rowgroup [ref=e57]:
+            - row "Empresa Contato E-mail Campanhas + Nova Empresa" [ref=e58]:
+              - columnheader [ref=e59]
+              - columnheader "Empresa" [ref=e60]
+              - columnheader "Contato" [ref=e61]
+              - columnheader "E-mail" [ref=e62]
+              - columnheader "Campanhas" [ref=e63]
+              - columnheader "+ Nova Empresa" [ref=e64]:
+                - button "+ Nova Empresa" [ref=e65] [cursor=pointer]
+          - rowgroup [ref=e66]:
+            - row "ZZOSY ZZOSY — — 3 Apagar Editar Ver" [ref=e67]:
+              - cell "ZZOSY" [ref=e68] [cursor=pointer]:
+                - img "ZZOSY" [ref=e70]
+              - cell "ZZOSY" [ref=e71] [cursor=pointer]
+              - cell "—" [ref=e72]
+              - cell "—" [ref=e73]
+              - cell "3" [ref=e74]
+              - cell "Apagar Editar Ver" [ref=e75]:
+                - generic [ref=e76]:
+                  - button "Apagar" [ref=e77] [cursor=pointer]
+                  - button "Editar" [ref=e78] [cursor=pointer]
+                  - button "Ver" [ref=e79] [cursor=pointer]

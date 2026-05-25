@@ -51,11 +51,7 @@ export default function ApprovalsPage() {
   return (
     <PageShell>
       <div style={{padding:32}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:32}}>
-          <div>
-            <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Aprovação de Peças</h1>
-            <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Revise e aprove as peças geradas</p>
-          </div>
+        <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:32}}>
           <div style={{display:"flex",gap:8}}>
             {[["ALL","Todas"],["CLIENTE","Cliente"],["APROVADO","Aprovadas"],["REPROVADO","Reprovadas"]].map(([v,l])=>(
               <FilterPill key={v} active={filter===v} onClick={()=>setFilter(v)}>

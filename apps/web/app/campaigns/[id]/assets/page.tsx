@@ -30,6 +30,11 @@ interface Asset {
   imageUrl: string | null
   content: any
   order: number
+  // GAM (modelo Figma): asset pode ser instancia de um ClientLibraryAsset.
+  libraryAssetId?: string | null
+  libraryAssetVersion?: number | null
+  libraryAssetDetached?: boolean | null
+  slotKey?: string | null
 }
 interface Campaign {
   id: string
@@ -65,6 +70,12 @@ export default function CampaignAssetsPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [campaign, setCampaign] = useState<Campaign | null>(null)
+  // Ref espelhando o campaign atual — leitura sincrona do estado mais recente
+  // SEM side-effects dentro do setState updater (anti-padrao React 18 StrictMode
+  // que rodava updater 2x e gerava texto duplicado no save: a 2a execucao
+  // compunha spans com prev ja alterado pela 1a).
+  const campaignRef = useRef<Campaign | null>(null)
+  useEffect(() => { campaignRef.current = campaign }, [campaign])
   useSetActiveClient(campaign?.client ? {
     id: campaign.client.id,
     name: campaign.client.name ?? "",
@@ -72,6 +83,110 @@ export default function CampaignAssetsPage() {
   } : null)
   const [loading, setLoading] = useState(true)
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({})
+  // GAM (Global Asset Management) state
+  const [libraryModalOpen, setLibraryModalOpen] = useState(false)
+  const [libraryAssets, setLibraryAssets] = useState<any[]>([])
+  const [libraryBusy, setLibraryBusy] = useState(false)
+
+  async function loadLibrary() {
+    if (!campaign?.client?.id) return
+    setLibraryBusy(true)
+    const res = await fetch(`/api/clients/${campaign.client.id}/library/assets`)
+    if (res.ok) setLibraryAssets(await res.json())
+    setLibraryBusy(false)
+  }
+
+  async function saveAssetToLibrary(assetId: string) {
+    const clientId = campaign?.client?.id
+    if (!clientId) return
+    const asset = campaign?.assets.find(a => a.id === assetId)
+    if (!asset) return
+    const name = prompt("Nome no library:", asset.label)?.trim()
+    if (!name) return
+    const slotKey = prompt("Slot key (opcional — pra cartridges):", "")?.trim() ?? ""
+    const res = await fetch(`/api/clients/${clientId}/library/assets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cloneFrom: { campaignId: id, assetId },
+        name,
+        slotKey: slotKey || null,
+      }),
+    })
+    if (res.ok) {
+      const lib = await res.json()
+      // Liga o CampaignAsset ao library criado (PATCH simples).
+      // Idealmente o POST acima ja faz isso; por ora chamamos um endpoint pra atualizar.
+      await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          libraryAssetId: lib.id,
+          libraryAssetVersion: lib.version,
+          libraryAssetDetached: false,
+          slotKey: lib.slotKey,
+        }),
+      }).catch(() => {})
+      alert(`"${name}" salvo no library`)
+      load()
+    } else {
+      alert("Falha ao salvar no library")
+    }
+  }
+
+  async function bulkSaveToLibrary() {
+    const clientId = campaign?.client?.id
+    if (!clientId || !campaign) return
+    if (!confirm(`Salvar TODOS os ${campaign.assets.length} assets desta campanha no library? Assets ja vinculados a library serao pulados.`)) return
+    setLibraryBusy(true)
+    let count = 0
+    for (const a of campaign.assets) {
+      if ((a as any).libraryAssetId) continue
+      try {
+        await fetch(`/api/clients/${clientId}/library/assets`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cloneFrom: { campaignId: id, assetId: a.id }, name: a.label }),
+        })
+        count++
+      } catch {}
+    }
+    setLibraryBusy(false)
+    alert(`${count} asset(s) salvos no library`)
+    load()
+  }
+
+  async function instantiateFromLibrary(libraryAssetId: string) {
+    setLibraryBusy(true)
+    const res = await fetch(`/api/campaigns/${id}/assets/from-library`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ libraryAssetId }),
+    })
+    setLibraryBusy(false)
+    if (res.ok) {
+      setLibraryModalOpen(false)
+      load()
+    } else {
+      alert("Falha ao instanciar")
+    }
+  }
+
+  async function detachAsset(assetId: string) {
+    if (!confirm("Detach: este asset vira independente do library. Edits futuros no library nao propagarao mais. Continuar?")) return
+    const res = await fetch(`/api/campaigns/${id}/assets/${assetId}/detach`, { method: "POST" })
+    if (res.ok) load()
+    else alert("Falha ao detach")
+  }
+
+  async function updateFromLibrary(assetId: string) {
+    // PUT no endpoint /detach faz tambem o update (consolida version).
+    // Content/lastOverride ja foram propagados pelo backend quando o library mudou.
+    // Aqui so consolidamos o version snapshot.
+    const res = await fetch(`/api/campaigns/${id}/assets/${assetId}/detach`, { method: "PUT" })
+    if (res.ok) load()
+    else alert("Falha ao atualizar")
+  }
   // Cores da marca (Client.brandColors). Carregadas quando a campanha resolve
   // o clientId. Refetch automatico no evento 'zzosy:client-brand-updated' pra
   // refletir mudancas feitas em /clients/[id]/edit sem reload.
@@ -324,13 +439,21 @@ export default function CampaignAssetsPage() {
         prevText[prevText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
       ) suffixLen++
       // Style char-by-char pro newText
+      // SUBSTITUICAO detected: chars antigos foram trocados entre prefix/suffix?
+      // Se sim, novo texto herda do PRIMEIRO char SUBSTITUIDO (igual Adobe/Figma).
+      // Se nao (insercao pura), herda do vizinho da esquerda.
+      const hadReplacement = prevText.length > prefixLen + suffixLen
+      const replacedStyle = hadReplacement ? prevStyles[prefixLen] : undefined
       const newStyles: any[] = []
       for (let i = 0; i < newText.length; i++) {
         if (i < prefixLen) newStyles.push(prevStyles[i] ?? defaultStyle)
         else if (i >= newText.length - suffixLen) {
           const prevIdx = prevText.length - (newText.length - i)
           newStyles.push(prevStyles[prevIdx] ?? defaultStyle)
-        } else newStyles.push(defaultStyle)
+        } else {
+          const inheritedStyle = replacedStyle ?? (i > 0 ? newStyles[i - 1] : undefined)
+          newStyles.push(inheritedStyle ?? prevStyles[0] ?? defaultStyle)
+        }
       }
       // Agrupa chars consecutivos com mesmo style em spans
       const result: any[] = []
@@ -349,12 +472,20 @@ export default function CampaignAssetsPage() {
     // Salva IMEDIATO ao clicar "Salvar" (sem debounce). Antes era debounce
     // 600ms — mas dispara em texto intermediário ("" durante apagar+digitar)
     // e destrói overrides.text das peças. Agora user controla via botão.
-    const currentAsset = campaign.assets.find(a => a.id === assetId)
+    //
+    // BUG GRAVE (corrigido 2026-05-24): usar setCampaign(prev => { newSpans = ... })
+    // com SIDE-EFFECT dentro do updater quebrava em React StrictMode (DEV).
+    // O updater rodava 2x; em casos onde o newText vinha de um path async, a
+    // segunda execucao via prev ja com a nova content e re-aplicava rebuildSpans
+    // ENCIMA do texto novo → duplicacao tipo "Nem sempre Nem sempre é difícil...".
+    // Fix: ler estado mais recente via campaignRef (fora do updater), computar
+    // newSpans uma unica vez, depois setState com objeto pronto (sem updater).
+    const currentAsset = campaignRef.current?.assets.find(a => a.id === assetId)
     const newSpans = rebuildSpans(parseContent(currentAsset?.content))
-    setCampaign({
-      ...campaign,
-      assets: campaign.assets.map(a => a.id === assetId ? { ...a, content: newSpans, value: newText, label: newLabel } : a)
-    })
+    setCampaign(prev => prev ? {
+      ...prev,
+      assets: prev.assets.map(a => a.id === assetId ? { ...a, content: newSpans, value: newText, label: newLabel } : a)
+    } : prev)
     setSavingMap(m => ({ ...m, [assetId]: true }))
     ;(async () => {
       try {
@@ -428,7 +559,13 @@ export default function CampaignAssetsPage() {
             hasAssets={campaign.assets.length > 0}
             hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
           />
-          <div style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{ position: "relative", flexShrink: 0, display: "flex", gap: 8 }}>
+            <Button variant="secondary" size="md" onClick={() => setLibraryModalOpen(true)} title="Importar asset salvo no library deste cliente">
+              + Do Library
+            </Button>
+            <Button variant="secondary" size="md" onClick={bulkSaveToLibrary} disabled={campaign.assets.length === 0} title="Salva TODOS os assets desta campanha no library do cliente (skip duplicates)">
+              ↑ Tudo p/ Library
+            </Button>
             <AddMenu
               onPickText={addTextAsset}
               onPickShape={addShapeAsset}
@@ -466,6 +603,9 @@ export default function CampaignAssetsPage() {
                     onLabelChange={updateAssetLabel}
                     onImageUpload={uploadAssetImage}
                     onDelete={deleteAsset}
+                    onSaveToLibrary={saveAssetToLibrary}
+                    onDetach={detachAsset}
+                    onUpdate={updateFromLibrary}
                   />
                 )}
                 {shapes.length > 0 && (
@@ -478,6 +618,9 @@ export default function CampaignAssetsPage() {
                     onLabelChange={updateAssetLabel}
                     onImageUpload={uploadAssetImage}
                     onDelete={deleteAsset}
+                    onSaveToLibrary={saveAssetToLibrary}
+                    onDetach={detachAsset}
+                    onUpdate={updateFromLibrary}
                   />
                 )}
                 {images.length > 0 && (
@@ -490,12 +633,100 @@ export default function CampaignAssetsPage() {
                     onLabelChange={updateAssetLabel}
                     onImageUpload={uploadAssetImage}
                     onDelete={deleteAsset}
+                    onSaveToLibrary={saveAssetToLibrary}
+                    onDetach={detachAsset}
+                    onUpdate={updateFromLibrary}
                   />
                 )}
               </div>
             )
           })()
         )}
+      </div>
+
+      {/* GAM: Modal "Importar do Library" */}
+      {libraryModalOpen && (
+        <LibraryPickerModal
+          clientId={campaign.client?.id ?? ""}
+          onClose={() => setLibraryModalOpen(false)}
+          onPick={instantiateFromLibrary}
+          busy={libraryBusy}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ============== Library Picker Modal ============== */
+function LibraryPickerModal({ clientId, onClose, onPick, busy }: {
+  clientId: string
+  onClose: () => void
+  onPick: (id: string) => void
+  busy: boolean
+}) {
+  const [assets, setAssets] = useState<any[]>([])
+  const [filterType, setFilterType] = useState("ALL")
+  const [search, setSearch] = useState("")
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch(`/api/clients/${clientId}/library/assets`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => { setAssets(d); setLoading(false) })
+  }, [clientId])
+
+  const filtered = assets.filter(a => {
+    if (filterType !== "ALL" && a.type !== filterType) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!a.name.toLowerCase().includes(q) && !(a.slotKey?.toLowerCase().includes(q))) return false
+    }
+    return true
+  })
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+      <div style={{ background: "white", borderRadius: 12, width: 720, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "16px 24px", borderBottom: "1px solid #E0E0E0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>Importar do Library</div>
+          <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 20, color: "#888", cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: "12px 24px", borderBottom: "1px solid #f0f0f0", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {["ALL", "TEXT", "IMAGE", "SHAPE", "SMART_OBJECT"].map(t => (
+            <button key={t} onClick={() => setFilterType(t)}
+              style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600,
+                background: filterType === t ? "#F5C400" : "white",
+                color: filterType === t ? "#111" : "#555",
+                border: "2px solid #555", borderRadius: 6, cursor: "pointer" }}>
+              {t === "ALL" ? "Todos" : t === "SMART_OBJECT" ? "SO" : t}
+            </button>
+          ))}
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar nome / slot..."
+            style={{ padding: "5px 10px", fontSize: 12, border: "1px solid #E0E0E0", borderRadius: 6, outline: "none", flex: 1, minWidth: 150 }} />
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          {loading ? <div style={{ padding: 40, textAlign: "center", color: "#888" }}>Carregando...</div>
+            : filtered.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: "#888", fontSize: 13 }}>Nenhum asset no library deste cliente.</div>
+            : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
+                {filtered.map(a => (
+                  <button key={a.id} onClick={() => onPick(a.id)} disabled={busy}
+                    style={{
+                      background: "white", border: "1px solid #E0E0E0", borderRadius: 8, padding: 8,
+                      cursor: busy ? "wait" : "pointer", display: "flex", flexDirection: "column", gap: 6, textAlign: "left",
+                    }}>
+                    <div style={{ height: 90, background: "#F5F5F0", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                      {a.thumbnailUrl ?? a.imageUrl ? <img src={a.thumbnailUrl ?? a.imageUrl} alt={a.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                        : <div style={{ fontSize: 10, color: "#999" }}>{a.type}</div>}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#222", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                    {a.slotKey && <div style={{ fontSize: 9, color: "#888", fontFamily: "monospace" }}>slot: {a.slotKey}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
+        </div>
       </div>
     </div>
   )
@@ -511,9 +742,13 @@ interface SectionProps {
   onLabelChange: (assetId: string, newLabel: string) => Promise<void>
   onImageUpload: (assetId: string, file: File) => Promise<void>
   onDelete: (assetId: string, label: string, skipConfirm?: boolean) => Promise<void>
+  // GAM handlers (optional pra back-compat)
+  onSaveToLibrary?: (assetId: string) => Promise<void> | void
+  onDetach?: (assetId: string) => Promise<void> | void
+  onUpdate?: (assetId: string) => Promise<void> | void
 }
 
-function AssetSection({ title, count, assets, savingMap, onTextChange, onLabelChange, onImageUpload, onDelete }: SectionProps) {
+function AssetSection({ title, count, assets, savingMap, onTextChange, onLabelChange, onImageUpload, onDelete, onSaveToLibrary, onDetach, onUpdate }: SectionProps) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10, paddingLeft: 4 }}>
@@ -531,6 +766,9 @@ function AssetSection({ title, count, assets, savingMap, onTextChange, onLabelCh
             onLabelChange={onLabelChange}
             onImageUpload={onImageUpload}
             onDelete={onDelete}
+            onSaveToLibrary={onSaveToLibrary}
+            onDetach={onDetach}
+            onUpdate={onUpdate}
           />
         ))}
       </div>
@@ -547,6 +785,57 @@ interface RowProps {
   onLabelChange: (assetId: string, newLabel: string) => Promise<void>
   onImageUpload: (assetId: string, file: File) => Promise<void>
   onDelete: (assetId: string, label: string, skipConfirm?: boolean) => Promise<void>
+  onSaveToLibrary?: (assetId: string) => Promise<void> | void
+  onDetach?: (assetId: string) => Promise<void> | void
+  onUpdate?: (assetId: string) => Promise<void> | void
+}
+
+/**
+ * GAM badge bar — mostra status do asset em relacao ao library do cliente.
+ * - Sem libraryAssetId: botao "↑ Save to library"
+ * - Com libraryAssetId + ativo: badge "Library" + botao Detach
+ * - Com libraryAssetVersion < library.version (TODO: detection client-side ainda nao implementada — backend sync ja propaga content; futuro: API retornar libraryCurrentVersion no asset)
+ */
+function GamBadgeBar({ asset, onSaveToLibrary, onDetach, onUpdate }: {
+  asset: Asset
+  onSaveToLibrary?: (id: string) => Promise<void> | void
+  onDetach?: (id: string) => Promise<void> | void
+  onUpdate?: (id: string) => Promise<void> | void
+}) {
+  if (asset.libraryAssetId && !asset.libraryAssetDetached) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
+        <span style={{ background: "#3b82f6", color: "white", padding: "2px 6px", borderRadius: 4, fontWeight: 700, letterSpacing: 0.3 }}>LIBRARY</span>
+        {asset.slotKey && <code style={{ color: "#888", fontSize: 9 }}>{asset.slotKey}</code>}
+        {onUpdate && (
+          <button onClick={() => onUpdate(asset.id)} title="Re-sync com versao atual do library"
+            style={{ border: "1px solid #E0E0E0", background: "white", padding: "2px 6px", borderRadius: 4, fontSize: 10, cursor: "pointer", color: "#555" }}>
+            ↻
+          </button>
+        )}
+        {onDetach && (
+          <button onClick={() => onDetach(asset.id)} title="Detach: vira independente, edits no library nao propagam"
+            style={{ border: "1px solid #E0E0E0", background: "white", padding: "2px 6px", borderRadius: 4, fontSize: 10, cursor: "pointer", color: "#555" }}>
+            ⊘
+          </button>
+        )}
+      </div>
+    )
+  }
+  if (asset.libraryAssetDetached) {
+    return (
+      <span style={{ fontSize: 9, color: "#888", fontStyle: "italic" }}>ex-library</span>
+    )
+  }
+  if (onSaveToLibrary) {
+    return (
+      <button onClick={() => onSaveToLibrary(asset.id)} title="Salvar este asset no Library do cliente"
+        style={{ border: "1px solid #E0E0E0", background: "white", padding: "3px 8px", borderRadius: 4, fontSize: 10, cursor: "pointer", color: "#555", fontWeight: 600 }}>
+        ↑ Library
+      </button>
+    )
+  }
+  return null
 }
 
 /**
@@ -585,7 +874,7 @@ function ShapePreview({ asset, shape: shapeOverride }: { asset?: any; shape?: an
   )
 }
 
-function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onDelete }: RowProps) {
+function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onDelete, onSaveToLibrary, onDetach, onUpdate }: RowProps) {
   const isText = asset.type === "TEXT"
   const isShape = asset.type === "SHAPE"
   const text = isText ? getText(asset) : ""
@@ -647,6 +936,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         />
         {/* So renderiza Salvar quando ha mudancas — antes ficava disabled
             com opacity-50, deixando o amarelo "clarinho" / fantasma na UI. */}
+        <GamBadgeBar asset={asset} onSaveToLibrary={onSaveToLibrary} onDetach={onDetach} onUpdate={onUpdate} />
         {(dirty || saving) && (
           <Button variant="view" size="sm" disabled={saving}
             onClick={() => onTextChange(asset.id, localText)}
@@ -712,8 +1002,9 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         )}
       </div>
 
-      {/* Acoes — so Apagar */}
+      {/* Acoes — GAM badges + Apagar */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, flexWrap: "wrap" }}>
+        <GamBadgeBar asset={asset} onSaveToLibrary={onSaveToLibrary} onDetach={onDetach} onUpdate={onUpdate} />
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
     </div>

@@ -304,7 +304,7 @@ export default function PiecePage() {
 
         {/* Abrir editor */}
         <div>
-          <Button variant="primary" size="lg" className="w-full" onClick={() => router.push(`/editor?campaignId=${piece.campaignId}&pieceId=${piece.id}`)}>Abrir no Editor</Button>
+          <Button variant="primary" size="lg" className="w-full" onClick={() => router.push(`/editor?campaignId=${piece.campaignId}&pieceId=${piece.id}`)}>Entrar no Editor</Button>
         </div>
 
         </div>{/* fim coluna direita */}

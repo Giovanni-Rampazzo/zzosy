@@ -20,48 +20,53 @@ export interface PageHeaderProps {
 }
 
 export function PageHeader({ title, subtitle, count, actions, className, style }: PageHeaderProps) {
+  // Se titulo vazio/null, esconde o bloco titulo+subtitle — usado em pages cujo
+  // nome ja aparece no TopNav (evita info redundante). Actions continuam visiveis.
+  const hideTitle = title === undefined || title === null || title === ""
   return (
     <div
       className={className}
       style={{
         display: "flex",
         alignItems: subtitle ? "flex-start" : "center",
-        justifyContent: "space-between",
+        justifyContent: hideTitle ? "flex-end" : "space-between",
         gap: 16,
         marginBottom: 12,
         ...style,
       }}
     >
-      <div style={{ minWidth: 0 }}>
-        <h1
-          style={{
-            fontSize: 22,
-            fontWeight: 700,
-            margin: 0,
-            display: "flex",
-            alignItems: "baseline",
-            gap: 8,
-            lineHeight: 1.2,
-          }}
-        >
-          <span>{title}</span>
-          {typeof count === "number" && (
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#888" }}>({count})</span>
-          )}
-        </h1>
-        {subtitle && (
-          <p
+      {!hideTitle && (
+        <div style={{ minWidth: 0 }}>
+          <h1
             style={{
-              margin: "4px 0 0",
-              fontSize: 12,
-              color: "#888",
-              lineHeight: 1.4,
+              fontSize: 22,
+              fontWeight: 700,
+              margin: 0,
+              display: "flex",
+              alignItems: "baseline",
+              gap: 8,
+              lineHeight: 1.2,
             }}
           >
-            {subtitle}
-          </p>
-        )}
-      </div>
+            <span>{title}</span>
+            {typeof count === "number" && (
+              <span style={{ fontSize: 13, fontWeight: 500, color: "#888" }}>({count})</span>
+            )}
+          </h1>
+          {subtitle && (
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 12,
+                color: "#888",
+                lineHeight: 1.4,
+              }}
+            >
+              {subtitle}
+            </p>
+          )}
+        </div>
+      )}
       {actions && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>{actions}</div>
       )}

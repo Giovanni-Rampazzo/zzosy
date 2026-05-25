@@ -37,11 +37,29 @@ export function ExportDialog({ pieces, onClose, campaignName }: Props) {
 
   async function doExport() {
     if (!selectedFormats.length) return
+    // PLANO B: abrir tab vazia SYNC no click pra preservar user gesture. Quando
+    // o blob estiver pronto, exportPieces redireciona essa tab pra URL de download.
+    // Adblockers nao bloqueiam pq foi o user-mesmo que clicou. Se popup blocker
+    // do browser bloquear, dlWindow = null e cai pro Plano A (window.location).
+    let dlWindow: Window | null = null
+    try {
+      dlWindow = window.open("about:blank", "_blank")
+      if (dlWindow) {
+        dlWindow.document.write(
+          '<!doctype html><title>Gerando download...</title>' +
+          '<body style="margin:0;padding:40px;background:#0d0d0d;color:#aaa;font-family:system-ui,sans-serif">' +
+          '<div style="display:flex;align-items:center;gap:12px"><div style="width:18px;height:18px;border:2px solid #F5C400;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>' +
+          '<div>Gerando arquivo, aguarde...</div></div>' +
+          '<style>@keyframes spin{to{transform:rotate(360deg)}}</style>'
+        )
+      }
+    } catch {}
     setExporting(true)
     try {
-      await exportPieces(pieces, selectedFormats, setProgress, campaignName)
+      await exportPieces(pieces, selectedFormats, setProgress, campaignName, dlWindow)
     } catch (e) {
       console.error("Falha geral na exportacao", e)
+      try { dlWindow?.close() } catch {}
     }
     setExporting(false)
     setProgress("")

@@ -139,6 +139,10 @@ export function normalizePsdFontToGoogle(psdName: string): string | null {
     // explicito, mas variable fonts colam Roman ao numero do family weight.
     .replace(/([\s\-_]|\d)Roman$/i, "$1")
     .replace(/[\s\-_]MT$/, "")
+    // 4b. Sufixo versao ".0" / ".1" colado ao numero do family (ex: "Exo2.0",
+    // "Source Sans3.0"). PSD pode carregar com versao explicita mas Google
+    // serve sem. Strip pra bater com "Exo 2", "Source Sans 3".
+    .replace(/(\d)\.\d+$/i, "$1")
     .trim()
   // 5. Hifens internos viram espacos (PostScript usa hifen como separador)
   let spaced = base.replace(/-/g, " ")

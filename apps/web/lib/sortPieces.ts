@@ -1,7 +1,7 @@
 // Sort de pecas em tabelas. Reusado em /pieces e /campaigns/[id].
 import { PIECE_STATUS_LIST } from "./pieceStatus"
 
-export type SortCol = "name" | "format" | "size" | "status"
+export type SortCol = "name" | "format" | "size" | "status" | "segment"
 export type SortDir = "asc" | "desc"
 
 export interface SortablePiece {
@@ -10,6 +10,7 @@ export interface SortablePiece {
   width?: number
   height?: number
   status?: string
+  segment?: string | null
 }
 
 const STATUS_ORDER: Record<string, number> = Object.fromEntries(
@@ -38,6 +39,8 @@ export function sortPieces<T extends SortablePiece>(items: T[], col: SortCol, di
       const aIdx = STATUS_ORDER[a.status ?? "STANDBY"] ?? 99
       const bIdx = STATUS_ORDER[b.status ?? "STANDBY"] ?? 99
       cmp = aIdx - bIdx
+    } else if (col === "segment") {
+      cmp = (a.segment ?? "").localeCompare(b.segment ?? "", "pt-BR", { sensitivity: "base" })
     }
     return dir === "asc" ? cmp : -cmp
   })

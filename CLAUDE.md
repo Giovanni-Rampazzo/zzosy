@@ -17,12 +17,24 @@ Dividido em 3 partes:
 - `Button variant="secondary"`
 - Fundo branco + border 2px #555 + texto preto bold
 
-### Primary (CTA destacado)
+### Primary (CTA destacado) — USO RESTRITO
 - `Button variant="primary"` — fundo amarelo #F5C400 + texto preto bold
 - USE APENAS pra:
   - Botão "← Voltar" no header (ex: "← Campanhas")
-  - **UMA** ação principal por seção (próximo passo mais provável)
-- NUNCA mais de um primary visível na mesma área
+  - CTA STANDALONE/isolado (ex: full-width "Entrar no Editor" no detalhe de peça)
+- NUNCA usar primary em ROW DE AÇÕES — usar padrão de 4 botões outline (ver 1.1.B)
+
+### 1.1.B Padrão de Row de Ações (4 botões outline)
+Em TODA linha/card que representa uma entidade (Empresa, Campanha, Peça), a row de ações segue ordem fixa, todos OUTLINE:
+
+| Ordem | Variant | Label | Função |
+|---|---|---|---|
+| 1 | `danger` (outline vermelho) | **Apagar** | DELETE |
+| 2 | `info` (outline azul) | **Duplicar** | clone (via /duplicate endpoint) |
+| 3 | `secondary` (outline cinza) | **Editar** | rename inline (prompt) OU page de metadata |
+| 4 | `view` (outline amarelo) | **Entrar** | abre a entidade (clients→`/clients/[id]`, campaign→`/campaigns/[id]`, piece→`/editor`) |
+
+Razao: peso visual uniforme entre 4 acoes da mesma entidade. Primary (fill amarelo) cria hierarquia agressiva que nao funciona quando ha multiplas acoes equipotentes. Reservar fill amarelo pra CTAs ISOLADOS.
 
 ### Subnavegação (botões agrupados)
 - TODOS mesmo estilo (secondary, border 2px #555, fundo branco)
@@ -33,6 +45,7 @@ Dividido em 3 partes:
 - **Curtos**: 2-3 palavras máximo
 - **Não-didáticos**: "Salvar" não "Salvar alterações"; "← Campanhas" não "← Voltar para Campanhas de XYZ"
 - Contexto adicional via `title` (tooltip), não no label visível
+- **Verbos PT padrão**: Apagar / Duplicar / Editar / Entrar / Salvar / Cancelar (não "Excluir/Clonar/Renomear/Abrir/Confirmar")
 
 ## 1.2 Headers de páginas
 
@@ -112,7 +125,28 @@ Dividido em 3 partes:
 - Click no asset = adiciona + fecha popover
 - Atalho UX (menos cliques)
 
-## 2.8 Como me corrigir
+## 2.8 Matriz ↔ Peças (propagação)
+
+Matriz = template. Peça = snapshot independente gerado da matriz.
+
+| Ação | Propaga p/ peças geradas? |
+|---|---|
+| Edit override matriz (text/fill/fontSize/charFills) | ❌ Não — só base pra futuras |
+| Add layer matriz | ✅ Sim (overrides vazios) |
+| Remove layer matriz | ✅ Sim (apaga mesmo se peça tinha overrides) |
+| Edit asset.content | ✅ Sim — TODAS peças via `migrateOverrideText` + remapeamento per-char |
+| Edit override em peça gerada | só essa peça |
+
+Implementação: `/api/campaigns/[id]/key-vision/route.ts` (add/remove layer) + `/api/campaigns/[id]/assets/[assetId]/route.ts` (asset → pieces transação atômica). Playground espelha em `/playground/overrides` — usar pra estudar comportamento.
+
+### Precedência de cor per char
+1. `overrides.charFills[i]` (per-char específico)
+2. `overrides.fill` (cor da layer inteira)
+3. `asset.content[span].style.color` (cor original do asset)
+
+Color picker em toolbar de seleção SEMPRE reflete a cor real do primeiro char selecionado (via `resolveCharColor()`).
+
+## 2.9 Como me corrigir
 
 - "Você violou regra X" → vou voltar e arrumar
 - "atualiza CLAUDE.md com: ..." → vou editar + commitar
@@ -144,6 +178,18 @@ Esquecer 1 step = drift/perda. **TODO fix de import requer revisar export equiva
 - TEXT layer mantém edição (não rasterizar)
 - Per-char styles via `obj.styles[line][col]`
 - Fabric v6.9.1 NÃO suporta `charSpacing` per-char — usar `lib/fabricCharSpacingPatch.ts`
+
+### Edit de texto: herança de style per-char (Adobe/Figma behavior)
+Quando user edita texto que tem per-char styles, `rebuildSpans` reconstrói os spans preservando estilo. Regra de herança pros NOVOS chars:
+- **Substituição** (selecionou + digitou por cima) → herda do PRIMEIRO char SUBSTITUÍDO
+- **Inserção** (cursor entre chars) → herda do VIZINHO DA ESQUERDA
+- **Append** (cursor no fim) → herda do ÚLTIMO char
+
+Detecção: `hadReplacement = prevText.length > prefixLen + suffixLen`. Se true, usa `prevStyles[prefixLen]`. Senão usa `newStyles[i-1]`.
+
+NUNCA usar `defaultStyle` (= primeiro char do asset) pra novos chars — quebra o fluxo Adobe/Figma. Sites afetados: `app/campaigns/[id]/assets/page.tsx` + `app/playground/overrides/page.tsx`.
+
+**Propagação asset → peças (mesmo padrão):** Quando asset.content muda, as peças com `overrides.styles` (per-char) precisam ter os styles MIGRADOS com a mesma regra de herança. Real ZZOSY faz isso server-side via `lib/migrateStyles.ts` (Myers LCS diff: equal/replace mantém, insert herda do vizinho esquerdo, delete some). Chamado no endpoint `/api/campaigns/[id]/assets/[assetId]:PUT` numa transação atômica (asset + KV + todas peças). Playground espelha em `migrateCharFillsForEdit` (versão simplificada com prefix/suffix diff).
 
 ## 3.2 Editor / Fabric
 
@@ -196,3 +242,5 @@ Pra contexto histórico de cada regra, ver `/Users/democrart/.claude/projects/-U
 - `feedback_undo_force_restore_all_props.md` — undo enumera tudo
 - `project_shape_import_flow.md` — fluxo shape específico
 - `project_fabric_charspacing_per_char.md` — limitação Fabric v6
+- `feedback_text_edit_inheritance.md` — rebuildSpans Adobe/Figma (substituição vs inserção)
+- `project_matriz_pieces_propagation.md` — tabela matriz↔peças + precedência cor

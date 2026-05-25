@@ -60,13 +60,25 @@ export default function DashboardPage() {
     setConfirmDelete(null)
   }
 
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
+  async function duplicateClient(clientId: string) {
+    setDuplicatingId(clientId)
+    try {
+      const res = await fetch(`/api/clients/${clientId}/duplicate`, { method: "POST" })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert("Falha ao duplicar empresa: " + (err.detail ?? err.error ?? "?"))
+        return
+      }
+      await fetchClients()
+    } finally {
+      setDuplicatingId(null)
+    }
+  }
+
   return (
     <PageShell>
       <div className="p-8">
-        <div style={{marginBottom:24}}>
-          <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Empresas</h1>
-          <p style={{fontSize:12,color:"#888",margin:"4px 0 0"}}>Gerencie todas as empresas da sua agência</p>
-        </div>
 
         {/* Padrao ZZOSY: botao de acao primaria dentro da box da lista, nao
             em header separado acima. Header da tabela: titulos das colunas
@@ -107,11 +119,9 @@ export default function DashboardPage() {
                       ) : (
                         <>
                           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
+                          <Button variant="info" size="sm" loading={duplicatingId === c.id} onClick={() => duplicateClient(c.id)}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</Button>
                           <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}/edit`)}>Editar</Button>
-                          {/* CTA primario da row: Ver = acao mais provavel. Padrao
-                              ZZOSY (feedback_primary_action_fill_brand): fill amarelo
-                              no botao mais provavel. Editar/Apagar ficam outline. */}
-                          <Button variant="primary" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Ver</Button>
+                          <Button variant="view" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Entrar</Button>
                         </>
                       )}
                     </div>
