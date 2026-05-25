@@ -22,6 +22,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
+import { addLayersToKv, type KvLayerInput } from "@/lib/kvLayers"
 import JSZip from "jszip"
 import { readFile, writeFile, mkdir } from "fs/promises"
 import { existsSync } from "fs"
@@ -154,11 +155,24 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       })
       result.updated.push({ assetId: updated.id, slotKey: ca.slotKey ?? "?", name: ca.name })
     } else if (createMissing) {
-      // Cria novo CampaignAsset
-      const last = await prisma.campaignAsset.findFirst({
-        where: { campaignId }, orderBy: { order: "desc" }, select: { order: true },
-      })
-      const order = (last?.order ?? -1) + 1
+      // Cria novo CampaignAsset. Posicao: prioridade manifest > lastOverride.posX
+      // > offset cascata (criados em sequencia ficam espalhados pra serem
+      // visiveis em vez de empilhados em (100,100)).
+      const lo: any = ca.lastOverride ?? {}
+      const idx = result.created.length
+      const effPosX = typeof ca.posX === "number" ? ca.posX
+                      : typeof lo.posX === "number" ? lo.posX
+                      : 100 + idx * 40
+      const effPosY = typeof ca.posY === "number" ? ca.posY
+                      : typeof lo.posY === "number" ? lo.posY
+                      : 100 + idx * 40
+      const effWidth = typeof ca.width === "number" ? ca.width
+                       : typeof lo.width === "number" ? lo.width
+                       : 600
+      const effHeight = typeof ca.height === "number" ? ca.height
+                        : typeof lo.height === "number" ? lo.height
+                        : 100
+
       let smartObjectId: string | null = null
       if (ca.smartObject) {
         const so = await prisma.smartObjectFile.create({
@@ -175,24 +189,43 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         })
         smartObjectId = so.id
       }
-      const created = await prisma.campaignAsset.create({
-        data: {
-          campaignId,
-          type: ca.type,
-          label: ca.name,
-          content: ca.content ? JSON.stringify(ca.content) : null,
-          lastOverride: ca.lastOverride ?? null,
-          imageUrl: ca.imageUrl ?? null,
-          smartObjectId,
-          libraryAssetId: ca.libraryAssetId ?? null,
-          libraryAssetVersion: ca.libraryAssetId ? (ca.version ?? 1) : null,
-          libraryAssetDetached: false,
-          slotKey: ca.slotKey ?? null,
-          order,
-          posX: 100, posY: 100,
-          width: 600, visible: true,
-        },
+      // Transaction: cria asset com order race-safe (B4 fix).
+      const created = await prisma.$transaction(async (tx) => {
+        const lastInTx = await tx.campaignAsset.findFirst({
+          where: { campaignId }, orderBy: { order: "desc" }, select: { order: true },
+        })
+        const txOrder = (lastInTx?.order ?? -1) + 1
+        return tx.campaignAsset.create({
+          data: {
+            campaignId,
+            type: ca.type,
+            label: ca.name,
+            content: ca.content ? JSON.stringify(ca.content) : null,
+            lastOverride: ca.lastOverride ?? null,
+            imageUrl: ca.imageUrl ?? null,
+            smartObjectId,
+            libraryAssetId: ca.libraryAssetId ?? null,
+            libraryAssetVersion: ca.libraryAssetId ? (ca.version ?? 1) : null,
+            libraryAssetDetached: false,
+            slotKey: ca.slotKey ?? null,
+            order: txOrder,
+            posX: effPosX,
+            posY: effPosY,
+            width: effWidth,
+            visible: true,
+          },
+        })
       })
+      // KV layer pro asset aparecer no canvas (B1 fix).
+      try {
+        await addLayersToKv(campaignId, {
+          assetId: created.id,
+          posX: effPosX, posY: effPosY,
+          width: effWidth, height: effHeight,
+        })
+      } catch (e) {
+        console.warn("[apply-cartridge] addLayersToKv falhou:", e)
+      }
       result.created.push({ assetId: created.id, slotKey: ca.slotKey, name: ca.name })
     } else {
       result.skipped.push({ slotKey: ca.slotKey, name: ca.name, reason: "Sem slot match + createMissing=false" })
@@ -229,6 +262,12 @@ async function parseCartridge(file: File, clientId: string): Promise<any[]> {
       lastOverride: m.lastOverride ?? null,
       imageUrl: null,
       smartObject: null,
+      // Posicionamento opcional (forward-compat: manifest v2 pode trazer).
+      // Cartridges atuais de library nao tem; apply usa offset cascata fallback.
+      posX: typeof m.posX === "number" ? m.posX : undefined,
+      posY: typeof m.posY === "number" ? m.posY : undefined,
+      width: typeof m.width === "number" ? m.width : undefined,
+      height: typeof m.height === "number" ? m.height : undefined,
     }
     if (m.binary) {
       const f = zip.file(m.binary)

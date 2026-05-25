@@ -114,19 +114,8 @@ export default function CampaignAssetsPage() {
       }),
     })
     if (res.ok) {
-      const lib = await res.json()
-      // Liga o CampaignAsset ao library criado (PATCH simples).
-      // Idealmente o POST acima ja faz isso; por ora chamamos um endpoint pra atualizar.
-      await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          libraryAssetId: lib.id,
-          libraryAssetVersion: lib.version,
-          libraryAssetDetached: false,
-          slotKey: lib.slotKey,
-        }),
-      }).catch(() => {})
+      // B5 fix: backend agora cria library + linka source CampaignAsset numa
+      // unica transaction atomic. Nada de PUT separado aqui.
       alert(`"${name}" salvo no library`)
       load()
     } else {

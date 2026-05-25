@@ -299,16 +299,18 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 
 ### Ordem sugerida de fix (próxima sessão GAM)
 
-**Imediato pós-`db push`:**
-1. B1 + B3: criar KV layer ao instanciar (from-library + apply-cartridge)
-2. B2: replicar migration logic no library PUT
-3. B5: fundir library create + link em endpoint atômico
+**✅ Imediato (CORRIGIDO nesta sessão):**
+1. ✅ B1 + B3: KV layer ao instanciar — novo helper `lib/kvLayers.ts` (`addLayersToKv`) usado em `/from-library` + `apply-cartridge` createMissing path
+2. ✅ B2: library PUT migra overrides — novo helper `lib/migrateAssetTextOverrides.ts` (`buildMigrationOps`) reusado em library PUT + asset PUT detach Re-sync
+3. ✅ B5: library cloneFrom + link em interactive transaction atômica (rollback se falhar)
+4. ✅ B4: from-library + apply-cartridge createMissing: order calc dentro de transaction
+5. ✅ U1: Re-sync (↻) agora faz force-pull — sobrescreve content/imageUrl/lastOverride do library E roda migration pra peças
+6. ✅ apply-cartridge createMissing usa posX/posY de manifest > lastOverride > offset cascata (não mais hardcoded 100,100)
 
-**Curto prazo:**
-4. B4: transaction no from-library
-5. U1+U2: clarify Re-sync OR remove
-6. U3: modais ZZOSY substituindo prompt/alert
-7. M3: validation pre-write slotKey duplicado
+**Curto prazo (PENDENTE):**
+7. U2: clarify Detach semantics (DELETE library asset com instâncias detached vs ativas)
+8. U3: modais ZZOSY substituindo prompt/alert
+9. M3: validation pre-write slotKey duplicado
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)

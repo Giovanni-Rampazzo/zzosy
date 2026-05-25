@@ -7,6 +7,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
+import { buildMigrationOps, spansToText, parseContent } from "@/lib/migrateAssetTextOverrides"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -88,26 +89,53 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if ("imageUrl" in body) data.imageUrl = body.imageUrl ?? null
   if ("smartObjectId" in body) data.smartObjectId = body.smartObjectId ?? null
 
-  // Transacao: update library + propaga pra instances ativas.
-  const ops: any[] = [
-    prisma.clientLibraryAsset.update({ where: { id: assetId }, data }),
-  ]
-  // Propagacao: atualiza content/imageUrl/lastOverride das instancias NAO-detached.
-  // Mantem version stale na instancia ate user clicar "Update" (badge "available").
+  // B2 fix (pos-build review critico): para TEXT assets, library PUT precisa
+  // migrar overrides.text/styles das pecas — espelhando o que o endpoint
+  // /api/campaigns/[id]/assets/[assetId] ja faz. Sem isso, peças que tinham
+  // \n nos overrides + per-char styles ficavam com indices broken.
+  //
+  // Estrategia: PRE-buscar todas instances ativas, calcular migration ops
+  // por campanha (cada instance pode estar em campanha diferente), depois
+  // executar TUDO numa transaction unica.
+  const isTextWithContent = asset.type === "TEXT" && "content" in body
+  let migrationOps: any[] = []
+  if (isTextWithContent) {
+    const oldText = spansToText(parseContent(asset.content))
+    const newText = spansToText(parseContent(data.content))
+    if (oldText !== newText && newText.trim().length > 0) {
+      const instances = await prisma.campaignAsset.findMany({
+        where: { libraryAssetId: assetId, libraryAssetDetached: false },
+        select: { id: true, campaignId: true },
+      })
+      // Para cada instance, builda ops da campanha (KV + pieces). Cada instance
+      // vive em uma campanha distinta — chamamos buildMigrationOps por instance.
+      for (const inst of instances) {
+        const ops = await buildMigrationOps(inst.campaignId, inst.id, oldText, newText)
+        migrationOps.push(...ops)
+      }
+    }
+  }
+
+  // Propagacao asset-level: atualiza content/imageUrl/lastOverride das instancias NAO-detached.
   const propData: any = {}
   if ("content" in body) propData.content = data.content
   if ("lastOverride" in body) propData.lastOverride = data.lastOverride
   if ("imageUrl" in body) propData.imageUrl = data.imageUrl
   if ("smartObjectId" in body) propData.smartObjectId = data.smartObjectId
+
+  const ops: any[] = [
+    prisma.clientLibraryAsset.update({ where: { id: assetId }, data }),
+  ]
   if (Object.keys(propData).length > 0) {
     ops.push(prisma.campaignAsset.updateMany({
       where: { libraryAssetId: assetId, libraryAssetDetached: false },
       data: propData,
     }))
   }
+  ops.push(...migrationOps)
 
-  const [updated] = await prisma.$transaction(ops)
-  return NextResponse.json(updated)
+  const results = await prisma.$transaction(ops)
+  return NextResponse.json(results[0])
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {

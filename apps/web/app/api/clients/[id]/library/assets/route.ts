@@ -92,15 +92,15 @@ async function cloneFromCampaignAsset(clientId: string, userId: string, body: an
   })
   if (!src) return NextResponse.json({ error: "Source asset not found" }, { status: 404 })
 
-  // Clone do SmartObjectFile se houver — copia bytes pra ClientLibrarySmartObjectFile
-  // (isolado do lifecycle da campanha original).
+  // B5 fix (pos-build review critico): create library asset + LINK o
+  // CampaignAsset original (set libraryAssetId no source) numa unica transacao.
+  // Antes era 2-step (POST library + PUT separado pra linkar) — se PUT falhasse,
+  // library tinha asset mas campanha nao mostrava badge "Library".
+  // Clone SmartObjectFile fica FORA da transacao (lifecycle independente, OK
+  // se ficar orfao em erro raro).
   let librarySmartObjectId: string | null = null
   if (src.smartObject) {
-    // Reusa o mesmo filePath/binario fisico (mesma agencia, mesmo storage).
-    // ClientLibrarySmartObjectFile separa o REGISTRO mas aponta pro mesmo arquivo.
-    // Se a campanha original for apagada, o arquivo continua (filePath nao tem cleanup automatico).
-    // Futuro: se quisermos copia 100% isolada, fazer fs.copyFile aqui.
-    const created = await prisma.clientLibrarySmartObjectFile.create({
+    const createdSo = await prisma.clientLibrarySmartObjectFile.create({
       data: {
         clientId,
         guid: src.smartObject.guid,
@@ -112,27 +112,42 @@ async function cloneFromCampaignAsset(clientId: string, userId: string, body: an
         height: src.smartObject.height,
       },
     })
-    librarySmartObjectId = created.id
+    librarySmartObjectId = createdSo.id
   }
 
-  const created = await prisma.clientLibraryAsset.create({
-    data: {
-      clientId,
-      name: body.name ?? src.label,
-      slotKey: body.slotKey ?? null,
-      type: src.type,
-      content: src.content, // ja em string JSON
-      lastOverride: src.lastOverride as any,
-      imageUrl: src.imageUrl,
-      thumbnailUrl: body.thumbnailUrl ?? null,
-      smartObjectId: librarySmartObjectId,
-      tags: body.tags ?? [],
-      notes: body.notes ?? null,
-      meta: body.meta ?? {},
-      version: 1,
-      createdBy: userId,
-    },
+  // Interactive transaction: create + link no source CampaignAsset atomicamente.
+  // Se o link falhar, rollback do create — evita library asset orfao.
+  const created = await prisma.$transaction(async (tx) => {
+    const libAsset = await tx.clientLibraryAsset.create({
+      data: {
+        clientId,
+        name: body.name ?? src.label,
+        slotKey: body.slotKey ?? null,
+        type: src.type,
+        content: src.content,
+        lastOverride: src.lastOverride as any,
+        imageUrl: src.imageUrl,
+        thumbnailUrl: body.thumbnailUrl ?? null,
+        smartObjectId: librarySmartObjectId,
+        tags: body.tags ?? [],
+        notes: body.notes ?? null,
+        meta: body.meta ?? {},
+        version: 1,
+        createdBy: userId,
+      },
+    })
+    await tx.campaignAsset.update({
+      where: { id: assetId },
+      data: {
+        libraryAssetId: libAsset.id,
+        libraryAssetVersion: libAsset.version,
+        libraryAssetDetached: false,
+        slotKey: libAsset.slotKey ?? null,
+      },
+    })
+    return libAsset
   })
+
   return NextResponse.json(created)
 }
 
