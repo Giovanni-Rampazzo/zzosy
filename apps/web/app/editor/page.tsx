@@ -2,6 +2,7 @@
 import { Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import dynamic from "next/dynamic"
+import { MobileWarning } from "@/components/editor/MobileWarning"
 
 const KeyVisionEditor = dynamic(
   () => import("@/components/editor/KeyVisionEditor").then(m => m.KeyVisionEditor),
@@ -39,12 +40,15 @@ function EditorContent() {
 
 export default function EditorPage() {
   return (
-    <Suspense fallback={
-      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1a1a1a",color:"#888",fontSize:14}}>
-        Carregando...
-      </div>
-    }>
-      <EditorContent />
-    </Suspense>
+    <>
+      <MobileWarning />
+      <Suspense fallback={
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1a1a1a",color:"#888",fontSize:14}}>
+          Carregando...
+        </div>
+      }>
+        <EditorContent />
+      </Suspense>
+    </>
   )
 }
