@@ -16,7 +16,6 @@ import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdIm
 import { PsdPieceImporter, type PsdPieceImporterHandle } from "@/components/campaign/PsdPieceImporter"
 import { Button } from "@/components/ui/Button"
 import { DuplicateFormatDialog } from "@/components/pieces/DuplicateFormatDialog"
-import { ApplyCartridgeButton } from "@/components/campaign/ApplyCartridgeButton"
 
 interface Asset { id: string; type: string; label: string }
 interface Campaign {
@@ -357,7 +356,14 @@ export default function CampaignOverviewPage() {
             </h1>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <ApplyCartridgeButton campaignId={id} clientId={campaign.client?.id} onApplied={loadAll} />
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => router.push(`/campaigns/${id}/cartridges`)}
+              title="Browse cartucho — assets do library do cliente com filtros + add em lote"
+            >
+              Cartucho
+            </Button>
             {campaign.client?.id && (
               <Button
                 variant="primary"
