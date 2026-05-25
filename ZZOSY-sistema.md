@@ -322,6 +322,8 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 18. ✅ P6: `Cache-Control: private, max-age=10, stale-while-revalidate=60` em GET library/assets. Balance entre realtime (BroadcastChannel invalida UI) e load de DB.
 19. ✅ P1: `lib/storage/` com `StorageAdapter` interface + `LocalFileStorageAdapter` + factory `getStorage()` por env `STORAGE_DRIVER`. Cartridge POST/PUT + apply-cartridge refactored — sem `fs.writeFile/mkdir` direto. Trocar pra S3/R2 = adicionar nova classe + STORAGE_DRIVER=s3 no env. URLs antigos `/uploads/*` continuam servindo (next.js public/) durante transição.
 20. ✅ P1 sweep COMPLETO: legacy paths migrados pro adapter (import-psd com PSD master + layer images + smart object bytes, piece thumbnail, step-thumbnail, key-vision thumbnail, asset image upload, deliveries ZIP, campaign duplicate via `storage.list()` + `storage.copy()` recursivo). Adapter ganhou `list(prefix)` + `copy(src, dst)`. Campaign duplicate URL rewrite agora storage-agnostic via `keyFromUrl` + `urlFor`. App inteiro plug-and-play pra qualquer storage provider.
+21. ✅ PROD-09: `lib/env.ts` com schema zod (DATABASE_URL, NEXTAUTH_*, STORAGE_DRIVER + S3 creds condicional, STRIPE_*, MIGRATE_SECRET). Validation crash-fast com lista de issues por field. Typed `env.X` substitui `process.env.X`. Documentado em MD.
+22. ✅ PROD-04 (stub): `lib/logger.ts` com `logger.info/warn/error/debug(tag, msg, context)`. `SentryStubLogger` plug-and-play — trocar 1 classe pra integrar Sentry. `instrumentation.ts` valida env no boot do server runtime + log inicializacao.
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)
@@ -348,7 +350,7 @@ Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem moni
 
 **🔴 PROD-03. Email transactional** — NextAuth precisa pra password reset, email verification, magic links. Hoje só credentials. Integrar Resend/Postmark/SES. **2 dias**
 
-**🔴 PROD-04. Error tracking** — sem Sentry/Bugsnag = bugs em prod silenciosos. Setup Sentry com DSN per-tenant. **1 dia**
+**🟡 PROD-04. Error tracking** — `lib/logger.ts` central com wrapper console-based + hook pré-implementado pra Sentry/Pino. `instrumentation.ts` (Next.js boot) valida env eager + log de inicialização. Plug Sentry = trocar `SentryStubLogger` por implementação real (1 linha). Pendente: instalar `@sentry/nextjs` + setar `SENTRY_DSN` no env. **30 min quando você tiver DSN.**
 
 **🔴 PROD-05. Stripe billing real** — `Plan / Subscription` models existem mas não há cobrança real. Webhook Stripe + portal customer + downgrade graceful. **1 semana**
 
