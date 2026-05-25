@@ -307,10 +307,11 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 5. ✅ U1: Re-sync (↻) agora faz force-pull — sobrescreve content/imageUrl/lastOverride do library E roda migration pra peças
 6. ✅ apply-cartridge createMissing usa posX/posY de manifest > lastOverride > offset cascata (não mais hardcoded 100,100)
 
-**Curto prazo (PENDENTE):**
-7. U2: clarify Detach semantics (DELETE library asset com instâncias detached vs ativas)
-8. U3: modais ZZOSY substituindo prompt/alert
-9. M3: validation pre-write slotKey duplicado
+**✅ Curto prazo (CORRIGIDO):**
+7. ✅ U2: DELETE library asset agora pré-marca instances ativas como `libraryAssetDetached=true` ANTES do cascade SetNull. Badge "ex-library" preservado pós-delete.
+8. ✅ U3: novos modais `SaveToLibraryModal` (em /campaigns/[id]/assets) + `ExportCartridgeModal` (em /clients/[id]/library). Substituem `prompt()` native com inputs proper + warning realtime de slotKey duplicado.
+9. ✅ M3: `lib/libraryValidation.ts` com `assertSlotKeyUnique()` reusado em POST clone + POST direct + PATCH. Retorna 409 com mensagem clara + conflictAssetName. (MySQL não suporta partial unique pra NULL — validação no app layer.)
+10. ✅ U4: ExportCartridgeModal oferece escolha "filtered" vs "all" quando há filtro ativo (antes exportava silently só filtered).
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)

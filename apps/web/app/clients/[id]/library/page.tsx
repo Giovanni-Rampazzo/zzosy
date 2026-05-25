@@ -5,6 +5,7 @@ import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
 import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { useSetActiveClient } from "@/lib/activeClientContext"
+import { ExportCartridgeModal } from "@/components/library/ExportCartridgeModal"
 
 interface LibraryAsset {
   id: string
@@ -45,6 +46,7 @@ export default function ClientLibraryPage() {
   const [search, setSearch] = useState("")
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [importBusy, setImportBusy] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -106,15 +108,13 @@ export default function ClientLibraryPage() {
     }
   }
 
-  async function exportCartridge() {
-    const selectedIds = filtered.map(a => a.id)
-    if (selectedIds.length === 0) { alert("Nenhum asset pra exportar"); return }
-    const name = prompt("Nome do cartucho:", `${client?.name ?? "library"}-cartridge`)?.trim()
-    if (!name) return
+  async function doExportCartridge(name: string, scope: "filtered" | "all") {
+    const ids = scope === "all" ? assets.map(a => a.id) : filtered.map(a => a.id)
+    if (ids.length === 0) { alert("Nenhum asset pra exportar"); return }
     const res = await fetch(`/api/clients/${id}/library/cartridge`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, assetIds: selectedIds }),
+      body: JSON.stringify({ name, assetIds: ids }),
     })
     if (!res.ok) { alert("Falha ao gerar cartucho"); return }
     const blob = await res.blob()
@@ -126,6 +126,7 @@ export default function ClientLibraryPage() {
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
+    setExportOpen(false)
   }
 
   if (loading) return <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}><TopNav /><div style={{ padding: 32, color: "#888" }}>Carregando...</div></div>
@@ -144,7 +145,7 @@ export default function ClientLibraryPage() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Button variant="secondary" size="md" onClick={exportCartridge} disabled={filtered.length === 0}>
+            <Button variant="secondary" size="md" onClick={() => setExportOpen(true)} disabled={assets.length === 0}>
               Export cartridge
             </Button>
             <label style={{ cursor: importBusy ? "wait" : "pointer" }}>
@@ -262,6 +263,15 @@ export default function ClientLibraryPage() {
           </div>
         </div>
       </div>
+      {exportOpen && (
+        <ExportCartridgeModal
+          defaultName={`${client?.name ?? "library"}-cartridge`}
+          totalAssets={assets.length}
+          filteredAssets={filtered.length}
+          onExport={doExportCartridge}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
     </div>
   )
 }

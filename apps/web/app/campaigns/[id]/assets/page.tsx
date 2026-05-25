@@ -9,6 +9,7 @@ import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdIm
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
+import { SaveToLibraryModal } from "@/components/library/SaveToLibraryModal"
 import {
   BrandPresetKey, BrandPreset, BrandTypography,
   PRESET_LABELS, PRESET_ORDER, DEFAULT_TYPOGRAPHY, normalizeTypography,
@@ -87,6 +88,9 @@ export default function CampaignAssetsPage() {
   const [libraryModalOpen, setLibraryModalOpen] = useState(false)
   const [libraryAssets, setLibraryAssets] = useState<any[]>([])
   const [libraryBusy, setLibraryBusy] = useState(false)
+  // U3 fix: modal SaveToLibrary substitui prompt() native
+  const [saveLibTarget, setSaveLibTarget] = useState<string | null>(null) // assetId
+  const [existingSlots, setExistingSlots] = useState<string[]>([])
 
   async function loadLibrary() {
     if (!campaign?.client?.id) return
@@ -99,27 +103,35 @@ export default function CampaignAssetsPage() {
   async function saveAssetToLibrary(assetId: string) {
     const clientId = campaign?.client?.id
     if (!clientId) return
-    const asset = campaign?.assets.find(a => a.id === assetId)
-    if (!asset) return
-    const name = prompt("Nome no library:", asset.label)?.trim()
-    if (!name) return
-    const slotKey = prompt("Slot key (opcional — pra cartridges):", "")?.trim() ?? ""
+    // Pre-busca slotKeys ja em uso pra warning real-time no modal
+    try {
+      const lr = await fetch(`/api/clients/${clientId}/library/assets`)
+      if (lr.ok) {
+        const list = await lr.json()
+        setExistingSlots((list as any[]).map(a => a.slotKey).filter(Boolean))
+      }
+    } catch {}
+    setSaveLibTarget(assetId)
+  }
+
+  async function doSaveToLibrary(payload: { name: string; slotKey: string | null; tags: string[]; notes: string | null }) {
+    const clientId = campaign?.client?.id
+    const assetId = saveLibTarget
+    if (!clientId || !assetId) return
     const res = await fetch(`/api/clients/${clientId}/library/assets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         cloneFrom: { campaignId: id, assetId },
-        name,
-        slotKey: slotKey || null,
+        ...payload,
       }),
     })
     if (res.ok) {
-      // B5 fix: backend agora cria library + linka source CampaignAsset numa
-      // unica transaction atomic. Nada de PUT separado aqui.
-      alert(`"${name}" salvo no library`)
+      setSaveLibTarget(null)
       load()
     } else {
-      alert("Falha ao salvar no library")
+      const err = await res.json().catch(() => ({}))
+      alert("Falha ao salvar no library: " + (err.error ?? res.status))
     }
   }
 
@@ -642,6 +654,19 @@ export default function CampaignAssetsPage() {
           busy={libraryBusy}
         />
       )}
+      {/* GAM: Modal "Salvar no Library" (substitui prompt nativo) */}
+      {saveLibTarget && (() => {
+        const tgt = campaign?.assets.find(a => a.id === saveLibTarget)
+        if (!tgt) return null
+        return (
+          <SaveToLibraryModal
+            defaultName={tgt.label}
+            existingSlotKeys={existingSlots}
+            onSave={doSaveToLibrary}
+            onClose={() => setSaveLibTarget(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

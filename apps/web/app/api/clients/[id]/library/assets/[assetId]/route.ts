@@ -8,6 +8,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import { buildMigrationOps, spansToText, parseContent } from "@/lib/migrateAssetTextOverrides"
+import { assertSlotKeyUnique } from "@/lib/libraryValidation"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -54,6 +55,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   }
   if ("tags" in body) data.tags = body.tags ?? []
   if ("meta" in body) data.meta = body.meta ?? {}
+
+  // M3: valida slotKey unique (exclui o proprio asset do check).
+  if ("slotKey" in body) {
+    const conflict = await assertSlotKeyUnique(clientId, body.slotKey, assetId)
+    if (conflict) return conflict
+  }
 
   const updated = await prisma.clientLibraryAsset.update({
     where: { id: assetId },
@@ -146,14 +153,24 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const asset = await getOwned(clientId, assetId, tenantId)
   if (!asset) return apiErrors.notFound()
 
-  // Conta instances ativas pra retornar warning ao caller. UI pode mostrar
-  // "X campanhas usam — apagar mesmo assim?".
-  const instances = await prisma.campaignAsset.count({
+  // U2 fix (pos-build review): cascade SetNull zeraria libraryAssetId mas
+  // libraryAssetDetached ficaria false → badge "LIBRARY" sumiria sem o
+  // "ex-library" aparecer. Pre-marca instances ativas como Detached primeiro,
+  // preservando o estado "ja foi library, agora orfa" pra UI.
+  // Transaction: pre-mark + delete (que cascade SetNull em ambas).
+  const detachedInstances = await prisma.campaignAsset.count({
     where: { libraryAssetId: assetId, libraryAssetDetached: false },
   })
 
-  await prisma.clientLibraryAsset.delete({ where: { id: assetId } })
-  return NextResponse.json({ ok: true, detachedInstances: instances })
+  await prisma.$transaction([
+    prisma.campaignAsset.updateMany({
+      where: { libraryAssetId: assetId, libraryAssetDetached: false },
+      data: { libraryAssetDetached: true },
+    }),
+    prisma.clientLibraryAsset.delete({ where: { id: assetId } }),
+  ])
+
+  return NextResponse.json({ ok: true, detachedInstances })
 }
 
 function safeParse(s: string): any { try { return JSON.parse(s) } catch { return null } }

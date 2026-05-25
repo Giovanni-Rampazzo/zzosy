@@ -13,6 +13,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
+import { assertSlotKeyUnique } from "@/lib/libraryValidation"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -92,6 +93,10 @@ async function cloneFromCampaignAsset(clientId: string, userId: string, body: an
   })
   if (!src) return NextResponse.json({ error: "Source asset not found" }, { status: 404 })
 
+  // M3 fix: slotKey unique per client
+  const conflict = await assertSlotKeyUnique(clientId, body.slotKey)
+  if (conflict) return conflict
+
   // B5 fix (pos-build review critico): create library asset + LINK o
   // CampaignAsset original (set libraryAssetId no source) numa unica transacao.
   // Antes era 2-step (POST library + PUT separado pra linkar) — se PUT falhasse,
@@ -155,6 +160,8 @@ async function createDirect(clientId: string, userId: string, body: any) {
   if (!body.name || !body.type) {
     return NextResponse.json({ error: "name + type required" }, { status: 400 })
   }
+  const conflict = await assertSlotKeyUnique(clientId, body.slotKey)
+  if (conflict) return conflict
   const created = await prisma.clientLibraryAsset.create({
     data: {
       clientId,
