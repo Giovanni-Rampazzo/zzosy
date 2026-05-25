@@ -768,26 +768,15 @@ npx tsc --noEmit            # type check
 
 ---
 
-## 🐛 BUG EM ABERTO — chromatic aberration em previews (2026-05-25)
+## ✅ Chromatic aberration em previews — RESOLVIDO (2026-05-25)
 
-**Sintoma**: Todos os previews/thumbs de matriz mostram texto com ghosting RGB-split-like (pink + cyan + verde + preto sobrepostos com offset horizontal). User confirmou: persiste após Cmd+Shift+R (não é cache do browser — thumb está bugado no server).
+**Sintoma original**: thumbs/previews de matriz com texto em ghosting RGB-split-like (pink + cyan + verde + preto, offset horizontal). Persistia após Cmd+Shift+R.
 
-**Screenshot exemplo**: texto "Título legal." rendered com chromatic aberration severo.
+**Causa raiz**: patch `lib/fabricCharSpacingPatch.ts` setava `this.charSpacing = 1e-9` temporário em `_renderChars` pra forçar char-by-char render. `1e-9` perto do underflow de float — alguma comparação downstream do Fabric tratava como zero e produzia render inconsistente entre os passes de fill/stroke/decorations, gerando o ghosting visível.
 
-### Suspeitos (em ordem de probabilidade)
-1. **`lib/fabricCharSpacingPatch.ts`** — patch `_renderChars` faz `this.charSpacing = 1e-9` temporário pra forçar char-by-char render. Subpixel drift de 1e-9 pode acumular em chars seguintes produzindo offset visível em scaled-up renders. **Tentar primeiro**: trocar 1e-9 por 0.001 ou desabilitar o hack quando per-char charSpacing realmente não existe.
-2. **`applyFabricEffects` com `overlaysOnly:true`** — BlendColor.tint pode estar acumulando filter passes em images de smart object.
-3. **`obj.dirty = true` em `applyStyle` (commit 28d3680)** — pode causar partial double-paint se render pass em curso. Tentar mover pra antes do setSelectionStyles.
-4. **`getHeightOfLine` override (paragraph spaceAfter)** + **`deltaY` per-char (baseline shift)** combo — quebra cálculo de posicionamento de chars/linhas.
+**Fix**: `1e-9 → 0.001` em `apps/web/lib/fabricCharSpacingPatch.ts:206`. Ainda sub-pixel no resultado (`0.001 * 80 / 1000 = 8e-5 px`, invisível), mas bem acima do underflow.
 
-### Tentativas registradas
-- **2026-05-25 (sessão restart)**: aplicado suspeito 1, troca `1e-9 → 0.001` em `lib/fabricCharSpacingPatch.ts`. Análise técnica: matematicamente os dois valores são sub-pixel (`fontSize*cs/1000` = 8e-11 vs 8e-5 — ambos invisíveis no rendering), mas `1e-9` está perto do underflow de f.p. que pode ser arredondado pra 0 em algum cast/comparação downstream do Fabric, causando inconsistência entre passes. `0.001` está bem acima do underflow. **STATUS**: aguardando validação visual do user — abrir editor + verificar se thumb da matriz ainda mostra ghosting. Se persistir, próximo: suspeito 2 ou 3.
-
-### Próximo passo de debug
-1. Reproduzir bug isoladamente (importar Sicredi PSD que tem o issue)
-2. Inspecionar `obj.styles[line][col]` no live canvas — quais props estão setadas?
-3. Tentar disable temporário do patch _renderChars + ver se bug some
-4. Investigar exportPiece's buildPieceCanvas — onde thumb é gerado
+**Lição**: ao escolher valor "negligible-mas-truthy" pra desligar shortCut, ficar bem longe do underflow de float (>= 1e-3, não 1e-9). Memória: [[project_fabric_charspacing_per_char]].
 
 ---
 

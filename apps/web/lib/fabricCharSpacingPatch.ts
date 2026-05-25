@@ -176,12 +176,12 @@ if (Text && !Text.__zzosyPerCharCharSpacingPatched) {
    * temporariamente pra um valor pequeno-mas-nao-zero que desliga o shortCut.
    * Per-char styles dominam visualmente via patches acima.
    *
-   * 2026-05-25: valor era 1e-9 (mat. negligível mas próximo a underflow
-   * f.p.). Tentativa de fix pro chromatic-aberration em previews/thumbs:
-   * trocado por 0.001 (ainda invisivel: 0.001 * fontSize/1000 = 1e-4 px,
-   * sub-pixel garantido). Suspeita: alguma comparacao downstream do Fabric
-   * tratava 1e-9 como zero (ou rounded), produzindo render inconsistente
-   * entre passes (shadow/fill/stroke) e gerando ghosting.
+   * IMPORTANTE: 0.001, NAO 1e-9. Valor original era 1e-9 e causava chromatic
+   * aberration em previews (ghosting RGB-split-like em fill/stroke passes).
+   * Causa raiz: 1e-9 perto do underflow de float — alguma comparacao
+   * downstream do Fabric tratava como zero e gerava render inconsistente
+   * entre passes. 0.001 fica bem acima do underflow e ainda sub-pixel no
+   * resultado (0.001 * 80 / 1000 = 8e-5 px). NUNCA reduza esse valor.
    */
   Text.prototype._renderChars = function (
     method: any,
