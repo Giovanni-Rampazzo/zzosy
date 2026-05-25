@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
 import { apiErrors } from "@/lib/apiError"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
 /**
  * Upload de thumbnail de um STEP especifico da peca.
  *
- * Salva o arquivo em /public/uploads/step-thumbs/{pieceId}_step{N}_{ts}.png
- * e injeta o caminho no piece.data.steps[index].imageUrl (e thumbnailUrl).
+ * Persiste via storage adapter (LocalFile: /uploads/step-thumbs/, S3: prefixo
+ * step-thumbs/). Injeta URL retornado em piece.data.steps[index].imageUrl
+ * (e thumbnailUrl).
  *
  * Index 0-based: ?index=0 = step 1, ?index=1 = step 2, etc.
  */
@@ -38,13 +38,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!file) return NextResponse.json({ error: "Sem arquivo" }, { status: 400 })
 
   const bytes = Buffer.from(await file.arrayBuffer())
-  const uploadsDir = path.join(process.cwd(), "public", "uploads", "step-thumbs")
-  await mkdir(uploadsDir, { recursive: true })
   const ts = Date.now()
-  const filename = `${id}_step${index}_${ts}.png`
-  const filePath = path.join(uploadsDir, filename)
-  await writeFile(filePath, bytes)
-  const publicUrl = `/uploads/step-thumbs/${filename}`
+  const key = `step-thumbs/${id}_step${index}_${ts}.png`
+  const { url: publicUrl } = await getStorage().put(key, bytes, "image/png")
 
   // Atualiza piece.data.steps[index].imageUrl + thumbnailUrl.
   // CRITICO: re-le piece JUSTAMENTE antes do update pra pegar a versao mais

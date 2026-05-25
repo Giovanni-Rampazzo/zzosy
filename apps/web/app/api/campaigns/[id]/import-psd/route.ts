@@ -2,9 +2,8 @@ import { NextResponse, NextRequest } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { writeFile, mkdir } from "fs/promises"
-import { existsSync } from "fs"
 import path from "path"
+import { getStorage } from "@/lib/storage"
 import { randomUUID } from "crypto"
 import { normalizeName } from "@/lib/normalize"
 import { apiErrors } from "@/lib/apiError"
@@ -78,22 +77,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       guid: string; mime: string; originalName: string; sizeBytes: number; width?: number; height?: number
     }> : []
 
-    // Pasta de uploads desta campanha
-    const uploadDir = path.join(process.cwd(), "public", "uploads", "campaigns", id)
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true })
-    }
+    // P1: storage adapter — sem fs direto. Trocar STORAGE_DRIVER no env =
+    // plug-and-play S3/R2/Bunny.
+    const storage = getStorage()
 
-    // Salvar PSD original (se enviado inline). Se skipMaster, psdUrl fica null
-    // e sera preenchido depois via upload chunked.
     console.log("[import-psd] iniciando upload, images:", images.length, "assets:", assets.length, "skipMaster:", skipMaster)
     let psdUrl: string | null = null
     if (!skipMaster && psdFile) {
       const psdBuffer = Buffer.from(await psdFile.arrayBuffer())
-      const psdFilename = `master-${randomUUID()}.psd`
-      const psdPath = path.join(uploadDir, psdFilename)
-      await writeFile(psdPath, psdBuffer)
-      psdUrl = `/uploads/campaigns/${id}/${psdFilename}`
+      const key = `campaigns/${id}/master-${randomUUID()}.psd`
+      const put = await storage.put(key, psdBuffer, "image/vnd.adobe.photoshop")
+      psdUrl = put.url
     }
 
     // Salvar imagens dos layers
@@ -101,10 +95,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     for (let i = 0; i < images.length; i++) {
       const img = images[i]
       const buf = Buffer.from(await img.arrayBuffer())
-      const imgFilename = `layer-${randomUUID()}.png`
-      const imgPath = path.join(uploadDir, imgFilename)
-      await writeFile(imgPath, buf)
-      imageUrls.push(`/uploads/campaigns/${id}/${imgFilename}`)
+      const key = `campaigns/${id}/layer-${randomUUID()}.png`
+      const put = await storage.put(key, buf, "image/png")
+      imageUrls.push(put.url)
     }
 
     // Snapshot dos assets antigos ANTES de deletar — precisamos do par
@@ -129,8 +122,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     // Salvar smart objects (linkedFiles do PSD) — preserva bytes originais
     // pra round-trip ZZOSY -> Photoshop -> ZZOSY sem perda. Subdir /smart pra
     // separar dos previews PNG e do PSD master.
-    const smartDir = path.join(uploadDir, "smart")
-    if (!existsSync(smartDir)) await mkdir(smartDir, { recursive: true })
     // index do FormData -> id do SmartObjectFile criado
     const smartObjectIds: (string | null)[] = []
     for (let i = 0; i < linkedFilesUploaded.length; i++) {
@@ -148,10 +139,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           meta.mime === "image/png" ? "png" :
           meta.mime === "image/jpeg" ? "jpg" :
           "bin"
-        const filename = `${meta.guid}.${ext}`
-        const fullPath = path.join(smartDir, filename)
-        await writeFile(fullPath, buf)
-        const filePath = `/uploads/campaigns/${id}/smart/${filename}`
+        const soKey = `campaigns/${id}/smart/${meta.guid}.${ext}`
+        const soPut = await storage.put(soKey, buf, meta.mime)
+        const filePath = soPut.url
         const so = await prisma.smartObjectFile.create({
           data: {
             campaignId: id,

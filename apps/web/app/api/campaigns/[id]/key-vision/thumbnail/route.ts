@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
 import { apiErrors } from "@/lib/apiError"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
@@ -28,17 +27,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const bytes = await file.arrayBuffer()
   const buf = Buffer.from(bytes)
 
-  const dir = path.join(process.cwd(), "public", "uploads", "campaigns", id)
-  await mkdir(dir, { recursive: true })
-  // Detecta formato pelo MIME pra usar extensao correta. PNG preserva alpha
-  // (necessario pra apresentacao mostrar KVs com mascaras raster). JPEG fica
-  // como fallback pra clientes antigos que ainda mandam JPEG.
   const mime = file.type || "image/png"
   const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg"
-  const fname = `kv-thumb-${Date.now()}.${ext}`
-  await writeFile(path.join(dir, fname), buf)
-
-  const publicUrl = `/uploads/campaigns/${id}/${fname}`
+  const key = `campaigns/${id}/kv-thumb-${Date.now()}.${ext}`
+  const { url: publicUrl } = await getStorage().put(key, buf, mime)
   // Upsert para criar KV se ainda nao existir (evita 500 silencioso quando matriz nunca foi salva)
   await prisma.keyVision.upsert({
     where: { campaignId: id },

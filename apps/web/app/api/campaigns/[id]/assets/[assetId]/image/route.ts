@@ -2,12 +2,10 @@ import { NextResponse, NextRequest } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { writeFile, mkdir } from "fs/promises"
-import { existsSync } from "fs"
-import path from "path"
 import { randomUUID } from "crypto"
 import { maybeSanitizeImage } from "@/lib/svgSanitize"
 import { apiErrors } from "@/lib/apiError"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
@@ -36,11 +34,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     let buf: Buffer = Buffer.from(await file.arrayBuffer())
     const ext = (file.name.split(".").pop() || "png").toLowerCase()
     buf = maybeSanitizeImage(buf, ext) as Buffer
-    const filename = `asset-${randomUUID()}.${ext}`
-    const dir = path.join(process.cwd(), "public", "uploads", "campaigns", id)
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true })
-    await writeFile(path.join(dir, filename), buf)
-    const imageUrl = `/uploads/campaigns/${id}/${filename}`
+    const key = `campaigns/${id}/asset-${randomUUID()}.${ext}`
+    const { url: imageUrl } = await getStorage().put(key, buf, file.type || undefined)
 
     await prisma.campaignAsset.update({
       where: { id: assetId },

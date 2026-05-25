@@ -5,7 +5,7 @@
  * NAO usar em produçao com container ephemeral (Vercel/Railway). Trocar pra
  * S3StorageAdapter (futuro) via env STORAGE_DRIVER=s3.
  */
-import { writeFile, readFile, unlink, mkdir, stat } from "fs/promises"
+import { writeFile, readFile, unlink, mkdir, stat, readdir, copyFile } from "fs/promises"
 import path from "path"
 import type { StorageAdapter, PutResult } from "./types"
 
@@ -77,6 +77,50 @@ export class LocalFileStorageAdapter implements StorageAdapter {
     if (url.startsWith(`${URL_PREFIX}/`)) return url.slice(URL_PREFIX.length + 1)
     if (url.startsWith(URL_PREFIX)) return url.slice(URL_PREFIX.length).replace(/^\/+/, "")
     return null
+  }
+
+  async list(prefix: string): Promise<string[]> {
+    const safe = normalizeKey(prefix.endsWith("/") ? prefix : `${prefix}/`)
+    const baseDir = path.join(this.rootDir, safe)
+    try {
+      // Walk recursivo. NAO segue symlinks (defesa).
+      const out: string[] = []
+      await walk(baseDir, safe, out)
+      return out
+    } catch (e: any) {
+      if (e?.code === "ENOENT") return []
+      throw e
+    }
+  }
+
+  async copy(srcKeyOrUrl: string, dstKey: string): Promise<boolean> {
+    const src = this.keyFromUrl(srcKeyOrUrl) ?? normalizeKey(srcKeyOrUrl)
+    const dst = normalizeKey(dstKey)
+    const srcFull = path.join(this.rootDir, src)
+    const dstFull = path.join(this.rootDir, dst)
+    try {
+      await mkdir(path.dirname(dstFull), { recursive: true })
+      await copyFile(srcFull, dstFull)
+      return true
+    } catch (e: any) {
+      if (e?.code === "ENOENT") return false
+      throw e
+    }
+  }
+}
+
+async function walk(absDir: string, relPrefix: string, out: string[]): Promise<void> {
+  let entries: any[]
+  try { entries = await readdir(absDir, { withFileTypes: true }) }
+  catch { return }
+  for (const e of entries) {
+    if (e.isSymbolicLink()) continue // skip symlinks
+    const relPath = `${relPrefix}${e.name}`
+    if (e.isDirectory()) {
+      await walk(path.join(absDir, e.name), `${relPath}/`, out)
+    } else if (e.isFile()) {
+      out.push(relPath)
+    }
   }
 }
 

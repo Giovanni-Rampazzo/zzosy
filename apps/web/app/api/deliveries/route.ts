@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
 import { apiErrors } from "@/lib/apiError"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
@@ -84,13 +83,10 @@ export async function POST(req: NextRequest) {
   const user = (session.user as any)?.id ? { id: (session.user as any).id } :
     await prisma.user.findUnique({ where: { email: session.user?.email ?? "" } })
 
-  // Salvar ZIP fisico
+  // Salvar ZIP fisico via storage adapter
   const buf = Buffer.from(await zipFile.arrayBuffer())
-  const dir = path.join(process.cwd(), "public", "uploads", "deliveries", campaignId)
-  await mkdir(dir, { recursive: true })
-  const fname = `entrega-${Date.now()}.zip`
-  await writeFile(path.join(dir, fname), buf)
-  const zipUrl = `/uploads/deliveries/${campaignId}/${fname}`
+  const key = `deliveries/${campaignId}/entrega-${Date.now()}.zip`
+  const { url: zipUrl } = await getStorage().put(key, buf, "application/zip")
 
   // Transacao: criar Delivery + DeliveryPiece + atualizar status das peças
   const ops: any[] = []

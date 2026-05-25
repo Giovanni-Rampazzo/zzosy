@@ -321,6 +321,7 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 17. ✅ S3: validação `imageUrl/thumbnailUrl` — regex `/^\/uploads\/[\w\-./]+$/` ou `https?://...`. Bloqueia `javascript:`, `data:`, `vbscript:`. Aplicado em POST direct + PUT content + PATCH.
 18. ✅ P6: `Cache-Control: private, max-age=10, stale-while-revalidate=60` em GET library/assets. Balance entre realtime (BroadcastChannel invalida UI) e load de DB.
 19. ✅ P1: `lib/storage/` com `StorageAdapter` interface + `LocalFileStorageAdapter` + factory `getStorage()` por env `STORAGE_DRIVER`. Cartridge POST/PUT + apply-cartridge refactored — sem `fs.writeFile/mkdir` direto. Trocar pra S3/R2 = adicionar nova classe + STORAGE_DRIVER=s3 no env. URLs antigos `/uploads/*` continuam servindo (next.js public/) durante transição.
+20. ✅ P1 sweep COMPLETO: legacy paths migrados pro adapter (import-psd com PSD master + layer images + smart object bytes, piece thumbnail, step-thumbnail, key-vision thumbnail, asset image upload, deliveries ZIP, campaign duplicate via `storage.list()` + `storage.copy()` recursivo). Adapter ganhou `list(prefix)` + `copy(src, dst)`. Campaign duplicate URL rewrite agora storage-agnostic via `keyFromUrl` + `urlFor`. App inteiro plug-and-play pra qualquer storage provider.
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)
@@ -341,7 +342,7 @@ Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem moni
 
 ### Bloqueadores hard (não tem como ir pro ar sem)
 
-**🟡 PROD-01. Storage abstrato (S3/R2)** — `lib/storage/` com `StorageAdapter` interface + `LocalFileStorageAdapter` IMPLEMENTADOS. GAM (cartridge POST/PUT + apply-cartridge) já usa adapter. Falta refactor de legacy paths: `import-psd`, asset image upload, key-vision thumbnail, deliveries, step-thumbnails. ~10 sites pra portar. Quando STORAGE_DRIVER mudar pra "s3"/"r2" no env, basta plugar nova classe. **GAM já production-ready pra qualquer storage; legacy paths precisam migration script + sweep ~2 dias.**
+**✅ PROD-01. Storage abstrato (S3/R2)** — COMPLETO. `lib/storage/` com `StorageAdapter` interface + `LocalFileStorageAdapter` (com `list`/`copy` recursivo) + factory `getStorage()`. **TODOS os endpoints que escreviam em `public/uploads/` foram migrados pro adapter**: GAM (cartridge POST/PUT/apply), import-psd (PSD master + layers + smart objects), asset image upload, KV thumbnail, piece thumbnail, step-thumbnail, deliveries ZIP, campaign duplicate (storage-agnostic copy via list+copy). Quando STORAGE_DRIVER=s3 no env + classe S3StorageAdapter implementada, **app inteiro funciona plug-and-play**. URLs antigos `/uploads/*` continuam servindo via next.js public/ durante transição.
 
 **🔴 PROD-02. Migrations strategy** — hoje usamos `prisma db push` (sem migration files). Pra prod precisa `prisma migrate dev/deploy` workflow. Migration baseline + commit `_prisma/migrations/`. **1 dia**
 

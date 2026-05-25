@@ -67,4 +67,17 @@ export interface StorageAdapter {
    * Util pra operar sobre URL armazenada em DB.
    */
   keyFromUrl(url: string): string | null
+
+  /**
+   * Lista keys com prefixo (ex: "campaigns/X/" pra listar tudo da campanha X).
+   * Util pra duplicate/cleanup. NAO listar `/` recursivo — use prefixo
+   * especifico pra evitar OOM ou listing infinito.
+   */
+  list(prefix: string): Promise<string[]>
+
+  /**
+   * Copia arquivo (S3 CopyObject ou read+write local). Idempotente: sobreescreve
+   * se dst ja existir. NAO falha se src nao existir (retorna false).
+   */
+  copy(srcKeyOrUrl: string, dstKey: string): Promise<boolean>
 }

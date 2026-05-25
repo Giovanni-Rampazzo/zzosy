@@ -2,11 +2,9 @@ import { NextResponse, NextRequest } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { writeFile, mkdir } from "fs/promises"
-import { existsSync } from "fs"
-import path from "path"
 import { randomUUID } from "crypto"
 import { apiErrors } from "@/lib/apiError"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
@@ -32,16 +30,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (!piece) return NextResponse.json({ error: "Peca nao encontrada" }, { status: 404 })
 
     const buf = Buffer.from(await file.arrayBuffer())
-    // Detecta formato pelo MIME pra usar extensao correta. PNG preserva alpha
-    // (necessario quando a peca tem mascara raster com transparencia — sem
-    // isso a apresentacao mostra fundo solido em vez do alpha real).
     const mime = file.type || "image/png"
     const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg"
-    const filename = `piece-${randomUUID()}.${ext}`
-    const dir = path.join(process.cwd(), "public", "uploads", "campaigns", piece.campaignId, "pieces")
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true })
-    await writeFile(path.join(dir, filename), buf)
-    const imageUrl = `/uploads/campaigns/${piece.campaignId}/pieces/${filename}`
+    const key = `campaigns/${piece.campaignId}/pieces/piece-${randomUUID()}.${ext}`
+    const { url: imageUrl } = await getStorage().put(key, buf, mime)
 
     // Schema novo (F5.1): thumbnailUrl e o campo dedicado pra preview. imageUrl
     // segue duplicado por backcompat — UI antiga ainda le imageUrl como preview;

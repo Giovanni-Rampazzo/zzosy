@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { copyFile, mkdir, readdir, stat } from "fs/promises"
-import { existsSync } from "fs"
-import path from "path"
 import { apiErrors } from "@/lib/apiError"
+import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
@@ -56,41 +54,32 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   })
   const newId = newCampaign.id
 
-  // 1) Copiar todo o diretório de uploads
-  const oldDir = path.join(process.cwd(), "public", "uploads", "campaigns", oldId)
-  const newDir = path.join(process.cwd(), "public", "uploads", "campaigns", newId)
-  if (existsSync(oldDir)) {
-    try {
-      await mkdir(newDir, { recursive: true })
-      const entries = await readdir(oldDir, { withFileTypes: true })
-      for (const ent of entries) {
-        const srcPath = path.join(oldDir, ent.name)
-        const dstPath = path.join(newDir, ent.name)
-        if (ent.isDirectory()) {
-          // Recursivo simples (1 nivel basta - estrutura comum eh /campaignId/pieces/)
-          await mkdir(dstPath, { recursive: true })
-          const sub = await readdir(srcPath)
-          for (const f of sub) {
-            const fs1 = path.join(srcPath, f)
-            const fd1 = path.join(dstPath, f)
-            try {
-              const s = await stat(fs1)
-              if (s.isFile()) await copyFile(fs1, fd1)
-            } catch {}
-          }
-        } else if (ent.isFile()) {
-          await copyFile(srcPath, dstPath)
-        }
-      }
-    } catch (e) {
-      console.warn("[duplicate] file copy partial fail:", e)
+  // 1) Copiar todo o conteudo via storage adapter (list + copy).
+  // Recursivo automatico — walk em FS local, prefix listing em S3.
+  // P1 sweep: zero acesso direto a fs aqui.
+  const storage = getStorage()
+  const srcPrefix = `campaigns/${oldId}/`
+  const dstPrefix = `campaigns/${newId}/`
+  try {
+    const keys = await storage.list(srcPrefix)
+    for (const srcKey of keys) {
+      const relPath = srcKey.slice(srcPrefix.length)
+      const dstKey = `${dstPrefix}${relPath}`
+      await storage.copy(srcKey, dstKey).catch(() => {})
     }
+  } catch (e) {
+    console.warn("[duplicate] file copy partial fail:", e)
   }
 
-  // Helper: reescrever URLs do diretório antigo pro novo
+  // Helper: reescrever URLs do diretório antigo pro novo. Storage-agnostic
+  // via keyFromUrl + urlFor — funciona pra qualquer adapter (LocalFile, S3, etc).
   const rewriteUrl = (u: string | null | undefined): string | null => {
     if (!u) return u ?? null
-    return u.replace(`/uploads/campaigns/${oldId}/`, `/uploads/campaigns/${newId}/`)
+    const key = storage.keyFromUrl(u)
+    if (!key) return u // URL externa, mantem
+    if (!key.startsWith(srcPrefix)) return u // nao eh da campanha origem
+    const newKey = dstPrefix + key.slice(srcPrefix.length)
+    return storage.urlFor(newKey)
   }
 
   // Helper: parse JSON (tolerante)
