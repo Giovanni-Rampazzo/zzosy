@@ -30,6 +30,34 @@ function editorLog(...args: any[]) {
   if (isDev) console.warn(...args)
 }
 
+/**
+ * Edge case PSD: overrides.fontSize box-level pode chegar quase-zero
+ * (~0.158) quando o PSD tem leading mixed e o per-char styles carrega o
+ * fontSize real. Sem clamping, Fabric Textbox cria com fontSize ~= 0,
+ * shrink-to-content calcula expectedLines = altura / (fontSize * 1.2) =
+ * milhares de linhas, condicao "lineCount === expectedLines" falha, e a
+ * largura fica em 99999 (point-text default). Sintoma visivel: textbox
+ * atravessa o canvas inteiro horizontalmente.
+ *
+ * Quando ov.fontSize < 1 e styles tem fontSizes per-char, retorna o MAX
+ * dos per-char fontSizes. Senao retorna o valor original.
+ */
+function clampTinyFontSize(fontSize: number | undefined, styles: any): number {
+  if (typeof fontSize !== "number") return fontSize ?? 80
+  if (fontSize >= 1) return fontSize
+  if (!styles || typeof styles !== "object") return fontSize
+  let maxFs = 0
+  for (const lineKey of Object.keys(styles)) {
+    const line = styles[lineKey]
+    if (!line || typeof line !== "object") continue
+    for (const colKey of Object.keys(line)) {
+      const fs = line[colKey]?.fontSize
+      if (typeof fs === "number" && fs > maxFs) maxFs = fs
+    }
+  }
+  return maxFs > 0 ? maxFs : fontSize
+}
+
 interface TextSpan {
   text: string
   style: { color?: string; fontSize?: number; fontWeight?: string; fontFamily?: string }
@@ -3233,7 +3261,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const created = objs[objs.length - 1] as any
               if (created && (created.type === "textbox" || created.type === "i-text") && layer.overrides) {
                 if (layer.overrides.fill !== undefined) created.set("fill", layer.overrides.fill)
-                if (layer.overrides.fontSize !== undefined) created.set("fontSize", layer.overrides.fontSize)
+                if (layer.overrides.fontSize !== undefined) {
+                  created.set("fontSize", clampTinyFontSize(layer.overrides.fontSize, layer.overrides.styles))
+                }
                 if (layer.overrides.fontFamily !== undefined) created.set("fontFamily", layer.overrides.fontFamily)
                 if (layer.overrides.fontWeight !== undefined) created.set("fontWeight", layer.overrides.fontWeight)
                 if (layer.overrides.fontStyle !== undefined) created.set("fontStyle", layer.overrides.fontStyle)
@@ -3364,7 +3394,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             if (created && (created.type === "textbox" || created.type === "i-text") && (layer as any).overrides) {
               const ov = (layer as any).overrides
               if (ov.fill !== undefined) created.set("fill", ov.fill)
-              if (ov.fontSize !== undefined) created.set("fontSize", ov.fontSize)
+              if (ov.fontSize !== undefined) {
+                created.set("fontSize", clampTinyFontSize(ov.fontSize, ov.styles))
+              }
               if (ov.fontFamily !== undefined) created.set("fontFamily", ov.fontFamily)
               if (ov.fontWeight !== undefined) created.set("fontWeight", ov.fontWeight)
               if (ov.fontStyle !== undefined) created.set("fontStyle", ov.fontStyle)
@@ -4918,6 +4950,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       let effFontSize = (ov?.fontSize ?? def.fontSize ?? 80)
       let effLeadingPt = ov?.leadingPt
       let effStyles = ov?.styles
+      // Edge case: overrides.fontSize quase-zero (PSD import com leading mixed
+      // pode salvar fontSize box-level ~= 0 mas per-char styles tem o real).
+      // Sem isso, shrink-to-content abaixo lê fontSize 0, calc expectedLines
+      // explode (height/0.19 = milhares de linhas), shrink nao dispara,
+      // textbox fica com width=99999. Detecta via max styleRuns.fontSize.
+      // Sintoma: textbox renderiza atravessando canvas inteiro.
+      effFontSize = clampTinyFontSize(effFontSize, effStyles)
       const needsConsolidation = Math.abs(scaleX - 1) > 0.001 || Math.abs(scaleY - 1) > 0.001
       if (needsConsolidation) {
         const sY = scaleY
@@ -5135,7 +5174,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // texto-tem-largura-do-conteudo.
         try {
           const lineCount = (t as any)._textLines?.length ?? 0
-          if (lineCount > 0 && lineCount === expectedLines) {
+          // Condicao relaxada (era `=== expectedLines`): shrink quando lineCount
+          // <= expectedLines. Caso problematico: PSD com bbox 2 linhas mas texto
+          // cabe em 1 (overrides editaram fontSize ou texto encurtou). Antes
+          // ficava com width=99999 porque 1 !== 2. Agora hugga 1-linha mesmo
+          // quando psd esperava mais.
+          if (lineCount > 0 && lineCount <= expectedLines) {
             let maxLineW = 0
             for (let i = 0; i < lineCount; i++) {
               const lw = typeof (t as any).getLineWidth === "function"

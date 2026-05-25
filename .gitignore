@@ -20,3 +20,7 @@ apps/web/public/uploads/clients/
 # Backups (sao locais, nao versionados)
 backup-system/*.log
 **/zzosy-backups/
+
+# Playwright MCP debug artifacts
+.playwright-mcp/
+editor-after-fix.png
