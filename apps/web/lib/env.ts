@@ -37,6 +37,17 @@ const schema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
+  // ── Sentry (error tracking) ──
+  SENTRY_DSN: z.string().url().optional(),
+  NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
+
+  // ── Rate limiting (Upstash Redis) ──
+  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+
+  // ── Logs ──
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional(),
+
   // ── Migrate guard ──
   MIGRATE_SECRET: z.string().optional(),
 }).superRefine((data, ctx) => {
