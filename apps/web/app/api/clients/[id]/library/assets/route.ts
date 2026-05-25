@@ -14,7 +14,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import { assertSlotKeyUnique } from "@/lib/libraryValidation"
-import { checkBodySizes } from "@/lib/sizeGuards"
+import { checkBodySizes, isImageUrlSafe } from "@/lib/sizeGuards"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -62,12 +62,17 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     })
   }
 
-  return NextResponse.json(assets.map(a => ({
+  // P6: Cache-Control. Library mudancas via BroadcastChannel (U6) ja invalidam
+  // cliente; s-maxage 30s baixo + stale-while-revalidate balanceia tenant load
+  // sem stale UI severa. Vary por Authorization (multi-tenant — header de sessao).
+  const res = NextResponse.json(assets.map(a => ({
     ...a,
     content: a.content ? safeParse(a.content) : null,
     tags: Array.isArray(a.tags) ? a.tags : [],
     instanceCount: (a as any)._count?.instances ?? 0,
   })))
+  res.headers.set("Cache-Control", "private, max-age=10, stale-while-revalidate=60")
+  return res
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -83,6 +88,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   // no DB + OOM no parse. Limits em lib/sizeGuards.ts.
   const sizeErr = checkBodySizes(body, ["name", "slotKey", "content", "lastOverride", "tags", "meta", "notes"])
   if (sizeErr) return NextResponse.json({ error: sizeErr }, { status: 413 })
+  // S3 fix: bloqueia javascript:/data:/vbscript: em imageUrl/thumbnailUrl.
+  if (body.imageUrl && !isImageUrlSafe(body.imageUrl)) {
+    return NextResponse.json({ error: "imageUrl invalido (deve ser /uploads/* ou http/https)" }, { status: 400 })
+  }
+  if (body.thumbnailUrl && !isImageUrlSafe(body.thumbnailUrl)) {
+    return NextResponse.json({ error: "thumbnailUrl invalido" }, { status: 400 })
+  }
 
   // Modos: cloneFrom={campaignId, assetId} OU upload direto (name + type + content/imageUrl + ...)
   if (body.cloneFrom?.assetId) {

@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import { buildMigrationOps, spansToText, parseContent } from "@/lib/migrateAssetTextOverrides"
 import { assertSlotKeyUnique } from "@/lib/libraryValidation"
-import { checkBodySizes } from "@/lib/sizeGuards"
+import { checkBodySizes, isImageUrlSafe } from "@/lib/sizeGuards"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -52,6 +52,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const body = await req.json()
   const sizeErr = checkBodySizes(body, ["name", "slotKey", "tags", "meta", "notes"])
   if (sizeErr) return NextResponse.json({ error: sizeErr }, { status: 413 })
+  if (body.thumbnailUrl && !isImageUrlSafe(body.thumbnailUrl)) {
+    return NextResponse.json({ error: "thumbnailUrl invalido" }, { status: 400 })
+  }
 
   const data: any = {}
   for (const k of ["name", "slotKey", "thumbnailUrl", "notes"]) {
@@ -93,6 +96,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const body = await req.json()
   const sizeErr = checkBodySizes(body, ["content", "lastOverride"])
   if (sizeErr) return NextResponse.json({ error: sizeErr }, { status: 413 })
+  if (body.imageUrl && !isImageUrlSafe(body.imageUrl)) {
+    return NextResponse.json({ error: "imageUrl invalido" }, { status: 400 })
+  }
 
   const data: any = { version: { increment: 1 } }
   if ("content" in body) {

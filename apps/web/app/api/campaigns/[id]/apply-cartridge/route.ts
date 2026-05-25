@@ -28,7 +28,7 @@ import { readFile, writeFile, mkdir } from "fs/promises"
 import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
-import { SIZE_LIMITS } from "@/lib/sizeGuards"
+import { SIZE_LIMITS, isCartridgeMimeAllowed } from "@/lib/sizeGuards"
 import { parseCartridgeManifest, CartridgeFormatError } from "@/lib/cartridgeFormat"
 
 export const dynamic = "force-dynamic"
@@ -66,6 +66,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({
         error: `Cartridge excede limite (${(file.size / 1024 / 1024).toFixed(1)}MB > ${SIZE_LIMITS.cartridgeFile / 1024 / 1024}MB)`,
       }, { status: 413 })
+    }
+    if (!isCartridgeMimeAllowed(file.type)) {
+      return NextResponse.json({
+        error: `Tipo de arquivo invalido: "${file.type}". Esperado .zzosy/.zip`,
+      }, { status: 415 })
     }
     const mp = fd.get("mapping") as string | null
     if (mp) { try { mapping = JSON.parse(mp) } catch {} }

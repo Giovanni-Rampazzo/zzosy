@@ -74,3 +74,33 @@ function formatBytes(n: number): string {
   if (n < MB) return `${(n / KB).toFixed(1)}KB`
   return `${(n / MB).toFixed(1)}MB`
 }
+
+/**
+ * MIME types aceitos pra upload de cartridge. ZIP (application/zip) ou
+ * application/octet-stream (browsers as vezes nao sabem zip de .zzosy).
+ * Defesa em camada — bomb attack guard (size) eh primaria; MIME secundario.
+ */
+export const CARTRIDGE_ALLOWED_MIME = new Set([
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/octet-stream",
+  "", // alguns browsers/curl mandam vazio
+])
+
+export function isCartridgeMimeAllowed(mime: string | undefined | null): boolean {
+  return CARTRIDGE_ALLOWED_MIME.has((mime ?? "").toLowerCase().split(";")[0].trim())
+}
+
+/**
+ * Valida que imageUrl eh um path local seguro (/uploads/...) ou URL absoluta
+ * http(s). Bloqueia javascript:, data:, vbscript: — defesa XSS indireto se
+ * algum lugar usar imageUrl como href ou window.open.
+ */
+const SAFE_PATH = /^\/uploads\/[\w\-./]+$/
+const SAFE_HTTP = /^https?:\/\/[\w\-.]+(:\d+)?(\/.*)?$/i
+export function isImageUrlSafe(url: string | undefined | null): boolean {
+  if (!url) return true // null/empty OK
+  if (typeof url !== "string") return false
+  if (url.length > 2000) return false // sane URL length
+  return SAFE_PATH.test(url) || SAFE_HTTP.test(url)
+}

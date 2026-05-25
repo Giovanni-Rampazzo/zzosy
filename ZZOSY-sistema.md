@@ -317,6 +317,9 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 13. ✅ U6: `lib/libraryBroadcast.ts` com `broadcastLibrary()` + `subscribeLibrary()` no channel `zzosy:library`. Library page + /campaigns/[id]/assets escutam → auto-refetch quando outra tab edita. Eventos: asset-created/updated/deleted, cartridge-imported/applied.
 14. ✅ M5: `lib/cartridgeFormat.ts` com `CARTRIDGE_FORMAT_LATEST/SUPPORTED`, `parseCartridgeManifest()` (auto-upgrade in-memory), `CartridgeFormatError` (mensagem clara). Cartucho com format fora de SUPPORTED → 400 com `receivedFormat` no body. Forward-compat pra v2.
 15. ✅ M4: warning UX em `SaveToLibraryModal` quando nome duplica algum já no library (soft — não bloqueia, só amarelo + msg).
+16. ✅ S1: MIME validation em upload cartridge (POST + apply-cartridge) — aceita apenas `application/zip`, `application/x-zip-compressed`, `application/octet-stream`, ou vazio. Status 415 quando outro.
+17. ✅ S3: validação `imageUrl/thumbnailUrl` — regex `/^\/uploads\/[\w\-./]+$/` ou `https?://...`. Bloqueia `javascript:`, `data:`, `vbscript:`. Aplicado em POST direct + PUT content + PATCH.
+18. ✅ P6: `Cache-Control: private, max-age=10, stale-while-revalidate=60` em GET library/assets. Balance entre realtime (BroadcastChannel invalida UI) e load de DB.
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)
