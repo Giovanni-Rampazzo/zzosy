@@ -1,4 +1,5 @@
 "use client"
+import { useState, useEffect } from "react"
 
 interface Props {
   src?: string | null
@@ -17,11 +18,17 @@ interface Props {
 
 /**
  * Preview pra primeira coluna de listas. Padronizado pra todo o sistema.
- * - Com src: mostra imagem
- * - Sem src + fallbackText: avatar circular com inicial(is)
+ * - Com src: mostra imagem com skeleton pulse enquanto carrega; cai pra fallback se 404/erro
+ * - Sem src + fallbackText: avatar com inicial(is)
  * - Sem nada: placeholder cinza
  */
 export function RowThumb({ src, alt, fallbackText, fallbackBg, size = 56, rounded = 8, fit = "contain" }: Props) {
+  const [loaded, setLoaded] = useState(false)
+  const [errored, setErrored] = useState(false)
+
+  // Reseta estado quando src muda (ex: cache-busting via ?v=N)
+  useEffect(() => { setLoaded(false); setErrored(false) }, [src])
+
   const initials = (fallbackText ?? "")
     .split(/\s+/)
     .filter(Boolean)
@@ -35,10 +42,18 @@ export function RowThumb({ src, alt, fallbackText, fallbackBg, size = 56, rounde
     overflow: "hidden", border: "1px solid #E0E0E0", background: "#F5F5F0",
   }
 
-  if (src) {
+  if (src && !errored) {
     return (
-      <div style={{...styleBase, border: "none", background: "transparent"}}>
-        <img src={src} alt={alt ?? ""} style={{ width: "100%", height: "100%", objectFit: fit }} />
+      <div style={{...styleBase, border: "none", background: loaded ? "transparent" : "#EDEDED", position: "relative"}} aria-busy={!loaded}>
+        {!loaded && <div style={{ position: "absolute", inset: 0, animation: "rowthumb-pulse 1.2s ease-in-out infinite", background: "linear-gradient(90deg, #EDEDED 0%, #F5F5F5 50%, #EDEDED 100%)", backgroundSize: "200% 100%" }} />}
+        <img
+          src={src}
+          alt={alt ?? ""}
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+          style={{ width: "100%", height: "100%", objectFit: fit, opacity: loaded ? 1 : 0, transition: "opacity 0.2s" }}
+        />
+        <style>{`@keyframes rowthumb-pulse { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
       </div>
     )
   }

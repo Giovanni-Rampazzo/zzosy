@@ -8,6 +8,7 @@ import { useSetActiveClient } from "@/lib/activeClientContext"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
+import { ImgWithLoader } from "@/components/ui/ImgWithLoader"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 import { SaveToLibraryModal } from "@/components/library/SaveToLibraryModal"
 import { broadcastLibrary, subscribeLibrary } from "@/lib/libraryBroadcast"
@@ -753,7 +754,7 @@ function LibraryPickerModal({ clientId, onClose, onPick, busy }: {
                       cursor: busy ? "wait" : "pointer", display: "flex", flexDirection: "column", gap: 6, textAlign: "left",
                     }}>
                     <div style={{ height: 90, background: "#F5F5F0", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                      {a.thumbnailUrl ?? a.imageUrl ? <img src={a.thumbnailUrl ?? a.imageUrl} alt={a.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                      {a.thumbnailUrl ?? a.imageUrl ? <ImgWithLoader src={(a.thumbnailUrl ?? a.imageUrl) as string} alt={a.name} style={{ width: "100%", height: "100%" }} />
                         : <div style={{ fontSize: 10, color: "#999" }}>{a.type}</div>}
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "#222", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
@@ -1010,8 +1011,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         {isShape ? (
           <ShapePreview asset={asset} />
         ) : asset.imageUrl ? (
-          <img src={asset.imageUrl} alt={asset.label}
-            style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          <ImgWithLoader src={asset.imageUrl} alt={asset.label} style={{ width: "100%", height: "100%" }} />
         ) : (
           <div style={{ color: "#ccc", fontSize: 11 }}>Sem imagem</div>
         )}

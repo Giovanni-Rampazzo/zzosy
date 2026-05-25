@@ -2717,6 +2717,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // Lateral arrastada: consolida sX em width (mantem fontSize intocado, deixa wrap fluir)
         const newWidth = (obj.width ?? 100) * sX
         const newHeight = (obj.height ?? 100) * sY
+        // Flag "manual resize": auto-fit em text:changed nao deve mais sobrescrever
+        // o width que o user setou arrastando. Sem isso, ao digitar apos um resize
+        // manual, a caixa volta pra natural width e perde o wrap escolhido.
+        if (Math.abs(sX - 1) > 0.0001) obj.__userResizedWidth = true
         obj.set({ width: newWidth, height: newHeight, scaleX: 1, scaleY: 1 })
         if ((obj as any).initDimensions) (obj as any).initDimensions()
         obj.setCoords()
@@ -2756,6 +2760,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // a ser instantanea. Sintoma corrigido: 'lag pra atualizar os textos'.
         const obj = e?.target
         if (!obj || obj.type !== "textbox") return
+        // Photoshop/Figma paragraph-text behavior: assim que ha quebra de linha
+        // ou o user redimensionou o box manualmente, width fica FIXA. Auto-fit so
+        // roda em "point text" (single line, nunca redimensionado). Sem isso,
+        // pressionar Enter num textbox manual-wrap colapsa pra natural width da
+        // linha mais longa (UNWRAPPED) — o famoso "reset" reportado pelo user.
+        const hasNewline = typeof obj.text === "string" && obj.text.includes("\n")
+        if (hasNewline || obj.__userResizedWidth) return
         clearTimeout(autoFitTimer.current)
         autoFitTimer.current = setTimeout(() => {
           if (!alive) return
@@ -2764,6 +2775,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // Re-check do guard: se um undo disparou nos 120ms entre o text:changed
           // e o timer, abortar — auto-fit nao deve modificar estado restaurado.
           if (isApplyingHistory.current) return
+          // Re-check newline/manual-resize: user pode ter pressionado Enter ou
+          // redimensionado nos 120ms do debounce.
+          if (typeof obj.text === "string" && obj.text.includes("\n")) return
+          if (obj.__userResizedWidth) return
           try {
             const oldWidth = obj.width
             obj.set("width", 5000)
@@ -3142,12 +3157,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             return
           }
           // Peca em edicao: bloquear digitacao mas permitir teclas de
-          // navegacao/selecao + Enter (quebra de linha local).
+          // navegacao/selecao + Enter (quebra de linha local) + whitespace
+          // (Space, Tab) que sao layout, nao conteudo lexical — mesma logica
+          // de Enter: user precisa poder reorganizar visualmente sem mexer
+          // nos chars do asset. Sem Space na allowlist, user nao conseguia
+          // adicionar espaco entre palavras apos uma quebra de linha.
           const allowed = new Set([
             "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
             "Home", "End", "PageUp", "PageDown", "Tab", "Escape",
             "Shift", "Control", "Alt", "Meta",
-            "Enter",
+            "Enter", " ",
           ])
           if (allowed.has(e.key)) return
           // Permitir Cmd/Ctrl+A, Cmd/Ctrl+C (selecionar/copiar)
