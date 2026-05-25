@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
@@ -27,18 +27,22 @@ export default function EditLibraryAssetPage() {
   const [tagsRaw, setTagsRaw] = useState("")
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function applyAsset(a: LibraryAsset) {
+    setAsset(a)
+    setName(a.name ?? "")
+    setSlotKey(a.slotKey ?? "")
+    setTagsRaw((a.tags ?? []).join(", "))
+    setNotes(a.notes ?? "")
+  }
 
   useEffect(() => {
     fetch(`/api/clients/${id}/library/assets/${assetId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(a => {
-        if (!a) return
-        setAsset(a)
-        setName(a.name ?? "")
-        setSlotKey(a.slotKey ?? "")
-        setTagsRaw((a.tags ?? []).join(", "))
-        setNotes(a.notes ?? "")
-      })
+      .then(a => { if (a) applyAsset(a) })
   }, [id, assetId])
 
   async function save() {
@@ -56,7 +60,44 @@ export default function EditLibraryAssetPage() {
     } else alert("Falha ao salvar")
   }
 
+  async function uploadNewFile(file: File) {
+    setUploadError(null)
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append("image", file)
+      const res = await fetch(`/api/clients/${id}/library/assets/${assetId}/image`, {
+        method: "POST",
+        body: fd,
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j?.error ?? `HTTP ${res.status}`)
+      }
+      // Refetch pra pegar version atualizada + nova imageUrl.
+      const fresh = await fetch(`/api/clients/${id}/library/assets/${assetId}`).then(r => r.ok ? r.json() : null)
+      if (fresh) applyAsset(fresh)
+      broadcastLibrary({ kind: "asset-updated", clientId: id, assetId })
+    } catch (e: any) {
+      setUploadError(e?.message ?? "Erro no upload")
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) uploadNewFile(f)
+  }
+
   if (!asset) return <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}><TopNav /><div style={{ padding: 32, color: "#888" }}>Carregando...</div></div>
+
+  const isImage = asset.type === "IMAGE"
+  const previewSrc = asset.thumbnailUrl ?? asset.imageUrl
+  // Cache-bust pelo version: imageUrl pode ficar mesmo path (raro) mas geralmente
+  // muda. Mesmo assim, version no querystring garante refresh do <img>.
+  const previewWithBust = previewSrc ? `${previewSrc}${previewSrc.includes("?") ? "&" : "?"}v=${asset.version}` : null
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
@@ -68,6 +109,48 @@ export default function EditLibraryAssetPage() {
         </div>
 
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: 24, maxWidth: 720, display: "flex", flexDirection: "column", gap: 16 }}>
+          {isImage && (
+            <Field label="Arquivo" sub="Substitua o arquivo do asset. A nova versao se propaga pras campanhas que usam (exceto detached).">
+              <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                <div style={{
+                  width: 140, height: 140, borderRadius: 6, border: "1px solid #E0E0E0",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: "#FAFAFA", overflow: "hidden", flexShrink: 0,
+                }}>
+                  {previewWithBust ? (
+                    <img src={previewWithBust} alt={asset.name}
+                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  ) : (
+                    <span style={{ fontSize: 11, color: "#aaa" }}>Sem preview</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={handleFilePick}
+                    style={{ display: "none" }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    onClick={() => fileInputRef.current?.click()}
+                    loading={uploading}
+                  >
+                    {uploading ? "Enviando..." : "Substituir arquivo"}
+                  </Button>
+                  <div style={{ fontSize: 11, color: "#888" }}>
+                    PNG, JPG, WEBP, SVG · max 50MB
+                  </div>
+                  {uploadError && (
+                    <div style={{ fontSize: 11, color: "#c0392b" }}>{uploadError}</div>
+                  )}
+                </div>
+              </div>
+            </Field>
+          )}
+
           <Field label="Nome">
             <input type="text" value={name} onChange={e => setName(e.target.value)} style={inpStyle} />
           </Field>
