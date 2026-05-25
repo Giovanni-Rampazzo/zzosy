@@ -1,0 +1,15 @@
+# Nixpacks config pra Railway. Monorepo: app em apps/web/.
+# Build/start commands estao em railway.json — esse arquivo so seta o node version
+# e habilita o cache do npm pra builds rapidos.
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["cd apps/web && npm ci"]
+
+[phases.build]
+cmds = ["cd apps/web && npm run build"]
+
+[start]
+cmd = "cd apps/web && npm start"
