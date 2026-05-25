@@ -6,6 +6,7 @@ import { randomUUID } from "crypto"
 import { maybeSanitizeImage } from "@/lib/svgSanitize"
 import { apiErrors } from "@/lib/apiError"
 import { getStorage } from "@/lib/storage"
+import { rateLimit, identifierFromRequest } from "@/lib/rateLimit"
 
 export const dynamic = "force-dynamic"
 
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const session = await getServerSession(authOptions)
     if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any).tenantId
+    const userId = (session.user as any).id
+    const rl = await rateLimit.upload.check(identifierFromRequest(req, userId))
+    if (!rl.ok) return apiErrors.tooManyRequests(rl.retryAfter)
 
     const { id, assetId } = await ctx.params
     // Verifica que asset pertence ao tenant + matches campaignId (audit P1.4).

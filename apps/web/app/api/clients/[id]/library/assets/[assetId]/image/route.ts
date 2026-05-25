@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import { getStorage } from "@/lib/storage"
 import { maybeSanitizeImage } from "@/lib/svgSanitize"
+import { rateLimit, identifierFromRequest } from "@/lib/rateLimit"
 import { randomUUID } from "crypto"
 
 export const dynamic = "force-dynamic"
@@ -28,6 +29,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const session = await getServerSession(authOptions)
     if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any).tenantId
+    const userId = (session.user as any).id
+    const rl = await rateLimit.upload.check(identifierFromRequest(req, userId))
+    if (!rl.ok) return apiErrors.tooManyRequests(rl.retryAfter)
     const { id: clientId, assetId } = await ctx.params
 
     const asset = await prisma.clientLibraryAsset.findFirst({

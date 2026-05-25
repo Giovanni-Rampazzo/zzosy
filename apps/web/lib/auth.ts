@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { rateLimit } from "@/lib/rateLimit";
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -18,6 +19,14 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
+
+        // Rate limit por email — bloqueia brute-force (10 tentativas/min por
+        // email). Sem Upstash configurado, eh no-op (warn no boot, nao
+        // bloqueia). Em prod com Upstash, throw aborta com mensagem ao user.
+        const rl = await rateLimit.auth.check(`login:${credentials.email.toLowerCase()}`);
+        if (!rl.ok) {
+          throw new Error(`RATE_LIMITED:${rl.retryAfter}`);
+        }
 
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },

@@ -7,6 +7,7 @@ import { getStorage } from "@/lib/storage"
 import { randomUUID } from "crypto"
 import { normalizeName } from "@/lib/normalize"
 import { apiErrors } from "@/lib/apiError"
+import { rateLimit, identifierFromRequest } from "@/lib/rateLimit"
 
 export const dynamic = "force-dynamic"
 
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return apiErrors.unauthorized()
+    const userId = (session.user as any).id
+    const rl = await rateLimit.upload.check(identifierFromRequest(req, userId))
+    if (!rl.ok) return apiErrors.tooManyRequests(rl.retryAfter)
 
     const { id } = await ctx.params
 

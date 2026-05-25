@@ -32,6 +32,7 @@ import { randomUUID } from "crypto"
 import { SIZE_LIMITS, isCartridgeMimeAllowed } from "@/lib/sizeGuards"
 import { buildCartridgeManifest, parseCartridgeManifest, CartridgeFormatError } from "@/lib/cartridgeFormat"
 import { getStorage } from "@/lib/storage"
+import { rateLimit, identifierFromRequest } from "@/lib/rateLimit"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -146,6 +147,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
   const userId = (session.user as any).id
+  const rl = await rateLimit.upload.check(identifierFromRequest(req, userId))
+  if (!rl.ok) return apiErrors.tooManyRequests(rl.retryAfter)
   const { id: clientId } = await ctx.params
   const client = await assertClient(clientId, tenantId)
   if (!client) return apiErrors.notFound()

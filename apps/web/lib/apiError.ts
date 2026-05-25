@@ -23,4 +23,9 @@ export const apiErrors = {
   notFound: (msg: string = "Não encontrado") => apiError(msg, 404),
   badRequest: (msg: string, opts?: { code?: string }) => apiError(msg, 400, opts),
   internal: (msg: string = "Erro interno") => apiError(msg, 500),
+  tooManyRequests: (retryAfterSeconds: number = 60) => {
+    const res = apiError(`Limite de requisições excedido. Tente novamente em ${retryAfterSeconds}s.`, 429, { code: "RATE_LIMITED" })
+    res.headers.set("Retry-After", String(retryAfterSeconds))
+    return res
+  },
 }
