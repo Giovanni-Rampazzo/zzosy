@@ -325,6 +325,7 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 21. ✅ PROD-09: `lib/env.ts` com schema zod (DATABASE_URL, NEXTAUTH_*, STORAGE_DRIVER + S3 creds condicional, STRIPE_*, MIGRATE_SECRET). Validation crash-fast com lista de issues por field. Typed `env.X` substitui `process.env.X`. Documentado em MD.
 22. ✅ PROD-04 (stub): `lib/logger.ts` com `logger.info/warn/error/debug(tag, msg, context)`. `SentryStubLogger` plug-and-play — trocar 1 classe pra integrar Sentry. `instrumentation.ts` valida env no boot do server runtime + log inicializacao.
 23. ✅ PROD-16: páginas erro custom. `not-found.tsx` (404), `error.tsx` (error boundary com retry + digest ref + logger), `global-error.tsx` (root layout fail).
+24. ✅ PROD-20: `GET /api/health` publico (no-auth). Checks db (SELECT 1, timeout 2s) + storage (adapter name). Status 503 se falhar. UptimeRobot-ready.
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)
@@ -385,7 +386,7 @@ Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem moni
 
 **🟡 PROD-19. Audit trail** — quem editou o que, quando. `prisma model AuditLog`. Útil pra cliente perguntando "quem mudou o logo". **2 dias**
 
-**🟡 PROD-20. Health check + uptime monitoring** — `/api/health` + UptimeRobot/BetterStack. **0.5 dia**
+**✅ PROD-20. Health check** — `GET /api/health` publico (sem auth). Retorna `{status, ts, nodeEnv, checks: {db, storage}}`. DB check via SELECT 1 com timeout 2s. Storage check via getStorage().name. Status 503 se algum check falhar. Pronto pra UptimeRobot/BetterStack. **Pendente**: registrar URL no monitoring externo.
 
 ### Quality gates (deve passar antes do release)
 
