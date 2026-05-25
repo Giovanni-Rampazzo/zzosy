@@ -31,6 +31,7 @@ import { readFile, writeFile, mkdir } from "fs/promises"
 import { existsSync } from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
+import { SIZE_LIMITS } from "@/lib/sizeGuards"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -156,6 +157,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const formData = await req.formData()
   const file = formData.get("cartridge") as File | null
   if (!file) return NextResponse.json({ error: "cartridge file missing" }, { status: 400 })
+  // S2 fix: bomb attack guard — File.size check ANTES de arrayBuffer().
+  if (file.size > SIZE_LIMITS.cartridgeFile) {
+    return NextResponse.json({
+      error: `Cartridge excede limite (${(file.size / 1024 / 1024).toFixed(1)}MB > ${SIZE_LIMITS.cartridgeFile / 1024 / 1024}MB)`,
+    }, { status: 413 })
+  }
 
   const arrayBuf = await file.arrayBuffer()
   const zip = await JSZip.loadAsync(arrayBuf)

@@ -312,6 +312,8 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 8. ✅ U3: novos modais `SaveToLibraryModal` (em /campaigns/[id]/assets) + `ExportCartridgeModal` (em /clients/[id]/library). Substituem `prompt()` native com inputs proper + warning realtime de slotKey duplicado.
 9. ✅ M3: `lib/libraryValidation.ts` com `assertSlotKeyUnique()` reusado em POST clone + POST direct + PATCH. Retorna 409 com mensagem clara + conflictAssetName. (MySQL não suporta partial unique pra NULL — validação no app layer.)
 10. ✅ U4: ExportCartridgeModal oferece escolha "filtered" vs "all" quando há filtro ativo (antes exportava silently só filtered).
+11. ✅ U5: busca por tag em LibraryPickerModal (antes só nome/slot).
+12. ✅ P7+S2: `lib/sizeGuards.ts` com `SIZE_LIMITS` + `checkBodySizes()`. Aplica caps em name/slotKey/content/lastOverride/tags/meta/notes em POST/PATCH/PUT library. `cartridgeFile` cap (100MB) em upload (file.size check ANTES de arrayBuffer — previne bomb attack OOM).
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)

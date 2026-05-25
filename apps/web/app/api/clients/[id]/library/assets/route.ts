@@ -14,6 +14,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import { assertSlotKeyUnique } from "@/lib/libraryValidation"
+import { checkBodySizes } from "@/lib/sizeGuards"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -78,6 +79,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!(await assertClientOfTenant(clientId, tenantId))) return apiErrors.notFound()
 
   const body = await req.json()
+  // P7+S2: size guards. Body com lastOverride/content/tags/meta gigante = bloat
+  // no DB + OOM no parse. Limits em lib/sizeGuards.ts.
+  const sizeErr = checkBodySizes(body, ["name", "slotKey", "content", "lastOverride", "tags", "meta", "notes"])
+  if (sizeErr) return NextResponse.json({ error: sizeErr }, { status: 413 })
+
   // Modos: cloneFrom={campaignId, assetId} OU upload direto (name + type + content/imageUrl + ...)
   if (body.cloneFrom?.assetId) {
     return cloneFromCampaignAsset(clientId, userId, body)

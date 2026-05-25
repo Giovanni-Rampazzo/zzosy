@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
 import { buildMigrationOps, spansToText, parseContent } from "@/lib/migrateAssetTextOverrides"
 import { assertSlotKeyUnique } from "@/lib/libraryValidation"
+import { checkBodySizes } from "@/lib/sizeGuards"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -49,6 +50,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   if (!asset) return apiErrors.notFound()
 
   const body = await req.json()
+  const sizeErr = checkBodySizes(body, ["name", "slotKey", "tags", "meta", "notes"])
+  if (sizeErr) return NextResponse.json({ error: sizeErr }, { status: 413 })
+
   const data: any = {}
   for (const k of ["name", "slotKey", "thumbnailUrl", "notes"]) {
     if (k in body) data[k] = body[k]
@@ -87,6 +91,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   if (!asset) return apiErrors.notFound()
 
   const body = await req.json()
+  const sizeErr = checkBodySizes(body, ["content", "lastOverride"])
+  if (sizeErr) return NextResponse.json({ error: sizeErr }, { status: 413 })
+
   const data: any = { version: { increment: 1 } }
   if ("content" in body) {
     data.content = typeof body.content === "string" ? body.content

@@ -693,7 +693,10 @@ function LibraryPickerModal({ clientId, onClose, onPick, busy }: {
     if (filterType !== "ALL" && a.type !== filterType) return false
     if (search) {
       const q = search.toLowerCase()
-      if (!a.name.toLowerCase().includes(q) && !(a.slotKey?.toLowerCase().includes(q))) return false
+      const nameHit = a.name.toLowerCase().includes(q)
+      const slotHit = a.slotKey?.toLowerCase().includes(q) ?? false
+      const tagHit = Array.isArray(a.tags) && (a.tags as string[]).some(t => t.toLowerCase().includes(q))
+      if (!nameHit && !slotHit && !tagHit) return false
     }
     return true
   })
@@ -716,7 +719,7 @@ function LibraryPickerModal({ clientId, onClose, onPick, busy }: {
             </button>
           ))}
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar nome / slot..."
+            placeholder="Buscar nome / slot / tag..."
             style={{ padding: "5px 10px", fontSize: 12, border: "1px solid #E0E0E0", borderRadius: 6, outline: "none", flex: 1, minWidth: 150 }} />
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
