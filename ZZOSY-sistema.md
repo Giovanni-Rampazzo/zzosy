@@ -324,6 +324,7 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 20. ✅ P1 sweep COMPLETO: legacy paths migrados pro adapter (import-psd com PSD master + layer images + smart object bytes, piece thumbnail, step-thumbnail, key-vision thumbnail, asset image upload, deliveries ZIP, campaign duplicate via `storage.list()` + `storage.copy()` recursivo). Adapter ganhou `list(prefix)` + `copy(src, dst)`. Campaign duplicate URL rewrite agora storage-agnostic via `keyFromUrl` + `urlFor`. App inteiro plug-and-play pra qualquer storage provider.
 21. ✅ PROD-09: `lib/env.ts` com schema zod (DATABASE_URL, NEXTAUTH_*, STORAGE_DRIVER + S3 creds condicional, STRIPE_*, MIGRATE_SECRET). Validation crash-fast com lista de issues por field. Typed `env.X` substitui `process.env.X`. Documentado em MD.
 22. ✅ PROD-04 (stub): `lib/logger.ts` com `logger.info/warn/error/debug(tag, msg, context)`. `SentryStubLogger` plug-and-play — trocar 1 classe pra integrar Sentry. `instrumentation.ts` valida env no boot do server runtime + log inicializacao.
+23. ✅ PROD-16: páginas erro custom. `not-found.tsx` (404), `error.tsx` (error boundary com retry + digest ref + logger), `global-error.tsx` (root layout fail).
 
 **Médio prazo:**
 8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)
@@ -376,7 +377,7 @@ Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem moni
 
 **🟡 PROD-15. Onboarding flow polido** — `/welcome` existe mas é placeholder. Wizard: cria primeira empresa → primeira campanha → tour do editor. **3 dias**
 
-**🟡 PROD-16. Páginas de erro custom** — 404, 500, offline. Hoje cai no fallback Next.js. **0.5 dia**
+**✅ PROD-16. Páginas de erro custom** — `app/not-found.tsx` (404 com Voltar ao Dashboard), `app/error.tsx` (error boundary com retry + ref digest + logger), `app/global-error.tsx` (root layout failure com retry). Branding ZZOSY (amarelo + DM Sans + 2px border).
 
 **🟡 PROD-17. Performance budget** — `KeyVisionEditor.tsx` tem 12k LOC; primeiro paint pesado. Code split + lazy load. **3-5 dias**
 
