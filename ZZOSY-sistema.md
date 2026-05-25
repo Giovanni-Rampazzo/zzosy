@@ -222,6 +222,29 @@ Separado de `/uploads/campaigns/{campaignId}/` pra não acoplar lifecycle.
 ### Bypass se `db push` falhar
 Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset (libraryAssetId, libraryAssetVersion, libraryAssetDetached, slotKey — todas nullable). Zero risco a data existente. Se `db push` der algum prompt sobre destructive: NÃO confirmar, mandar log que eu olho.
 
+### 🔴 CRÍTICO — bloqueia uso
+
+**1. DB push pendente** — schema em `schema.prisma` ainda não na DB. Toda rota GAM 500 até rodar `cd apps/web && npx prisma db push`. Auto-mode classifier bloqueou push autônomo (proteção contra schema change sem revisão). Schema é **additive only** — zero risco.
+
+### 🟡 MÉDIO — funciona mas tem ressalva
+
+**2. Storage local (`public/uploads/`)** — cartridge export/import + upload library leem/escrevem em filesystem. **Funciona em dev. Em prod com R2/S3 ou container efêmero (Vercel/Railway): quebra**. Não há abstração `storageAdapter` no codebase — usar local foi consistente com import-psd existente. Refactor pra S3 = sweep cross-cutting.
+
+**3. SmartObjectFile shared `filePath`** — `/from-library` cria novo `SmartObjectFile` na campanha apontando pro MESMO arquivo físico do `ClientLibrarySmartObjectFile`. Economia de storage; risco no cleanup futuro de órfãos.
+
+**4. Sem badge "Update available"** — Re-sync button existe mas detecção visual de versão stale não. Precisa endpoint retornar `library.currentVersion` junto com `asset.libraryAssetVersion`. Hoje user re-sync no escuro.
+
+**5. Manual mapping modal ausente** — `apply-cartridge` backend aceita `mapping: {slotKey: campaignAssetId}`, UI sempre auto-matcha. Conflitos silenciosos (último ganha em Map).
+
+### 🟢 BAIXO — refinamento
+
+**6. Bulk save serial sem progress** — "↑ Tudo p/ Library" itera assets sequencialmente sem UI feedback. Lento com N>50.
+**7. Sem quota / cleanup** — qualquer ADMIN acumula library infinitamente.
+**8. Cartridge sem versionamento** — re-importar mesmo `.zzosy` cria duplicatas. Sem dedupe por slotKey/checksum.
+
+### Bug crítico CORRIGIDO em commit f9a4eba
+`sizeBytes: 0` hardcoded em apply-cartridge ao criar SmartObjectFile. Agora propaga `bytes.length` real.
+
 ---
 
 ## Stack
