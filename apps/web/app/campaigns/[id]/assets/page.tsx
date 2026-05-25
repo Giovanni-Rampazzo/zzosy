@@ -10,6 +10,7 @@ import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 import { SaveToLibraryModal } from "@/components/library/SaveToLibraryModal"
+import { ApplyCartridgeButton } from "@/components/campaign/ApplyCartridgeButton"
 import { broadcastLibrary, subscribeLibrary } from "@/lib/libraryBroadcast"
 import {
   BrandPresetKey, BrandPreset, BrandTypography,
@@ -576,6 +577,7 @@ export default function CampaignAssetsPage() {
             hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
           />
           <div style={{ position: "relative", flexShrink: 0, display: "flex", gap: 8 }}>
+            <ApplyCartridgeButton campaignId={id} clientId={campaign.client?.id} onApplied={load} />
             <Button variant="secondary" size="md" onClick={() => setLibraryModalOpen(true)} title="Importar asset salvo no library deste cliente">
               + Do Library
             </Button>
