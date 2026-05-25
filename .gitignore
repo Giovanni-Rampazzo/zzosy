@@ -24,3 +24,9 @@ backup-system/*.log
 # Playwright MCP debug artifacts
 .playwright-mcp/
 editor-after-fix.png
+
+# Playwright E2E artifacts
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/blob-report/
+apps/web/playwright/.cache/
