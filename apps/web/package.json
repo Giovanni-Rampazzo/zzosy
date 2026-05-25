@@ -5,12 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "prisma migrate deploy && next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push --accept-data-loss",
     "db:seed": "curl -X POST https://zzosy-web.vercel.app/api/seed",
     "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:status": "prisma migrate status",
     "psd:test": "npx tsx scripts/test-psd.ts"
   },
   "dependencies": {

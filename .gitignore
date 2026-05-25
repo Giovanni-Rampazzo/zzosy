@@ -11,10 +11,11 @@ build
 .vercel
 apps/web/env
 
-# User uploads (PSD files, layer images, generated thumbs, deliveries)
+# User uploads (PSD files, layer images, generated thumbs, deliveries, library)
 apps/web/public/uploads/campaigns/
 apps/web/public/uploads/step-thumbs/
 apps/web/public/uploads/deliveries/
+apps/web/public/uploads/clients/
 
 # Backups (sao locais, nao versionados)
 backup-system/*.log
