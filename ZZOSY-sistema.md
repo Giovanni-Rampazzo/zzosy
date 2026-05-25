@@ -245,6 +245,175 @@ Schema mudou apenas com tabelas NOVAS + colunas NOVAS opcionais em CampaignAsset
 ### Bug crítico CORRIGIDO em commit f9a4eba
 `sizeBytes: 0` hardcoded em apply-cartridge ao criar SmartObjectFile. Agora propaga `bytes.length` real.
 
+### 📋 Análise crítica profunda (auditoria pós-build)
+
+#### 🔴 Bugs de correção (quebram em uso real)
+
+**B1. `from-library` cria CampaignAsset mas NÃO cria layer no KeyVision** — editor renderiza `keyVision.layers[]`; asset sozinho não aparece no canvas. Fix: dentro do POST, atualizar `KeyVision.layers` JSON. **MAJOR**
+
+**B2. Library PUT não migra `overrides.text/styles` das peças** — endpoint `PUT /api/campaigns/[id]/assets/[assetId]` tem `migrateOverrideText + migrateStyles` que preservam `\n` + per-char styles. Library PUT pula essa lógica → peças com overrides ficam com índices broken. **MAJOR**
+
+**B3. `apply-cartridge` cria CampaignAsset em posX/posY: 100,100 hardcoded** — slots novos aplicam em (100,100). Combinado com B1: asset invisível. Fix: cartridge manifest deve exportar/importar `posX/posY/width/height` + apply atualizar KV layers. **MAJOR**
+
+**B4. Race condition `order` em `from-library`** — `findFirst(order:desc) + create` sem transação. Dois clicks simultâneos = mesmo `order`. **MINOR**
+
+**B5. `saveAssetToLibrary` é 2-step (POST + PUT)** — POST library ✓ + PUT linking ✗ = library tem asset, campanha não vincula. Fix: endpoint atômico server-side. **MINOR**
+
+#### 🟡 UX incompleto
+
+- **U1.** Re-sync (↻) é no-op visual — propagação já aconteceu no PUT library; botão só consolida version. User não vê mudança.
+- **U2.** Detach mantém libraryAssetId; DELETE library asset zera FK em ambos detached e ativos (cascade SetNull). Estado ambíguo.
+- **U3.** `prompt()/alert()` nativos em saveAssetToLibrary, bulk save, library page. Inconsistente.
+- **U4.** `exportCartridge` exporta filtered (não todos) — filtro ativo perde TEXT/SO ao exportar.
+- **U5.** Modal "+ Do Library" sem busca por tag.
+- **U6.** Sem realtime cross-tab (BroadcastChannel ausente).
+- **U7.** Library page export sem audit trail server-side.
+
+#### 🟠 Manutenibilidade
+
+- **M1.** `SmartObjectFile` (campaign) vs `ClientLibrarySmartObjectFile` (lib) — naming inconsistente. Renomear original pra `CampaignSmartObjectFile`.
+- **M2.** Triple-write de SmartObject — bytes em 3 FKs apontando pro mesmo arquivo. Cleanup futuro complexo.
+- **M3.** `slotKey` não unique per client — auto-match silently picks last. Validation no app layer (Prisma MySQL não tem partial unique).
+- **M4.** `name` library asset não unique — 5 "Logo Sicredi" possíveis.
+- **M5.** Cartridge format hardcoded `zzosy-cartridge-v1` — v2 breaking change sem fallback parser.
+- **M6.** File write síncrono + Prisma create em loop — falha parcial deixa orphan files. Falta rollback.
+- **M7.** Props `__psd*` viajam em `lastOverride` JSON sem TypeScript type — typo silencioso.
+
+#### 🔵 Scalability / produção
+
+- **P1.** `public/uploads/` filesystem — incompatível com containers ephemerals (Vercel/Railway). Refactor pra S3/R2.
+- **P2.** Bulk save serial — 50 assets = 50 round-trips. Batch endpoint.
+- **P3.** Cartridge ZIP all-in-memory — `JSZip.loadAsync(arrayBuffer)` + `generateAsync("nodebuffer")`. PSB 50MB = limit. Streaming.
+- **P4.** Propagação `updateMany` OK em 1 query, mas peça-level migration (B2) seria N queries.
+- **P5.** Sem rate-limit nos endpoints novos.
+- **P6.** Sem `Cache-Control` em GETs públicos da library.
+- **P7.** JSON fields (`tags`, `meta`, `lastOverride`) sem size cap server-side.
+
+#### 🟣 Segurança (baixa prioridade — consistente com padrão do codebase)
+
+- **S1.** Sem validação MIME no upload cartridge (só falha em parse).
+- **S2.** Sem cap de tamanho upload cartridge → bomb attack OOM.
+- **S3.** `imageUrl` aceita string arbitrária (XSS não direto via React, mas risco indireto).
+- **S4.** `slotKey` raw em manifest.json exportado — abrir em editor sem escape.
+- **S5.** Endpoints não checam role (consistente com codebase atual).
+
+### Ordem sugerida de fix (próxima sessão GAM)
+
+**Imediato pós-`db push`:**
+1. B1 + B3: criar KV layer ao instanciar (from-library + apply-cartridge)
+2. B2: replicar migration logic no library PUT
+3. B5: fundir library create + link em endpoint atômico
+
+**Curto prazo:**
+4. B4: transaction no from-library
+5. U1+U2: clarify Re-sync OR remove
+6. U3: modais ZZOSY substituindo prompt/alert
+7. M3: validation pre-write slotKey duplicado
+
+**Médio prazo:**
+8. M1: rename SmartObjectFile → CampaignSmartObjectFile (sweep ~15 sites)
+9. P1: storageAdapter abstraction
+10. P3: cartridge streaming
+11. P7: size guards JSON fields
+
+**Backlog:**
+12. M5: cartridge format versioning + migration parser
+13. M6: file write rollback strategy
+14. S2: size cap upload cartridge
+
+---
+
+## 🚀 ROADMAP PRODUÇÃO — Go-live ZZOSY
+
+Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem monitoring, sem billing real.
+
+### Bloqueadores hard (não tem como ir pro ar sem)
+
+**🔴 PROD-01. Storage abstrato (S3/R2)** — hoje `public/uploads/` quebra em qualquer container ephemeral (Vercel/Railway). Refactor em `lib/storage.ts` com adapter pattern. Touchpoints: `import-psd`, library, cartridge, asset image upload, brand logos, brand fonts. ~20 sites. **3-5 dias**
+
+**🔴 PROD-02. Migrations strategy** — hoje usamos `prisma db push` (sem migration files). Pra prod precisa `prisma migrate dev/deploy` workflow. Migration baseline + commit `_prisma/migrations/`. **1 dia**
+
+**🔴 PROD-03. Email transactional** — NextAuth precisa pra password reset, email verification, magic links. Hoje só credentials. Integrar Resend/Postmark/SES. **2 dias**
+
+**🔴 PROD-04. Error tracking** — sem Sentry/Bugsnag = bugs em prod silenciosos. Setup Sentry com DSN per-tenant. **1 dia**
+
+**🔴 PROD-05. Stripe billing real** — `Plan / Subscription` models existem mas não há cobrança real. Webhook Stripe + portal customer + downgrade graceful. **1 semana**
+
+**🔴 PROD-06. Backup automático DB** — Railway tem snapshot, mas validar restore + ter cron extra. **1 dia**
+
+**🔴 PROD-07. CDN para uploads** — servir PSDs/imagens via CloudFlare/Bunny direto, não passa pelo Next.js. Cache headers. **2 dias** (depois de PROD-01)
+
+**🔴 PROD-08. Rate limiting** — `@upstash/ratelimit` em endpoints sensíveis (upload, login, criar campanha). **1 dia**
+
+**🔴 PROD-09. Variáveis de ambiente per-stage** — `.env.production` vs `.env.staging` vs `.env.development`. Validation via `zod` no boot. **0.5 dia**
+
+**🔴 PROD-10. Logs estruturados** — `console.log` espalhado vai pra `/dev/null`. Usar Pino + log aggregator (Axiom/Logtail). **1 dia**
+
+### Bloqueadores soft (gente vai descobrir e reclamar)
+
+**🟡 PROD-11. PT/EN i18n** — sistema misturado. Decisão: 100% PT (mercado BR) ou bilingual. next-intl. **1 semana se i18n completo, 1 dia se sweep PT**
+
+**🟡 PROD-12. Mobile responsive audit** — editor canvas em mobile não funciona; dashboard/listings precisam responsive. Páginas de view-only (cliente aprova peça via link) PRECISAM ser mobile-first. **3-5 dias**
+
+**🟡 PROD-13. Accessibility (a11y)** — aria-labels, contrast, keyboard nav. Auditoria com axe-core. **2 dias**
+
+**🟡 PROD-14. Páginas legais** — Termos de Uso + Política de Privacidade (LGPD-compliant). Boilerplate ajustado. **1 dia**
+
+**🟡 PROD-15. Onboarding flow polido** — `/welcome` existe mas é placeholder. Wizard: cria primeira empresa → primeira campanha → tour do editor. **3 dias**
+
+**🟡 PROD-16. Páginas de erro custom** — 404, 500, offline. Hoje cai no fallback Next.js. **0.5 dia**
+
+**🟡 PROD-17. Performance budget** — `KeyVisionEditor.tsx` tem 12k LOC; primeiro paint pesado. Code split + lazy load. **3-5 dias**
+
+**🟡 PROD-18. Image optimization** — `<img>` cru em todo lugar. Migrar pra `next/image` onde aplicável. **2 dias**
+
+**🟡 PROD-19. Audit trail** — quem editou o que, quando. `prisma model AuditLog`. Útil pra cliente perguntando "quem mudou o logo". **2 dias**
+
+**🟡 PROD-20. Health check + uptime monitoring** — `/api/health` + UptimeRobot/BetterStack. **0.5 dia**
+
+### Quality gates (deve passar antes do release)
+
+**🟢 PROD-21. E2E test suite** — Playwright. Critical paths: signup → criar campanha → import PSD → gerar peças → exportar. **1 semana initial setup + testes**
+
+**🟢 PROD-22. CI/CD pipeline** — GitHub Actions: lint + typecheck + build + E2E + deploy. **2 dias**
+
+**🟢 PROD-23. Staging environment** — clone do prod, dados anonimizados. Deploy automático no push pra `staging` branch. **1 dia**
+
+**🟢 PROD-24. Load test** — k6/artillery contra staging com cenário "100 designers simultâneos importando PSDs". **2 dias**
+
+**🟢 PROD-25. Security audit externo** — checklist OWASP, pentest leve. **1 semana se externo, 2 dias interno com tools**
+
+**🟢 PROD-26. Documentação user-facing** — help center / docs.zzosy.com / videos curtos por feature. **1-2 semanas**
+
+**🟢 PROD-27. Support channel** — Intercom/Crisp/email. Pelo menos email com SLA escrito. **0.5 dia**
+
+### Nice-to-have antes do launch público
+
+- **N1.** Affiliate / referral program
+- **N2.** Public template gallery (cartridges públicas de marca)
+- **N3.** Slack/Discord da comunidade
+- **N4.** Public roadmap voting
+- **N5.** Status page (statusgator/instatus)
+- **N6.** Changelog público (releaselog)
+
+### Estimativa total go-live (sequencial otimista)
+
+- **MVP fechado e testado**: GAM bugs (B1-B5) + finalização Fidelidade PSD = **1 semana**
+- **Bloqueadores hard (PROD-01 a 10)**: **3 semanas**
+- **Bloqueadores soft + quality gates**: **3-4 semanas**
+- **Total estimado**: **2-2.5 meses** com 1 dev fulltime
+
+Paralelizando (devs + designer + ops): **~6 semanas**.
+
+### Decisões pendentes pra go-live
+
+1. **Cloud provider**: Vercel (Next.js nativo, mais caro) vs Railway (cheap, ja temos DB la) vs Fly.io vs auto-hosted?
+2. **Storage**: R2 (Cloudflare, S3-compatible, cheap egress) vs S3 vs Bunny Storage?
+3. **DB tier**: Railway managed pode escalar até X. Migrar pra Planetscale ou Neon se previsão > 10k users?
+4. **Pricing model**: SaaS por user? Por client? Por peça gerada? Flat agency tier?
+5. **Region**: AWS sa-east-1 vs us-east-1? Latência cliente BR.
+6. **Brand do produto**: "zzosy" final ou vamos renomear pré-launch?
+
 ---
 
 ## Stack
