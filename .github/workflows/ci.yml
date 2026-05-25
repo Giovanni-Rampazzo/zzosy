@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, staging]
+  push:
+    branches: [main, staging]
+
+jobs:
+  typecheck-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build (Next.js)
+        # Build com env dummy validavel pelo zod schema (lib/env.ts).
+        # NEXTAUTH_SECRET >= 16 chars. DATABASE_URL valida (mas nao acessada
+        # durante build estatico — so na primeira request runtime).
+        env:
+          NODE_ENV: production
+          DATABASE_URL: "mysql://ci:ci@localhost:3306/zzosy_ci"
+          NEXTAUTH_SECRET: "ci-only-secret-not-used-in-real-auth"
+          NEXTAUTH_URL: "https://ci.local"
+          STORAGE_DRIVER: "local"
+        run: npm run build
