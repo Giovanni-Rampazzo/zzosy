@@ -230,15 +230,26 @@ export default function ClientLibraryPage() {
                         {a.instanceCount} em uso
                       </div>
                     )}
-                    <div style={{ height: 140, background: "#F5F5F0", borderRadius: "10px 10px 0 0", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
+                    {/* Preview com fundo escuro + checker sutil pra que assets
+                        brancos (logo branco, texto branco) fiquem visiveis.
+                        Padrao Photoshop pra transparencia. */}
+                    <div style={{
+                      height: 140, borderRadius: "10px 10px 0 0",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      overflow: "hidden", padding: 8,
+                      background: "#3a3a3a",
+                      backgroundImage: "linear-gradient(45deg, #2e2e2e 25%, transparent 25%), linear-gradient(-45deg, #2e2e2e 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2e2e2e 75%), linear-gradient(-45deg, transparent 75%, #2e2e2e 75%)",
+                      backgroundSize: "12px 12px",
+                      backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0px",
+                    }}>
                       {a.thumbnailUrl ?? a.imageUrl ? (
                         <img src={a.thumbnailUrl ?? a.imageUrl ?? ""} alt={a.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                       ) : a.type === "TEXT" ? (
-                        <div style={{ fontSize: 14, color: "#444", padding: 12, fontStyle: "italic", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" }}>
+                        <div style={{ fontSize: 14, color: "#eee", padding: 12, fontStyle: "italic", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" }}>
                           {previewText(a.content)}
                         </div>
                       ) : (
-                        <div style={{ color: "#aaa", fontSize: 11 }}>(sem preview)</div>
+                        <div style={{ color: "#999", fontSize: 11 }}>(sem preview)</div>
                       )}
                     </div>
                     <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -251,16 +262,18 @@ export default function ClientLibraryPage() {
                           ))}
                         </div>
                       )}
-                      <div style={{ display: "flex", gap: 6, marginTop: 4, justifyContent: "center" }}>
+                      <div style={{ display: "flex", gap: 4, marginTop: 4, justifyContent: "center", flexWrap: "nowrap" }}>
+                        {/* Padrao compacto do system (mesmo de /campaigns/[id] pecas):
+                            padding 2x7, font 10, outline. */}
                         {confirmDelete === a.id ? (
                           <>
-                            <Button variant="danger" size="sm" onClick={() => deleteAsset(a.id)}>Sim</Button>
-                            <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
+                            <Button variant="danger" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => deleteAsset(a.id)}>Sim</Button>
+                            <Button variant="secondary" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => setConfirmDelete(null)}>Não</Button>
                           </>
                         ) : (
                           <>
-                            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
-                            <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Editar</Button>
+                            <Button variant="danger" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
+                            <Button variant="secondary" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Editar</Button>
                           </>
                         )}
                       </div>
