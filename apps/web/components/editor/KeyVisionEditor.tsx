@@ -9115,9 +9115,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const preservedMaskAnchor = (currentObj as any).__maskAnchor
 
     // Pra IMAGE/SO: pre-carrega imagem nova pra descobrir naturalW/H, depois
-    // calcula scale pra que a nova imagem PREENCHA o mesmo bbox do current.
-    // Aspect ratio pode mudar — user quer "mesma mascara", entao fit exato
-    // ao bbox e nao crop/contain.
+    // calcula scale COVER (preenche bbox completamente sem deformar, excesso
+    // cortado pela mascara/bbox visual). User pediu 2026-05-26: "nao quero
+    // que deforme nao, quero fit". Cover = aspect ratio preservado + bbox
+    // completo + centrado.
     let imageLayerOverride: { posX: number; posY: number; scaleX: number; scaleY: number } | null = null
     if ((newAsset.type === "IMAGE" || newAsset.type === "SMART_OBJECT") && newAsset.imageUrl) {
       try {
@@ -9129,15 +9130,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           el.src = newAsset.imageUrl!
         })
         if (naturalDims) {
-          // Scale POR EIXO: naturalNew * scale = bboxOriginal. Garante mesmo
-          // tamanho visual do current, mesma posicao top-left. Se aspect ratio
-          // diferente, estica/comprime (intencional — user quer encaixe exato
-          // na mascara que ja existia).
+          // COVER scale: o MAIOR ratio garante que ambos os eixos preenchem.
+          // O eixo sobrante "vaza" — recortado pela mascara que vem do current
+          // ou simplesmente excede o bbox.
+          const scale = Math.max(capturedBboxW / naturalDims.w, capturedBboxH / naturalDims.h)
+          const scaledW = naturalDims.w * scale
+          const scaledH = naturalDims.h * scale
+          // Centra dentro do bbox antigo. Em IMAGE Fabric, left/top eh o
+          // top-left do objeto sem transform — pra centrar, recua metade do
+          // excesso.
           imageLayerOverride = {
-            posX: capturedLeft,
-            posY: capturedTop,
-            scaleX: capturedBboxW / naturalDims.w,
-            scaleY: capturedBboxH / naturalDims.h,
+            posX: capturedLeft - (scaledW - capturedBboxW) / 2,
+            posY: capturedTop - (scaledH - capturedBboxH) / 2,
+            scaleX: scale,
+            scaleY: scale,
           }
         }
       } catch (e) { editorLog("[swapAsset] preload image falhou:", e) }
