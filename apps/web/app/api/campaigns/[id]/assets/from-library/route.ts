@@ -10,7 +10,6 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { apiErrors } from "@/lib/apiError"
-import { addLayersToKv } from "@/lib/kvLayers"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -62,17 +61,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     smartObjectId = so.id
   }
 
-  // Fallback de posicao: prioridade param > lastOverride.posX > 100. Sem
-  // posicao real, asset cairia em (100,100) sempre — invisivel em campanhas
-  // com background dark.
+  // Fallback de posicao: prioridade param > lastOverride.posX > 100. Posicao
+  // guardada no asset (lastOverride) pro user/editor referenciar — NAO eh
+  // usada pra renderizar (asset nao vai mais pro KV automaticamente; user
+  // adiciona via "+" no editor quando quiser).
   const lo: any = libAsset.lastOverride ?? {}
   const effPosX = typeof posX === "number" ? posX : (typeof lo.posX === "number" ? lo.posX : 100)
   const effPosY = typeof posY === "number" ? posY : (typeof lo.posY === "number" ? lo.posY : 100)
   const effWidth = typeof width === "number" ? width : (typeof lo.width === "number" ? lo.width : 600)
-  const effHeight = typeof lo.height === "number" ? lo.height : 100
 
-  // Transaction: cria asset + adiciona layer no KV. Sem isso, asset existe no
-  // banco mas nao renderiza no canvas (fix B1 — pos-build review critico).
   // Race-safe: order calc dentro da mesma transaction (fix B4).
   const created = await prisma.$transaction(async (tx) => {
     const lastInTx = await tx.campaignAsset.findFirst({
@@ -104,21 +101,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     })
   })
 
-  // Adiciona layer no KeyVision.layers (helper central — auto z-index).
-  // Erro aqui nao reverte o asset (acceptable: user pode adicionar manual via editor).
-  try {
-    await addLayersToKv(campaignId, {
-      assetId: created.id,
-      posX: effPosX,
-      posY: effPosY,
-      width: effWidth,
-      height: effHeight,
-      // Effects/groupPath/etc do library NAO sao propagados aqui — sao
-      // do asset-level, e o editor le isso direto do asset.lastOverride.
-    })
-  } catch (e) {
-    console.warn("[from-library] addLayersToKv falhou:", e)
-  }
-
+  // 2026-05-26: asset NAO eh mais auto-adicionado ao KV. User reportou que
+  // assets do cartucho apareciam direto no KV (e distorcidos pq usavamos
+  // height fallback 100 com width 600 -> ratio 6:1). Comportamento Photoshop:
+  // import enche a biblioteca; "+" no editor adiciona ao canvas com aspect
+  // ratio correto via preload da imagem.
   return NextResponse.json(created)
 }
