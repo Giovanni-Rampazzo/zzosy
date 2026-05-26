@@ -8,6 +8,10 @@ import { getStorage } from "@/lib/storage"
 export const dynamic = "force-dynamic"
 
 export const runtime = "nodejs"
+// Upload de ZIP pode ser grande (PPTX + N PNGs + opcionais PSDs).
+// 300s = 5min; default 10s era curto demais — user reportou hang em
+// "Salvando entrega no servidor..." pra ZIPs ~50MB.
+export const maxDuration = 300
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)

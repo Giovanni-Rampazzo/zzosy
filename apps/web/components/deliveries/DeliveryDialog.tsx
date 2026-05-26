@@ -131,14 +131,31 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
       URL.revokeObjectURL(url)
 
       // 4) Salvar copia no servidor + criar Delivery + marcar pecas como ENTREGUE
-      setProgress("Salvando entrega no servidor...")
+      const sizeMb = (zipBlob.size / 1024 / 1024).toFixed(1)
+      setProgress(`Enviando ZIP (${sizeMb} MB) pro servidor...`)
       const fd = new FormData()
       fd.append("zip", zipBlob, downloadName)
       fd.append("campaignId", campaignId)
       fd.append("pieceIds", JSON.stringify(Array.from(selected)))
       fd.append("formats", JSON.stringify(Array.from(formats)))
       fd.append("name", downloadName)
-      const res = await fetch("/api/deliveries", { method: "POST", body: fd })
+      // Timeout 5min — sem isso, fetch hang pra sempre se server demora
+      // (e o user perde o download local que ja aconteceu).
+      const ctrl = new AbortController()
+      const uploadTimer = setTimeout(() => ctrl.abort(), 5 * 60 * 1000)
+      let res: Response
+      try {
+        res = await fetch("/api/deliveries", { method: "POST", body: fd, signal: ctrl.signal })
+        clearTimeout(uploadTimer)
+      } catch (e: any) {
+        clearTimeout(uploadTimer)
+        if (e?.name === "AbortError") {
+          alert("Upload do ZIP timeout (5min). Download local OK, mas servidor nao registrou — repete a entrega.")
+        } else {
+          alert("Upload falhou: " + (e?.message ?? e) + " — download local OK.")
+        }
+        return
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         alert("Entrega salva localmente, mas falhou ao registrar no servidor: " + (err.detail ?? err.error ?? "?"))
