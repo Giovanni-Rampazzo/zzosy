@@ -199,28 +199,27 @@ export default function MediasPage() {
               </div>
             ) : (
               <>
-              {/* Header da tabela — mesmos column widths das rows pra alinhar.
-                  Actions com width:280 fixo (em ambos) pra Midia(flex:1) ter
-                  o mesmo espaco real em header e data row. */}
-              <div style={{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid #E0E0E0",background:"#FAFAFA"}}>
+              {/* Header da tabela — column widths equilibrados.
+                  Actions com marginLeft:auto pra empurrar pra direita; demais cols
+                  com width fixo proporcional ao conteudo tipico. */}
+              <div style={{display:"flex",alignItems:"center",padding:"6px 16px",borderBottom:"1px solid #E0E0E0",background:"#FAFAFA"}}>
                 {(() => {
-                  const lblS: React.CSSProperties = {fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}
+                  const lblS: React.CSSProperties = {fontSize:12,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}
                   return (
                     <>
-                      <div style={{flex:1, ...lblS}}>Mídia</div>
-                      <div style={{width:140, ...lblS}}>Veículo</div>
-                      <div style={{width:150, ...lblS}}>Formato</div>
-                      <div style={{width:170, ...lblS}}>Dimensão</div>
-                      <div style={{width:140, ...lblS}}>Segmento</div>
+                      <div style={{width:180, ...lblS}}>Mídia</div>
+                      <div style={{width:130, ...lblS}}>Veículo</div>
+                      <div style={{width:170, ...lblS}}>Formato</div>
+                      <div style={{width:160, ...lblS}}>Dimensão</div>
+                      <div style={{width:180, ...lblS}}>Segmento</div>
                       <div style={{width:70, ...lblS}}>DPI</div>
-                      <div style={{width:280}} />
                     </>
                   )
                 })()}
               </div>
               {categories.map(label => (
                 <div key={label}>
-                  <div style={{padding:"10px 20px",background:"#F5F5F0",borderBottom:"1px solid #E0E0E0"}}>
+                  <div style={{padding:"6px 16px",background:"#F5F5F0",borderBottom:"1px solid #E0E0E0"}}>
                     <span style={{fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.8px",color:"#888"}}>{label}</span>
                   </div>
                   {groupedFormats[label].map(f => {
@@ -234,14 +233,14 @@ export default function MediasPage() {
                       ? `${f.width}×${f.height} px`
                       : `${formatNum(wV)} ${wU} × ${formatNum(hV)} ${hU}`
                     return (
-                  <div key={f.id} style={{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid #f0f0f0"}}>
-                    <div style={{flex:1,fontWeight:600,fontSize:13}}>{f.media}</div>
-                    <div style={{width:140,fontSize:12,color:"#888"}}>{f.vehicle}</div>
-                    <div style={{width:150,fontSize:12,color:"#888"}}>{f.format}</div>
-                    <div style={{width:170,fontSize:12,color:"#888"}}>{dimText}</div>
-                    <div style={{width:140,fontSize:12,color:"#888"}}>{f.segment ?? ""}</div>
-                    <div style={{width:70,fontSize:12,color:"#888"}}>{f.dpi}dpi</div>
-                    <div style={{width:280,display:"flex",gap:6,alignItems:"center"}}>
+                  <div key={f.id} style={{display:"flex",alignItems:"center",padding:"6px 16px",borderBottom:"1px solid #f0f0f0"}}>
+                    <div style={{width:180,fontWeight:600,fontSize:14}}>{f.media}</div>
+                    <div style={{width:130,fontSize:13,color:"#666"}}>{f.vehicle}</div>
+                    <div style={{width:170,fontSize:13,color:"#666"}}>{f.format}</div>
+                    <div style={{width:160,fontSize:13,color:"#666"}}>{dimText}</div>
+                    <div style={{width:180,fontSize:13,color:"#666"}}>{f.segment ?? ""}</div>
+                    <div style={{width:70,fontSize:13,color:"#666"}}>{f.dpi}dpi</div>
+                    <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
                       {!f.isDefault ? (
                         <>
                           <Button variant="danger" size="sm" onClick={() => handleDelete(f.id)}>Remover</Button>
