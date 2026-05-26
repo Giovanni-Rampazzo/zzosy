@@ -88,22 +88,38 @@ async function main() {
     form.append("uploads", new Blob([tarBuf], { type: "application/gzip" }), "uploads.tar.gz")
   }
 
-  console.log("[3/3] POST /api/admin/sync...")
+  const totalSizeMB = (
+    (uploadsOnly ? 0 : statSync(sqlPath).size) +
+    (dbOnly ? 0 : statSync(tarPath).size)
+  ) / 1024 / 1024
+  console.log(`[3/3] POST /api/admin/sync (${totalSizeMB.toFixed(1)} MB upload + processamento server)...`)
   const t0 = Date.now()
-  const res = await fetch(`${PROD_URL}/api/admin/sync`, {
-    method: "POST",
-    headers: { "x-sync-token": TOKEN! },
-    body: form,
-  })
+  const tick = setInterval(() => {
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(0)
+    process.stdout.write(`\r  esperando resposta... ${elapsed}s`)
+  }, 1000)
+  let res: Response
+  try {
+    res = await fetch(`${PROD_URL}/api/admin/sync`, {
+      method: "POST",
+      headers: { "x-sync-token": TOKEN! },
+      body: form,
+    })
+  } finally {
+    clearInterval(tick)
+    process.stdout.write("\r")
+  }
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
   const body = await res.text()
-  console.log(`  HTTP ${res.status}  ${elapsed}s`)
+  console.log(`  HTTP ${res.status}  ${elapsed}s total`)
   console.log(body)
 
   if (!uploadsOnly && existsSync(sqlPath)) unlinkSync(sqlPath)
   if (!dbOnly && existsSync(tarPath)) unlinkSync(tarPath)
 
-  process.exit(res.ok ? 0 : 1)
+  return res.ok ? 0 : 1
 }
 
-main().catch((e) => { console.error(e); process.exit(1) })
+main()
+  .then((code) => process.exit(code))
+  .catch((e) => { console.error(e); process.exit(1) })
