@@ -8573,7 +8573,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // "nao consigo alterar o tamanho da fonte do titulo". Removemos os
       // per-char overrides desses campos pra que o set() default tenha efeito
       // visual completo.
-      if (styleKey === "fontSize" || styleKey === "fontFamily" || styleKey === "fontWeight" || styleKey === "fontStyle" || styleKey === "charSpacing") {
+      // Strip per-char override do styleKey atual quando o user aplica
+      // SEM selecao — comportamento esperado "mudar tudo". Antes era so
+      // pra fontSize/Family/Weight/Style/charSpacing; user reportou
+      // 2026-05-26 que mudar cor pra branco voltava preto apos reload
+      // porque os per-char fills do PSD original ganhavam precedencia.
+      // Pra `fill` precisa strippar TAMBEM `fillBrandIdx` per-char (senao
+      // o cascade reaplica a brand color antiga apos save/reload).
+      const STRIP_KEYS_NO_SEL = ["fontSize", "fontFamily", "fontWeight", "fontStyle", "charSpacing", "fill"]
+      if (STRIP_KEYS_NO_SEL.includes(styleKey)) {
         const styles = (obj as any).styles
         if (styles && typeof styles === "object") {
           for (const lineKey of Object.keys(styles)) {
@@ -8582,6 +8590,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             for (const colKey of Object.keys(line)) {
               if (line[colKey] && Object.prototype.hasOwnProperty.call(line[colKey], styleKey)) {
                 delete line[colKey][styleKey]
+              }
+              // Pra fill, tambem strippa fillBrandIdx (vinculo de brand color
+              // per-char que sobrescreveria a cor padrao no proximo render).
+              if (styleKey === "fill" && line[colKey] && Object.prototype.hasOwnProperty.call(line[colKey], "fillBrandIdx")) {
+                delete line[colKey].fillBrandIdx
               }
               // Limpa entry vazio pra nao deixar lixo
               if (line[colKey] && Object.keys(line[colKey]).length === 0) delete line[colKey]
