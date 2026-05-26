@@ -2488,7 +2488,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       fc.on("object:moving" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
       fc.on("object:scaling" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
-      fc.on("object:rotating" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
+      fc.on("object:rotating" as any, (e: any) => {
+        if (!alive) return
+        const target = e?.target
+        if (target) {
+          // Snap a multiplos de 45 (0/45/90/135/180/225/270/315). Shift = snap forte
+          // (igual Figma/PS), default = snap leve com janela de 4 graus em volta de
+          // cada multiplo. User pediu 45 e 90; multiplos de 45 cobrem ambos.
+          const evt: MouseEvent | undefined = e?.e
+          const a = target.angle ?? 0
+          const normalized = ((a % 360) + 360) % 360
+          const nearestMul45 = Math.round(normalized / 45) * 45
+          const delta = Math.abs(normalized - nearestMul45)
+          const SNAP_THRESHOLD = 4 // graus
+          if (evt?.shiftKey || delta <= SNAP_THRESHOLD) {
+            const snapped = nearestMul45 === 360 ? 0 : nearestMul45
+            target.set("angle", snapped)
+          }
+          syncClippingMasksAboveLive(target)
+        }
+        fc.requestRenderAll()
+      })
       fc.on("object:modified", async (e: any) => {
         if (!alive || !fc) return
         // Guard undo: applyClippingMaskNative async sobrescreveria clipPath
