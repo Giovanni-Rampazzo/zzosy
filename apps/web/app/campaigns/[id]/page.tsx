@@ -381,10 +381,15 @@ export default function CampaignOverviewPage() {
             pra seu contexto correto na sidebar: Assets+KV em MATRIZ, Pecas
             removido (ja tem PECAS GERADAS embaixo), Apresentacao em ENTREGA. */}
 
-        {/* Preview KV + actions sidebar */}
-        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px", marginBottom: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 16, alignItems: "stretch" }}>
-          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        {/* Layout 2026-05-25 (user pedido): KV box em COLUNA na esquerda
+            (preview em cima, acoes embaixo, ambos stacked), lista de pecas
+            ocupa a coluna da direita. Garante mais espaco vertical pra peca
+            list e densidade maior na KV. Breakpoint <900px volta a stack. */}
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 14, alignItems: "start" }}>
+        {/* Preview KV + actions sidebar — agora em coluna (preview + acoes stacked) */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             <div
               onClick={() => { if (campaign.keyVision?.thumbnailUrl) router.push(`/editor?campaignId=${id}`) }}
               title={campaign.keyVision?.thumbnailUrl ? "Abrir editor da matriz (ou arraste um .psd pra importar)" : "Arraste um .psd aqui ou clique em Importar PSD"}
@@ -783,6 +788,7 @@ export default function CampaignOverviewPage() {
         </div>
           )
         })()}
+        </div>
       </div>
 
       {deliveryOpen && (
