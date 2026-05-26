@@ -2625,12 +2625,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       cleanupFns.push(() => { if (clearGuidesTimerRef.current) clearTimeout(clearGuidesTimerRef.current) })
       // Desenha guides visuais (smart guides) sobre o canvas pos-render.
-      // Fabric "after:render" roda apos cada renderAll — desenha por cima
-      // sem virar parte do canvas state (limpo no proximo render).
+      // Usa o LOWER context (fc.getContext()) — Fabric limpa esse canvas
+      // automaticamente a cada renderAll via before:render. Antes usavamos
+      // contextTop, mas Fabric so limpa o top quando ha mudanca de selecao/
+      // controles — quando user so arrastava sem mudar selecao, as guides
+      // empilhavam em camadas ate atualizar a aba.
       fc.on("after:render" as any, () => {
         const guides = (fc as any).__safeAreaGuides as Array<{ kind: "v" | "h"; pos: number }> | null
         if (!guides || guides.length === 0) return
-        const ctx = (fc as any).getTopContext?.() || fc.contextTop
+        const ctx = fc.getContext()
         if (!ctx) return
         const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
         ctx.save()
