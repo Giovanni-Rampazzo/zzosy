@@ -45,7 +45,7 @@ const dbName = url.pathname.slice(1)
 
 const tmp = tmpdir()
 const sqlPath = path.join(tmp, "sync-db.sql")
-const tarPath = path.join(tmp, "sync-uploads.tar.gz")
+const tarPath = path.join(tmp, "sync-uploads.tar")
 const uploadsDir = path.resolve(__dirname, "../public/uploads")
 
 async function main() {
@@ -80,9 +80,11 @@ async function main() {
       process.stdout.write(`\r  tar... ${elapsed}s  (${sz} MB)`)
     }, 500)
     const tarExitCode: number = await new Promise((resolve) => {
+      // tar SEM gzip (cf): gzip do macOS e single-thread e segura ~80% do tempo.
+      // Upload fica maior mas total cai pela metade.
       const proc = spawn(
         "tar",
-        ["czf", tarPath, "-C", uploadsDir, "campaigns", "clients", "deliveries", "step-thumbs"],
+        ["cf", tarPath, "-C", uploadsDir, "campaigns", "clients", "deliveries", "step-thumbs"],
         { stdio: ["ignore", "ignore", "inherit"] },
       )
       proc.on("close", (code) => resolve(code ?? -1))
@@ -96,7 +98,7 @@ async function main() {
     const sz = statSync(tarPath).size
     console.log(`  ${(sz / 1024 / 1024).toFixed(1)} MB em ${((Date.now() - tarT0) / 1000).toFixed(1)}s`)
     const tarBuf = readFileSync(tarPath)
-    form.append("uploads", new Blob([tarBuf], { type: "application/gzip" }), "uploads.tar.gz")
+    form.append("uploads", new Blob([tarBuf], { type: "application/x-tar" }), "uploads.tar")
   }
 
   const totalSizeMB = (

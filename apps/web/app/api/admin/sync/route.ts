@@ -18,7 +18,9 @@ const UPLOADS_DIR = "/app/apps/web/public/uploads"
 
 async function extractTar(tarPath: string, dest: string): Promise<{ ok: boolean; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn("tar", ["xzf", tarPath, "-C", dest], { stdio: ["ignore", "pipe", "pipe"] })
+    // 'xf' autodetecta compressao (gzip ou raw tar). Suporta ambos formatos
+    // pra retrocompatibilidade com clientes que ainda mandam .tar.gz.
+    const child = spawn("tar", ["xf", tarPath, "-C", dest], { stdio: ["ignore", "pipe", "pipe"] })
     let stderr = ""
     child.stderr.on("data", (d) => { stderr += d.toString() })
     child.on("close", (code) => resolve({ ok: code === 0, stderr }))
@@ -68,7 +70,7 @@ export async function POST(req: NextRequest) {
 
     if (uploadsFile) {
       const buf = Buffer.from(await uploadsFile.arrayBuffer())
-      const tarPath = "/tmp/sync-uploads.tar.gz"
+      const tarPath = "/tmp/sync-uploads.tar"
       await fs.writeFile(tarPath, buf)
       await fs.mkdir(UPLOADS_DIR, { recursive: true })
       const ext = await extractTar(tarPath, UPLOADS_DIR)
