@@ -215,8 +215,8 @@ export default function MediasPage() {
                       : `${formatNum(wV)} ${wU} × ${formatNum(hV)} ${hU}`
                     return (
                   <div key={f.id} style={{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid #f0f0f0"}}>
-                    <div style={{flex:1,fontWeight:600,fontSize:13}}>{f.vehicle}</div>
-                    <div style={{width:140,fontSize:12,color:"#888"}}>{f.media}</div>
+                    <div style={{flex:1,fontWeight:600,fontSize:13}}>{f.media}</div>
+                    <div style={{width:140,fontSize:12,color:"#888"}}>{f.vehicle}</div>
                     <div style={{width:150,fontSize:12,color:"#888"}}>{f.format}</div>
                     <div style={{width:170,fontSize:12,color:"#888"}}>{dimText}</div>
                     <div style={{width:70,fontSize:12,color:"#888"}}>{f.dpi}dpi</div>
