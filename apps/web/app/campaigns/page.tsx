@@ -230,13 +230,13 @@ export default function CampaignsPage() {
             <table className="w-full border-collapse">
               <thead className="bg-[#fafafa] border-b border-[#E0E0E0]">
                 <tr>
-                  <th className="px-2 py-3 text-left" style={{ width: 72 }}></th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Nome</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Cliente</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Peças</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#666]">Assets</th>
-                  <th className="px-4 py-3 text-right"></th>
+                  <th className="px-2 py-1.5 text-left" style={{ width: 72 }}></th>
+                  <th className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-[#888]">Nome</th>
+                  <th className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-[#888]">Cliente</th>
+                  <th className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-[#888]">Status</th>
+                  <th className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-[#888]">Peças</th>
+                  <th className="px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-[#888]">Assets</th>
+                  <th className="px-3 py-1.5 text-right"></th>
                 </tr>
               </thead>
               <tbody>
@@ -248,10 +248,10 @@ export default function CampaignsPage() {
                       onClick={() => router.push(`/campaigns/${c.id}`)}
                       className="border-b border-[#f0f0f0] last:border-0 hover:bg-[#fafafa] cursor-pointer"
                     >
-                      <td className="px-2 py-2"><RowThumb src={c.keyVision?.thumbnailUrl} alt={c.name} fallbackText={c.name} /></td>
-                      <td className="px-4 py-3 font-semibold text-sm">{c.name}</td>
-                      <td className="px-4 py-3 text-sm text-[#666]">{c.client.name}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-1.5"><RowThumb src={c.keyVision?.thumbnailUrl} alt={c.name} fallbackText={c.name} /></td>
+                      <td className="px-3 py-1.5 font-semibold text-[13px]">{c.name}</td>
+                      <td className="px-3 py-1.5 text-[12px] text-[#666]">{c.client.name}</td>
+                      <td className="px-3 py-1.5">
                         <StatusBadge
                           pieceId={c.id}
                           entityType="campaign"
@@ -260,9 +260,9 @@ export default function CampaignsPage() {
                           onChange={(s) => setCampaigns(prev => prev.map(x => x.id === c.id ? { ...x, status: s } : x))}
                         />
                       </td>
-                      <td className="px-4 py-3 text-sm text-[#666]">{c._count.pieces}</td>
-                      <td className="px-4 py-3 text-sm text-[#666]">{c._count.assets}</td>
-                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                      <td className="px-3 py-1.5 text-[12px] text-[#666]">{c._count.pieces}</td>
+                      <td className="px-3 py-1.5 text-[12px] text-[#666]">{c._count.assets}</td>
+                      <td className="px-3 py-1.5 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-2 justify-end">
                           {confirmDelete === c.id ? (
                             <>
