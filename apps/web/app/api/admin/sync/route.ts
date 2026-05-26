@@ -50,9 +50,21 @@ export async function GET(req: NextRequest) {
     const absPath = path.join((getStorage() as any).rootDir, testKey)
     diag.testWriteAbsPath = absPath
     diag.testReadStat = await fs.stat(absPath).then(s => ({ size: s.size, mtime: s.mtime })).catch(e => ({ err: e?.code }))
-    await fs.unlink(absPath).catch(() => {})
+    // Deixa o arquivo no disco — vamos tentar fetch via HTTP pra ver se Next.js serve.
+    diag.testFileUrl = r.url
   } catch (e: any) {
     diag.testWriteError = e?.message
+  }
+
+  // Contagem de arquivos no dir de pieces da campanha LinkedIn — pra ver se regen
+  // realmente esta gravando (browser POSTou ~125 thumbs mas todos 404 no GET).
+  try {
+    const pieceDir = "/app/apps/web/public/uploads/campaigns/cmplhh7i6001hj6pb2jgm57r8/pieces"
+    const entries = await fs.readdir(pieceDir).catch(() => [])
+    diag.linkedinPiecesDirCount = entries.length
+    diag.linkedinPiecesSample = entries.slice(-5)
+  } catch (e: any) {
+    diag.linkedinPiecesError = e?.message
   }
 
   return NextResponse.json(diag)
