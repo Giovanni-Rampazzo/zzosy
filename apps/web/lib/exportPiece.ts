@@ -2336,14 +2336,26 @@ export async function buildDeliveryZip(
   // Expande pecas multi-step (carrossel etc): cada step vira uma peca virtual
   // com nome _StepN no zip de entrega.
   pieces = expandSteps(pieces) as any
-  let done = 0
-  const total = pieces.length * formats.length
-
+  // Monta tasks (cada combinacao piece x formato eh independente).
+  type Task = { piece: typeof pieces[0]; fmt: ExportFormat; mediaFolder: string }
+  const tasks: Task[] = []
   for (const piece of pieces) {
     const mediaFolder = (piece.media || "Outros").trim().replace(/[\\/:*?"<>|]/g, "-")
-    for (const fmt of formats) {
-      done++
-      onProgress?.(`${done}/${total} — ${piece.name} (${fmt})`)
+    for (const fmt of formats) tasks.push({ piece, fmt, mediaFolder })
+  }
+  const total = tasks.length
+  let done = 0
+
+  // Paraleliza com concurrency=3 — buildBlob roda Fabric+canvas, CPU heavy
+  // mas IO-bound em parte (image loads). 3 simultaneos eh o sweet spot
+  // (mais que isso trava o browser).
+  const CONCURRENCY = 3
+  let cursor = 0
+  async function worker() {
+    while (true) {
+      const i = cursor++
+      if (i >= tasks.length) return
+      const { piece, fmt, mediaFolder } = tasks[i]
       try {
         const blob = await buildBlob(piece, fmt)
         const buf = await blob.arrayBuffer()
@@ -2351,10 +2363,6 @@ export async function buildDeliveryZip(
         const fileName = `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`
         zip.file(`${folderPath}/${fileName}`, buf)
       } catch (e: any) {
-        // Loga stack inteiro pra identificar a origem real (catch generico
-        // sozinho perde info do throw original). Sem isso o user ve so
-        // "Cannot read properties of undefined (reading '1')" sem saber
-        // qual layer/asset causou.
         console.error("Falha exportar", piece.name, fmt, {
           message: e?.message,
           stack: e?.stack,
@@ -2362,8 +2370,11 @@ export async function buildDeliveryZip(
           pieceData: typeof piece.data === "string" ? "<string>" : Object.keys(piece.data ?? {}),
         })
       }
+      done++
+      onProgress?.(`${done}/${total} — ${piece.name} (${fmt})`)
     }
   }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()))
 
   // Adiciona arquivos extras (ex: apresentacao em Deck/) se fornecidos
   if (extraFiles && extraFiles.length > 0) {

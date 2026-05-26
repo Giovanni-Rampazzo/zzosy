@@ -228,12 +228,19 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
             </>
           )}
 
-          {progress && <div style={{ fontSize: 12, color: "#888", marginTop: 8 }}>{progress}</div>}
         </div>
 
-        <div style={{ padding: 20, borderTop: "1px solid #eee", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Button variant="secondary" onClick={onClose} disabled={working}>Cancelar</Button>
-          <Button onClick={handleExport} loading={working} disabled={selected.size === 0}>{working ? "Exportando..." : `Exportar (${selected.size})`}</Button>
+        {/* Footer fixo — progress sempre visivel (antes ficava DENTRO da area
+            scrollavel das pieces, escondido apos scroll). User reportou
+            "spinner rodando sem feedback". */}
+        <div style={{ padding: 20, borderTop: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ fontSize: 12, color: progress ? "#111" : "#888", fontWeight: progress ? 500 : 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {progress || (working ? "Preparando..." : "")}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <Button variant="secondary" onClick={onClose} disabled={working}>Cancelar</Button>
+            <Button onClick={handleExport} loading={working} disabled={selected.size === 0}>{working ? "Exportando..." : `Exportar (${selected.size})`}</Button>
+          </div>
         </div>
       </div>
     </div>
