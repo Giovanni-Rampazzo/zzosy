@@ -10370,6 +10370,30 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     }}
                   />
                 )}
+                {/* Lapis: SO layers tem botao pra abrir o mini-editor SO (Photoshop
+                    "Edit Contents"). Stop propagation pra nao selecionar o layer ao clicar. */}
+                {!layer.isBg && layerAssetId && (() => {
+                  const a = (campaign?.assets ?? []).find(x => x.id === layerAssetId)
+                  if (!a || a.type !== "SMART_OBJECT") return null
+                  return (
+                    <a
+                      title="Editar Smart Object (abre nova aba)"
+                      href={`/campaigns/${campaignId}/assets/${layerAssetId}/edit-so`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.color = "#F5C400"; (e.currentTarget as HTMLAnchorElement).style.background = "rgba(245,196,0,0.12)" }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = "#888"; (e.currentTarget as HTMLAnchorElement).style.background = "transparent" }}
+                      style={{ color: "#888", background: "transparent", border: "none", cursor: "pointer", padding: "3px 5px", lineHeight: 1, borderRadius: 3, transition: "color 120ms, background 120ms", display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+                      aria-label="Editar Smart Object"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 20h9"/>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                      </svg>
+                    </a>
+                  )
+                })()}
                 {!layer.isBg && (
                   <button title="Delete layer" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
                     onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#e63946"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(230,57,70,0.1)" }}
