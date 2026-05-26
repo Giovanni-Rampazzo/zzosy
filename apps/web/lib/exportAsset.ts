@@ -16,7 +16,7 @@ import { writePsdBuffer } from "ag-psd"
 
 interface Asset {
   id: string
-  type: "TEXT" | "IMAGE"
+  type: "TEXT" | "IMAGE" | "SMART_OBJECT" | "SHAPE"
   label: string
   imageUrl?: string | null
   content?: any  // TextSpan[] (parsed) ou string JSON
@@ -98,7 +98,7 @@ function spansToText(spans: Array<{ text: string }>): string {
 
 async function exportOriginal(asset: Asset) {
   const safe = sanitizeFilename(asset.label || asset.id)
-  if (asset.type === "IMAGE") {
+  if (asset.type === "IMAGE" || asset.type === "SMART_OBJECT") {
     // Prioriza smart object preservado (bytes originais, melhor qualidade)
     if (asset.smartObject?.filePath) {
       const res = await fetch(asset.smartObject.filePath)
@@ -171,7 +171,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 async function exportPsd(asset: Asset) {
   const safe = sanitizeFilename(asset.label || asset.id)
 
-  if (asset.type === "IMAGE") {
+  if (asset.type === "IMAGE" || asset.type === "SMART_OBJECT") {
     if (!asset.imageUrl) throw new Error("Asset sem imagem")
     const img = await loadImageEl(asset.imageUrl)
     const canvas = imageToCanvas(img)

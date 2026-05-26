@@ -86,7 +86,7 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
           ...psdProps,
         })
         fc.add(t)
-      } else if (asset.type === "IMAGE" && asset.imageUrl) {
+      } else if ((asset.type === "IMAGE" || asset.type === "SMART_OBJECT") && asset.imageUrl) {
         try {
           const img = await new Promise<any>((resolve, reject) => {
             const ie = new window.Image()

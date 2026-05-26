@@ -591,7 +591,7 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
           ;(t as any).__groupPath = layer.groupPath
         }
         fc.add(t)
-      } else if (asset.type === "IMAGE") {
+      } else if (asset.type === "IMAGE" || asset.type === "SMART_OBJECT") {
         if (asset.imageUrl) {
           try {
             // Mesmo fix do KeyVisionEditor: SVGs sem width/height intrinsecos carregam

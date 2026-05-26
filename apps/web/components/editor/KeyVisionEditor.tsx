@@ -4766,7 +4766,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         console.error("[shape] render falhou:", asset.label, e)
       }
     }
-    if (asset.type === "IMAGE") {
+    // SMART_OBJECT renderiza pelo mesmo path de IMAGE — composite raster em
+    // asset.imageUrl. Bytes originais do PSD ficam em SmartObjectFile pra
+    // round-trip. Edicao interna da SO (Fase 2) substitui o composite mas
+    // mantem a layer no canvas igual.
+    if (asset.type === "IMAGE" || asset.type === "SMART_OBJECT") {
       if (asset.imageUrl) {
         try {
           const isSvg = /\.svg(\?|$)/i.test(asset.imageUrl)
@@ -6010,7 +6014,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (typeof layer.blendMode === "string" && layer.blendMode && layer.blendMode !== "source-over") {
           psdProps.globalCompositeOperation = layer.blendMode
         }
-        if (asset.type === "IMAGE") {
+        if (asset.type === "IMAGE" || asset.type === "SMART_OBJECT") {
           if (!asset.imageUrl) continue
           try {
             const img = await new Promise<HTMLImageElement>((resolve, reject) => {

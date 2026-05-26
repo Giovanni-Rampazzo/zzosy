@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: [],
+  // @napi-rs/canvas tem native binding (.node) que Turbopack nao consegue
+  // empacotar — marcar como external faz Node usar require() padrao.
+  serverExternalPackages: ["@napi-rs/canvas", "ag-psd"],
   experimental: {
     serverActions: {
       bodySizeLimit: '100mb',
