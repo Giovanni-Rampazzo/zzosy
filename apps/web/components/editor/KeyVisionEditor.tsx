@@ -2807,12 +2807,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // cada keystroke disparava re-render completo do painel direito (font,
         // size, color pickers, swatches) — em maquinas mais fracas, gerava
         // lag visivel na digitacao.
-        if (selectedTickRaf.current == null) {
-          selectedTickRaf.current = requestAnimationFrame(() => {
-            selectedTickRaf.current = null
-            setSelectedTick(t => t + 1)
-          })
-        }
+        scheduleSelectedTick()
         // AUTO-FIT: ajusta o width do textbox ao conteudo quando o texto muda.
         // DEBOUNCE 120ms: cada keystroke re-mede o texto inteiro via
         // initDimensions x2 + calcTextWidth, o que em textos grandes (>100
@@ -3343,6 +3338,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               im.onerror = () => resolve()
               im.src = url
             })))
+            // User pode ter fechado/navegado durante o await — sem alive
+            // check, entramos no loop e mexemos num canvas em dispose.
+            if (!alive) return
           }
           for (const layer of sorted) {
             // Layer LINKADO a um asset (peca gerada ou linkada do PSD)
@@ -3502,6 +3500,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               im.onerror = () => resolve()
               im.src = url
             })))
+            if (!alive) return
           }
           for (const layer of sorted) {
             const asset = assetMap[layer.assetId] as Asset
@@ -3653,22 +3652,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // AUTO-REGEN ON OPEN: regera o thumb apenas se NECESSARIO.
       // Antes rodava SEMPRE 1.2s apos open (waste 2-5s por abertura mesmo
       // quando user so vai olhar). Otimizacao 2026-05-26:
-      //   - PIECE com thumbnailUrl ja existente: pula (proximo save regenera).
-      //   - PIECE sem thumb: roda (caso 1a abertura/import sem thumb ainda).
-      //   - MATRIZ: pula sempre (KV thumb sai do save normal; aberturas sem
-      //     edicao nao precisam atualizar). Cobertos pelo broadcast quando
-      //     algum lugar muda algo relevante.
+      //   - PIECE/MATRIZ com thumbnailUrl ja existente: pula (proximo save regenera).
+      //   - Sem thumb: roda (primeira abertura/import sem preview ainda).
       // Trade-off: thumb pode ficar 1 sessao stale se asset.content mudou
-      // em outra aba. Primeiro save no editor refresca.
+      // em outra aba. Primeiro save no editor refresca. Mas CLAUDE 2.2
+      // (preview realtime) exige que matriz tambem regen quando nao tem
+      // thumb — restaurado o else branch (review 2026-05-26).
       setTimeout(() => {
         const fcc = fabricRef.current
         if (!alive || !fcc || !isInitialized.current) return
         if (pieceId) {
           const hasThumb = !!(pieceRef.current as any)?.thumbnailUrl
           if (!hasThumb) {
-            uploadPieceThumb(fcc, pieceId).catch(e => console.warn("[auto-regen piece]", e))
+            uploadPieceThumb(fcc, pieceId).catch(e => editorLog("[auto-regen piece]", e))
           } else {
-            console.log("[auto-regen] pulou — piece ja tem thumb")
+            editorLog("[auto-regen] pulou — piece ja tem thumb")
+          }
+        } else {
+          // MATRIZ
+          const kvThumb = (campaignRef.current as any)?.keyVision?.thumbnailUrl
+          if (!kvThumb) {
+            uploadMatrixThumb(fcc).catch(e => editorLog("[auto-regen matrix]", e))
+          } else {
+            editorLog("[auto-regen] pulou — KV ja tem thumb")
           }
         }
       }, 1200)
@@ -6330,9 +6336,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const offsetX = vt[4] ?? 0
       const offsetY = vt[5] ?? 0
 
-      // Esconde temporariamente o bleed overlay
+      // Esconde temporariamente o bleed overlay + smart guides (after:render
+      // pinta dashed lines no lower context — se autosave dispara mid-drag
+      // com __safeAreaGuides setado, as linhas entram no PNG do thumb).
       const bleedOverlays = fc.getObjects().filter((o: any) => o.__isBleedOverlay)
       bleedOverlays.forEach((o: any) => { o.visible = false })
+      const savedGuides = (fc as any).__safeAreaGuides
+      ;(fc as any).__safeAreaGuides = null
       try {
         const dataUrl = fc.toDataURL({
           format: "png",
@@ -6351,6 +6361,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         return blob
       } finally {
         bleedOverlays.forEach((o: any) => { o.visible = true })
+        ;(fc as any).__safeAreaGuides = savedGuides
         fc.requestRenderAll()
       }
     } catch (e: any) {
