@@ -92,7 +92,7 @@ async function main() {
   const t0 = Date.now()
   const res = await fetch(`${PROD_URL}/api/admin/sync`, {
     method: "POST",
-    headers: { "x-sync-token": TOKEN },
+    headers: { "x-sync-token": TOKEN! },
     body: form,
   })
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
