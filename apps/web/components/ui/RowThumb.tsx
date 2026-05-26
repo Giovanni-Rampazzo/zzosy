@@ -58,6 +58,8 @@ export function RowThumb({ src, alt, fallbackText, fallbackBg, size = 56, rounde
           ref={imgRef}
           src={src}
           alt={alt ?? ""}
+          loading="lazy"
+          decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
           style={{ width: "100%", height: "100%", objectFit: fit, opacity: loaded ? 1 : 0, transition: "opacity 0.2s", display: "block" }}

@@ -207,7 +207,10 @@ export async function cascadeBrandUpdate(
     campaigns.map(async (camp) => {
       try {
         const [piecesRes, campRes] = await Promise.all([
-          fetch(`/api/pieces?campaignId=${camp.id}`, { cache: "no-store" }).then(r => r.ok ? r.json() : []),
+          // withData=true: cascadeBrandUpdate processa piece.data direto (resolve
+          // brand refs em todas layers). Default da rota (perf opt 2026-05-26)
+          // strippa data — opt-in pra incluir.
+          fetch(`/api/pieces?campaignId=${camp.id}&withData=true`, { cache: "no-store" }).then(r => r.ok ? r.json() : []),
           fetch(`/api/campaigns/${camp.id}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null),
         ])
         const pieces: any[] = Array.isArray(piecesRes) ? piecesRes : []

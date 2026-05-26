@@ -243,7 +243,7 @@ export default function ClientLibraryPage() {
                       backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0px",
                     }}>
                       {a.thumbnailUrl ?? a.imageUrl ? (
-                        <img src={a.thumbnailUrl ?? a.imageUrl ?? ""} alt={a.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                        <img src={a.thumbnailUrl ?? a.imageUrl ?? ""} alt={a.name} loading="lazy" decoding="async" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                       ) : a.type === "TEXT" ? (
                         <div style={{ fontSize: 14, color: "#eee", padding: 12, fontStyle: "italic", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" }}>
                           {previewText(a.content)}

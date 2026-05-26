@@ -439,7 +439,7 @@ function PiecesContent() {
                   onClick={() => router.push(`/editor?campaignId=${p.campaignId}&pieceId=${p.id}`)}
                 >
                   {p.imageUrl ? (
-                    <img src={`${p.imageUrl}?t=${new Date(p.updatedAt ?? Date.now()).getTime()}`} alt={p.name} className="w-full h-full object-contain" />
+                    <img src={`${p.imageUrl}?t=${new Date(p.updatedAt ?? Date.now()).getTime()}`} alt={p.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                   ) : (
                     <>
                       <div className="text-xs font-semibold text-[#888888] mb-1">{p.format}</div>

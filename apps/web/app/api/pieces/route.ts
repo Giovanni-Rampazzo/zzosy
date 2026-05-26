@@ -15,6 +15,11 @@ export async function GET(req: NextRequest) {
   const tenantId = (session.user as any).tenantId
   const { searchParams } = new URL(req.url)
   const campaignId = searchParams.get("campaignId")
+  // ?withData=true opt-in pra incluir piece.data no payload. Default (false)
+  // strippa o data pra reduzir payload em 70-80%. Callers que precisam do
+  // data (regeneratePieceThumbsForAsset, server-side filter por uso de asset)
+  // passam withData=true. Frontend de listagem nao passa — pega lite.
+  const withData = searchParams.get("withData") === "true"
   const pieces = await prisma.piece.findMany({
     where: {
       campaign: { client: { tenantId } },
@@ -74,14 +79,15 @@ export async function GET(req: NextRequest) {
 
     // imageUrl da peca tambem versionado
     const stampedImageUrl = stamp(p.imageUrl as any)
-    // PERF: strippa p.data do payload. O `data` eh o JSON COMPLETO do Fabric
-    // canvas (todas layers + base64 fontes) — pode ter 50KB+ por peca. Em 30+
-    // pecas vira 1.5MB+ por request. Lista NUNCA usa p.data direto, so width/
-    // height/steps extraidos acima. Quem precisa do data (DeliveryDialog,
-    // export) faz fetch by-id de /api/pieces/[id] sob demanda. Reportado
-    // 2026-05-26: "preview muito lento".
-    const { data: _stripped, ...pNoData } = p as any
-    return { ...pNoData, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
+    // PERF: strippa p.data do payload por default. O `data` eh o JSON COMPLETO
+    // do Fabric canvas (+ fontes base64) — 50KB+ por peca, 1.5MB+ pra 30 pecas.
+    // Lista nunca usa p.data direto, so width/height/steps extraidos acima.
+    // Quem precisa do data passa ?withData=true ou faz fetch by-id.
+    if (!withData) {
+      const { data: _stripped, ...pNoData } = p as any
+      return { ...pNoData, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
+    }
+    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
   })
   return NextResponse.json(enriched)
 }

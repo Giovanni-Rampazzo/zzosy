@@ -119,37 +119,61 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
   return null
 }
 
+// Concorrencia limitada — Fabric StaticCanvas usa GPU/canvas memory. Demais
+// que 3 simultaneos pode estourar OOM em mobile/laptop fraco. 3 eh sweet spot:
+// 3x mais rapido que sequencial sem risco de OOM.
+async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  const queue = items.slice()
+  const workers: Promise<void>[] = []
+  for (let i = 0; i < Math.min(limit, queue.length); i++) {
+    workers.push((async () => {
+      while (queue.length > 0) {
+        const item = queue.shift()
+        if (item === undefined) break
+        try { await fn(item) } catch (e) { console.warn("[runWithConcurrency] item failed:", e) }
+      }
+    })())
+  }
+  await Promise.all(workers)
+}
+
 export async function regeneratePieceThumbsForAsset(campaignId: string, assetId: string): Promise<void> {
+  // ?withData=true: payload da lista agora strippa data por default (perf opt
+  // 2026-05-26). Como aqui precisamos do data pra filtrar quem usa o asset,
+  // pedimos com data.
   const [campRes, piecesRes] = await Promise.all([
     fetch(`/api/campaigns/${campaignId}`).then(r => r.json()),
-    fetch(`/api/pieces?campaignId=${campaignId}`).then(r => r.json()),
+    fetch(`/api/pieces?campaignId=${campaignId}&withData=true`).then(r => r.json()),
   ])
   const assets: Asset[] = campRes.assets ?? []
   const pieces: any[] = Array.isArray(piecesRes) ? piecesRes : []
 
-  for (const piece of pieces) {
+  // PERF: paraleliza o regen com concorrencia 3 — antes era sequencial
+  // (30 pecas × 200-500ms cada = 6-15s bloqueando). Agora ~3x mais rapido.
+  await runWithConcurrency(pieces, 3, async (piece) => {
     const pdata = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
-    if (!pdata || pdata.version !== 2) continue
+    if (!pdata || pdata.version !== 2) return
 
-    // MULTI-STEP: pdata.steps[] contem layers de cada step. Cada step
-    // precisa de seu proprio thumb (via /step-thumbnail?index=N).
-    // O thumb principal (piece.imageUrl) usa o step ATIVO.
+    // MULTI-STEP: pdata.steps[] contem layers de cada step. Cada step precisa
+    // de seu proprio thumb (via /step-thumbnail?index=N). O thumb principal
+    // (piece.imageUrl) usa o step ATIVO.
     const steps: any[] = Array.isArray(pdata.steps) ? pdata.steps : []
     const isMultiStep = steps.length >= 2
 
     if (isMultiStep) {
-      // Detecta quais steps usam o asset alterado.
       const W = pdata.width ?? 1080
       const H = pdata.height ?? 1080
       const activeIdx = typeof pdata.activeStepIndex === "number" ? pdata.activeStepIndex : 0
       let regeneratedSomething = false
 
-      for (let i = 0; i < steps.length; i++) {
+      // Paraleliza steps internamente — concorrencia 2 (dentro do worker pai
+      // que ja eh 3, totalizando ~6 renders simultaneos no pico).
+      const stepIndices = steps.map((_, i) => i)
+      await runWithConcurrency(stepIndices, 2, async (i) => {
         const step = steps[i]
-        if (!step || !Array.isArray(step.layers)) continue
+        if (!step || !Array.isArray(step.layers)) return
         const stepUsesAsset = step.layers.some((l: any) => l?.assetId === assetId)
-        if (!stepUsesAsset) continue
-        // Renderiza esse step com layers + bgColor proprios.
+        if (!stepUsesAsset) return
         const pseudoStepPiece = {
           version: 2,
           width: W, height: H,
@@ -158,12 +182,11 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
         }
         try {
           const blob = await buildThumbnailFromPieceData(pseudoStepPiece, assets)
-          if (!blob) continue
+          if (!blob) return
           const fd = new FormData()
           fd.append("thumbnail", blob, `step${i}.jpg`)
           await fetch(`/api/pieces/${piece.id}/step-thumbnail?index=${i}`, { method: "POST", body: fd })
           regeneratedSomething = true
-          // Se eh o step ativo, tambem sobe como thumb principal.
           if (i === activeIdx) {
             const fdMain = new FormData()
             fdMain.append("thumbnail", blob, "thumb.jpg")
@@ -172,24 +195,22 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
         } catch (e) {
           console.warn("regen step falhou", piece.id, i, e)
         }
-      }
-      // Se o step ativo NAO usa o asset (mas algum inativo usa), o thumb
-      // principal continua igual — nao precisamos sobrescrever.
+      })
+
       if (regeneratedSomething) {
         broadcastPieceUpdated(piece.id, campaignId)
-        continue
+        return
       }
     }
 
-    // SINGLE-STEP (ou multi-step onde nenhum step usou o asset — improvavel):
-    // codigo original.
-    if (!Array.isArray(pdata.layers)) continue
+    // SINGLE-STEP
+    if (!Array.isArray(pdata.layers)) return
     const usesAsset = pdata.layers.some((l: any) => l.assetId === assetId)
-    if (!usesAsset) continue
+    if (!usesAsset) return
 
     try {
       const blob = await buildThumbnailFromPieceData(pdata, assets)
-      if (!blob) continue
+      if (!blob) return
       const fd = new FormData()
       fd.append("thumbnail", blob, "thumb.jpg")
       await fetch(`/api/pieces/${piece.id}/thumbnail`, { method: "POST", body: fd })
@@ -197,7 +218,7 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
     } catch (e) {
       console.warn("regen falhou para peca", piece.id, e)
     }
-  }
+  })
 }
 
 
