@@ -2001,46 +2001,81 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
 
       // Sempre rasteriza pra usar como preview (Photoshop precisa do canvas mesmo
       // pra smart objects — eh o que ele mostra antes do double-click "abrir conteudo").
+      //
+      // CASCATA DE FALLBACKS (cada um mais defensivo que o anterior):
+      //   tentativa 1: obj.toCanvasElement({ multiplier: 1 })
+      //   tentativa 2: obj.toCanvasElement({ multiplier: 1, enableRetinaScaling: false })
+      //   tentativa 3: render isolado num canvas StaticCanvas com clone do obj
+      //   tentativa 4: fc-crop (regiao do composite final do Fabric)
+      //
+      // Bug original: layer aparecia no painel PS mas nao pintava nada — porque
+      // toCanvasElement retornava canvas TRANSPARENTE quando: imagem com source
+      // tainted, clipPath escondendo tudo, opacity sutil, ou edge case do Fabric.
       const layerCanvas = document.createElement("canvas")
       layerCanvas.width = w
       layerCanvas.height = h
       const lctx = layerCanvas.getContext("2d")! // alpha:true (transparente)
-      try {
-        const img = obj.toCanvasElement({ multiplier: 1 })
-        lctx.drawImage(img, 0, 0, w, h)
-      } catch (e) { console.warn("[psd-export] rasterize fail:", name, e) }
 
-      // Detect empty canvas (all pixels transparent) — bug recorrente: imagens
-      // com source tainted/clipPath/visible=false viravam canvas vazio + push
-      // como layer "fantasma" (existia no painel PS mas nao pintava nada).
-      // Fallback: copia regiao do fc.getElement() (composite final ja renderizado).
-      // Nao eh perfeito pq pega pixels de outros objs sobrepostos, mas eh muito
-      // melhor que layer invisivel.
-      let layerIsEmpty = false
-      try {
-        if (w > 0 && h > 0) {
-          const probeSize = Math.min(32, Math.max(2, Math.floor(Math.min(w, h) / 4)))
-          const sx = Math.floor(w / 2 - probeSize / 2)
-          const sy = Math.floor(h / 2 - probeSize / 2)
-          const data = lctx.getImageData(sx, sy, probeSize, probeSize).data
-          let hasOpaque = false
-          for (let i = 3; i < data.length; i += 4) {
-            if (data[i] > 0) { hasOpaque = true; break }
+      // Verifica se canvas tem pixels opacos. Usa cantos + centro como probe
+      // — boa cobertura pra shapes/imagens variadas sem percorrer tudo.
+      function canvasHasOpaquePixels(ctx: CanvasRenderingContext2D, cw: number, ch: number): boolean {
+        if (cw <= 0 || ch <= 0) return false
+        try {
+          const probeSize = Math.min(32, Math.max(2, Math.floor(Math.min(cw, ch) / 4)))
+          const cx = Math.floor(cw / 2 - probeSize / 2)
+          const cy = Math.floor(ch / 2 - probeSize / 2)
+          const center = ctx.getImageData(cx, cy, probeSize, probeSize).data
+          for (let i = 3; i < center.length; i += 4) if (center[i] > 0) return true
+          const corners: Array<[number, number]> = [
+            [0, 0], [cw - 1, 0], [0, ch - 1], [cw - 1, ch - 1],
+            [Math.floor(cw / 4), Math.floor(ch / 4)],
+            [Math.floor(cw * 3 / 4), Math.floor(ch * 3 / 4)],
+          ]
+          for (const [px, py] of corners) {
+            if (ctx.getImageData(px, py, 1, 1).data[3] > 0) return true
           }
-          if (!hasOpaque) {
-            // checa cantos tambem (cobre shapes que pintam so na borda)
-            const cornerProbe = (cx: number, cy: number) => {
-              const d = lctx.getImageData(cx, cy, 1, 1).data
-              return d[3] > 0
-            }
-            const anyCorner = cornerProbe(0, 0) || cornerProbe(w - 1, 0) || cornerProbe(0, h - 1) || cornerProbe(w - 1, h - 1)
-            if (!anyCorner) layerIsEmpty = true
-          }
+          return false
+        } catch { return true } // se nao consegue ler, assume ok (CORS taint, etc)
+      }
+
+      const tryRender = (label: string, renderFn: () => HTMLCanvasElement | null): boolean => {
+        try {
+          const img = renderFn()
+          if (!img) return false
+          lctx.clearRect(0, 0, w, h)
+          lctx.drawImage(img, 0, 0, w, h)
+          return canvasHasOpaquePixels(lctx, w, h)
+        } catch (e) {
+          console.warn(`[psd-export] tentativa ${label} falhou:`, name, e)
+          return false
         }
-      } catch {}
+      }
 
-      if (layerIsEmpty) {
-        console.warn("[psd-export] canvas VAZIO detectado, ativando fallback fc-crop:", name, {
+      let rendered = tryRender("1-toCanvasElement", () => obj.toCanvasElement({ multiplier: 1 }))
+
+      if (!rendered) {
+        // Tentativa 2: sem retina scaling pode desabilitar caminhos exoticos no Fabric.
+        rendered = tryRender("2-noRetina", () => obj.toCanvasElement({ multiplier: 1, enableRetinaScaling: false } as any))
+      }
+
+      if (!rendered) {
+        // Tentativa 3: forca visible=true + opacity=1 temporariamente. Cobre o caso
+        // onde alguma prop runtime esta zerada mas o usuario espera o conteudo
+        // visivel (pq aparece OK no canvas via outro path tipo masks).
+        const prevVisible = (obj as any).visible
+        const prevOpacity = (obj as any).opacity
+        try {
+          (obj as any).visible = true
+          ;(obj as any).opacity = Math.max(prevOpacity ?? 1, 1)
+          rendered = tryRender("3-forceVisible", () => obj.toCanvasElement({ multiplier: 1 }))
+        } finally {
+          ;(obj as any).visible = prevVisible
+          ;(obj as any).opacity = prevOpacity
+        }
+      }
+
+      if (!rendered) {
+        console.warn("[psd-export] canvas vazio em todas tentativas, fallback fc-crop:", name, {
           w, h, left, top,
           objType: obj.type,
           visible: (obj as any).visible,
@@ -2049,9 +2084,14 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           objW: obj.width, objH: obj.height,
           scaleX: obj.scaleX, scaleY: obj.scaleY,
           isSmartObject: (obj as any).__isSmartObject,
+          isShape: (obj as any).__isShape,
+          assetType: (obj as any).__assetType,
+          assetLabel: (obj as any).__assetLabel,
+          fill: (obj as any).fill,
           srcWidth: (obj as any)._element?.width ?? (obj as any)._element?.naturalWidth,
           srcHeight: (obj as any)._element?.height ?? (obj as any)._element?.naturalHeight,
           srcSrc: (obj as any)._element?.src?.slice(0, 80),
+          srcComplete: (obj as any)._element?.complete,
         })
         try {
           const srcCanvas = fc.getElement() as HTMLCanvasElement
@@ -2060,6 +2100,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           const sw = Math.min(w, srcCanvas.width - sx)
           const sh = Math.min(h, srcCanvas.height - sy)
           if (sw > 0 && sh > 0) {
+            lctx.clearRect(0, 0, w, h)
             lctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, sw, sh)
           }
         } catch (e) { console.warn("[psd-export] fallback fc-crop falhou:", name, e) }
