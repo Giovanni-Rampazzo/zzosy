@@ -1931,19 +1931,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const json = active.toObject([
           "__assetId", "__assetLabel", "__isBg", "leadingPt", "__maskData",
         ])
-        setClipboard({ campaignId, json, copiedAt: Date.now() })
+        setClipboard({
+          campaignId,
+          sourcePieceId: pieceId ?? null,
+          json,
+          copiedAt: Date.now(),
+        })
         return
       }
 
-      // Cmd+V — cola da clipboard interna
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && !e.shiftKey && !e.altKey) {
+      // Cmd+V / Cmd+Shift+V — cola da clipboard interna
+      // Photoshop-style:
+      //  - source == current peca: offset +20 (duplica visivel)
+      //  - source != current peca (ou matriz): paste-in-place (mesma posicao)
+      //  - Shift+V: sempre paste-in-place independente do source
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && !e.altKey) {
         const cb = getClipboard()
         if (!cb) return
         if (cb.campaignId !== campaignId) {
-          alert("Copied asset belongs to another campaign — copy/paste only within the same campaign for now.")
+          alert("Asset copiado pertence a outra campanha — copy/paste so dentro da mesma campanha.")
           return
         }
         e.preventDefault()
+        const currentSource = pieceId ?? null
+        const sameSource = cb.sourcePieceId === currentSource
+        const pasteInPlace = e.shiftKey || !sameSource
         ;(async () => {
           const { util } = await import("fabric")
           // enlivenObjects retorna Promise<FabricObject[]> em v6+
@@ -1964,11 +1976,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             ;(cloned as any).clipPath = null
             await applyMaskToFabricObject({ Image: FabImage, Path }, cloned, cb.json.__maskData)
           }
-          // Offset visivel pra nao ficar exatamente em cima do original
-          cloned.set({
-            left: (cloned.left ?? 0) + 20,
-            top: (cloned.top ?? 0) + 20,
-          })
+          if (!pasteInPlace) {
+            cloned.set({
+              left: (cloned.left ?? 0) + 20,
+              top: (cloned.top ?? 0) + 20,
+            })
+          }
           cloned.setCoords()
           fc.add(cloned)
           fc.setActiveObject(cloned)
