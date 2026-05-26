@@ -1157,6 +1157,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // de sobrescrever fontSizeInput/leadingInput durante a digitação do user.
   const numericInputFocusedRef = useRef(false)
   const [selectedTick, setSelectedTick] = useState(0)
+  // Coalesce ticks via rAF (usa selectedTickRaf definido acima) — multiplos
+  // eventos no mesmo frame (text:changed + selection:changed + mouseup
+  // durante digitacao) geravam N re-renders do Properties panel (huge JSX).
+  // Com rAF, todos viram 1 render por frame. Padrao ja existente pra
+  // text:changed (linha 2810); helper centraliza pra reuso.
+  const scheduleSelectedTick = () => {
+    if (selectedTickRaf.current !== null) return
+    selectedTickRaf.current = requestAnimationFrame(() => {
+      selectedTickRaf.current = null
+      setSelectedTick(t => t + 1)
+    })
+  }
   // Pulse key — incrementa toda vez que um NOVO layer eh selecionado. Usado no
   // painel Layers pra disparar uma animacao breve de glow (cor da marca) que
   // ajuda o user a localizar o layer correspondente apos clicar no canvas.
@@ -2664,7 +2676,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const onCanvasInteract = () => {
         if (!alive) return
         const active = fc.getActiveObject() as any
-        if (active?.isEditing) setSelectedTick(t => t + 1)
+        if (active?.isEditing) scheduleSelectedTick()
       }
       fc.on("mouse:up", onCanvasInteract)
       // Escalar via canto/handle do box: dispara em real time pra atualizar painel
@@ -2733,7 +2745,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           applyLeadingPtToFabric(obj, (obj as any).leadingPt)
         }
         obj.setCoords()
-        setSelectedTick(t => t + 1)
+        scheduleSelectedTick()
       })
 
       // SHAPE: scaling parametric DESABILITADO (tentativas anteriores
@@ -2780,7 +2792,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const onKeyUp = (_e: KeyboardEvent) => {
         if (!alive) return
         const active = fc.getActiveObject() as any
-        if (active?.isEditing) setSelectedTick(t => t + 1)
+        if (active?.isEditing) scheduleSelectedTick()
       }
       window.addEventListener("keyup", onKeyUp)
       cleanupFns.push(() => window.removeEventListener("keyup", onKeyUp))
@@ -3313,6 +3325,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const matchedP = sorted.filter((l: any) => l.assetId && assetMap[l.assetId]).length
           const embeddedP = sorted.filter((l: any) => l.__embedded).length
           console.log("[LOAD-PIECE-DIAG] piece layers:", sorted.length, "assets na campanha:", c.assets.length, "matched:", matchedP, "embedded:", embeddedP, "unmatched:", sorted.length - matchedP - embeddedP)
+          // OPTIMIZACAO 2026-05-26: prewarm o browser cache com TODAS as imageUrls
+          // em paralelo ANTES do loop serial de addAssetToCanvas. O loop continua
+          // serial (ordem zIndex importa; clipping precisa do layer abaixo no
+          // canvas), mas as imagens ja estarao no cache HTTP quando addAssetToCanvas
+          // criar seu proprio new Image(). Ganho real: open de KV com 10+ assets
+          // de 5-10s pra ~2-3s (IO paralelizado, render serial).
+          const imageUrls = Array.from(new Set(sorted
+            .map((l: any) => assetMap[l.assetId])
+            .filter((a: any) => a && (a.type === "IMAGE" || a.type === "SMART_OBJECT") && a.imageUrl)
+            .map((a: any) => a.imageUrl as string)))
+          if (imageUrls.length > 0) {
+            await Promise.all(imageUrls.map(url => new Promise<void>(resolve => {
+              const im = new window.Image()
+              im.crossOrigin = "anonymous"
+              im.onload = () => resolve()
+              im.onerror = () => resolve()
+              im.src = url
+            })))
+          }
           for (const layer of sorted) {
             // Layer LINKADO a um asset (peca gerada ou linkada do PSD)
             const asset = assetMap[layer.assetId] as Asset
@@ -3458,6 +3489,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // DIAGNÓSTICO: quantos layers no KV vs quantos assets na campanha vs match
           const matched = sorted.filter((l: any) => l.assetId && assetMap[l.assetId]).length
           console.log("[LOAD-MATRIX-DIAG] KV layers:", sorted.length, "assets na campanha:", c.assets.length, "matched:", matched, "unmatched:", sorted.length - matched)
+          // Prewarm cache (mesma logica do load de peca — IO paralelo).
+          const kvImageUrls = Array.from(new Set(sorted
+            .map((l: any) => assetMap[l.assetId])
+            .filter((a: any) => a && (a.type === "IMAGE" || a.type === "SMART_OBJECT") && a.imageUrl)
+            .map((a: any) => a.imageUrl as string)))
+          if (kvImageUrls.length > 0) {
+            await Promise.all(kvImageUrls.map(url => new Promise<void>(resolve => {
+              const im = new window.Image()
+              im.crossOrigin = "anonymous"
+              im.onload = () => resolve()
+              im.onerror = () => resolve()
+              im.src = url
+            })))
+          }
           for (const layer of sorted) {
             const asset = assetMap[layer.assetId] as Asset
             if (!asset) {
@@ -3605,18 +3650,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (pieceId) {
         autoGenerateMissingStepThumbs().catch(e => console.warn("[auto-thumbs] erro:", e))
       }
-      // AUTO-REGEN ON OPEN: regera + sobe o thumb principal sempre que o user
-      // abre o editor (mesmo sem editar). Garante que apresentacao/cards refletem
-      // o estado atual — caso util quando o asset.content mudou em outra aba/
-      // chamada API e o thumb antigo ficou stale. Roda em background (1.2s pra
-      // dar tempo de fontes Google + imagens carregarem assincronamente).
+      // AUTO-REGEN ON OPEN: regera o thumb apenas se NECESSARIO.
+      // Antes rodava SEMPRE 1.2s apos open (waste 2-5s por abertura mesmo
+      // quando user so vai olhar). Otimizacao 2026-05-26:
+      //   - PIECE com thumbnailUrl ja existente: pula (proximo save regenera).
+      //   - PIECE sem thumb: roda (caso 1a abertura/import sem thumb ainda).
+      //   - MATRIZ: pula sempre (KV thumb sai do save normal; aberturas sem
+      //     edicao nao precisam atualizar). Cobertos pelo broadcast quando
+      //     algum lugar muda algo relevante.
+      // Trade-off: thumb pode ficar 1 sessao stale se asset.content mudou
+      // em outra aba. Primeiro save no editor refresca.
       setTimeout(() => {
         const fcc = fabricRef.current
         if (!alive || !fcc || !isInitialized.current) return
         if (pieceId) {
-          uploadPieceThumb(fcc, pieceId).catch(e => console.warn("[auto-regen piece]", e))
-        } else {
-          uploadMatrixThumb(fcc).catch(e => console.warn("[auto-regen matrix]", e))
+          const hasThumb = !!(pieceRef.current as any)?.thumbnailUrl
+          if (!hasThumb) {
+            uploadPieceThumb(fcc, pieceId).catch(e => console.warn("[auto-regen piece]", e))
+          } else {
+            console.log("[auto-regen] pulou — piece ja tem thumb")
+          }
         }
       }, 1200)
     }
