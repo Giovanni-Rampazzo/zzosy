@@ -74,8 +74,14 @@ async function imgToDataUri(src: string): Promise<string | null> {
   if (!src) return null
   // Ja eh dataURI?
   if (src.startsWith("data:")) return src
+  // Timeout 15s por imagem — sem isso, uma imagem lenta/inacessivel travava
+  // o Promise.all inteiro do buildPptx ("Gerando apresentacao..." preso pra
+  // sempre). User reportou 2026-05-26.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15000)
   try {
-    const r = await fetch(src)
+    const r = await fetch(src, { signal: controller.signal })
+    clearTimeout(timer)
     if (!r.ok) return null
     const blob = await r.blob()
     return await new Promise<string>((resolve, reject) => {
@@ -84,7 +90,9 @@ async function imgToDataUri(src: string): Promise<string | null> {
       fr.onerror = () => reject(new Error("FileReader failed"))
       fr.readAsDataURL(blob)
     })
-  } catch {
+  } catch (e) {
+    clearTimeout(timer)
+    console.warn("[imgToDataUri] falha/timeout:", src.slice(0, 80), e instanceof Error ? e.message : e)
     return null
   }
 }
