@@ -2583,10 +2583,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // Armazena guides ativas pra after:render desenhar (linhas tracejadas)
         ;(fc as any).__safeAreaGuides = guides.length > 0 ? guides : null
       })
+      // Guides somem 2s apos o user soltar o mouse (deselect). Antes ficavam
+      // ate o proximo render — agora persistem brevemente como confirmacao
+      // visual do snap, e desaparecem sozinhos. Se o user comeca outro drag,
+      // o timer eh cancelado (object:moving popula guides direto, dispensa
+      // clear pendente).
+      const clearGuidesTimerRef = { current: null as any }
+      const scheduleGuidesClear = () => {
+        if (clearGuidesTimerRef.current) clearTimeout(clearGuidesTimerRef.current)
+        clearGuidesTimerRef.current = setTimeout(() => {
+          ;(fc as any).__safeAreaGuides = null
+          fc.requestRenderAll()
+        }, 2000)
+      }
       fc.on("mouse:up" as any, () => {
-        ;(fc as any).__safeAreaGuides = null
+        // NAO limpa imediato. Agenda clear pra 2s — guides ficam visiveis
+        // como feedback de alinhamento.
+        scheduleGuidesClear()
         fc.requestRenderAll()
       })
+      // Object:moving sempre repopula __safeAreaGuides — cancela timer pendente
+      // pra nao apagar guide enquanto user esta arrastando outra coisa.
+      fc.on("object:moving" as any, () => {
+        if (clearGuidesTimerRef.current) {
+          clearTimeout(clearGuidesTimerRef.current)
+          clearGuidesTimerRef.current = null
+        }
+      })
+      cleanupFns.push(() => { if (clearGuidesTimerRef.current) clearTimeout(clearGuidesTimerRef.current) })
       // Desenha guides visuais (smart guides) sobre o canvas pos-render.
       // Fabric "after:render" roda apos cada renderAll — desenha por cima
       // sem virar parte do canvas state (limpo no proximo render).
