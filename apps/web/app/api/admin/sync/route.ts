@@ -44,9 +44,10 @@ export async function GET(req: NextRequest) {
 
   try {
     // Sem prefixo __ — Next.js reserva esse prefixo. Usa hexa simples.
-    // Em subdir - como as pecas reais. Suspeita: arquivos no root de /uploads sao
-    // tratados diferente que arquivos em subdir.
-    const testKey = `diagtest-subdir/diagtest-${Date.now()}.png`
+    // Em subdir EXISTENTE (criado pelo sync original). Se 200 e o de cima 404,
+    // confirma teoria: Next.js cacheia listing de /public no boot, novos subdirs
+    // adicionados em runtime nao sao servidos.
+    const testKey = `campaigns/cmplhh7i6001hj6pb2jgm57r8/pieces/diagtest-${Date.now()}.png`
     // PNG bytes minimos (1x1 transparent)
     const buf = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6300010000000500010d0a2db40000000049454e44ae426082", "hex")
     const r = await getStorage().put(testKey, buf, "image/png")
