@@ -950,6 +950,7 @@ function ShapePreview({ asset, shape: shapeOverride }: { asset?: any; shape?: an
 }
 
 function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageUpload, onDelete, onSaveToLibrary, onDetach, onUpdate }: RowProps) {
+  const { id: campaignIdParam } = useParams<{ id: string }>()
   const isText = asset.type === "TEXT"
   const isShape = asset.type === "SHAPE"
   const text = isText ? getText(asset) : ""
@@ -1073,7 +1074,7 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
                 onChange={e => { const f = e.target.files?.[0]; if (f) onImageUpload(asset.id, f); e.target.value = "" }} />
             </label>
             {asset.type === "SMART_OBJECT" && (
-              <a href={`${asset.id}/edit-so`}
+              <a href={`/campaigns/${campaignIdParam}/assets/${asset.id}/edit-so`}
                  style={{ fontSize: 12, color: "#111", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#FFF8DC", textDecoration: "none", fontWeight: 500 }}
                  title="Abrir editor do Smart Object — edita textos internos e propaga pras pecas">
                 Editar
