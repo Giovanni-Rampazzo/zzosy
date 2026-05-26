@@ -43,9 +43,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const testKey = `__diag-${Date.now()}.txt`
-    const buf = Buffer.from("diag-test-content")
-    const r = await getStorage().put(testKey, buf, "text/plain")
+    // Sem prefixo __ — Next.js reserva esse prefixo. Usa hexa simples.
+    const testKey = `diagtest-${Date.now()}.png`
+    // PNG bytes minimos (1x1 transparent)
+    const buf = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6300010000000500010d0a2db40000000049454e44ae426082", "hex")
+    const r = await getStorage().put(testKey, buf, "image/png")
     diag.testWrite = { key: testKey, url: r.url, size: r.size }
     const absPath = path.join((getStorage() as any).rootDir, testKey)
     diag.testWriteAbsPath = absPath
