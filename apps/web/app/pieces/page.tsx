@@ -43,7 +43,7 @@ function PiecesContent() {
   const [view, setView] = useState<"grid" | "list">("grid")
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL")
-  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>({ col: "name", dir: "asc" })
   const [exportOpen, setExportOpen] = useState(false)
   const [campaignName, setCampaignName] = useState<string | undefined>(undefined)
   const [campaignClientId, setCampaignClientId] = useState<string | undefined>(undefined)

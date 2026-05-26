@@ -79,7 +79,7 @@ export default function CampaignOverviewPage() {
   const [exportOpen, setExportOpen] = useState(false)
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
-  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null)
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>({ col: "name", dir: "asc" })
   const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
   const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
   // Drag-and-drop de PSD direto no preview do KV (matriz) e na lista de peças.
