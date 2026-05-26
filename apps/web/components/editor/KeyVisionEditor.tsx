@@ -6241,7 +6241,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     try {
       const w = canvasWRef.current
       const h = canvasHRef.current
-      const TARGET = 2400
+      // TARGET 2400 -> 1440 (2026-05-26 user reportou previews lentos).
+      // 1440px ainda permite scale 1.5x num slide PPTX widescreen sem pixelar,
+      // mas reduz tamanho do PNG em ~4x (area dimensional). Ganho real:
+      // presentation page com 8 pieces baixa ~2MB em vez de 6MB.
+      const TARGET = 1440
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
 
       // O canvas Fabric do editor eh GRANDE (fullW x fullH ~ painel do editor)
@@ -6292,7 +6296,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // mesmo se o usuario nao editou nada nesta sessao.
   async function uploadMatrixThumb(fc: any) {
     try {
-      const thumbScale = Math.min(1920 / canvasWRef.current, 1920 / canvasHRef.current, 1)
+      const thumbScale = Math.min(1440 / canvasWRef.current, 1440 / canvasHRef.current, 1)
       const z = zoomRef.current || 1
       const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
       const offsetX = vt[4] ?? 0
@@ -6626,7 +6630,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // Thumb HIGH-RES (1920px max, JPEG 0.92). 480/0.85 ficava pixelado no
         // preview de apresentacao e PPTX (slide widescreen tem 960px de largura
         // a 72 DPI; pptxgenjs escala thumb pra 8-12" -> ampliacao 8x).
-        const thumbScale = Math.min(1920 / canvasWRef.current, 1920 / canvasHRef.current, 1)
+        const thumbScale = Math.min(1440 / canvasWRef.current, 1440 / canvasHRef.current, 1)
         // CROP da area da peca. toDataURL aceita left/top/width/height em
         // coords do CANVAS DOM (px do canvas HTML). A peca renderiza
         // centralizada via viewportTransform[4,5] (offset). Le o offset real
@@ -7638,7 +7642,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // High-res necessario pro preview de apresentacao e PPTX exportado nao
       // ficarem pixelados (slide widescreen escala thumb pra 8-12 polegadas).
       try {
-        const thumbScale = Math.min(1920 / canvasWRef.current, 1920 / canvasHRef.current, 1)
+        const thumbScale = Math.min(1440 / canvasWRef.current, 1440 / canvasHRef.current, 1)
         // CROP da area da peca. Le offset real do viewportTransform pra
         // cortar exatamente onde a peca renderiza no canvas DOM.
         const z = zoomRef.current || 1

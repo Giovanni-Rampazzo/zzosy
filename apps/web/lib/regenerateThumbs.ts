@@ -107,7 +107,7 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
     fc.renderAll()
     await new Promise(r => setTimeout(r, 200))
 
-    const thumbScale = Math.min(1600 / W, 1600 / H, 1)
+    const thumbScale = Math.min(1440 / W, 1440 / H, 1)
     // PNG (nao JPEG) — preserva canal alpha em mascaras raster transparentes.
     const dataUrl = fc.toDataURL({ format: "png", multiplier: thumbScale })
     fc.dispose()
@@ -231,8 +231,8 @@ async function renderPieceThumbViaExport(pieceLike: { data: any; width: number; 
     if (!fc) return null
     const W = pieceLike.width
     const H = pieceLike.height
-    // Thumb compacto pra UI: max 1920 px no maior lado. Preserva alpha (PNG).
-    const scale = Math.min(1920 / W, 1920 / H, 1)
+    // Thumb compacto pra UI: max 1440 px no maior lado. Preserva alpha (PNG).
+    const scale = Math.min(1440 / W, 1440 / H, 1)
     const dataUrl = fc.toDataURL({ format: "png", multiplier: scale })
     try { fc.dispose() } catch {}
     const res = await fetch(dataUrl)
