@@ -74,7 +74,14 @@ export async function GET(req: NextRequest) {
 
     // imageUrl da peca tambem versionado
     const stampedImageUrl = stamp(p.imageUrl as any)
-    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
+    // PERF: strippa p.data do payload. O `data` eh o JSON COMPLETO do Fabric
+    // canvas (todas layers + base64 fontes) — pode ter 50KB+ por peca. Em 30+
+    // pecas vira 1.5MB+ por request. Lista NUNCA usa p.data direto, so width/
+    // height/steps extraidos acima. Quem precisa do data (DeliveryDialog,
+    // export) faz fetch by-id de /api/pieces/[id] sob demanda. Reportado
+    // 2026-05-26: "preview muito lento".
+    const { data: _stripped, ...pNoData } = p as any
+    return { ...pNoData, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
   })
   return NextResponse.json(enriched)
 }

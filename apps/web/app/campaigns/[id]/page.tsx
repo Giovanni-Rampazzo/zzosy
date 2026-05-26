@@ -419,6 +419,7 @@ export default function CampaignOverviewPage() {
             >
               {campaign.keyVision?.thumbnailUrl ? (
                 <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
+                  loading="lazy" decoding="async"
                   style={{ maxWidth: "100%", maxHeight: 130, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0", margin: "auto" }} />
               ) : (
                 <div
@@ -645,7 +646,9 @@ export default function CampaignOverviewPage() {
                       // antigo do cache mesmo apos broadcast piece-updated +
                       // refetch (URL nao muda, server retorna mesmo /uploads/...).
                       // User reportou 2026-05-23: preview nao realtime.
-                      <img src={`${p.imageUrl}?t=${new Date((p as any).updatedAt ?? Date.now()).getTime()}`} alt={p.name} style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", display: "block" }} />
+                      <img src={`${p.imageUrl}?t=${new Date((p as any).updatedAt ?? Date.now()).getTime()}`} alt={p.name}
+                        loading="lazy" decoding="async"
+                        style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", display: "block" }} />
                     ) : (
                       <div style={{ textAlign: "center", color: "#aaa", fontSize: 11 }}>
                         <div style={{ fontWeight: 600 }}>{p.format}</div>

@@ -207,9 +207,12 @@ export default function PresentationPage() {
       if (ev.key === `zzosy:lastSave:${id}` || ev.key === `zzosy:lastKvSave:${id}`) refetch()
     }
     window.addEventListener("storage", onStorage)
-    // Polling 2s (era 6s) pra captura rapida quando broadcast falha (e.g. same-tab
-    // navigation). Apenas quando aba esta visivel — sem desperdicio em background.
-    const poll = setInterval(() => { if (!document.hidden) refetch() }, 2000)
+    // Polling 30s — BroadcastChannel + storage event ja cobrem mudancas same-
+    // browser instantaneamente (99% dos casos). Polling fica so como safety
+    // net pra cross-device updates (edicao num device, view noutro). 2s era
+    // exagero: com 30 pecas e payload pesado virava 4.5MB/min de waste.
+    // Apenas quando aba esta visivel — sem desperdicio em background.
+    const poll = setInterval(() => { if (!document.hidden) refetch() }, 30000)
 
     return () => {
       window.removeEventListener("focus", refetch)

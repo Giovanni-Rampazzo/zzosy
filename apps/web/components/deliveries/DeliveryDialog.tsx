@@ -77,9 +77,28 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
     if (formats.size === 0) { alert("Selecione pelo menos um formato"); return }
     setWorking(true)
     try {
-      const piecesToExport = allPieces
-        .filter(p => selected.has(p.id))
-        .map(p => ({ id: p.id, name: p.name, data: p.data, width: p.width, height: p.height, media: p.media }))
+      // PERF 2026-05-26: /api/pieces lista agora retorna SEM piece.data (payload
+      // 70% menor). Pra exportar precisamos do data — fetchamos por id em
+      // paralelo aqui. Trade-off aceitavel: lista carrega muito mais rapido,
+      // export tem um pequeno delay extra (paralelo, raramente >1s).
+      const selectedPieces = allPieces.filter(p => selected.has(p.id))
+      setProgress("Carregando peças...")
+      const dataMap = new Map<string, string>()
+      await Promise.all(selectedPieces.map(async p => {
+        if (typeof p.data === "string" && p.data.length > 0) {
+          dataMap.set(p.id, p.data)
+          return
+        }
+        try {
+          const r = await fetch(`/api/pieces/${p.id}`, { cache: "no-store" })
+          if (r.ok) {
+            const fresh = await r.json()
+            if (typeof fresh.data === "string") dataMap.set(p.id, fresh.data)
+          }
+        } catch {}
+      }))
+      const piecesToExport = selectedPieces
+        .map(p => ({ id: p.id, name: p.name, data: dataMap.get(p.id) ?? null, width: p.width, height: p.height, media: p.media }))
 
       // Se incluir apresentacao: gera o PPTX antes do ZIP pra empacotar em Deck/
       // O segment vem por peca (nao mais por campanha) — passamos cada um adiante.

@@ -51,11 +51,33 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const ext = path.extname(abs).toLowerCase()
   const mime = MIME[ext] ?? "application/octet-stream"
 
-  // Stream pra arquivos grandes; readFile pra pequenos (<2MB)
+  // ETag pra revalidacao barata: browser envia If-None-Match com etag previo,
+  // server responde 304 (sem body) se inalterado. Reduz drasticamente bytes
+  // transferidos em refetches frequentes (poll/broadcast). User reportou
+  // 2026-05-26: "preview muito lento" — cada thumb re-baixava 100-300KB
+  // mesmo quando nao mudou.
+  const etag = `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`
+  const ifNoneMatch = _req.headers.get("if-none-match")
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return new NextResponse(null, {
+      status: 304,
+      headers: {
+        "ETag": etag,
+        "Cache-Control": "no-cache, must-revalidate",
+        "Last-Modified": stat.mtime.toUTCString(),
+      },
+    })
+  }
+
+  // Stream pra arquivos grandes; readFile pra pequenos (<2MB).
+  // Cache-Control: no-cache OBRIGA browser a revalidar (envia If-None-Match
+  // sempre), mas permite uso do cache via 304. Anterior tinha "no-store" que
+  // FORCAVA re-download — anulava o ganho do ETag.
   const headers: Record<string, string> = {
     "Content-Type": mime,
     "Content-Length": String(stat.size),
-    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Cache-Control": "no-cache, must-revalidate",
+    "ETag": etag,
     "Last-Modified": stat.mtime.toUTCString(),
   }
   if (stat.size < 2 * 1024 * 1024) {
