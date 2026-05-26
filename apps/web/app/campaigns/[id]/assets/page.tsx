@@ -557,13 +557,22 @@ export default function CampaignAssetsPage() {
     const res = await fetch(`/api/campaigns/${id}/assets/${assetId}/image`, { method: "POST", body: fd })
     if (res.ok) {
       const data = await res.json()
-      setCampaign(c => c ? {
-        ...c,
-        assets: c.assets.map(a => a.id === assetId ? { ...a, imageUrl: data.imageUrl } : a)
-      } : c)
+      // PSD -> asset upgraded pra SMART_OBJECT (type/smartObjectId/width mudam).
+      // Recarrega full pra refletir as mudancas alem do imageUrl.
+      if (data.isSmartObject) {
+        await load()
+      } else {
+        setCampaign(c => c ? {
+          ...c,
+          assets: c.assets.map(a => a.id === assetId ? { ...a, imageUrl: data.imageUrl } : a)
+        } : c)
+      }
       // Regerar thumbs das peças afetadas em segundo plano
       regeneratePieceThumbsForAsset(id, assetId).catch(e => console.warn("regen thumbs:", e))
       regenerateKVThumb(id).catch(e => console.warn("regen KV thumb:", e))
+    } else {
+      const body = await res.json().catch(() => ({}))
+      alert(`Falha ao trocar imagem: ${body?.error ?? res.status}`)
     }
     setSavingMap(m => ({ ...m, [assetId]: false }))
   }
@@ -1058,9 +1067,9 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         </div>
         {isShape ? null : (
           <div>
-            <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }}>
+            <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }} title="PNG/JPG/WebP/SVG ou PSD (vira Smart Object)">
               Trocar imagem
-              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/vnd.adobe.photoshop,.psd" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
                 onChange={e => { const f = e.target.files?.[0]; if (f) onImageUpload(asset.id, f); e.target.value = "" }} />
             </label>
           </div>
