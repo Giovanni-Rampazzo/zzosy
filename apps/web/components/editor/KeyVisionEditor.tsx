@@ -698,6 +698,12 @@ function serializeTextboxOverrides(
   if (o.leadingPt !== undefined && o.leadingPt !== null) ov.leadingPt = o.leadingPt
   if (o.styles && Object.keys(o.styles).length > 0) ov.styles = o.styles
   if (o.__dsLinked === false) ov.dsLinked = false
+  // Width fixa: persiste flag indicando que o user (ou PSD box text) escolheu
+  // uma largura especifica. Sem isso, ao re-abrir a peca, addAssetToCanvas
+  // trata como point text e o auto-fit shrink colapsa o width pra natural
+  // content width — perdendo o wrap escolhido. Bug grave reportado 2026-05-25.
+  if (o.__userResizedWidth) ov.userResizedWidth = true
+  if (typeof o.width === "number") ov.width = o.width
   return ov
 }
 
@@ -5101,10 +5107,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Solucao: pra point text, criar com width ENORME (sem wrap), depois o
       // shrink-to-content abaixo encolhe pro tamanho real do texto renderizado.
       const psdShapeType = (asset as any).lastOverride?.__psdShapeType
-      const isPointText = psdShapeType === "point" || psdShapeType === undefined
+      // userResizedWidth: layer salvou width explicito (user redimensionou OU
+      // veio de PSD box text). Trata como box mesmo que asset diga "point" —
+      // overrides per-instancia sobrepoem o default do asset. Width fica fixa
+      // e auto-fit text:changed nao roda nesse textbox (preserva wrap).
+      const layerWidthSaved = (layerOv as any)?.userResizedWidth === true
+        || (typeof (layerOv as any)?.width === "number" && (layerOv as any).width < 50000 && (layerOv as any).width > 0)
+      const isPointText = !layerWidthSaved && (psdShapeType === "point" || psdShapeType === undefined)
+      // Quando layer salvou width, usa o width salvo direto (ignora effWidth
+      // que vem da bbox antiga do asset). Caso contrario: 99999 (point) ou
+      // bbox do asset (box).
+      const explicitSavedWidth = typeof (layerOv as any)?.width === "number" ? (layerOv as any).width : null
       const initialWidth = isPointText
         ? 99999
-        : Math.max(effWidth, 200)
+        : (explicitSavedWidth != null ? Math.max(explicitSavedWidth, 50) : Math.max(effWidth, 200))
       const t = new Textbox(initialText, {
         left: posX, top: posY,
         width: initialWidth,
@@ -5125,6 +5141,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Marca como point/box pra round-trip e UI futura. Round-trip: writer le
       // pra recriar Point/Paragraph Text correto no PSD.
       ;(t as any).__psdShapeType = isPointText ? "point" : "box"
+      // Restaura flag de user-resized (persistida no save). Sem isso, qualquer
+      // edit de texto dispara auto-fit text:changed e colapsa o width fixo,
+      // perdendo o wrap escolhido pelo user (ou herdado do PSD box).
+      if (layerWidthSaved) (t as any).__userResizedWidth = true
       if ((asset as any).lastOverride?.__psdBoxBounds) {
         ;(t as any).__psdBoxBounds = (asset as any).lastOverride.__psdBoxBounds
       }
@@ -5180,14 +5200,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const expectedLines = Math.max(explicitLines, psdLines)
         let attempts = 0
         // _textLines eh propriedade interna do Fabric Textbox pos initDimensions.
-        while (((t as any)._textLines?.length ?? 0) > expectedLines && attempts < 3) {
-          const currentWidth = (t as any).width ?? Math.max(effWidth, 200)
-          ;(t as any).set("width", Math.ceil(currentWidth * 1.05))
-          if ((t as any).initDimensions) (t as any).initDimensions()
-          attempts++
-        }
-        if (attempts > 0) {
-          editorLog("[autofit-text]", asset.label, `expanded ${attempts}x to fit ${expectedLines} lines (psd=${psdLines}, explicit=${explicitLines})`)
+        // Skip expand-to-fit quando layer salvou width — width fixa nao deve
+        // ser inflada pra reduzir linhas (user escolheu wrappar).
+        if (!layerWidthSaved) {
+          while (((t as any)._textLines?.length ?? 0) > expectedLines && attempts < 3) {
+            const currentWidth = (t as any).width ?? Math.max(effWidth, 200)
+            ;(t as any).set("width", Math.ceil(currentWidth * 1.05))
+            if ((t as any).initDimensions) (t as any).initDimensions()
+            attempts++
+          }
+          if (attempts > 0) {
+            editorLog("[autofit-text]", asset.label, `expanded ${attempts}x to fit ${expectedLines} lines (psd=${psdLines}, explicit=${explicitLines})`)
+          }
         }
         // SHRINK-TO-CONTENT: depois de garantir que o text wrapping respeita
         // expectedLines, encolhe o width pra HUGGAR o conteudo. Sem isso, um
@@ -5195,7 +5219,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // largura mesmo se o texto so usa 600px — handles ficam la longe,
         // edicao no canvas vira pesadelo. Pattern Adobe/Figma: "Point Type"
         // texto-tem-largura-do-conteudo.
-        try {
+        //
+        // EXCETO se layer salvou width explicito (user redimensionou ou box
+        // text). Nesse caso o width eh INTENCIONAL e shrink desfaz o wrap
+        // escolhido. Sintoma do bug user reportou: pecas geradas perdem o
+        // width do textbox apos reload — shrink-to-content estava colapsando.
+        try { if (layerWidthSaved) { /* skip shrink */ } else {
           const lineCount = (t as any)._textLines?.length ?? 0
           // Condicao relaxada (era `=== expectedLines`): shrink quando lineCount
           // <= expectedLines. Caso problematico: PSD com bbox 2 linhas mas texto
@@ -5222,7 +5251,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               editorLog("[autofit-text]", asset.label, `shrunk ${currentW}→${targetW} pra hugger conteudo`)
             }
           }
-        } catch (e) { editorLog("[autofit-text-shrink] erro:", e) }
+        } } catch (e) { editorLog("[autofit-text-shrink] erro:", e) }
       } catch (e) { editorLog("[autofit-text] erro:", e) }
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
