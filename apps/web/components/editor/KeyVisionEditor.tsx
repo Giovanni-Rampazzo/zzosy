@@ -11671,6 +11671,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 }
               </select>
             </div>
+            {(() => {
+              // "Edit Smart Object" — quando o asset selecionado eh um SO, abre
+              // o mini-editor /edit-so (Photoshop "Edit Contents" equivalente).
+              const assetId = (selected as any).__assetId
+              const asset = (campaign?.assets ?? []).find(a => a.id === assetId)
+              if (!asset || asset.type !== "SMART_OBJECT") return null
+              return (
+                <a
+                  href={`/campaigns/${campaignId}/assets/${assetId}/edit-so`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "block", textAlign: "center",
+                    background: "#F5C400", border: "none", borderRadius: 6,
+                    padding: "8px 12px", fontSize: 12, fontWeight: 700,
+                    color: "#111", textDecoration: "none",
+                  }}
+                  title="Abrir editor do Smart Object (Photoshop: Edit Contents) — propaga ao salvar"
+                >
+                  ✎ Editar Smart Object
+                </a>
+              )
+            })()}
             <div style={{ color: "#444", fontSize: 11 }}>Move and resize on canvas.</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
               {[0.2, 0.4, 0.6, 0.8].map(pct => (
