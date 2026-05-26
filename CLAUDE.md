@@ -146,6 +146,18 @@ Implementação: `/api/campaigns/[id]/key-vision/route.ts` (add/remove layer) + 
 
 Color picker em toolbar de seleção SEMPRE reflete a cor real do primeiro char selecionado (via `resolveCharColor()`).
 
+### Espaços + quebras de linha: ASSET É FONTE ÚNICA (sem override)
+
+**Regra global ZZOSY (2026-05-26):** NENHUMA peça (nem matriz, nem peças geradas) pode dar override no asset pra **espaço** ou **quebra de linha** (`\n`, whitespace, espaços extras). Asset.content é a fonte única de verdade pra essas duas dimensões — sempre.
+
+Por quê: espaço e \n são "estrutura" do texto, não estilo. Se peça pudesse overrider, qualquer edit no asset.content (que migra via Myers LCS diff) ficaria inconsistente — peça com \n extra perderia alinhamento; peça com espaço diferente desincronizaria do per-char mapping. Designer trabalha estrutura no asset.
+
+Implicações:
+- Editor da matriz: pode mudar fontSize/fill/charFills/etc, MAS espaço/\n são propagados do asset
+- Peças geradas: idem — herdam structure do asset, podem customizar style
+- Editar asset.content: TODAS peças updatam o texto literal (espaços + \n inclusos), preservando style overrides via diff Myers
+- Validar em `migrateOverrideText`: se peça tentar manter texto com whitespace divergente do asset, ignora e usa o asset
+
 ## 2.9 Como me corrigir
 
 - "Você violou regra X" → vou voltar e arrumar
