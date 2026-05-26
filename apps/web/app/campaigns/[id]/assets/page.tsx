@@ -981,10 +981,11 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
     return (
       <div style={{
         display: "flex",
-        // flex-start: botoes alinham com a PRIMEIRA linha do textarea quando
-        // ele cresce. Center fazia eles "flutuarem" no meio vertical do
-        // textarea expandido.
-        alignItems: "flex-start",
+        // center: user pediu 2026-05-26 — "centralize sempre todos os fields
+        // e botoes nas linhas". Antes era flex-start (botoes na primeira
+        // linha do textarea expandido); agora botoes ficam centrados vertical
+        // mesmo com textarea multi-line. Padrao consistente em todas rows.
+        alignItems: "center",
         gap: 12,
         padding: "8px 16px",
         borderBottom: isLast ? "none" : "1px solid #F0F0F0",
