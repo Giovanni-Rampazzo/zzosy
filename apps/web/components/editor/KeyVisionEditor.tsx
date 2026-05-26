@@ -10586,6 +10586,29 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     ? fc.getObjects().some((o: any) => o.__assetId === a.id)
                     : false
                   const typeColor = a.type === "TEXT" ? "#F5C400" : a.type === "SHAPE" ? "#86efac" : "#a855f7"
+                  // Mini preview por linha (28x28 checker bg pra ver transparencia):
+                  //  IMAGE/SO  -> <img> com imageUrl
+                  //  TEXT      -> "T" no typeColor
+                  //  SHAPE     -> mini SVG do path com fill da shape
+                  let thumbContent: React.ReactNode
+                  if ((a.type === "IMAGE" || a.type === "SMART_OBJECT") && a.imageUrl) {
+                    // eslint-disable-next-line @next/next/no-img-element
+                    thumbContent = <img src={a.imageUrl} alt={a.label} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+                  } else if (a.type === "SHAPE") {
+                    const shape: any = typeof a.content === "string" ? (() => { try { return JSON.parse(a.content as any) } catch { return null } })() : (a.content as any)
+                    const path: string | null = shape?.path ?? null
+                    const fill: string = shape?.fill?.color ?? "#888"
+                    const bbox = shape?.pathBbox ?? null
+                    const vw = bbox ? Math.max(1, bbox.right - bbox.left) : 100
+                    const vh = bbox ? Math.max(1, bbox.bottom - bbox.top) : 100
+                    thumbContent = path ? (
+                      <svg viewBox={`${bbox?.left ?? 0} ${bbox?.top ?? 0} ${vw} ${vh}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%", display: "block" }}>
+                        <path d={path} fill={fill} />
+                      </svg>
+                    ) : <span style={{ fontSize: 14, color: typeColor, fontWeight: 700 }}>◇</span>
+                  } else {
+                    thumbContent = <span style={{ fontSize: 16, color: typeColor, fontWeight: 800, fontFamily: "Georgia, serif" }}>T</span>
+                  }
                   return (
                     <button
                       key={a.id}
@@ -10600,7 +10623,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       style={{
                         background: "transparent",
                         border: "none",
-                        padding: "8px 10px",
+                        padding: "6px 8px",
                         borderRadius: 4,
                         fontSize: 12,
                         color: alreadyOnCanvas ? "#555" : "#ddd",
@@ -10615,7 +10638,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       onMouseEnter={e => { if (!alreadyOnCanvas) e.currentTarget.style.background = "#2a2a2a" }}
                       onMouseLeave={e => { e.currentTarget.style.background = "transparent" }}
                     >
-                      <span style={{ width: 7, height: 7, borderRadius: 2, background: typeColor, flexShrink: 0 }} />
+                      {/* Thumb 28x28 com checker bg pra ver transparencia + border tipo color */}
+                      <div style={{
+                        width: 28, height: 28, flexShrink: 0, borderRadius: 4,
+                        border: `1px solid ${typeColor}40`,
+                        background: "#1f1f1f",
+                        backgroundImage: "linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%)",
+                        backgroundSize: "8px 8px",
+                        backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        overflow: "hidden", padding: 2,
+                      }}>
+                        {thumbContent}
+                      </div>
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {a.label}
                       </span>
