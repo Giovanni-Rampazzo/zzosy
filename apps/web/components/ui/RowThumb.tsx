@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
 interface Props {
   src?: string | null
@@ -25,9 +25,17 @@ interface Props {
 export function RowThumb({ src, alt, fallbackText, fallbackBg, size = 56, rounded = 8, fit = "contain" }: Props) {
   const [loaded, setLoaded] = useState(false)
   const [errored, setErrored] = useState(false)
+  const imgRef = useRef<HTMLImageElement | null>(null)
 
-  // Reseta estado quando src muda (ex: cache-busting via ?v=N)
-  useEffect(() => { setLoaded(false); setErrored(false) }, [src])
+  // Reseta estado quando src muda (ex: cache-busting via ?v=N).
+  // Importante: ler img.complete no mount — imagens do cache do browser
+  // disparam onLoad ANTES do React executar, entao sem esse check o state
+  // fica preso em 'loading' e mostra skeleton pra sempre.
+  useEffect(() => {
+    setErrored(false)
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) setLoaded(true)
+    else setLoaded(false)
+  }, [src])
 
   const initials = (fallbackText ?? "")
     .split(/\s+/)
@@ -47,11 +55,12 @@ export function RowThumb({ src, alt, fallbackText, fallbackBg, size = 56, rounde
       <div style={{...styleBase, border: "none", background: loaded ? "transparent" : "#EDEDED", position: "relative"}} aria-busy={!loaded}>
         {!loaded && <div style={{ position: "absolute", inset: 0, animation: "rowthumb-pulse 1.2s ease-in-out infinite", background: "linear-gradient(90deg, #EDEDED 0%, #F5F5F5 50%, #EDEDED 100%)", backgroundSize: "200% 100%" }} />}
         <img
+          ref={imgRef}
           src={src}
           alt={alt ?? ""}
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
-          style={{ width: "100%", height: "100%", objectFit: fit, opacity: loaded ? 1 : 0, transition: "opacity 0.2s" }}
+          style={{ width: "100%", height: "100%", objectFit: fit, opacity: loaded ? 1 : 0, transition: "opacity 0.2s", display: "block" }}
         />
         <style>{`@keyframes rowthumb-pulse { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
       </div>

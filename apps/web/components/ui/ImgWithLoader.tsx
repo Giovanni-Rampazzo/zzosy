@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
 interface Props {
   src: string
@@ -18,8 +18,15 @@ interface Props {
 export function ImgWithLoader({ src, alt, style, errorFallback, className }: Props) {
   const [loaded, setLoaded] = useState(false)
   const [errored, setErrored] = useState(false)
+  const imgRef = useRef<HTMLImageElement | null>(null)
 
-  useEffect(() => { setLoaded(false); setErrored(false) }, [src])
+  // Imagens do cache disparam onLoad antes do React executar — ler
+  // img.complete no mount evita ficar preso no skeleton.
+  useEffect(() => {
+    setErrored(false)
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) setLoaded(true)
+    else setLoaded(false)
+  }, [src])
 
   if (errored) {
     return (
@@ -40,6 +47,7 @@ export function ImgWithLoader({ src, alt, style, errorFallback, className }: Pro
         }} />
       )}
       <img
+        ref={imgRef}
         src={src}
         alt={alt ?? ""}
         onLoad={() => setLoaded(true)}
