@@ -2008,7 +2008,62 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       try {
         const img = obj.toCanvasElement({ multiplier: 1 })
         lctx.drawImage(img, 0, 0, w, h)
-      } catch (e) { console.warn("rasterize fail:", name, e) }
+      } catch (e) { console.warn("[psd-export] rasterize fail:", name, e) }
+
+      // Detect empty canvas (all pixels transparent) — bug recorrente: imagens
+      // com source tainted/clipPath/visible=false viravam canvas vazio + push
+      // como layer "fantasma" (existia no painel PS mas nao pintava nada).
+      // Fallback: copia regiao do fc.getElement() (composite final ja renderizado).
+      // Nao eh perfeito pq pega pixels de outros objs sobrepostos, mas eh muito
+      // melhor que layer invisivel.
+      let layerIsEmpty = false
+      try {
+        if (w > 0 && h > 0) {
+          const probeSize = Math.min(32, Math.max(2, Math.floor(Math.min(w, h) / 4)))
+          const sx = Math.floor(w / 2 - probeSize / 2)
+          const sy = Math.floor(h / 2 - probeSize / 2)
+          const data = lctx.getImageData(sx, sy, probeSize, probeSize).data
+          let hasOpaque = false
+          for (let i = 3; i < data.length; i += 4) {
+            if (data[i] > 0) { hasOpaque = true; break }
+          }
+          if (!hasOpaque) {
+            // checa cantos tambem (cobre shapes que pintam so na borda)
+            const cornerProbe = (cx: number, cy: number) => {
+              const d = lctx.getImageData(cx, cy, 1, 1).data
+              return d[3] > 0
+            }
+            const anyCorner = cornerProbe(0, 0) || cornerProbe(w - 1, 0) || cornerProbe(0, h - 1) || cornerProbe(w - 1, h - 1)
+            if (!anyCorner) layerIsEmpty = true
+          }
+        }
+      } catch {}
+
+      if (layerIsEmpty) {
+        console.warn("[psd-export] canvas VAZIO detectado, ativando fallback fc-crop:", name, {
+          w, h, left, top,
+          objType: obj.type,
+          visible: (obj as any).visible,
+          opacity: (obj as any).opacity,
+          hasClipPath: !!(obj as any).clipPath,
+          objW: obj.width, objH: obj.height,
+          scaleX: obj.scaleX, scaleY: obj.scaleY,
+          isSmartObject: (obj as any).__isSmartObject,
+          srcWidth: (obj as any)._element?.width ?? (obj as any)._element?.naturalWidth,
+          srcHeight: (obj as any)._element?.height ?? (obj as any)._element?.naturalHeight,
+          srcSrc: (obj as any)._element?.src?.slice(0, 80),
+        })
+        try {
+          const srcCanvas = fc.getElement() as HTMLCanvasElement
+          const sx = Math.max(0, left)
+          const sy = Math.max(0, top)
+          const sw = Math.min(w, srcCanvas.width - sx)
+          const sh = Math.min(h, srcCanvas.height - sy)
+          if (sw > 0 && sh > 0) {
+            lctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, sw, sh)
+          }
+        } catch (e) { console.warn("[psd-export] fallback fc-crop falhou:", name, e) }
+      }
 
       if (isSmartObjectCandidate) {
         // SMART OBJECT EMBEDDED: vai como Smart Object no PSD.
