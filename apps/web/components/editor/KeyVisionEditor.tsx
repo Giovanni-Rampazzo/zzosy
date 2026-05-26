@@ -11386,7 +11386,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 />
               </div>
             </div>
-            </>)}
 
             {/* Alinhamento separado num grid full-width pra dar mais espaco */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
@@ -11467,6 +11466,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 ))}
               </div>
             </div>
+            </>)}
 
             <div>
               <div style={secS}>Color {mixedFill && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(multiple)</span>}</div>
