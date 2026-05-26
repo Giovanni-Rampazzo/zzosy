@@ -26,6 +26,21 @@ const nextConfig = {
       },
     ]
   },
+  // beforeFiles: roda ANTES do matcher de static /public files. Sem isso,
+  // Next.js prod cacheia 404 da primeira tentativa pra qualquer /uploads/X
+  // que nao existia no boot — e mesmo apos escrever o arquivo via storage.put
+  // em runtime, o 404 cacheado persiste pra sempre (x-nextjs-prerender:1).
+  // Forcando /uploads/* a passar por route handler dinamico (force-dynamic),
+  // file system eh consultado a cada request.
+  async rewrites() {
+    return {
+      beforeFiles: [
+        { source: "/uploads/:path*", destination: "/api/uploads/:path*" },
+      ],
+      afterFiles: [],
+      fallback: [],
+    }
+  },
 }
 
 module.exports = nextConfig
