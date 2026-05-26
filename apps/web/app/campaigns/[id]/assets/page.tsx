@@ -1066,12 +1066,19 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
           <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
         </div>
         {isShape ? null : (
-          <div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }} title="PNG/JPG/WebP/SVG ou PSD (vira Smart Object)">
               Trocar imagem
               <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/vnd.adobe.photoshop,.psd" style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }} tabIndex={-1}
                 onChange={e => { const f = e.target.files?.[0]; if (f) onImageUpload(asset.id, f); e.target.value = "" }} />
             </label>
+            {asset.type === "SMART_OBJECT" && (
+              <a href={`${asset.id}/edit-so`}
+                 style={{ fontSize: 12, color: "#111", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#FFF8DC", textDecoration: "none", fontWeight: 500 }}
+                 title="Abrir editor do Smart Object — edita textos internos e propaga pras pecas">
+                Editar
+              </a>
+            )}
           </div>
         )}
       </div>
