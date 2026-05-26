@@ -722,7 +722,6 @@ export default function CampaignOverviewPage() {
                         <>
                           <th style={{ padding: "10px 8px", textAlign: "left", width: 72 }}></th>
                           <SortHeader col="name" label="Nome" />
-                          <SortHeader col="format" label="Formato" />
                           <SortHeader col="size" label="Tamanho" />
                           <SortHeader col="segment" label="Segmento" />
                           <th style={{ padding: "10px 12px", textAlign: "right" }}></th>
@@ -754,7 +753,6 @@ export default function CampaignOverviewPage() {
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
                         {p.name}
                       </td>
-                      <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.format}</td>
                       <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.width} × {p.height}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <SegmentPicker
@@ -770,11 +768,13 @@ export default function CampaignOverviewPage() {
                         />
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", gap: 6 }}>
-                          <Button variant="danger" size="sm" onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
-                          <Button variant="info" size="sm" onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
-                          <Button variant="secondary" size="sm" onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
-                          <Button variant="view" size="sm" onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
+                        <div style={{ display: "inline-flex", gap: 4 }}>
+                          {/* Botoes ~40% do size sm (60% menores): user pediu economia
+                              de espaco na row de 4 acoes equipotentes. */}
+                          <Button variant="danger" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                          <Button variant="info" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
+                          <Button variant="secondary" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                          <Button variant="view" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                         </div>
                       </td>
                     </tr>
