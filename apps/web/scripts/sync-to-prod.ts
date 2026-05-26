@@ -5,7 +5,7 @@
 // Reads ADMIN_SYNC_TOKEN + PROD_URL from .env. Dumps local MySQL, tars
 // /uploads (excluindo /uploads-orphans), faz POST multipart pra
 // /api/admin/sync em prod. Idempotente (DROP TABLE no dump).
-import { spawnSync } from "child_process"
+import { spawnSync, spawn } from "child_process"
 import { statSync, createReadStream, existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -73,17 +73,28 @@ async function main() {
 
   if (!dbOnly) {
     console.log("[2/3] Tar /uploads (sem orphans)...")
-    const tar = spawnSync(
-      "tar",
-      ["czf", tarPath, "-C", uploadsDir, "campaigns", "clients", "deliveries", "step-thumbs"],
-      { encoding: "buffer" },
-    )
-    if (tar.status !== 0) {
-      console.error("tar falhou:", tar.stderr.toString())
+    const tarT0 = Date.now()
+    const tarTick = setInterval(() => {
+      const elapsed = ((Date.now() - tarT0) / 1000).toFixed(0)
+      const sz = existsSync(tarPath) ? (statSync(tarPath).size / 1024 / 1024).toFixed(1) : "0.0"
+      process.stdout.write(`\r  tar... ${elapsed}s  (${sz} MB)`)
+    }, 500)
+    const tarExitCode: number = await new Promise((resolve) => {
+      const proc = spawn(
+        "tar",
+        ["czf", tarPath, "-C", uploadsDir, "campaigns", "clients", "deliveries", "step-thumbs"],
+        { stdio: ["ignore", "ignore", "inherit"] },
+      )
+      proc.on("close", (code) => resolve(code ?? -1))
+    })
+    clearInterval(tarTick)
+    process.stdout.write("\r")
+    if (tarExitCode !== 0) {
+      console.error(`\ntar falhou (exit ${tarExitCode})`)
       process.exit(1)
     }
     const sz = statSync(tarPath).size
-    console.log(`  ${(sz / 1024 / 1024).toFixed(1)} MB`)
+    console.log(`  ${(sz / 1024 / 1024).toFixed(1)} MB em ${((Date.now() - tarT0) / 1000).toFixed(1)}s`)
     const tarBuf = readFileSync(tarPath)
     form.append("uploads", new Blob([tarBuf], { type: "application/gzip" }), "uploads.tar.gz")
   }
