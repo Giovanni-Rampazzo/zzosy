@@ -198,7 +198,24 @@ export default function MediasPage() {
                 Nenhum formato cadastrado. Clique em "+ Novo formato" pra criar.
               </div>
             ) : (
-              categories.map(label => (
+              <>
+              {/* Header da tabela — mesmos column widths das rows pra alinhar. */}
+              <div style={{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid #E0E0E0",background:"#FAFAFA"}}>
+                {(() => {
+                  const lblS: React.CSSProperties = {fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}
+                  return (
+                    <>
+                      <div style={{flex:1, ...lblS}}>Mídia</div>
+                      <div style={{width:140, ...lblS}}>Veículo</div>
+                      <div style={{width:150, ...lblS}}>Formato</div>
+                      <div style={{width:170, ...lblS}}>Dimensão</div>
+                      <div style={{width:70, ...lblS}}>DPI</div>
+                      <div style={{display:"flex"}} />
+                    </>
+                  )
+                })()}
+              </div>
+              {categories.map(label => (
                 <div key={label}>
                   <div style={{padding:"10px 20px",background:"#F5F5F0",borderBottom:"1px solid #E0E0E0"}}>
                     <span style={{fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.8px",color:"#888"}}>{label}</span>
@@ -238,7 +255,8 @@ export default function MediasPage() {
                     )
                   })}
                 </div>
-              ))
+              ))}
+              </>
             )}
           </div>
         )}
