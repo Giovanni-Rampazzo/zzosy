@@ -224,7 +224,28 @@ export default function PresentationPage() {
 
   // REGEN INTELIGENTE 2026-05-24: ref-guard por piece.id+updatedAt impede
   // loop com watcher e re-regen redundante; re-dispara quando piece muda.
+  // PERSISTENCIA 2026-05-26: regenSeen agora salva em localStorage pra
+  // sobreviver a refresh/navegacao. Sem isso, cada page load re-regenerava
+  // todas as pieces (cada regen leva 2-5s + bloqueia load de imagens da
+  // apresentacao). Storage key inclui campaignId pra nao colidir entre campanhas.
+  const REGEN_STORAGE_KEY = `zzosy:regenSeen:${id}`
   const regenSeenRef = useRef<Map<string, string>>(new Map())
+  // Hidrata da localStorage no mount uma unica vez.
+  const regenHydratedRef = useRef(false)
+  if (!regenHydratedRef.current && typeof window !== "undefined") {
+    regenHydratedRef.current = true
+    try {
+      const raw = localStorage.getItem(REGEN_STORAGE_KEY)
+      if (raw) {
+        const obj = JSON.parse(raw)
+        if (obj && typeof obj === "object") {
+          for (const [k, v] of Object.entries(obj)) {
+            if (typeof v === "string") regenSeenRef.current.set(k, v)
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
   useEffect(() => {
     if (pieces.length === 0) return
     const seen = regenSeenRef.current
@@ -247,9 +268,15 @@ export default function PresentationPage() {
           } catch (e) { console.warn("[smart-regen]", p.id, e) }
         }))
       }
+      // Persiste o map atualizado.
+      try {
+        const obj: Record<string, string> = {}
+        seen.forEach((v, k) => { obj[k] = v })
+        localStorage.setItem(REGEN_STORAGE_KEY, JSON.stringify(obj))
+      } catch { /* localStorage quota cheia ou desabilitada */ }
     })()
     return () => { cancelled = true }
-  }, [pieces])
+  }, [pieces, REGEN_STORAGE_KEY])
 
   // Scroll automatico pro slide indicado no hash (#piece-{id}).
   // Acontece DEPOIS de pieces serem renderizadas (loading=false), pois antes

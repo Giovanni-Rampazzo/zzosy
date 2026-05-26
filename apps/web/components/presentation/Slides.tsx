@@ -411,6 +411,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                     width:auto deriva pela aspect ratio. */}
                 {src ? (
                   <img src={src} alt={`${name} Step ${(s.index ?? i) + 1}`}
+                    loading="lazy" decoding="async"
                     style={{
                       // Altura: max ate caber no container (descontando label+gap).
                       // Width: auto pra preservar aspect ratio.
@@ -434,6 +435,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
     // Single step (peca normal/legada)
     return imageUrl ? (
       <img src={imageUrl} alt={name}
+        loading="lazy" decoding="async"
         // dataset.zzosyPieceImg=true marca esta img como "a area clicavel real
         // da peca". O wrapper externo escuta click por delegacao e so dispara
         // onClick se o alvo for esta img (nao o espaco vazio em volta).
