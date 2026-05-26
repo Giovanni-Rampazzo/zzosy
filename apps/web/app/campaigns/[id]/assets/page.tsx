@@ -1000,6 +1000,10 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty) {
               e.preventDefault()
               onTextChange(asset.id, localText)
+            } else if (e.key === "Escape" && dirty) {
+              e.preventDefault()
+              setLocalText(text)
+              ;(e.target as HTMLTextAreaElement).blur()
             }
           }}
           placeholder="Conteúdo do texto"
@@ -1011,15 +1015,24 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
             resize: "none", overflow: "hidden", lineHeight: 1.5,
           }}
         />
-        {/* So renderiza Salvar quando ha mudancas — antes ficava disabled
-            com opacity-50, deixando o amarelo "clarinho" / fantasma na UI. */}
+        {/* So renderiza Cancelar + Salvar quando ha mudancas — antes ficava
+            disabled com opacity-50, deixando o amarelo "clarinho" na UI.
+            Cancelar (2026-05-26): user pediu "e se eu nao quiser salvar?" —
+            reverter pro texto original. Esc tambem reverte. */}
         <GamBadgeBar asset={asset} onSaveToLibrary={onSaveToLibrary} onDetach={onDetach} onUpdate={onUpdate} />
         {(dirty || saving) && (
-          <Button variant="view" size="sm" disabled={saving}
-            onClick={() => onTextChange(asset.id, localText)}
-            title={saving ? "Salvando…" : "Salvar alterações (Cmd+Enter)"}>
-            {saving ? "Salvando…" : "Salvar"}
-          </Button>
+          <>
+            <Button variant="secondary" size="sm" disabled={saving}
+              onClick={() => setLocalText(text)}
+              title="Descartar alterações (Esc)">
+              Cancelar
+            </Button>
+            <Button variant="view" size="sm" disabled={saving}
+              onClick={() => onTextChange(asset.id, localText)}
+              title={saving ? "Salvando…" : "Salvar alterações (Cmd+Enter)"}>
+              {saving ? "Salvando…" : "Salvar"}
+            </Button>
+          </>
         )}
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
