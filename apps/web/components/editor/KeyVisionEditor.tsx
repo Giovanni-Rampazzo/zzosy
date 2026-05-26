@@ -3053,13 +3053,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const onKey = (e: KeyboardEvent) => {
         if (!alive || !fabricRef.current) return
         // Guard global: nao interfere quando user esta digitando num input/textarea
+        // OU editando texto dentro de um Fabric textbox (isEditing). Antes nao
+        // checava o Fabric edit mode — Cmd+A com cursor dentro de textbox
+        // disparava select-all global do canvas (selecionava todos os layers),
+        // matando o flow de selecionar chars no texto. User pedido 2026-05-26:
+        // Cmd+A em edit mode tem que ir pro Fabric (select all chars).
         const t = e.target as HTMLElement | null
-        const inField = !!t && (() => {
+        const fcActive = fabricRef.current?.getActiveObject() as any
+        const inField = (!!t && (() => {
           const tag = (t.tagName || "").toUpperCase()
           if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
           if (t.isContentEditable) return true
           return false
-        })()
+        })()) || !!fcActive?.isEditing
         // Atalhos de viewport (estilo Figma):
         //   Shift+1 = Zoom to fit (centraliza peca)
         //   Shift+2 = Zoom to selection (foca objeto ativo)
