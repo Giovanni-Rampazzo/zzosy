@@ -11680,9 +11680,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
       {confirmExit && (() => {
         // Adapta texto/botoes ao estado: dirty mostra 3 opcoes (Cancelar/Descartar/
-        // Salvar e sair); limpo mostra 2 (Cancelar/Voltar). Sempre pergunta pra
-        // que o user nao saia por engano — pedido do user pra ser consistente.
+        // Salvar e sair); limpo NAO pergunta (CLAUDE.md 2.1) — sai direto.
+        // Caso comum: user clicou Voltar com isDirty=true mas saveNow async
+        // resetou pra false antes do render do dialog (race). Aqui detectamos
+        // e auto-exit sem incomodar.
         const dirty = isDirtyRef.current || isDirty
+        if (!dirty) {
+          const go = confirmExit
+          // setConfirmExit em microtask pra nao rodar setState durante render
+          Promise.resolve().then(() => {
+            setConfirmExit(null)
+            try { go() } catch (e) { console.warn("[ConfirmExit] auto-exit go() falhou:", e) }
+          })
+          return null
+        }
         return (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "#1a1a1a", borderRadius: 10, padding: 24, width: 420, border: "1px solid #333" }}>
