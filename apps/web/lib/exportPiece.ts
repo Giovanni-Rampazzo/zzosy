@@ -697,6 +697,17 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
             if (Array.isArray(layer.groupPath) && layer.groupPath.length > 0) {
               ;(img as any).__groupPath = layer.groupPath
             }
+            // VECTOR mask: aplica clipPath via helper (raster ja foi bakeado
+            // acima). Sem isso, regenerateThumb gerava preview SEM clip vetorial
+            // — user reportou que apresentacao mostrava imagem extrapolando o
+            // contorno apos thumb regen. Editor aplica via mesmo helper.
+            if (layer.mask?.type === "vector" && layer.mask.enabled !== false) {
+              try {
+                const { applyMaskToFabricObject } = await import("@/lib/applyMaskToFabric")
+                const { Image: FabImage2, Path: FabPath2 } = await import("fabric")
+                await applyMaskToFabricObject({ Image: FabImage2, Path: FabPath2 }, img, layer.mask)
+              } catch (e) { console.warn("[export-vector-mask] fail:", asset.label, e) }
+            }
             fc.add(img)
           } catch (e) { console.warn("img load fail:", asset.label, e) }
         } else {
