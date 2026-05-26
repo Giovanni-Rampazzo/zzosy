@@ -553,7 +553,7 @@ export default function CampaignOverviewPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {visiblePieces.length > 0 && (
                 <>
-                  {selected.length > 0 ? (
+                  {selected.length > 0 && (
                     <>
                       <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{selected.length} selecionada(s)</span>
                       <Button variant="secondary" size="sm" onClick={toggleSelectAll}>
@@ -565,8 +565,6 @@ export default function CampaignOverviewPage() {
                       <Button variant="secondary" size="sm" onClick={() => setBulkStatusOpen(o => !o)}>Status</Button>
                       <Button variant="primary" size="sm" onClick={() => setExportOpen(true)}>Exportar ({selected.length})</Button>
                     </>
-                  ) : (
-                    <Button variant="secondary" size="sm" onClick={toggleSelectAll}>Selecionar tudo</Button>
                   )}
                   {/* Toggle de view (Grid/Lista) — top-right do box, segregado por
                       separador vertical pra deixar claro que e controle de view,
