@@ -9502,7 +9502,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           </div>
         )}
         <div style={{ flex: 1 }} />
-        <button onClick={centerObjectInCanvas} style={bS} title="Center selected object in canvas (vertical + horizontal)">Center</button>
+        {/* Center movido pro Properties panel 2026-05-26 — operacao de ASSET
+            (centraliza o objeto selecionado no canvas), nao de view. */}
         <button onClick={centerView} style={bS} title="Fit the piece in the viewport (Shift+1)">Fit</button>
         <button onClick={zoomToSelection} style={bS} title="Focus on the selected object (Shift+2)">Focus selection</button>
         {/* Zoom: −/input/+ agrupados pra reduzir gap visual e tornar % editavel.
@@ -11416,6 +11417,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 title="Scale and center the layer inside the piece (100%)">
                 Fit to canvas
               </button>
+              <button onClick={centerObjectInCanvas} tabIndex={-1}
+                style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                title="Center selected object in canvas (vertical + horizontal)">
+                Center
+              </button>
             </div>
 
             {/* ===== MÁSCARA (Photoshop-style) ===== */}
@@ -11796,6 +11804,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#111" }}
               title="Scale and center the layer inside the piece (100%)">
               Fit to canvas
+            </button>
+            <button onClick={centerObjectInCanvas}
+              style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+              onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+              title="Center selected object in canvas (vertical + horizontal)">
+              Center
             </button>
 
             {/* ===== MÁSCARA (Photoshop-style) ===== */}
