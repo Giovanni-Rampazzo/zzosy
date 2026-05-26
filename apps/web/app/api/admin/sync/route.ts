@@ -9,12 +9,54 @@ import { spawn } from "child_process"
 import { promises as fs } from "fs"
 import path from "path"
 import mysql from "mysql2/promise"
+import { getStorage } from "@/lib/storage"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
 export const dynamic = "force-dynamic"
 
 const UPLOADS_DIR = "/app/apps/web/public/uploads"
+
+// GET com token = diagnostico filesystem (cwd, storage rootDir, write+read test).
+// Permite debugar discrepancia entre storage.put() runtime e static serving.
+export async function GET(req: NextRequest) {
+  const token = req.headers.get("x-sync-token")
+  if (!token || !process.env.ADMIN_SYNC_TOKEN || token !== process.env.ADMIN_SYNC_TOKEN) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  }
+
+  const diag: any = { cwd: process.cwd(), uploadsDir: UPLOADS_DIR }
+  try {
+    const storage = getStorage()
+    diag.storageName = storage.name
+    diag.storageRootDir = (storage as any).rootDir ?? null
+  } catch (e: any) { diag.storageError = e?.message }
+
+  for (const dir of [UPLOADS_DIR, path.join(process.cwd(), "public", "uploads")]) {
+    try {
+      const s = await fs.stat(dir)
+      const entries = await fs.readdir(dir).catch(() => [])
+      diag[`dir:${dir}`] = { exists: true, isDir: s.isDirectory(), entries: entries.slice(0, 10), count: entries.length }
+    } catch (e: any) {
+      diag[`dir:${dir}`] = { exists: false, err: e?.code }
+    }
+  }
+
+  try {
+    const testKey = `__diag-${Date.now()}.txt`
+    const buf = Buffer.from("diag-test-content")
+    const r = await getStorage().put(testKey, buf, "text/plain")
+    diag.testWrite = { key: testKey, url: r.url, size: r.size }
+    const absPath = path.join((getStorage() as any).rootDir, testKey)
+    diag.testWriteAbsPath = absPath
+    diag.testReadStat = await fs.stat(absPath).then(s => ({ size: s.size, mtime: s.mtime })).catch(e => ({ err: e?.code }))
+    await fs.unlink(absPath).catch(() => {})
+  } catch (e: any) {
+    diag.testWriteError = e?.message
+  }
+
+  return NextResponse.json(diag)
+}
 
 async function extractTar(tarPath: string, dest: string): Promise<{ ok: boolean; stderr: string }> {
   return new Promise((resolve) => {
