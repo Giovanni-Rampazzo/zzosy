@@ -596,12 +596,13 @@ export default function CampaignAssetsPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
       <TopNav />
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 24px" }}>
 
         {/* Subnav 2026-05-24: re-adicionado depois que user perguntou "como
             volto pro editor?" — header limpo mas precisava de navegacao entre
-            tabs. CampaignSubnav ja nao tem "Campanha" tab (removida globalmente). */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16 }}>
+            tabs. maxWidth: 1280 (era 900) — espaco pros 4 tabs + 4 actions
+            caberem numa linha sem quebrar. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16, flexWrap: "wrap" }}>
           <CampaignSubnav
             campaignId={id}
             clientId={campaign.client?.id}
@@ -610,7 +611,7 @@ export default function CampaignAssetsPage() {
             hasAssets={campaign.assets.length > 0}
             hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
           />
-          <div style={{ position: "relative", flexShrink: 0, display: "flex", gap: 8 }}>
+          <div style={{ position: "relative", flexShrink: 0, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button variant="secondary" size="md" onClick={() => router.push(`/campaigns/${id}/cartridges`)} title="Browse cartucho — assets do library do cliente com filtros + add em lote">
               Cartucho
             </Button>

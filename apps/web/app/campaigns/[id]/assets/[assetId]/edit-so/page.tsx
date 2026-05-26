@@ -131,7 +131,10 @@ export default function EditSoPage() {
   }
 
   function exit() {
-    if (dirtyCount > 0 && !confirm("Voltar sem salvar? As mudancas serao perdidas.")) return
+    // CLAUDE.md §2.1: sem prompt "salvar?" em navegacao interna. beforeunload
+    // (handler abaixo) ja cobre o caso critico de close-tab/reload com dirty.
+    // Voltar pra Assets eh navegacao SPA — segue padrao Adobe/Figma de ir
+    // direto sem perguntar.
     router.push(`/campaigns/${campaignId}/assets`)
   }
 

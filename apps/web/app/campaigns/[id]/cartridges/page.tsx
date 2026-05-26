@@ -165,8 +165,8 @@ export default function CartridgesBrowsePage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--zz-bg-page, #F5F5F0)" }}>
       <TopNav />
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16, flexWrap: "wrap" }}>
           <CampaignSubnav
             campaignId={id}
             clientId={campaign.client?.id}
@@ -175,7 +175,7 @@ export default function CartridgesBrowsePage() {
             hasAssets={campaign.assets.length > 0}
             hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
           />
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <ApplyCartridgeButton campaignId={id} clientId={campaign.client?.id} onApplied={() => router.refresh()} />
           </div>
         </div>

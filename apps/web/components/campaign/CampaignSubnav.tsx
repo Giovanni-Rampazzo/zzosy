@@ -95,8 +95,11 @@ export function CampaignSubnav({ campaignId, actions, inlineActions, activeTab, 
       flexWrap: "wrap",
     }}>
       {/* Subnav buttons — esquerda. Padrao ZZOSY: todos com border 2px #555,
-          active = fill amarelo brand. */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          active = fill amarelo brand. NO-WRAP: os 4 tabs SEMPRE numa linha
+          (user reportou 2026-05-26 "menu nivel quebrado em 2 linhas" porque
+          actions ao lado faziam wrap interno). Actions quebram pra proxima
+          linha se necessario, mas tabs ficam coesas. */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "nowrap", flexShrink: 0 }}>
         <Tab label="Assets" tab="assets" href={`/campaigns/${campaignId}/assets`} title="Lista de assets desta campanha" />
         <Tab
           label="KV"

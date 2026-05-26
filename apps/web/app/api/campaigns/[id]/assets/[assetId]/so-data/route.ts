@@ -170,6 +170,26 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
     ensureCanvasInit()
     const ab = psdBytes.buffer.slice(psdBytes.byteOffset, psdBytes.byteOffset + psdBytes.byteLength) as ArrayBuffer
+
+    // Captura composite ORIGINAL (pre-edit) via ag-psd direto — usado como
+    // fallback se o re-render pos-write retornar preto/null (caso comum quando
+    // invalidateTextLayers=true + ag-psd sem text engine completo).
+    // Bug reportado 2026-05-26: preview ficava todo preto apos salvar.
+    let originalCompositeBuffer: Buffer | null = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { readPsd: readOriginal } = require("ag-psd") as typeof import("ag-psd")
+      const origPsd = readOriginal(ab.slice(0), {
+        skipLayerImageData: true,
+        skipThumbnail: true,
+        skipCompositeImageData: false,
+      })
+      const origCanvas = (origPsd as any).canvas
+      if (origCanvas && typeof origCanvas.toBuffer === "function") {
+        originalCompositeBuffer = origCanvas.toBuffer("image/png")
+      }
+    } catch (e) { console.warn("[so-data PUT] captura composite original falhou:", e) }
+
     const { document } = readPsdDocument(ab, { includeImageData: true, includeComposite: true })
 
     // Aplica edits — cada chave eh "0.1.2" (path joined por .)
@@ -214,12 +234,37 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       skipLayerImageData: true,
       skipThumbnail: true,
       skipCompositeImageData: false,
-      useImageData: false,
-    } as any)
+    })
     const composite = (psdRe as any).canvas
     let compositeBuffer: Buffer | null = null
     if (composite && typeof composite.toBuffer === "function") {
       compositeBuffer = composite.toBuffer("image/png")
+    }
+
+    // Sanity check: composite all-black significa que ag-psd nao conseguiu
+    // renderizar (text engine falta). Detecta via probe central — se 99% dos
+    // pixels da regiao central tem RGB=0, considera preto e usa o original.
+    if (compositeBuffer) {
+      try {
+        const probe = compositeBuffer
+        // PNG header eh 33 bytes; pula ele e checa amostra dos pixels.
+        // Sample simples: conta bytes != 0 nas primeiras 4KB pos-header.
+        const start = 100
+        const end = Math.min(probe.length, start + 4096)
+        let nonZero = 0
+        for (let i = start; i < end; i++) {
+          if (probe[i] !== 0) nonZero++
+        }
+        const ratio = nonZero / (end - start)
+        if (ratio < 0.05 && originalCompositeBuffer) {
+          console.warn("[so-data PUT] composite pos-write parece all-black (nonzero ratio:", ratio, "), usando original como fallback")
+          compositeBuffer = originalCompositeBuffer
+        }
+      } catch (e) { console.warn("[so-data PUT] probe composite falhou:", e) }
+    } else if (originalCompositeBuffer) {
+      // composite null = re-render falhou totalmente. Usa original.
+      console.warn("[so-data PUT] composite pos-write retornou null, usando original")
+      compositeBuffer = originalCompositeBuffer
     }
 
     // Captura paths antigos ANTES do update pra apagar do storage depois
