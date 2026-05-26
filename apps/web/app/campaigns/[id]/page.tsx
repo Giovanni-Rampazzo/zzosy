@@ -35,6 +35,9 @@ interface Piece {
   height: number
   status: string
   segment?: string | null
+  // Fallback do segmento herdado do MediaFormat associado (read-only).
+  // Usado pelo SegmentPicker quando piece.segment esta vazio.
+  mediaFormatSegment?: string | null
   imageUrl?: string | null
   copy?: string | null
   data?: any
@@ -671,7 +674,7 @@ export default function CampaignOverviewPage() {
                     </div>
                     <SegmentPicker
                       pieceId={p.id}
-                      initial={p.segment}
+                      initial={p.segment ?? p.mediaFormatSegment ?? null}
                       suggestions={segmentSuggestions}
                       onChange={(next) => {
                         setPieces(prev => prev.map(x => x.id === p.id ? { ...x, segment: next } : x))
@@ -759,7 +762,7 @@ export default function CampaignOverviewPage() {
                       <td style={{ padding: "10px 12px" }}>
                         <SegmentPicker
                           pieceId={p.id}
-                          initial={p.segment}
+                          initial={p.segment ?? p.mediaFormatSegment ?? null}
                           suggestions={segmentSuggestions}
                           onChange={(next) => {
                             setPieces(prev => prev.map(x => x.id === p.id ? { ...x, segment: next } : x))

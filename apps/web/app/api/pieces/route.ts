@@ -68,10 +68,13 @@ export async function GET(req: NextRequest) {
     const heightValue = mf?.heightValue ?? height
     const widthUnit = mf?.widthUnit ?? "px"
     const heightUnit = mf?.heightUnit ?? "px"
+    // Segmento herdado do MediaFormat — fallback quando piece.segment vazio.
+    // Frontend usa: piece.segment ?? piece.mediaFormatSegment como display default.
+    const mediaFormatSegment = mf?.segment ?? null
 
     // imageUrl da peca tambem versionado
     const stampedImageUrl = stamp(p.imageUrl as any)
-    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
+    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
   })
   return NextResponse.json(enriched)
 }
@@ -80,14 +83,23 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
-  const { campaignId, name, mediaFormatId, data, status } = await req.json()
+  const { campaignId, name, mediaFormatId, data, status, segment } = await req.json()
   const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, client: { tenantId } } })
   if (!campaign) return apiErrors.forbidden()
+  // Se o caller nao passou segment explicito mas o MediaFormat tem um,
+  // copia pro piece.segment na criacao (user pedido 2026-05-26 — peca
+  // deve "vir com" o segmento do formato).
+  let effectiveSegment: string | null = typeof segment === "string" ? (segment.trim() || null) : null
+  if (!effectiveSegment && mediaFormatId) {
+    const mf = await prisma.mediaFormat.findUnique({ where: { id: mediaFormatId }, select: { segment: true } })
+    if (mf?.segment) effectiveSegment = mf.segment
+  }
   const piece = await prisma.piece.create({
     data: {
       campaignId, name, mediaFormatId,
       data: data ? JSON.stringify(data) : null,
       status: status ?? "STANDBY",
+      segment: effectiveSegment,
     }
   })
   return NextResponse.json(piece)

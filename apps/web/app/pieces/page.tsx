@@ -472,7 +472,7 @@ function PiecesContent() {
                   <div className="mt-2">
                     <SegmentPicker
                       pieceId={p.id}
-                      initial={(p as any).segment}
+                      initial={(p as any).segment ?? (p as any).mediaFormatSegment ?? null}
                       suggestions={segmentSuggestions}
                       onChange={(next) => {
                         setPieces(prev => prev.map(x => x.id === p.id ? { ...x, segment: next ?? undefined } as any : x))
