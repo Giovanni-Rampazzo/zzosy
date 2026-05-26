@@ -1124,6 +1124,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [selected, setSelected] = useState<any>(null)
   // Toggle do popover "+ Add asset" ao lado do botao ASSETS no Properties.
   const [showAddAsset, setShowAddAsset] = useState(false)
+  // Font section collapsada por DEFAULT no Properties panel pra reduzir scroll
+  // (user pedido 2026-05-26 — bloco grande Font/Size/Weight/LineHeight/etc).
+  // Padrao Mask: chevron pra expandir/recolher.
+  const [fontSectionOpen, setFontSectionOpen] = useState(false)
   // Toggle do seletor SOLID/LINEAR/RADIAL no Background panel — so aparece
   // quando user clica no swatch da cor (user pedido 2026-05-23).
   const [showBgTypeSelector, setShowBgTypeSelector] = useState(false)
@@ -11099,13 +11103,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               </select>
             </div>
             <div>
-              <div style={secS}>Font {mixedFontFamily && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(multiple)</span>}</div>
-              <FontPicker
-                value={mixedFontFamily ? "" : effectiveFontFamily}
-                onChange={(f) => applyStyle("fontFamily", f)}
-                brandFont={campaignRef.current?.client?.brandFont ?? null}
-              />
+              {/* Font header colapsivel (padrao Mask). Default recolhido. */}
+              <div
+                role="button"
+                tabIndex={-1}
+                onClick={() => setFontSectionOpen(o => !o)}
+                style={{ ...secS, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: fontSectionOpen ? secS.marginBottom : 0, userSelect: "none" }}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ transform: fontSectionOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.12s", flexShrink: 0 }}>
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+                Font {mixedFontFamily && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(multiple)</span>}
+              </div>
+              {fontSectionOpen && (
+                <FontPicker
+                  value={mixedFontFamily ? "" : effectiveFontFamily}
+                  onChange={(f) => applyStyle("fontFamily", f)}
+                  brandFont={campaignRef.current?.client?.brandFont ?? null}
+                />
+              )}
             </div>
+            {fontSectionOpen && (<>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <div style={secS}>Size {mixedFontSize && <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>(mult.)</span>}</div>
@@ -11263,6 +11282,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 />
               </div>
             </div>
+            </>)}
 
             {/* Alinhamento separado num grid full-width pra dar mais espaco */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
