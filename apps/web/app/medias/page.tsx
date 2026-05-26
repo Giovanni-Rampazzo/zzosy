@@ -199,7 +199,9 @@ export default function MediasPage() {
               </div>
             ) : (
               <>
-              {/* Header da tabela — mesmos column widths das rows pra alinhar. */}
+              {/* Header da tabela — mesmos column widths das rows pra alinhar.
+                  Actions com width:280 fixo (em ambos) pra Midia(flex:1) ter
+                  o mesmo espaco real em header e data row. */}
               <div style={{display:"flex",alignItems:"center",padding:"10px 20px",borderBottom:"1px solid #E0E0E0",background:"#FAFAFA"}}>
                 {(() => {
                   const lblS: React.CSSProperties = {fontSize:11,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}
@@ -209,8 +211,9 @@ export default function MediasPage() {
                       <div style={{width:140, ...lblS}}>Veículo</div>
                       <div style={{width:150, ...lblS}}>Formato</div>
                       <div style={{width:170, ...lblS}}>Dimensão</div>
+                      <div style={{width:140, ...lblS}}>Segmento</div>
                       <div style={{width:70, ...lblS}}>DPI</div>
-                      <div style={{display:"flex"}} />
+                      <div style={{width:280}} />
                     </>
                   )
                 })()}
@@ -236,8 +239,9 @@ export default function MediasPage() {
                     <div style={{width:140,fontSize:12,color:"#888"}}>{f.vehicle}</div>
                     <div style={{width:150,fontSize:12,color:"#888"}}>{f.format}</div>
                     <div style={{width:170,fontSize:12,color:"#888"}}>{dimText}</div>
+                    <div style={{width:140,fontSize:12,color:"#888"}}>{f.segment ?? ""}</div>
                     <div style={{width:70,fontSize:12,color:"#888"}}>{f.dpi}dpi</div>
-                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <div style={{width:280,display:"flex",gap:6,alignItems:"center"}}>
                       {!f.isDefault ? (
                         <>
                           <Button variant="danger" size="sm" onClick={() => handleDelete(f.id)}>Remover</Button>
