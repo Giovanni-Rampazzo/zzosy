@@ -113,10 +113,32 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const textLayers: TextLayerDTO[] = []
     collectTextLayers(document.layers, [], textLayers)
 
+    // Re-le o PSD com composite habilitado pra gerar preview fresh em data URL.
+    // asset.imageUrl pode estar quebrado (composite original do import veio
+    // preto se a fonte nao existia server-side); aqui pegamos sempre o canvas
+    // atual via ag-psd + napi-canvas.
+    let freshComposite: string | null = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { readPsd } = require("ag-psd") as typeof import("ag-psd")
+      const psdRe = readPsd(ab, {
+        skipLayerImageData: true,
+        skipThumbnail: true,
+        skipCompositeImageData: false,
+      })
+      const c = (psdRe as any).canvas
+      if (c && typeof c.toBuffer === "function") {
+        const buf: Buffer = c.toBuffer("image/png")
+        freshComposite = `data:image/png;base64,${buf.toString("base64")}`
+      }
+    } catch (e) {
+      console.warn("[so-data GET] composite re-render falhou:", e)
+    }
+
     return NextResponse.json({
       width: document.width,
       height: document.height,
-      compositeUrl: asset.imageUrl,
+      compositeUrl: freshComposite ?? asset.imageUrl,
       textLayers,
     })
   } catch (e: any) {

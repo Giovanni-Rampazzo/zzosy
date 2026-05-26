@@ -76,6 +76,21 @@ export default function EditSoPage() {
     return edits[k] !== orig
   }).length
 
+  // beforeunload: dispara prompt nativo do browser se user fecha aba/reload
+  // com edits pendentes. Sem isso, edicao some sem aviso.
+  useEffect(() => {
+    if (dirtyCount === 0) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // Required for legacy browsers; mensagem custom e ignorada hoje (Chrome
+      // mostra texto padrao do browser).
+      e.returnValue = ""
+      return ""
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [dirtyCount])
+
   async function save() {
     if (!data || dirtyCount === 0) return
     setSaving(true)
