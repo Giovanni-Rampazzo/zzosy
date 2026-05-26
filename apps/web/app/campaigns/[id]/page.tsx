@@ -317,7 +317,7 @@ export default function CampaignOverviewPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
       <TopNav />
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 24px" }}>
+      <div style={{ maxWidth: 1600, margin: "0 auto", padding: "16px 24px" }}>
 
         {/* Header: titulo a esquerda + "← Campanhas" amarelo a direita 2026-05-24 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
