@@ -9093,12 +9093,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (typeof newTplH === "number") swapHeight = newTplH
     }
 
-    // Pra IMAGE: pre-carrega a imagem do novo asset pra descobrir naturalW/H
-    // e calcular scale uniforme baseado na MENOR DIMENSAO do current. Sem
-    // isso, o novo asset herdava width E height do current e distorcia (caia
-    // no caminho "width + height explicitos -> stretch" do addAssetToCanvas).
-    // Anchor point: centro do bbox do current (vertical + horizontal). Mantem
-    // o asset novo onde o antigo estava.
+    // Captura BBOX EXATO do current antes de qualquer mudanca. User pediu
+    // 2026-05-26: "quando troco a imagem ela perde a posicao do layer e as
+    // mascara. preciso que so mude a imagem e que se mantenha na mesma
+    // mascara, e nao indo para o topo do layer".
+    //
+    // Estrategia: novo asset HERDA exatamente bbox + posicao + angulo + z-order
+    // + mask do current. Pra IMAGE, scale calculado pra que o naturalW/H da
+    // imagem nova ocupe o MESMO bbox visual (pode esticar se aspect ratio
+    // diferente — usuario quer isso pra encaixar na mesma mascara).
+    const capturedBboxW = (currentObj.width ?? 100) * (currentObj.scaleX ?? 1)
+    const capturedBboxH = (currentObj.height ?? 100) * (currentObj.scaleY ?? 1)
+    const capturedLeft = currentObj.left ?? 0
+    const capturedTop = currentObj.top ?? 0
+    const capturedAngle = currentObj.angle ?? 0
+    // Z-order: indice atual do objeto no canvas. Sem isso, addAssetToCanvas
+    // adiciona no topo (fim do array = renderizado por ULTIMO).
+    const oldZIndex = fc.getObjects().indexOf(currentObj)
+    // Preserva mascara antes de remover (move pra o novo objeto).
+    const preservedMask = (currentObj as any).__maskData
+    const preservedMaskAnchor = (currentObj as any).__maskAnchor
+
+    // Pra IMAGE/SO: pre-carrega imagem nova pra descobrir naturalW/H, depois
+    // calcula scale pra que a nova imagem PREENCHA o mesmo bbox do current.
+    // Aspect ratio pode mudar — user quer "mesma mascara", entao fit exato
+    // ao bbox e nao crop/contain.
     let imageLayerOverride: { posX: number; posY: number; scaleX: number; scaleY: number } | null = null
     if ((newAsset.type === "IMAGE" || newAsset.type === "SMART_OBJECT") && newAsset.imageUrl) {
       try {
@@ -9110,34 +9129,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           el.src = newAsset.imageUrl!
         })
         if (naturalDims) {
-          // Bbox em coords do mundo do current. aCoords respeita scale+rotation.
-          let bx: number, by: number, bw: number, bh: number
-          const aC = (currentObj as any).aCoords
-          if (aC) {
-            const xs = [aC.tl.x, aC.tr.x, aC.bl.x, aC.br.x]
-            const ys = [aC.tl.y, aC.tr.y, aC.bl.y, aC.br.y]
-            bx = Math.min(...xs); by = Math.min(...ys)
-            bw = Math.max(...xs) - bx; bh = Math.max(...ys) - by
-          } else {
-            bx = currentObj.left ?? 0
-            by = currentObj.top ?? 0
-            bw = (currentObj.width ?? 100) * (currentObj.scaleX ?? 1)
-            bh = (currentObj.height ?? 100) * (currentObj.scaleY ?? 1)
-          }
-          const minSide = Math.min(bw, bh)
-          // Scale uniforme: novo asset cabe dentro do menor lado preservando
-          // aspect ratio. Se asset eh wide e current eh tall, encolhe pelo
-          // height; se asset eh tall e current eh wide, encolhe pelo width.
-          const maxNatural = Math.max(naturalDims.w, naturalDims.h)
-          const scale = minSide / maxNatural
-          const scaledW = naturalDims.w * scale
-          const scaledH = naturalDims.h * scale
-          // Anchor central: posiciona o novo asset com center = center do current.
+          // Scale POR EIXO: naturalNew * scale = bboxOriginal. Garante mesmo
+          // tamanho visual do current, mesma posicao top-left. Se aspect ratio
+          // diferente, estica/comprime (intencional — user quer encaixe exato
+          // na mascara que ja existia).
           imageLayerOverride = {
-            posX: bx + (bw - scaledW) / 2,
-            posY: by + (bh - scaledH) / 2,
-            scaleX: scale,
-            scaleY: scale,
+            posX: capturedLeft,
+            posY: capturedTop,
+            scaleX: capturedBboxW / naturalDims.w,
+            scaleY: capturedBboxH / naturalDims.h,
           }
         }
       } catch (e) { editorLog("[swapAsset] preload image falhou:", e) }
@@ -9148,38 +9148,60 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       posY: imageLayerOverride.posY,
       scaleX: imageLayerOverride.scaleX,
       scaleY: imageLayerOverride.scaleY,
-      rotation: currentObj.angle ?? 0,
+      rotation: capturedAngle,
       overrides: newAssetOverrides,
     } : {
-      posX: currentObj.left ?? 0,
-      posY: currentObj.top ?? 0,
+      // TEXT ou IMAGE com preload falhado: mantem transform exato do current.
+      posX: capturedLeft,
+      posY: capturedTop,
       width: swapWidth,
       height: swapHeight,
-      // Mantem o transform fisico (posicao/scale/angulo) — so o conteudo + estilos trocam
       scaleX: currentObj.scaleX ?? 1,
       scaleY: currentObj.scaleY ?? 1,
-      rotation: currentObj.angle ?? 0,
+      rotation: capturedAngle,
       overrides: newAssetOverrides,
     }
 
     // Remove o atual e adiciona o novo asset com mesmo transform.
-    // addAssetToCanvas faz fc.add(newObj) — nao retorna referencia.
-    // Pego o ultimo objeto adicionado pra selecionar como ativo.
     const beforeIds = new Set(fc.getObjects())
-    // Preserva a mascara antes de remover (move pra o novo objeto).
-    const preservedMask = (currentObj as any).__maskData
     fc.remove(currentObj)
     await addAssetToCanvas(fc, newAsset, layerSpec)
-
     const newObj = fc.getObjects().find((o: any) => !beforeIds.has(o))
 
-    // Re-aplica mascara no novo objeto. Modelo: mascara segue o LAYER (posicao no canvas),
-    // nao o asset — entao swap de conteudo preserva o efeito visual.
-    if (newObj && preservedMask) {
-      ;(newObj as any).__maskData = preservedMask
-      const { Image: FabImage, Path } = await import("fabric")
-      ;(newObj as any).clipPath = null
-      await applyMaskToFabricObject({ Image: FabImage, Path }, newObj, preservedMask)
+    if (newObj) {
+      // PRESERVA Z-ORDER — addAssetToCanvas adiciona no fim do array (topo
+      // visual). Move pro mesmo indice que o currentObj tinha antes.
+      if (oldZIndex >= 0) {
+        const fcAny = fc as any
+        const currentNewIdx = fc.getObjects().indexOf(newObj)
+        if (currentNewIdx !== oldZIndex) {
+          if (typeof fcAny.moveTo === "function") {
+            fcAny.moveTo(newObj, oldZIndex)
+          } else {
+            // Fabric v7+ usa moveObjectTo. Fallback manual via _objects splice.
+            try {
+              const objs = (fcAny._objects ?? []) as any[]
+              const cur = objs.indexOf(newObj)
+              if (cur >= 0 && oldZIndex >= 0 && cur !== oldZIndex) {
+                const [item] = objs.splice(cur, 1)
+                objs.splice(oldZIndex, 0, item)
+              }
+            } catch { /* nao critico */ }
+          }
+        }
+      }
+
+      // PRESERVA MASCARA — mask segue o LAYER (posicao no canvas), nao o
+      // asset. Re-aplica no novo obj. preservedMaskAnchor importante pra
+      // tracking de drag (object:modified atualiza __maskData.raster.posX/Y
+      // baseado no delta com anchor).
+      if (preservedMask) {
+        ;(newObj as any).__maskData = preservedMask
+        if (preservedMaskAnchor) (newObj as any).__maskAnchor = preservedMaskAnchor
+        const { Image: FabImage, Path } = await import("fabric")
+        ;(newObj as any).clipPath = null
+        await applyMaskToFabricObject({ Image: FabImage, Path }, newObj, preservedMask)
+      }
     }
 
     fc.requestRenderAll()
