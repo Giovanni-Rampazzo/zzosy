@@ -222,7 +222,12 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       compositeBuffer = composite.toBuffer("image/png")
     }
 
-    // Upload PSD novo (overwrite mesmo key pra invalidar caches)
+    // Captura paths antigos ANTES do update pra apagar do storage depois
+    // (sem isso, cada PUT orfanava um par PSD+composite no disco eternamente).
+    const oldPsdUrl = asset.smartObject!.filePath
+    const oldImageUrl = asset.imageUrl
+
+    // Upload PSD novo
     const guid = randomUUID()
     const psdKey = `campaigns/${id}/smart/${guid}.psd`
     const { url: psdUrl } = await storage.put(psdKey, newBuf, "image/vnd.adobe.photoshop")
@@ -245,6 +250,18 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         data: { imageUrl },
       })
     })
+
+    // Best-effort cleanup dos arquivos antigos (post-transaction pra nao
+    // apagar antes de confirmar o save). Errors so logam — orfaos eventuais
+    // podem ser limpos por job offline depois.
+    try {
+      const oldPsdKey = storage.keyFromUrl(oldPsdUrl)
+      if (oldPsdKey && oldPsdKey !== psdKey) await storage.delete(oldPsdKey)
+      if (oldImageUrl && oldImageUrl !== imageUrl) {
+        const oldImgKey = storage.keyFromUrl(oldImageUrl)
+        if (oldImgKey) await storage.delete(oldImgKey)
+      }
+    } catch (e) { console.warn("[so-data PUT] cleanup falhou (orfao):", e) }
 
     return NextResponse.json({ ok: true, changed: changedCount, imageUrl })
   } catch (e: any) {
