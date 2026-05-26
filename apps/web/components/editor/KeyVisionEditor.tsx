@@ -2488,27 +2488,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       fc.on("object:moving" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
       fc.on("object:scaling" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
-      fc.on("object:rotating" as any, (e: any) => {
-        if (!alive) return
-        const target = e?.target
-        if (target) {
-          // Snap a multiplos de 45 (0/45/90/135/180/225/270/315). Shift = snap forte
-          // (igual Figma/PS), default = snap leve com janela de 4 graus em volta de
-          // cada multiplo. User pediu 45 e 90; multiplos de 45 cobrem ambos.
-          const evt: MouseEvent | undefined = e?.e
-          const a = target.angle ?? 0
-          const normalized = ((a % 360) + 360) % 360
-          const nearestMul45 = Math.round(normalized / 45) * 45
-          const delta = Math.abs(normalized - nearestMul45)
-          const SNAP_THRESHOLD = 4 // graus
-          if (evt?.shiftKey || delta <= SNAP_THRESHOLD) {
-            const snapped = nearestMul45 === 360 ? 0 : nearestMul45
-            target.set("angle", snapped)
-          }
-          syncClippingMasksAboveLive(target)
-        }
-        fc.requestRenderAll()
-      })
+      fc.on("object:rotating" as any, (e: any) => { if (alive) { syncClippingMasksAboveLive(e?.target); fc.requestRenderAll() } })
       fc.on("object:modified", async (e: any) => {
         if (!alive || !fc) return
         // Guard undo: applyClippingMaskNative async sobrescreveria clipPath
@@ -2818,7 +2798,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           } catch (err) { console.warn("auto-fit textbox fail:", err) }
         }, 120)
       })
-      fc.on("object:added", () => { if (alive) refreshLayers(fc) })
+      fc.on("object:added", (e: any) => {
+        if (!alive) return
+        // Snap angular nativo do Fabric: snapAngle define o increment (45deg)
+        // e snapThreshold a janela em volta de cada multiplo onde gruda (4deg).
+        // Sem isso, rotate fica completamente livre. Fabric internamente
+        // calcula a posicao correta — set("angle") manual no rotating handler
+        // fazia o objeto andar pela tela (pivot deriva).
+        const t = e?.target
+        if (t && !t.__isBleedOverlay && !t.__isBg) {
+          if (t.snapAngle == null) t.snapAngle = 45
+          if (t.snapThreshold == null) t.snapThreshold = 4
+        }
+        refreshLayers(fc)
+      })
       fc.on("object:removed", () => { if (alive) refreshLayers(fc) })
       // Captura mudancas para historico de undo/redo.
       // IGNORA bleed overlays e BG: sao objetos internos da UI (cobrem area
