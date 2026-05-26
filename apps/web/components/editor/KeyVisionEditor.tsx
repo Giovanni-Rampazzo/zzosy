@@ -3198,7 +3198,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (inField) return
         const obj = fabricRef.current.getActiveObject()
         if (obj && !(obj as any).__isBg && !(obj as any).isEditing) {
-          fabricRef.current.remove(obj)
+          removeLayerWithUnclipCascade(obj)
           fabricRef.current.renderAll()
           doSave()
         }
@@ -5962,6 +5962,42 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // ============= MASK HELPERS =============
   // Adiciona/remove/inverte/toggle mascara no objeto Fabric selecionado.
   // Os 3 tipos suportados: raster, vector (path SVG), clipping (recorta layer abaixo).
+
+  /**
+   * Remove uma layer com unclip CASCADE acima.
+   *
+   * Photoshop clipping mask: layer A clipa pela layer B (imediatamente abaixo).
+   * Se cadeia: A → B → C (todos clipping), removendo C tem que limpar A E B.
+   *
+   * Quando user apaga uma layer, qualquer layer ACIMA dela com clipping mask
+   * que dependia desta base precisa ter o clip removido (sem isso, fica
+   * "fantasma" — clipPath ainda referencia o objeto removido).
+   *
+   * Loop break: a primeira layer SEM clipping quebra a cadeia (above stops).
+   *
+   * Reportado 2026-05-26: "apago a mascara o layer de baixo e ele continua
+   * com a mascara — deveria imediatamente perder a mascara".
+   */
+  function removeLayerWithUnclipCascade(obj: any) {
+    const fc = fabricRef.current
+    if (!fc || !obj) return
+    const all = fc.getObjects()
+    const baseIdx = all.indexOf(obj)
+    if (baseIdx >= 0) {
+      for (let i = baseIdx + 1; i < all.length; i++) {
+        const above: any = all[i]
+        const md = above?.__maskData
+        if (md?.type === "clipping" && md?.enabled !== false) {
+          above.__maskData = undefined
+          delete above.__clippingMask
+          above.clipPath = null
+          try { above.setCoords?.() } catch {}
+          above.dirty = true
+        } else break  // primeira layer sem clipping quebra a cadeia
+      }
+    }
+    fc.remove(obj)
+  }
 
   async function applyMaskAndPersist(obj: any, mask: any) {
     const fc = fabricRef.current
@@ -10534,7 +10570,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   )
                 })()}
                 {!layer.isBg && (
-                  <button title="Delete layer" onClick={e => { e.stopPropagation(); fabricRef.current?.remove(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
+                  <button title="Delete layer" onClick={e => { e.stopPropagation(); removeLayerWithUnclipCascade(layer.obj); fabricRef.current?.renderAll(); setSelected(null); doSave() }}
                     onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#e63946"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(230,57,70,0.1)" }}
                     onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "#888"; (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
                     style={{ color: "#888", background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: "3px 6px", lineHeight: 1, borderRadius: 3, transition: "color 120ms, background 120ms" }}
