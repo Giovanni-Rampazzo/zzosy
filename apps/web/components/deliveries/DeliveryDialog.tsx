@@ -117,9 +117,12 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
       // 2) Nome do ZIP usa codigo da campanha quando existir
       const codeForName = (campaignCode || "").trim()
       const safeCode = codeForName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "")
+      // Data local (toISOString seria UTC -> em BRT vira o dia seguinte apos 21h)
+      const now = new Date()
+      const localYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
       const downloadName = safeCode
         ? `Entrega ${safeCode}.zip`
-        : `Entrega-${new Date().toISOString().slice(0,10)}.zip`
+        : `Entrega-${localYmd}.zip`
 
       // 3) Download local pro user
       const url = URL.createObjectURL(zipBlob)

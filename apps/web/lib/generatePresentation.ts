@@ -480,6 +480,61 @@ function addThanksSlide(pptx: PptxGenJS, palette: Palette) {
 }
 
 /**
+ * ISO 8601 com offset local (ex: "2026-05-26T21:30:15-03:00"). pptxgenjs
+ * hardcoda toISOString() (sempre UTC 'Z') nos dcterms:created/modified do
+ * core.xml. Em BRT (UTC-3), download as 21h no dia 26 grava "2026-05-27T00:00Z"
+ * no doc — alguns visualizadores nao convertem pra local e mostram a peca
+ * "criada em 27" mesmo o user tendo baixado no dia 26. Fix: pos-processa o
+ * blob substituindo o created/modified pelo timestamp local com offset.
+ */
+function localIsoWithOffset(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  const yyyy = d.getFullYear()
+  const mm = pad(d.getMonth() + 1)
+  const dd = pad(d.getDate())
+  const hh = pad(d.getHours())
+  const mi = pad(d.getMinutes())
+  const ss = pad(d.getSeconds())
+  const offMin = -d.getTimezoneOffset() // minutos a leste de UTC
+  const sign = offMin >= 0 ? "+" : "-"
+  const absMin = Math.abs(offMin)
+  const oh = pad(Math.floor(absMin / 60))
+  const om = pad(absMin % 60)
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}${sign}${oh}:${om}`
+}
+
+/**
+ * Pos-processa o blob do pptx substituindo dcterms:created/modified (UTC
+ * hardcodado pelo pptxgenjs) por ISO local com offset. Garante que viewers
+ * que nao convertem TZ mostrem a data correta de criacao.
+ */
+async function patchPptxDatesToLocal(blob: Blob): Promise<Blob> {
+  try {
+    const JSZip = (await import("jszip")).default
+    const zip = await JSZip.loadAsync(blob)
+    const corePath = "docProps/core.xml"
+    const file = zip.file(corePath)
+    if (!file) return blob
+    const xml = await file.async("string")
+    const localIso = localIsoWithOffset(new Date())
+    const patched = xml
+      .replace(
+        /<dcterms:created[^>]*>[^<]*<\/dcterms:created>/,
+        `<dcterms:created xsi:type="dcterms:W3CDTF">${localIso}</dcterms:created>`
+      )
+      .replace(
+        /<dcterms:modified[^>]*>[^<]*<\/dcterms:modified>/,
+        `<dcterms:modified xsi:type="dcterms:W3CDTF">${localIso}</dcterms:modified>`
+      )
+    zip.file(corePath, patched)
+    return await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" })
+  } catch (e) {
+    console.warn("[patchPptxDatesToLocal] falhou, retornando blob original:", e)
+    return blob
+  }
+}
+
+/**
  * Helper: nome de arquivo seguro a partir do nome da campanha + data atual.
  * Formato: "<nome>_<YYYY-MM-DD>.pptx"
  */
@@ -600,11 +655,23 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
 }
 
 /**
- * Gera e dispara download do .pptx da campanha.
+ * Gera e dispara download do .pptx da campanha. Pos-processa o blob pra
+ * patchar created/modified do core.xml em local-com-offset (pptxgenjs
+ * hardcoda UTC).
  */
 export async function generateCampaignPresentation(data: CampaignData): Promise<void> {
   const pptx = await buildPptx(data)
-  await pptx.writeFile({ fileName: fileNameFor(data.name) })
+  const blob = await pptx.write({ outputType: "blob" }) as unknown as Blob
+  const patched = await patchPptxDatesToLocal(blob)
+  const fileName = fileNameFor(data.name)
+  const url = URL.createObjectURL(patched)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 /**
@@ -615,5 +682,6 @@ export async function buildCampaignPresentationBlob(data: CampaignData): Promise
   const pptx = await buildPptx(data)
   // pptxgenjs permite writeFile com outputType "blob" — retorna Blob direto sem download
   const blob = await pptx.write({ outputType: "blob" }) as unknown as Blob
-  return { blob, fileName: fileNameFor(data.name) }
+  const patched = await patchPptxDatesToLocal(blob)
+  return { blob: patched, fileName: fileNameFor(data.name) }
 }
