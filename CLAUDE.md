@@ -78,6 +78,14 @@ Razao: peso visual uniforme entre 4 acoes da mesma entidade. Primary (fill amare
 - Titulo + helper text ANTES do input (não depois)
 - Ordem: `label → helper → input`
 
+## 1.7 Alinhamento em rows (campos + botões)
+
+- **SEMPRE** `alignItems: "center"` em row horizontal (input + botões juntos)
+- NUNCA `flex-start` mesmo quando textarea pode crescer multi-line
+- Botões `size="sm"` (28px alto) precisam alinhar verticalmente com input single-line — center resolve
+- Trade-off: em multi-line, botões flutuam no meio vertical. Aceito.
+- Regra global em todo ZZOSY (lists, modais, toolbars)
+
 ---
 
 # PARTE 2 — LÓGICA / NAVEGAÇÃO
