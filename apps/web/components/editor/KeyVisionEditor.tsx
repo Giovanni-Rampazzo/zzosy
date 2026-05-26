@@ -8990,7 +8990,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // Anchor point: centro do bbox do current (vertical + horizontal). Mantem
     // o asset novo onde o antigo estava.
     let imageLayerOverride: { posX: number; posY: number; scaleX: number; scaleY: number } | null = null
-    if (newAsset.type === "IMAGE" && newAsset.imageUrl) {
+    if ((newAsset.type === "IMAGE" || newAsset.type === "SMART_OBJECT") && newAsset.imageUrl) {
       try {
         const naturalDims = await new Promise<{ w: number; h: number } | null>((resolve) => {
           const el = new window.Image()
@@ -11664,7 +11664,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 style={{ ...inpS, cursor: "pointer", appearance: "none", paddingRight: 24 }}
               >
                 {(campaign?.assets ?? [])
-                  .filter(a => a.type === "IMAGE")
+                  .filter(a => a.type === "IMAGE" || a.type === "SMART_OBJECT")
                   .map(a => (
                     <option key={a.id} value={a.id}>{a.label || "Unnamed"}</option>
                   ))
