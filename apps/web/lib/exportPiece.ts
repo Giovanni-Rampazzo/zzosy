@@ -520,9 +520,19 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
           }
           if (Object.keys(stylesMap).length > 0) assetStyles = stylesMap
         }
+        // Width fixa quando user resized (ou PSD box salvou width explicito).
+        // Sem isso, anti-overwrap abaixo expande largura no export e perde o
+        // wrap escolhido — PNG sai diferente do editor. Fonte: overrides
+        // gravados via serializeTextboxOverrides (fix 645a211).
+        const overrideWidth = typeof (overrides as any).width === "number" ? (overrides as any).width : null
+        const layerWidthSaved = (overrides as any).userResizedWidth === true
+          || (overrideWidth != null && overrideWidth < 50000 && overrideWidth > 0)
+        const initialExportWidth = overrideWidth != null && layerWidthSaved
+          ? Math.max(overrideWidth, 50)
+          : Math.max(layer.width ?? 400, 100)
         const t = new Textbox(fullText, {
           left: layer.posX, top: layer.posY,
-          width: Math.max(layer.width ?? 400, 100),
+          width: initialExportWidth,
           fontSize: overrides.fontSize ?? def.fontSize ?? 80,
           fontFamily: overrides.fontFamily ?? def.fontFamily ?? "Arial",
           fontWeight: overrides.fontWeight ?? def.fontWeight ?? "normal",
@@ -564,17 +574,21 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
         // que o thumb gerado off-screen tenha o MESMO layout que o editor
         // mostra. Sem isso, preview vinha com texto quebrado em 2 linhas mas
         // editor abria em 1 linha (autofit so rodava la).
-        try {
-          const fullText: string = (t as any).text ?? ""
-          const expectedLines = (fullText.match(/\n/g)?.length ?? 0) + 1
-          let attempts = 0
-          while (((t as any)._textLines?.length ?? 0) > expectedLines && attempts < 3) {
-            const currentWidth = (t as any).width ?? Math.max(layer.width ?? 400, 100)
-            ;(t as any).set("width", Math.ceil(currentWidth * 1.05))
-            if ((t as any).initDimensions) (t as any).initDimensions()
-            attempts++
-          }
-        } catch { /* tolera erro: thumb sai com wrap original */ }
+        // Skip anti-overwrap quando user resized: width fixa eh intencional
+        // (mesma condicao do KeyVisionEditor.addAssetToCanvas — match editor).
+        if (!layerWidthSaved) {
+          try {
+            const fullText: string = (t as any).text ?? ""
+            const expectedLines = (fullText.match(/\n/g)?.length ?? 0) + 1
+            let attempts = 0
+            while (((t as any)._textLines?.length ?? 0) > expectedLines && attempts < 3) {
+              const currentWidth = (t as any).width ?? Math.max(layer.width ?? 400, 100)
+              ;(t as any).set("width", Math.ceil(currentWidth * 1.05))
+              if ((t as any).initDimensions) (t as any).initDimensions()
+              attempts++
+            }
+          } catch { /* tolera erro: thumb sai com wrap original */ }
+        }
         ;(t as any).__assetId = asset.id
         ;(t as any).__assetLabel = asset.label
         if (layer.mask) (t as any).__maskData = layer.mask
