@@ -4080,6 +4080,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }
         }
       }
+      // CLIPPING MASKS — segundo passe. applyMaskToFabricObject acima NAO
+      // recria clipPath pra type=clipping (so seta __maskData). O clipPath
+      // real eh clonado do layer ABAIXO via applyClippingMaskNative — mas
+      // isso depende dos layers ja estarem no canvas na ordem correta, entao
+      // roda depois do loop principal. Sem esse passe, undo de movimento em
+      // layer com clipping mask removia o efeito visual (user reportou
+      // 2026-05-26 "undo na posicao desfaz tambem a mascara clip layer below").
+      for (let i = 0; i < restored.length; i++) {
+        const obj: any = restored[i]
+        const md = obj?.__maskData
+        if (md?.type === "clipping" && md?.enabled !== false) {
+          try { await applyClippingMaskNative(fc, obj) } catch (e) {
+            console.warn("[undo-restore-clipping]", e)
+          }
+        }
+      }
 
       // DESABILITADO 2026-05-18: orphan cleanup pos-restore removia layers
       // validos depois do undo. Causa: indexacao por posicao entre
