@@ -594,10 +594,29 @@ async function buildPptx(data: CampaignData, onProgress?: (msg: string) => void)
   addCoverSlide(pptx, palette)
   addCodeSlide(pptx, palette, data.name, data.code ?? null)
 
-  _log(`pre-carregando ${data.pieces.length} imagens das peças (timeout 15s/img)`)
-  // Pre-carrega todas as imagens em paralelo
-  const imgs = await Promise.all(
-    data.pieces.map(p => p.imageUrl ? imgToDataUri(p.imageUrl) : Promise.resolve(null))
+  _log(`pre-carregando ${data.pieces.length} imagens (concorrencia 6, timeout 15s/img)`)
+  // Pre-carrega imagens com concorrencia limitada — Promise.all puro com 23
+  // pieces fazia 23 fetches simultaneos que browser limitava a ~6 por host
+  // anyway, mas o overhead virava serial. Com pool 6, mantemos saturado o
+  // limite do browser sem fila desnecessaria.
+  const imgs: Array<string | null> = new Array(data.pieces.length).fill(null)
+  let imgCursor = 0
+  let imgDone = 0
+  await Promise.all(
+    Array.from({ length: Math.min(6, data.pieces.length) }, async () => {
+      while (true) {
+        const i = imgCursor++
+        if (i >= data.pieces.length) return
+        const p = data.pieces[i]
+        if (p.imageUrl) {
+          imgs[i] = await imgToDataUri(p.imageUrl)
+        }
+        imgDone++
+        if (imgDone % 5 === 0 || imgDone === data.pieces.length) {
+          _log(`imagens: ${imgDone}/${data.pieces.length}`)
+        }
+      }
+    })
   )
   const loadedCount = imgs.filter(Boolean).length
   _log(`imagens carregadas: ${loadedCount}/${data.pieces.length}`)

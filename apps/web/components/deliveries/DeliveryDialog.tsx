@@ -112,12 +112,27 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
             id: p.id, name: p.name, segment: p.segment ?? null, copy: p.copy ?? null,
             imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
           }))
-        const { blob: pptxBlob, fileName: pptxName } = await buildCampaignPresentationBlob({
-          name: campaignName ?? "Campanha",
-          code: campaignCode ?? null,
-          pieces: piecesForDeck,
-        }, setProgress)
-        extraFiles.push({ folder: "Deck", name: pptxName, blob: pptxBlob })
+        // ANTI-TRAVA 2026-05-27: timeout TOTAL 90s pra PPTX. Se passar disso,
+        // SKIP PPTX e continua delivery sem ele (mostra warning). Sem isso,
+        // PPTX preso em "Gerando apresentacao..." trava entrega inteira.
+        // User pediu "resolver exportacao" — entrega NAO pode falhar por PPTX.
+        try {
+          const pptxPromise = buildCampaignPresentationBlob({
+            name: campaignName ?? "Campanha",
+            code: campaignCode ?? null,
+            pieces: piecesForDeck,
+          }, setProgress)
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("PPTX timeout 90s")), 90_000)
+          )
+          const result = await Promise.race([pptxPromise, timeoutPromise]) as { blob: Blob; fileName: string }
+          extraFiles.push({ folder: "Deck", name: result.fileName, blob: result.blob })
+        } catch (e: any) {
+          console.error("[DeliveryDialog] PPTX falhou:", e?.message ?? e)
+          setProgress(`⚠️ Apresentação falhou (${e?.message ?? "erro"}). Continuando sem PPTX…`)
+          // Aguarda 2s pro user ler a mensagem antes de prosseguir
+          await new Promise(r => setTimeout(r, 2000))
+        }
       }
 
       // Arquivos .txt com a legenda (copy) de cada peca que tiver. Vai pra pasta Copy/.
