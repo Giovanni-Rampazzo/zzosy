@@ -16,6 +16,8 @@ interface PieceLite {
   copy?: string | null
   media?: string
   imageUrl?: string | null
+  steps?: Array<{ index: number; thumbnailUrl?: string | null; imageUrl?: string | null }> | null
+  stepCount?: number
 }
 
 interface Props {
@@ -111,6 +113,12 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
           .map(p => ({
             id: p.id, name: p.name, segment: p.segment ?? null, copy: p.copy ?? null,
             imageUrl: p.imageUrl ?? null, width: p.width, height: p.height,
+            // BUG 2026-05-27: steps NAO estava sendo passado pro PPTX builder.
+            // generatePresentation.ts:buildPptx ja tem logica multi-step (1 slide
+            // por step ate 4, depois quebra em chunks), mas sem 'steps' no input
+            // ela cai no fallback single-image. User reportou "sem porra dos
+            // steps na apresentacao".
+            steps: p.steps ?? null,
           }))
         // ANTI-TRAVA 2026-05-27: timeout TOTAL 90s pra PPTX. Se passar disso,
         // SKIP PPTX e continua delivery sem ele (mostra warning). Sem isso,
