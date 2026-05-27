@@ -116,7 +116,7 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
           name: campaignName ?? "Campanha",
           code: campaignCode ?? null,
           pieces: piecesForDeck,
-        })
+        }, setProgress)
         extraFiles.push({ folder: "Deck", name: pptxName, blob: pptxBlob })
       }
 

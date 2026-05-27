@@ -563,7 +563,14 @@ function fileNameFor(campaignName: string): string {
  * Compartilhado entre generateCampaignPresentation (download direto) e
  * buildCampaignPresentationBlob (usado na entrega pra empacotar no ZIP).
  */
-async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
+async function buildPptx(data: CampaignData, onProgress?: (msg: string) => void): Promise<PptxGenJS> {
+  const _t0 = Date.now()
+  const _log = (msg: string) => {
+    const elapsed = ((Date.now() - _t0) / 1000).toFixed(1)
+    console.log(`[buildPptx +${elapsed}s] ${msg}`)
+    onProgress?.(`Apresentação: ${msg}`)
+  }
+  _log("iniciando")
   const pptx = new PptxGenJS()
   pptx.layout = "LAYOUT_WIDE" // 13.333 x 7.5 inches (16:9)
   pptx.title = `${data.name} - Apresentação`
@@ -587,16 +594,21 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
   addCoverSlide(pptx, palette)
   addCodeSlide(pptx, palette, data.name, data.code ?? null)
 
+  _log(`pre-carregando ${data.pieces.length} imagens das peças (timeout 15s/img)`)
   // Pre-carrega todas as imagens em paralelo
   const imgs = await Promise.all(
     data.pieces.map(p => p.imageUrl ? imgToDataUri(p.imageUrl) : Promise.resolve(null))
   )
+  const loadedCount = imgs.filter(Boolean).length
+  _log(`imagens carregadas: ${loadedCount}/${data.pieces.length}`)
   // Mapa imageUrl→idx pra recuperar o dataUri por peca durante o for
   const imgByPieceIdx = new Map<string, string | null>()
   data.pieces.forEach((p, i) => imgByPieceIdx.set(p.id, imgs[i]))
 
   // STEPS: pre-carrega imagens dos steps tambem (pecas multi-step).
   // Mapa: pieceId -> array<string|null> com dataUri de cada step.
+  const multiStepCount = data.pieces.filter(p => p.steps && p.steps.length >= 2).length
+  if (multiStepCount > 0) _log(`pre-carregando imagens de steps (${multiStepCount} pecas multi-step)`)
   const stepImgsByPieceIdx = new Map<string, Array<string | null>>()
   await Promise.all(
     data.pieces.map(async (p) => {
@@ -610,6 +622,7 @@ async function buildPptx(data: CampaignData): Promise<PptxGenJS> {
       stepImgsByPieceIdx.set(p.id, stepImgs)
     })
   )
+  if (multiStepCount > 0) _log(`step images carregadas`)
 
   // Agrupa pecas por segmento. Mesma logica da pagina de presentation:
   // - Pecas sem segmento ficam num grupo "" e NAO recebem slide divisor
@@ -686,10 +699,13 @@ export async function generateCampaignPresentation(data: CampaignData): Promise<
  * Gera o .pptx e retorna como Blob (sem download).
  * Usado pelo fluxo de entrega pra empacotar dentro do ZIP em pasta Deck/.
  */
-export async function buildCampaignPresentationBlob(data: CampaignData): Promise<{ blob: Blob; fileName: string }> {
-  const pptx = await buildPptx(data)
+export async function buildCampaignPresentationBlob(data: CampaignData, onProgress?: (msg: string) => void): Promise<{ blob: Blob; fileName: string }> {
+  const pptx = await buildPptx(data, onProgress)
+  onProgress?.("Apresentação: encodando PPTX...")
   // pptxgenjs permite writeFile com outputType "blob" — retorna Blob direto sem download
   const blob = await pptx.write({ outputType: "blob" }) as unknown as Blob
+  onProgress?.("Apresentação: ajustando datas...")
   const patched = await patchPptxDatesToLocal(blob)
+  onProgress?.("Apresentação: pronta")
   return { blob: patched, fileName: fileNameFor(data.name) }
 }
