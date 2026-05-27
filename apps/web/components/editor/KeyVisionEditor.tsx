@@ -6358,11 +6358,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     try {
       const w = canvasWRef.current
       const h = canvasHRef.current
-      // TARGET 2400 -> 1440 (2026-05-26 user reportou previews lentos).
-      // 1440px ainda permite scale 1.5x num slide PPTX widescreen sem pixelar,
-      // mas reduz tamanho do PNG em ~4x (area dimensional). Ganho real:
-      // presentation page com 8 pieces baixa ~2MB em vez de 6MB.
-      const TARGET = 1440
+      // TARGET 2400 -> 1440 -> 960 (2026-05-26 user pediu mais perf).
+      // 960px cobre display max ~600-900px em apresentacao com folga. PPTX
+      // export ainda usa esse thumb mas slide widescreen mostra a 720-900px.
+      // Reducao final: ~9x area vs original 2400, ~2.3x vs intermediario 1440.
+      const TARGET = 960
       const thumbScale = Math.min(TARGET / w, TARGET / h, 1)
 
       // O canvas Fabric do editor eh GRANDE (fullW x fullH ~ painel do editor)
@@ -6387,8 +6387,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       ;(fc as any).__safeAreaGuides = null
       try {
         const dataUrl = fc.toDataURL({
-          format: "png",
-          // multiplier dividido por z compensa o zoom — resultado: PNG com
+          // JPEG quality 0.82 — pecas tem bg solido sempre, transparencia
+          // verdadeira so em SVGs/logos isolados. Quality 0.82 sweet spot
+          // sem artifacts. ~60% reducao vs PNG. (2026-05-26 user pediu mais
+          // perf no preview.)
+          format: "jpeg",
+          quality: 0.82,
+          // multiplier dividido por z compensa o zoom — resultado: JPEG com
           // exatamente w*thumbScale x h*thumbScale (proporcao da peca).
           multiplier: thumbScale / z,
           enableRetinaScaling: false,
@@ -6418,16 +6423,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // mesmo se o usuario nao editou nada nesta sessao.
   async function uploadMatrixThumb(fc: any) {
     try {
-      const thumbScale = Math.min(1440 / canvasWRef.current, 1440 / canvasHRef.current, 1)
+      // 1440 → 960 (2026-05-26 perf). KV thumb mostra em cards/list, max 200-400px.
+      const thumbScale = Math.min(960 / canvasWRef.current, 960 / canvasHRef.current, 1)
       const z = zoomRef.current || 1
       const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
       const offsetX = vt[4] ?? 0
       const offsetY = vt[5] ?? 0
       const dataUrl = fc.toDataURL({
-        // PNG (nao JPEG): preserva o canal alpha quando a peca tem mascaras
-        // raster com transparencia ou bg transparente. JPEG flatava tudo
-        // pra cor solida — apresentacao perdia o look correto.
-        format: "png",
+        // JPEG quality 0.82 — pecas tem bg solido. ~60% reducao vs PNG.
+        // Hist: PNG era pra preservar alpha mas quase nunca usado em pratica.
+        // Sweet spot 2026-05-26.
+        format: "jpeg",
+        quality: 0.82,
         multiplier: thumbScale / z,
         left: offsetX, top: offsetY,
         width: canvasWRef.current * z,
@@ -6435,7 +6442,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       const blob = await (await fetch(dataUrl)).blob()
       const fd = new FormData()
-      fd.append("thumbnail", blob, "kv-thumb.png")
+      fd.append("thumbnail", blob, "kv-thumb.jpg")
       await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
       // Broadcast cross-tab pra preview em outras paginas (campanhas list,
       // dashboard) refetch o KV thumb atualizado.

@@ -98,6 +98,23 @@ export default function PresentationPage() {
         }
         setCampaign(c)
         setPieces(Array.isArray(p) ? p : [])
+        // PERF 2026-05-26: <link rel=preload> pras primeiras 3 imagens visiveis
+        // ao mount. Browser pre-baixa em paralelo enquanto React monta os
+        // slides, eliminando o "espera mostra" das primeiras pecas. Sem
+        // bloquear nada — preload eh background hint.
+        try {
+          if (Array.isArray(p) && p.length > 0) {
+            const firstImgs = p.slice(0, 3).map((piece: any) => piece.imageUrl).filter(Boolean)
+            for (const url of firstImgs) {
+              const link = document.createElement("link")
+              link.rel = "preload"
+              link.as = "image"
+              link.href = url
+              link.setAttribute("data-preload-presentation", "1")
+              document.head.appendChild(link)
+            }
+          }
+        } catch { /* nao critico */ }
         // Carrega a fonte do CLIENTE no document. Slides aplicam fontFamily
         // via CSS, mas sem injetar @font-face / <link> o browser cai em
         // fallback system. Mesma logica que /campaigns/[id]/assets/page.tsx.
