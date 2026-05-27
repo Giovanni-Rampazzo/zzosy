@@ -2360,6 +2360,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // alguns casos os handles ficavam invisiveis quando o objeto ja
         // estava no z-stack abaixo de outros.
         controlsAboveOverlay: true,
+        // perPixelTargetFind: click so seleciona onde tem pixel opaco (alpha
+        // > threshold). Area transparente do bbox NAO captura clicks — user
+        // pediu 2026-05-26 "quando background e transparent nao quero que
+        // seja clicavel". Photoshop/Figma-style. Custo: Fabric le imageData
+        // pra cada hit-test, ligeiramente mais lento mas aceitavel pra UX.
+        perPixelTargetFind: true,
+        targetFindTolerance: 4,
       })
       fc.setZoom(z)
       // Offset pra centralizar a peca no canvas grande. Em coords do canvas DOM:
