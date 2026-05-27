@@ -732,15 +732,26 @@ async function rasterizeBgLayersToCanvas(bgLayers: any[], width: number, height:
 }
 
 export async function prepareImageDataAsync(doc: PsdDocument): Promise<void> {
-  if (typeof document === "undefined") return
+  // Detecta ambiente: browser (document existe) ou Node (sem document).
+  // Em Node, usa @napi-rs/canvas via require dinamico — sem isso, masks
+  // raster com dataUrl saiam intactos no writer (drop), perdendo TODA mask
+  // de qualquer PSD round-trip server-side. Bug encontrado via
+  // mask-roundtrip.test.ts em 5/8 PSDs reais de 2026-05-27.
+  const isBrowser = typeof document !== "undefined"
+  let nodeCanvas: any = null
+  if (!isBrowser) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      nodeCanvas = require("@napi-rs/canvas")
+    } catch {
+      return // sem canvas em Node = sem fallback possivel
+    }
+  }
   const decodes: Promise<void>[] = []
 
   async function decodeOne(imgData: PsdImageData): Promise<void> {
     if (imgData.format !== "dataUrl" || typeof imgData.data !== "string") return
     const url = imgData.data as string
-    // BG-7 placeholder: __zzosy-bg:<encoded JSON> — rasteriza bgLayers
-    // diretamente num canvas (sem precisar de Image load). Usado pra
-    // background gradient/solid/image saido do editor via fromEditor.
     if (url.startsWith("__zzosy-bg:")) {
       try {
         const payload = JSON.parse(decodeURIComponent(url.slice("__zzosy-bg:".length)))
@@ -752,21 +763,34 @@ export async function prepareImageDataAsync(doc: PsdDocument): Promise<void> {
       } catch (e) { console.warn("[psd-writer] bg placeholder falhou:", e) }
       return
     }
-    return new Promise((resolve) => {
-      const el = new Image()
-      el.onload = () => {
-        const c = document.createElement("canvas")
-        c.width = el.naturalWidth || imgData.width
-        c.height = el.naturalHeight || imgData.height
-        const ctx = c.getContext("2d")
-        if (ctx) ctx.drawImage(el, 0, 0)
-        ;(imgData as any).data = c as any
-        ;(imgData as any).format = "canvas"
-        resolve()
-      }
-      el.onerror = () => resolve()
-      el.src = url
-    })
+    if (isBrowser) {
+      return new Promise((resolve) => {
+        const el = new Image()
+        el.onload = () => {
+          const c = document.createElement("canvas")
+          c.width = el.naturalWidth || imgData.width
+          c.height = el.naturalHeight || imgData.height
+          const ctx = c.getContext("2d")
+          if (ctx) ctx.drawImage(el, 0, 0)
+          ;(imgData as any).data = c as any
+          ;(imgData as any).format = "canvas"
+          resolve()
+        }
+        el.onerror = () => resolve()
+        el.src = url
+      })
+    }
+    // Node fallback: usa @napi-rs/canvas loadImage + createCanvas
+    try {
+      const img = await nodeCanvas.loadImage(url)
+      const c = nodeCanvas.createCanvas(img.width || imgData.width, img.height || imgData.height)
+      const ctx = c.getContext("2d")
+      if (ctx) ctx.drawImage(img, 0, 0)
+      ;(imgData as any).data = c
+      ;(imgData as any).format = "canvas"
+    } catch (e) {
+      console.warn("[psd-writer] node decode falhou:", e)
+    }
   }
 
   function walk(layers: PsdLayer[]) {
