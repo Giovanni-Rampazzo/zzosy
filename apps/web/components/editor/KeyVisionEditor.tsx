@@ -849,6 +849,10 @@ function applyStrokePositionVisual(p: any, position: "inside" | "center" | "outs
         fill: "black", // qualquer cor — clipPath usa SO a silhueta
         stroke: undefined,
         strokeWidth: 0,
+        // CRITICO: nao exporta nem aparece em snapshots. clipPath eh runtime
+        // visual hack, NUNCA persiste. Sem isso, JSON do canvas inclui clipPath
+        // duplicada e undo/save criam state inconsistente.
+        excludeFromExport: true,
       })
       ;(clip as any).__zzosyStrokePosClip = true
       p.clipPath = clip
@@ -873,7 +877,17 @@ function serializeShapeOverrides(o: any): Record<string, any> {
   const ov: Record<string, any> = {}
   if (typeof o.fill === "string") ov.fill = o.fill
   if (typeof o.stroke === "string") ov.stroke = o.stroke
-  if (typeof o.strokeWidth === "number") ov.strokeWidth = o.strokeWidth
+  // strokeWidth: quando strokePosition inside/outside, o hack visual DOBROU
+  // o.strokeWidth (p.set("strokeWidth", naturalW * 2)). Salvar o valor cru
+  // (o.strokeWidth) faria toda save DOBRAR — proximo reload aplicaria o hack
+  // de novo sobre o valor ja dobrado, criando blow-up infinito do stroke.
+  // Fonte de verdade: __naturalStrokeWidth (valor que o USER setou).
+  if (typeof o.strokeWidth === "number") {
+    const natural = typeof o.__naturalStrokeWidth === "number"
+      ? o.__naturalStrokeWidth
+      : o.strokeWidth
+    ov.strokeWidth = natural
+  }
   // strokePosition: inside | center | outside. PSD lineAlignment.
   // Mantido como custom prop __strokePosition no Fabric obj — Fabric nativo
   // so renderiza centered, position visual eh aplicado via clipPath trick.
@@ -1124,6 +1138,11 @@ const HISTORY_PROPS_TO_INCLUDE = [
   "__paragraphSpaceAfter", "__psdParagraphSpaceAfter",
   // shape
   "__isShape", "__shapeKind", "__cornerRadius", "__pathBbox",
+  // stroke position visual hack: __strokePosition = inside|center|outside
+  // (user pref) + __naturalStrokeWidth = valor cru antes do hack dobrar.
+  // CRITICO: sem isso, undo restaura state com strokeWidth dobrado mas
+  // sem applicar o hack visual, ficando inconsistente.
+  "__strokePosition", "__naturalStrokeWidth",
 ]
 
 export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, openGenerator }: { campaignId: string; pieceId?: string; from?: string; initialStepIndex?: number; openGenerator?: boolean }) {
