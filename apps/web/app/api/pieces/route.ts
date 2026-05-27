@@ -69,13 +69,20 @@ export async function GET(req: NextRequest) {
           imageUrl: stamp(s.imageUrl ?? null),
         }))
       }
-      // Detecta empty: layers=[] + steps tambem vazios. Edge case: peca recem-
-      // criada pode estar legitimamente vazia ate user adicionar layers. OK —
-      // banner so promove recovery, nao apaga nada.
+      // Detecta empty: TRES casos:
+      //   1) piece.data eh null/undefined (peca recem-criada nunca salva,
+      //      OU corrompida com piece.data=null no DB)
+      //   2) piece.data parseado mas com layers=[] e steps tambem vazios
+      //   3) parse falhou (catch externo) — improvavel
+      // Edge: peca recem-criada legitimamente vazia mostra banner. OK —
+      // banner so promove recovery via matriz, nao apaga nada.
       const rootLayers = Array.isArray(d?.layers) ? d.layers.length : 0
       const stepsHaveLayers = Array.isArray(d?.steps) && d.steps.some((s: any) => Array.isArray(s?.layers) && s.layers.length > 0)
-      isEmpty = !!d && rootLayers === 0 && !stepsHaveLayers
-    } catch {}
+      isEmpty = !d || (rootLayers === 0 && !stepsHaveLayers)
+    } catch {
+      // Parse falhou — data corrompido = considera empty
+      isEmpty = true
+    }
 
     const mf = p.mediaFormatId ? mfMap.get(p.mediaFormatId) : null
     const media = mf?.vehicle || mf?.media || inferMediaFromName(p.name)

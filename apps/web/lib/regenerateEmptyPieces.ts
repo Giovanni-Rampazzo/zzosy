@@ -114,10 +114,22 @@ export async function regenerateEmptyPiecesForCampaign(campaignId: string): Prom
     if (Array.isArray(newData.steps) && newData.steps.every((s: any) => !Array.isArray(s?.layers) || s.layers.length === 0)) {
       delete newData.steps; delete newData.activeStepIndex
     }
-    await prisma.piece.update({
-      where: { id: p.id },
-      data: { data: JSON.stringify(newData), dataBackup: p.data ?? null, imageUrl: null },
-    })
+    // Update com dataBackup. Se a migration ainda nao rodou (campo nao existe),
+    // tenta novamente sem dataBackup. Anti-falhas: garante que recovery roda
+    // mesmo se schema deploy nao tiver aplicado ainda.
+    try {
+      await prisma.piece.update({
+        where: { id: p.id },
+        data: { data: JSON.stringify(newData), dataBackup: p.data ?? null, imageUrl: null },
+      })
+    } catch (e: any) {
+      // Falha com dataBackup — tenta sem (fallback pra schema antigo)
+      console.warn("[regen-empty-pieces] dataBackup falhou pro id", p.id, "— tentando sem:", e?.message)
+      await prisma.piece.update({
+        where: { id: p.id },
+        data: { data: JSON.stringify(newData), imageUrl: null },
+      })
+    }
     updates.push({ id: p.id, name: p.name, layerCount: newLayers.length })
   }
 
