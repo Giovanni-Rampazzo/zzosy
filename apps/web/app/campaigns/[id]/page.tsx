@@ -38,6 +38,8 @@ interface Piece {
   // Fallback do segmento herdado do MediaFormat associado (read-only).
   // Usado pelo SegmentPicker quando piece.segment esta vazio.
   mediaFormatSegment?: string | null
+  // Veiculo (= mediaFormat.vehicle || mediaFormat.media), enriquecido server-side.
+  media?: string | null
   imageUrl?: string | null
   copy?: string | null
   data?: any
@@ -731,6 +733,7 @@ export default function CampaignOverviewPage() {
                           <th style={{ padding: "10px 8px", textAlign: "left", width: 72 }}></th>
                           <SortHeader col="name" label="Nome" />
                           <SortHeader col="size" label="Tamanho" />
+                          <SortHeader col="media" label="Veículo" />
                           <SortHeader col="segment" label="Segmento" />
                           <th style={{ padding: "10px 12px", textAlign: "right" }}></th>
                         </>
@@ -762,6 +765,7 @@ export default function CampaignOverviewPage() {
                         {p.name}
                       </td>
                       <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.width} × {p.height}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 12, color: "#666" }}>{p.media || "—"}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <SegmentPicker
                           pieceId={p.id}
