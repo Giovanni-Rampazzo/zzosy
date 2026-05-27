@@ -208,20 +208,37 @@ function textToAgPsd(l: PsdTextLayer): any {
   }
 }
 
+// Map weight numerico → sufixo do font name (convencao Adobe/Google).
+// PSD nao serializa fontWeight numerico — peso eh codificado no NOME do
+// font (ex: 'Exo 2 Black' = 900, 'Helvetica-Bold' = 700). Reader.ts/
+// extractFontWeight faz o inverso. Italic concatena no fim.
+const WEIGHT_NAME: Record<number, string> = {
+  100: "Thin", 200: "ExtraLight", 300: "Light", 400: "",
+  500: "Medium", 600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black",
+}
+
+function encodeFontName(family: string, weight: number, italic: boolean): string {
+  const wName = WEIGHT_NAME[weight] ?? ""
+  const parts = [family]
+  if (wName) parts.push(wName)
+  if (italic) parts.push("Italic")
+  return parts.join(" ").trim()
+}
+
 function charStyleToAgPsd(s: PsdTextLayer["defaultStyle"]): any {
-  // PSD nao tem fontWeight numerico — peso vem do POSTSCRIPT NAME (ex:
-  // "Arial-BoldMT") OU do flag fauxBold (synthetic bold via Faux). Como
-  // nao temos postscript name confiavel (Google Fonts varia), aplicamos
-  // fauxBold pra qualquer weight >= 600. Idem fontStyle italic → fauxItalic.
+  // Peso codificado no font.name (PSD nao tem fontWeight numerico). Sem
+  // isso, round-trip perdia weight (export 900 → re-import lia 400 do nome
+  // base 'Exo 2', faltando o sufixo 'Black').
   //
-  // Sem isso, PS abre TODO texto em regular (sumiam pesos black/bold/heavy).
-  // Bug 2026-05-27 — user reportou fonte com peso errado no export.
-  const w = typeof s.fontWeight === "number" ? s.fontWeight
+  // fauxBold = synthesize bold quando font name nao indica weight ja. Como
+  // agora encodamos no nome, NAO sintetizar — PS resolve do nome se font
+  // estiver instalado. fauxBold=true ALEM do nome with-weight bold-blasted.
+  const w = typeof s.fontWeight === "number" ? Math.round(s.fontWeight / 100) * 100
     : (typeof s.fontWeight === "string" && /bold|^[6-9]00$/.test(s.fontWeight) ? 700 : 400)
-  const isBold = w >= 600
   const isItalic = s.fontStyle === "italic" || s.fauxItalic === true
+  const fontName = encodeFontName(s.fontFamily, w, isItalic)
   return {
-    font: { name: s.fontFamily },
+    font: { name: fontName },
     fontSize: s.fontSize,
     fillColor: hexToRgb(s.color),
     tracking: s.tracking,
@@ -230,8 +247,8 @@ function charStyleToAgPsd(s: PsdTextLayer["defaultStyle"]): any {
     leading: s.leading,
     underline: s.underline,
     strikethrough: s.strikethrough,
-    fauxBold: s.fauxBold ?? isBold,
-    fauxItalic: isItalic,
+    fauxBold: s.fauxBold ?? false,
+    fauxItalic: s.fauxItalic ?? false,
   }
 }
 
