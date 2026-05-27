@@ -30,7 +30,31 @@ export class LocalFileStorageAdapter implements StorageAdapter {
     const full = this.fullPath(safe)
     await mkdir(path.dirname(full), { recursive: true })
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-    await writeFile(full, buf)
+    try {
+      await writeFile(full, buf)
+    } catch (e: any) {
+      // AUTO-CLEANUP 2026-05-27: disk full → tenta limpar orfaos e retentar.
+      // User reportou ENOSPC bloqueando imports. Cleanup endpoint manual existia,
+      // mas auto rescue eh mais defensivo. So roda 1x por process (flag).
+      if (e?.code === "ENOSPC" && !(globalThis as any).__zzosyAutoCleanupRan) {
+        ;(globalThis as any).__zzosyAutoCleanupRan = true
+        console.warn("[storage] ENOSPC detectado — disparando auto-cleanup de orfaos...")
+        try {
+          const { runOrphanCleanup } = await import("./autoCleanup")
+          const r = await runOrphanCleanup()
+          console.warn(`[storage] auto-cleanup: ${r.deletedFiles} arquivos, ${(r.deletedBytes/1024/1024).toFixed(1)}MB liberados`)
+          // Reset flag em 1h pra permitir nova passada se encher de novo
+          setTimeout(() => { (globalThis as any).__zzosyAutoCleanupRan = false }, 60 * 60 * 1000)
+          // Retenta o write
+          await writeFile(full, buf)
+        } catch (cleanupErr) {
+          console.error("[storage] auto-cleanup falhou:", cleanupErr)
+          throw e // re-throw original ENOSPC
+        }
+      } else {
+        throw e
+      }
+    }
     return {
       url: this.urlFor(safe),
       key: safe,
