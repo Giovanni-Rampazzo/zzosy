@@ -148,7 +148,14 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
       // direto nas redes sem precisar abrir o slide.
       const piecesWithCopy = allPieces.filter(p => selected.has(p.id) && p.copy && p.copy.trim().length > 0)
       for (const p of piecesWithCopy) {
-        const safeName = (p.name || "peca").replace(/[\\/:*?"<>|]/g, "_").trim() || "peca"
+        // ASCII normalize 2026-05-27: ZIP filenames com chars unicode (— ç ç̃)
+        // viravam mojibake (Op+�+�o) ao abrir via unzip CLI / Windows Explorer.
+        // NFD + strip combining marks + replace dashes pra evitar.
+        const safeName = (p.name || "peca")
+          .normalize("NFD").replace(/[̀-ͯ]/g, "")
+          .replace(/[—–]/g, "-")
+          .replace(/[\\/:*?"<>|]/g, "_")
+          .trim() || "peca"
         const txtBlob = new Blob([p.copy!.trim()], { type: "text/plain;charset=utf-8" })
         extraFiles.push({ folder: "Copy", name: `${safeName}.txt`, blob: txtBlob })
       }
