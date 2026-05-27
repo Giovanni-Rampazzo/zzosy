@@ -11,6 +11,32 @@ import type { StorageAdapter, PutResult } from "./types"
 
 const URL_PREFIX = "/uploads"
 
+// AUTO-CLEANUP 2026-05-27: promise compartilhada pra dedup de uploads paralelos
+// que batem ENOSPC ao mesmo tempo. Resetada apos 1h pra permitir nova rodada
+// se disco encher de novo.
+let __sharedCleanup: Promise<{ deletedBytes: number; deletedFiles: number }> | null = null
+
+async function runSharedCleanup(): Promise<{ deletedBytes: number; deletedFiles: number }> {
+  if (__sharedCleanup) return __sharedCleanup
+  __sharedCleanup = (async () => {
+    console.warn("[storage] ENOSPC detectado — disparando auto-cleanup de orfaos...")
+    try {
+      const { runOrphanCleanup } = await import("./autoCleanup")
+      const r = await runOrphanCleanup()
+      console.warn(`[storage] auto-cleanup: ${r.deletedFiles} arquivos, ${(r.deletedBytes/1024/1024).toFixed(1)}MB liberados`)
+      return { deletedBytes: r.deletedBytes, deletedFiles: r.deletedFiles }
+    } catch (cleanupErr) {
+      console.error("[storage] auto-cleanup falhou:", cleanupErr)
+      return { deletedBytes: 0, deletedFiles: 0 }
+    } finally {
+      // Reset apos 1h. Permite nova passada se disco encher de novo,
+      // mas evita re-rodar cleanup desnecessariamente em writes proximos.
+      setTimeout(() => { __sharedCleanup = null }, 60 * 60 * 1000)
+    }
+  })()
+  return __sharedCleanup
+}
+
 export class LocalFileStorageAdapter implements StorageAdapter {
   readonly name = "local-file"
   private readonly rootDir: string
@@ -28,32 +54,29 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   async put(key: string, data: Buffer | Uint8Array, _contentType?: string): Promise<PutResult> {
     const safe = normalizeKey(key)
     const full = this.fullPath(safe)
-    await mkdir(path.dirname(full), { recursive: true })
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-    try {
+    // AUTO-CLEANUP 2026-05-27 (revisado): disk full → limpa orfaos e retenta.
+    // mkdir TAMBEM dentro do try — disco lotado tambem afeta criacao de dirs.
+    // Refatorado pra usar PROMISE compartilhada (em vez de flag boolean) —
+    // 5 uploads paralelos que falham ENOSPC simultaneamente compartilham o
+    // mesmo cleanup em vez de so 1 limpar e os outros 4 erroarem.
+    const doWrite = async () => {
+      await mkdir(path.dirname(full), { recursive: true })
       await writeFile(full, buf)
+    }
+    try {
+      await doWrite()
     } catch (e: any) {
-      // AUTO-CLEANUP 2026-05-27: disk full → tenta limpar orfaos e retentar.
-      // User reportou ENOSPC bloqueando imports. Cleanup endpoint manual existia,
-      // mas auto rescue eh mais defensivo. So roda 1x por process (flag).
-      if (e?.code === "ENOSPC" && !(globalThis as any).__zzosyAutoCleanupRan) {
-        ;(globalThis as any).__zzosyAutoCleanupRan = true
-        console.warn("[storage] ENOSPC detectado — disparando auto-cleanup de orfaos...")
-        try {
-          const { runOrphanCleanup } = await import("./autoCleanup")
-          const r = await runOrphanCleanup()
-          console.warn(`[storage] auto-cleanup: ${r.deletedFiles} arquivos, ${(r.deletedBytes/1024/1024).toFixed(1)}MB liberados`)
-          // Reset flag em 1h pra permitir nova passada se encher de novo
-          setTimeout(() => { (globalThis as any).__zzosyAutoCleanupRan = false }, 60 * 60 * 1000)
-          // Retenta o write
-          await writeFile(full, buf)
-        } catch (cleanupErr) {
-          console.error("[storage] auto-cleanup falhou:", cleanupErr)
-          throw e // re-throw original ENOSPC
-        }
-      } else {
+      if (e?.code !== "ENOSPC") throw e
+      // Comparte cleanup entre callers paralelos. Se ja existe promise em vooo,
+      // espera ela. Senao cria nova. Apos resultado, decide se retenta.
+      const result = await runSharedCleanup()
+      if (result.deletedBytes === 0) {
+        console.error("[storage] ENOSPC + cleanup nao liberou nada (0 orfaos). Disco realmente cheio.")
         throw e
       }
+      console.warn(`[storage] auto-cleanup liberou ${(result.deletedBytes/1024/1024).toFixed(1)}MB — retentando write`)
+      await doWrite()  // pode falhar de novo se write eh > espaco liberado
     }
     return {
       url: this.urlFor(safe),
