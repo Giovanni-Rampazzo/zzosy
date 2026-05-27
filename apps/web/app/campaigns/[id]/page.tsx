@@ -46,6 +46,11 @@ interface Piece {
   createdAt: string
   updatedAt?: string
   stepCount?: number
+  // Flags anti-falhas (enriquecidos em /api/pieces):
+  // isEmpty=true: piece.data com layers=[] (provavel corrupcao)
+  // hasBackup=true: tem piece.dataBackup salvo (pode restaurar via UI)
+  isEmpty?: boolean
+  hasBackup?: boolean
 }
 
 export default function CampaignOverviewPage() {
@@ -616,6 +621,43 @@ export default function CampaignOverviewPage() {
             padding: piecesDragOver ? 4 : 0,
           }}
         >
+          {/* Banner anti-falhas: detecta pecas vazias (piece.data com layers=[])
+              e oferece recovery imediato. User pediu 2026-05-26 — pieces
+              corrompidas escondidas na lista, dificil de detectar. */}
+          {(() => {
+            const emptyPieces = visiblePieces.filter(p => p.isEmpty)
+            const restorables = emptyPieces.filter(p => p.hasBackup)
+            if (emptyPieces.length === 0) return null
+            return (
+              <div style={{ background: "#FFF3CD", border: "1px solid #FFE69C", borderRadius: 8, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 18 }}>⚠️</span>
+                <div style={{ flex: 1, minWidth: 240, fontSize: 13, color: "#664D03" }}>
+                  <strong>{emptyPieces.length} peça(s) sem conteúdo detectada(s)</strong>
+                  {restorables.length > 0 && ` · ${restorables.length} com backup disponível`}
+                </div>
+                {restorables.length > 0 && (
+                  <Button variant="secondary" size="sm" onClick={async () => {
+                    if (!confirm(`Restaurar versão anterior de ${restorables.length} peça(s) com backup?`)) return
+                    try {
+                      await Promise.all(restorables.map(p =>
+                        fetch(`/api/pieces/${p.id}/restore-previous`, { method: "POST" })
+                      ))
+                      await loadAll()
+                    } catch (e: any) { alert(`Erro: ${e?.message ?? e}`) }
+                  }}>↶ Restaurar backup ({restorables.length})</Button>
+                )}
+                <Button variant="secondary" size="sm" onClick={async () => {
+                  if (!confirm(`Regenerar ${emptyPieces.length} peça(s) a partir da matriz atual?`)) return
+                  try {
+                    await Promise.all(emptyPieces.map(p =>
+                      fetch(`/api/pieces/${p.id}/regenerate-from-matrix`, { method: "POST" })
+                    ))
+                    await loadAll()
+                  } catch (e: any) { alert(`Erro: ${e?.message ?? e}`) }
+                }}>↻ Regenerar da matriz ({emptyPieces.length})</Button>
+              </div>
+            )
+          })()}
           <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #E0E0E0", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>

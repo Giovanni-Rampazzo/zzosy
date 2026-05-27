@@ -49,6 +49,11 @@ export async function GET(req: NextRequest) {
     let width = 0, height = 0, format = "", dpi = 72
     let steps: any[] | null = null
     let stepCount = 1
+    // Anti-falhas 2026-05-26: detecta pecas vazias (piece.data.layers=[] e
+    // sem steps com layers). Front-end mostra banner "X pecas vazias —
+    // recuperar agora" pra direcionar user ao recovery.
+    let isEmpty = false
+    let hasBackup = !!(p as any).dataBackup
     // Versionador: timestamp da ultima edicao da peca. Quando muda, navegador
     // re-baixa as imagens (sem mais cache stale).
     const v = new Date(p.updatedAt).getTime()
@@ -64,6 +69,12 @@ export async function GET(req: NextRequest) {
           imageUrl: stamp(s.imageUrl ?? null),
         }))
       }
+      // Detecta empty: layers=[] + steps tambem vazios. Edge case: peca recem-
+      // criada pode estar legitimamente vazia ate user adicionar layers. OK —
+      // banner so promove recovery, nao apaga nada.
+      const rootLayers = Array.isArray(d?.layers) ? d.layers.length : 0
+      const stepsHaveLayers = Array.isArray(d?.steps) && d.steps.some((s: any) => Array.isArray(s?.layers) && s.layers.length > 0)
+      isEmpty = !!d && rootLayers === 0 && !stepsHaveLayers
     } catch {}
 
     const mf = p.mediaFormatId ? mfMap.get(p.mediaFormatId) : null
@@ -84,10 +95,12 @@ export async function GET(req: NextRequest) {
     // Lista nunca usa p.data direto, so width/height/steps extraidos acima.
     // Quem precisa do data passa ?withData=true ou faz fetch by-id.
     if (!withData) {
-      const { data: _stripped, ...pNoData } = p as any
-      return { ...pNoData, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
+      // Strip data + dataBackup do payload lite — sao gigantes, frontend so
+      // precisa dos flags (isEmpty, hasBackup).
+      const { data: _stripped, dataBackup: _bk, ...pNoData } = p as any
+      return { ...pNoData, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount, isEmpty, hasBackup }
     }
-    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount }
+    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount, isEmpty, hasBackup }
   })
   return NextResponse.json(enriched)
 }
