@@ -359,12 +359,54 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
   }
 }
 
+/** Renderiza thumb do KV (matriz) server-side e salva em keyVision.thumbnailUrl.
+ *  Adicionado 2026-05-27: user reportou campanhas sem preview na lista
+ *  (cade o preview?). Auto-regen no editor exige user abrir o editor; aqui
+ *  geramos batch via endpoint server-render-thumbs. */
+export async function renderKvThumbServer(campaignId: string): Promise<{ ok: boolean; imageUrl?: string; error?: string }> {
+  try {
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: { keyVision: true, assets: true },
+    })
+    if (!campaign || !campaign.keyVision) return { ok: false, error: "no kv" }
+    const kv = campaign.keyVision
+    const layers = Array.isArray((kv as any).layers) ? (kv as any).layers : []
+    if (layers.length === 0) return { ok: false, error: "no layers" }
+    const pseudoPiece = {
+      version: 2,
+      width: kv.width ?? 1080,
+      height: kv.height ?? 1080,
+      bgColor: kv.bgColor ?? "#ffffff",
+      layers,
+    }
+    const assetsMap = new Map<string, any>()
+    for (const a of campaign.assets) assetsMap.set(a.id, a)
+    // Reusa renderPieceThumbServer com pseudoPiece (data eh string JSON).
+    const result = await renderPieceThumbServer({
+      id: `kv-${campaignId}`,
+      data: JSON.stringify(pseudoPiece),
+      campaignId,
+    }, assetsMap)
+    if (!result.ok || !result.imageUrl) return { ok: false, error: result.error }
+    // Salva no KV
+    await prisma.keyVision.update({
+      where: { campaignId },
+      data: { thumbnailUrl: result.imageUrl },
+    })
+    return { ok: true, imageUrl: result.imageUrl }
+  } catch (e: any) {
+    console.error("[renderKvThumbServer] erro:", e)
+    return { ok: false, error: e?.message ?? "Erro" }
+  }
+}
+
 /** Renderiza thumbs de TODAS pieces da campanha. Concorrencia limitada
  *  pra nao OOM (cada render aloca canvas + image buffers). */
-export async function renderAllPiecesThumbsServer(campaignId: string, concurrency = 4): Promise<{ total: number; ok: number; failed: number; details: RenderResult[] }> {
+export async function renderAllPiecesThumbsServer(campaignId: string, concurrency = 4): Promise<{ total: number; ok: number; failed: number; details: RenderResult[]; kv?: { ok: boolean; imageUrl?: string; error?: string } }> {
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    include: { pieces: true, assets: true },
+    include: { pieces: true, assets: true, keyVision: true },
   })
   if (!campaign) return { total: 0, ok: 0, failed: 0, details: [] }
 
@@ -373,7 +415,13 @@ export async function renderAllPiecesThumbsServer(campaignId: string, concurrenc
 
   // Pieces precisam de thumb (sem imageUrl)
   const targets = campaign.pieces.filter(p => !p.imageUrl || p.imageUrl.length === 0)
-  if (targets.length === 0) return { total: 0, ok: 0, failed: 0, details: [] }
+  // KV thumb tambem precisa? (mesmo se nao tem pieces pendentes)
+  const kvMissing = !campaign.keyVision || !(campaign.keyVision as any).thumbnailUrl
+  if (targets.length === 0 && !kvMissing) return { total: 0, ok: 0, failed: 0, details: [] }
+  if (targets.length === 0 && kvMissing) {
+    const kvResult = await renderKvThumbServer(campaignId)
+    return { total: 0, ok: 0, failed: 0, details: [], kv: kvResult }
+  }
 
   // Concurrency pool
   const results: RenderResult[] = []
@@ -401,5 +449,13 @@ export async function renderAllPiecesThumbsServer(campaignId: string, concurrenc
   }
   await Promise.all(workers)
   const ok = results.filter(r => r.ok).length
-  return { total: targets.length, ok, failed: targets.length - ok, details: results }
+
+  // Tambem renderiza KV thumb se estiver faltando. User reportou
+  // 2026-05-27 'cade o preview?' em campanhas na lista — sem thumb.
+  let kvResult: { ok: boolean; imageUrl?: string; error?: string } | undefined
+  if (!campaign.keyVision || !(campaign.keyVision as any).thumbnailUrl) {
+    kvResult = await renderKvThumbServer(campaignId)
+  }
+
+  return { total: targets.length, ok, failed: targets.length - ok, details: results, kv: kvResult }
 }
