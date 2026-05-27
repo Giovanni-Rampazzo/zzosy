@@ -117,11 +117,33 @@ async function executeFullRecover(id: string, tenantId: string | null): Promise<
     tempIdToNewId.set(a.tempId, record.id)
   }
 
+  // Constroi map tempId → BuiltAsset pra puxar mask + flags do asset pra layer.
+  // toCampaign retorna kvLayers SEM mask (a mask vive em BuiltAsset). Pra
+  // editor renderizar mascaras + clipping masks corretamente, precisamos
+  // copiar mask/hidden/locked/effects do asset pra cada layer KV.
+  // Sem isso, full-recover perdia TODAS as mascaras (clipping masks da
+  // foto da praia, vector masks, etc) — user reportou 2026-05-27 "mascaras
+  // se perdendo no editor e preview".
+  const assetByTempId = new Map<string, any>()
+  for (const a of build.assets) assetByTempId.set(a.tempId, a)
+
   const kvLayers = build.kvLayers
     .map(l => {
       const newId = tempIdToNewId.get(l.assetId)
       if (!newId) return null
-      return { ...l, assetId: newId }
+      const origAsset = assetByTempId.get(l.assetId)
+      return {
+        ...l,
+        assetId: newId,
+        // Copia mask + flags do asset original pra layer KV (mesma logica
+        // do /api/campaigns/[id]/import-psd linhas 235-253).
+        ...(origAsset?.mask ? { mask: origAsset.mask } : {}),
+        ...(origAsset?.hidden === true ? { hidden: true } : {}),
+        ...(origAsset?.locked === true ? { locked: true } : {}),
+        ...(origAsset?.effects && Object.keys(origAsset.effects).length > 0 ? { effects: origAsset.effects } : {}),
+        ...(origAsset?.pixelsIncludeEffects === true ? { pixelsIncludeEffects: true } : {}),
+        ...(typeof origAsset?.nameSource === "string" ? { nameSource: origAsset.nameSource } : {}),
+      }
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
 

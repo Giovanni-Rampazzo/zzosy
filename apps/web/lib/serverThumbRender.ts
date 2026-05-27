@@ -86,6 +86,121 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
     const layers: any[] = Array.isArray(pData.layers) ? pData.layers : []
     const sorted = [...layers].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
 
+    // Helper: aplica mask na ctx ANTES de drawImage. ctx ja deve estar
+    // em save() — caller faz restore depois. Suporta raster + vector +
+    // clipping (clip to layer below).
+    //
+    // Estrategia:
+    //  - vector: Path2D do svg path → ctx.clip (corta render seguinte)
+    //  - raster: cria offscreen canvas com mask alpha, depois apos drawImage
+    //    do conteudo usa composite "destination-in" pra preservar so onde
+    //    mask tem alpha. Mas mask precisa ser aplicada APOS conteudo. Solucao:
+    //    desenha conteudo num offscreen canvas, aplica raster mask,
+    //    blit offscreen no ctx principal.
+    //  - clipping: usa layer.path/bbox do layer ABAIXO. Se nao disponivel,
+    //    skip (limitacao). Pra clipping correto seria preciso lookahead
+    //    no proximo layer. Por enquanto skip + log.
+    async function applyVectorMaskClip(mask: any) {
+      const vpath = mask?.vector?.path
+      if (!vpath) return false
+      try {
+        const p2d = new (canvasModule.Path2D ?? globalThis.Path2D)(vpath)
+        // Aplica scale do thumb pra clip ficar no espaco do canvas thumb.
+        // Vector path eh em coords absolutas do PSD.
+        ctx.scale(scale, scale)
+        ctx.clip(p2d)
+        ctx.scale(1 / scale, 1 / scale)
+        return true
+      } catch (e) {
+        console.warn("[serverThumbRender] vector mask falhou:", e)
+        return false
+      }
+    }
+
+    async function renderImageLayerWithMask(layer: any, asset: any) {
+      const buf = await fetchImageBuffer(asset.imageUrl)
+      if (!buf) return
+      const img = await loadImageBuffer(buf)
+      if (!img) return
+      const lScale = (layer.scaleX ?? 1) * scale
+      const lScaleY = (layer.scaleY ?? 1) * scale
+      const drawW = (img.width ?? 100) * lScale
+      const drawH = (img.height ?? 100) * lScaleY
+      const drawX = (layer.posX ?? 0) * scale
+      const drawY = (layer.posY ?? 0) * scale
+
+      const mask = layer.mask
+      const maskEnabled = mask && mask.enabled !== false
+      const maskType = maskEnabled ? mask?.type : null
+
+      // RASTER MASK: render num offscreen primeiro, aplica mask, blit no ctx.
+      if (maskType === "raster" && mask.raster?.dataUrl) {
+        try {
+          const { createCanvas } = getCanvasModule()
+          const off = createCanvas(thumbW, thumbH)
+          const octx = off.getContext("2d") as any
+          // Draw image no offscreen
+          if (typeof layer.rotation === "number" && layer.rotation !== 0) {
+            octx.translate(drawX, drawY)
+            octx.rotate((layer.rotation * Math.PI) / 180)
+            octx.drawImage(img, 0, 0, drawW, drawH)
+          } else {
+            octx.drawImage(img, drawX, drawY, drawW, drawH)
+          }
+          // Load raster mask + apply
+          const m = mask.raster
+          const maskMatch = /^data:([^;]+);base64,(.+)$/.exec(m.dataUrl)
+          if (maskMatch) {
+            const maskBuf = Buffer.from(maskMatch[2], "base64")
+            const maskImg = await loadImageBuffer(maskBuf)
+            if (maskImg) {
+              const maskX = (m.posX ?? 0) * scale
+              const maskY = (m.posY ?? 0) * scale
+              const maskW = (m.width ?? 0) * scale
+              const maskH = (m.height ?? 0) * scale
+              // destination-in: keep dest pixels onde mask tem alpha
+              octx.globalCompositeOperation = mask.inverted ? "destination-out" : "destination-in"
+              octx.drawImage(maskImg, maskX, maskY, maskW, maskH)
+              octx.globalCompositeOperation = "source-over"
+            }
+          }
+          // Blit offscreen no ctx principal
+          ctx.drawImage(off, 0, 0)
+          return
+        } catch (e) {
+          console.warn("[serverThumbRender] raster mask falhou:", e)
+          // fallback: draw sem mask
+        }
+      }
+
+      // VECTOR MASK: clip antes de draw
+      if (maskType === "vector") {
+        const applied = await applyVectorMaskClip(mask)
+        if (applied) {
+          if (typeof layer.rotation === "number" && layer.rotation !== 0) {
+            ctx.translate(drawX, drawY)
+            ctx.rotate((layer.rotation * Math.PI) / 180)
+            ctx.drawImage(img, 0, 0, drawW, drawH)
+          } else {
+            ctx.drawImage(img, drawX, drawY, drawW, drawH)
+          }
+          return
+        }
+      }
+
+      // CLIPPING MASK ou sem mask: drawImage normal
+      // (Clipping mask = clip to layer below — server-side seria complexo
+      //  porque precisa silhouette do layer abaixo. Skip por agora; thumb
+      //  vai mostrar layer sem clip. Browser regen aplica certo depois.)
+      if (typeof layer.rotation === "number" && layer.rotation !== 0) {
+        ctx.translate(drawX, drawY)
+        ctx.rotate((layer.rotation * Math.PI) / 180)
+        ctx.drawImage(img, 0, 0, drawW, drawH)
+      } else {
+        ctx.drawImage(img, drawX, drawY, drawW, drawH)
+      }
+    }
+
     for (const layer of sorted) {
       if (layer.hidden === true) continue
       const asset = assetsMap.get(layer.assetId)
@@ -97,26 +212,7 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
           ctx.globalAlpha = layer.opacity
         }
         if (asset.type === "IMAGE" && asset.imageUrl) {
-          const buf = await fetchImageBuffer(asset.imageUrl)
-          if (!buf) { ctx.restore(); continue }
-          const img = await loadImageBuffer(buf)
-          if (!img) { ctx.restore(); continue }
-          const lScale = (layer.scaleX ?? 1) * scale
-          const lScaleY = (layer.scaleY ?? 1) * scale
-          const drawW = (img.width ?? 100) * lScale
-          const drawH = (img.height ?? 100) * lScaleY
-          const drawX = (layer.posX ?? 0) * scale
-          const drawY = (layer.posY ?? 0) * scale
-          // Rotate (around top-left por simplicidade — Fabric usa center mas
-          // pra MVP server thumb basta. Quando browser regen, fica correto).
-          if (typeof layer.rotation === "number" && layer.rotation !== 0) {
-            const rad = (layer.rotation * Math.PI) / 180
-            ctx.translate(drawX, drawY)
-            ctx.rotate(rad)
-            ctx.drawImage(img, 0, 0, drawW, drawH)
-          } else {
-            ctx.drawImage(img, drawX, drawY, drawW, drawH)
-          }
+          await renderImageLayerWithMask(layer, asset)
         } else if (asset.type === "SHAPE") {
           // Parse asset.content → { path, fill, stroke, pathBbox }
           let shape: any = null
