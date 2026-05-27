@@ -20,12 +20,17 @@ export async function GET(req: NextRequest) {
   // data (regeneratePieceThumbsForAsset, server-side filter por uso de asset)
   // passam withData=true. Frontend de listagem nao passa — pega lite.
   const withData = searchParams.get("withData") === "true"
+  // PERF 2026-05-27: removido `include: { campaign: { include: { client: true } } }`.
+  // Cada piece vinha com campaign.client.brandLogoUrl = PNG base64 (55KB).
+  // Em 5 pieces = 275KB de duplicacao desnecessaria na resposta. User reportou
+  // "sistema muito lento". Frontend ja tem campaign separado via /api/campaigns/[id].
+  // O `where` continua scopando por tenant via relation (Prisma traduz pra JOIN
+  // sem precisar do include).
   const pieces = await prisma.piece.findMany({
     where: {
       campaign: { client: { tenantId } },
       ...(campaignId ? { campaignId } : {}),
     },
-    include: { campaign: { include: { client: true } } },
     orderBy: { createdAt: "desc" },
   })
 

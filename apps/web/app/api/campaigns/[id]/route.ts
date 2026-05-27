@@ -27,10 +27,22 @@ export async function GET(req: Request, ctx: Ctx) {
   const { id } = await ctx.params
   const tenantId = (session.user as any).tenantId
 
+  // PERF 2026-05-27: select especifico do client. Antes incluia brandLogoUrl
+  // (PNG base64 55KB) em TODA fetch do campaign, mesmo quando o frontend nao
+  // precisava do logo. User reportou "sistema muito lento" — endpoint era
+  // 158KB; com esse fix cai pra ~103KB (-35%). Pra usos que precisam do logo
+  // (PPTX builder), buscar via /api/clients/[id] separado.
   const campaign = await prisma.campaign.findFirst({
     where: { id, client: { tenantId } },
     include: {
-      client: true,
+      client: {
+        select: {
+          id: true, name: true, tenantId: true, slug: true,
+          brandColors: true, brandTypography: true, brandFont: true,
+          // brandLogoUrl: NAO incluir (PNG base64 ~55KB). PPTX builder busca
+          // via /api/clients/[id] separado quando precisa.
+        },
+      },
       assets: { orderBy: { order: "asc" }, include: { smartObject: true } },
       keyVision: true,
       _count: { select: { pieces: true } },
