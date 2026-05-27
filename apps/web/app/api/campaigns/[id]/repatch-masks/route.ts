@@ -30,11 +30,22 @@ function ensureCanvasInit() {
 
 type Ctx = { params: Promise<{ id: string }> }
 
+interface PerPieceDiag {
+  id: string
+  name: string
+  layers: number
+  masksApplied: number
+  mismatch: boolean
+}
+
 interface Result {
   ok: true
   kvLayersUpdated: number
   piecesUpdated: number
   masksReapplied: number
+  psdLayerCount: number
+  masksAvailable: number
+  perPiece: PerPieceDiag[]
 }
 
 async function execute(id: string, tenantId: string | null): Promise<Result | { error: string; status: number }> {
@@ -117,15 +128,31 @@ async function execute(id: string, tenantId: string | null): Promise<Result | { 
   })
 
   // Aplica em pieces (mesmo padrão — match por zIndex)
+  // 2026-05-27 DIAG: user reportou repatch nao traz masks pro export.
+  // Adiciono per-piece breakdown pra detectar mismatch de layer count
+  // (PSD com N layers vs piece com M layers — match por zIndex falha).
   let piecesUpdated = 0
+  const psdLayerCount = sortedKvLayers.length
+  const masksAvailable = [...masksByZIndex.values()].filter(f => f.mask).length
+  const perPiece: Array<{ id: string; name: string; layers: number; masksApplied: number; mismatch: boolean }> = []
   for (const p of campaign.pieces) {
-    if (!p.data) continue
+    if (!p.data) {
+      perPiece.push({ id: p.id, name: p.name ?? "(sem nome)", layers: 0, masksApplied: 0, mismatch: false })
+      continue
+    }
     let pData: any
-    try { pData = JSON.parse(p.data) } catch { continue }
+    try { pData = JSON.parse(p.data) } catch {
+      perPiece.push({ id: p.id, name: p.name ?? "(sem nome)", layers: 0, masksApplied: 0, mismatch: false })
+      continue
+    }
     const layers: any[] = Array.isArray(pData.layers) ? pData.layers : []
-    if (layers.length === 0) continue
+    if (layers.length === 0) {
+      perPiece.push({ id: p.id, name: p.name ?? "(sem nome)", layers: 0, masksApplied: 0, mismatch: false })
+      continue
+    }
     const sorted = [...layers].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
     let modified = false
+    let masksAppliedHere = 0
     for (let i = 0; i < sorted.length; i++) {
       const flags = masksByZIndex.get(i)
       if (!flags) continue
@@ -134,10 +161,12 @@ async function execute(id: string, tenantId: string | null): Promise<Result | { 
         if (layer[k] !== flags[k]) {
           layer[k] = flags[k]
           modified = true
-          if (k === "mask") masksReapplied++
+          if (k === "mask") { masksReapplied++; masksAppliedHere++ }
         }
       }
     }
+    const mismatch = layers.length !== psdLayerCount
+    perPiece.push({ id: p.id, name: p.name ?? "(sem nome)", layers: layers.length, masksApplied: masksAppliedHere, mismatch })
     if (modified) {
       pData.layers = layers
       await prisma.piece.update({
@@ -148,7 +177,7 @@ async function execute(id: string, tenantId: string | null): Promise<Result | { 
     }
   }
 
-  return { ok: true, kvLayersUpdated, piecesUpdated, masksReapplied }
+  return { ok: true, kvLayersUpdated, piecesUpdated, masksReapplied, psdLayerCount, masksAvailable, perPiece }
 }
 
 export async function POST(_req: NextRequest, ctx: Ctx) {

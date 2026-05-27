@@ -762,8 +762,23 @@ export default function CampaignOverviewPage() {
               try {
                 const r = await fetch(`/api/campaigns/${id}/repatch-masks`, { method: "POST" })
                 const j = await r.json()
-                if (r.ok) alert(`Máscaras reaplicadas: ${j.masksReapplied} máscaras, ${j.piecesUpdated} peças, ${j.kvLayersUpdated} layers KV. Agora clica em "Render server thumbs" pra regenerar as previews.`)
-                else alert("Erro: " + (j.error ?? "?"))
+                if (r.ok) {
+                  // Diagnostico per-piece pra detectar mismatch (PSD com N
+                  // layers vs piece com M layers — match por zIndex falha).
+                  // User reportou "tudo sem mascara" — diagnostico ajuda a
+                  // entender se foi mismatch ou outra causa.
+                  const mismatches = Array.isArray(j.perPiece) ? j.perPiece.filter((p: any) => p.mismatch) : []
+                  let detail = `Máscaras reaplicadas: ${j.masksReapplied} aplicações em ${j.piecesUpdated}/${j.perPiece?.length ?? "?"} peças.\n`
+                  detail += `PSD tem ${j.psdLayerCount} layers, ${j.masksAvailable} com máscara.\n`
+                  if (mismatches.length > 0) {
+                    detail += `\n⚠️ ${mismatches.length} peças com layer count diferente do PSD (mask match por zIndex pode estar errado):\n`
+                    detail += mismatches.slice(0, 5).map((p: any) => `  • ${p.name}: ${p.layers} layers (esperado ${j.psdLayerCount})`).join("\n")
+                    if (mismatches.length > 5) detail += `\n  ... + ${mismatches.length - 5} outras`
+                  }
+                  detail += `\n\nProximo passo: clica "Render server thumbs" pra regenerar previews.`
+                  console.log("[repatch-masks] resultado:", j)
+                  alert(detail)
+                } else alert("Erro: " + (j.error ?? "?"))
                 await loadAll()
               } catch (e: any) { alert("Erro: " + (e?.message ?? e)) }
               finally { setRecoveryWorking(null) }
