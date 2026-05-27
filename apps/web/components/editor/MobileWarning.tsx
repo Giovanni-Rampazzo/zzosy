@@ -14,9 +14,17 @@ import Link from "next/link"
 export function MobileWarning() {
   const [isMobile, setIsMobile] = useState(false)
   const [mounted, setMounted] = useState(false)
+  // 2026-05-27: override pra desktops com janela estreita (split screen,
+  // sidebar, etc). User reportou bloqueio injusto com janela <900px de
+  // largura mesmo tendo mouse+teclado. Override fica salvo no localStorage.
+  const [override, setOverride] = useState(false)
 
   useEffect(() => {
     setMounted(true)
+    // Le override do localStorage
+    try {
+      if (localStorage.getItem("zzosy:editorMobileOverride") === "1") setOverride(true)
+    } catch { /* sem localStorage = sem override */ }
     function check() {
       setIsMobile(window.innerWidth < 900 || window.matchMedia("(pointer: coarse) and (max-width: 1100px)").matches)
     }
@@ -25,7 +33,7 @@ export function MobileWarning() {
     return () => window.removeEventListener("resize", check)
   }, [])
 
-  if (!mounted || !isMobile) return null
+  if (!mounted || !isMobile || override) return null
 
   return (
     <div style={{
@@ -56,6 +64,21 @@ export function MobileWarning() {
         }}>
           Dashboard
         </Link>
+        <button
+          type="button"
+          onClick={() => {
+            try { localStorage.setItem("zzosy:editorMobileOverride", "1") } catch {}
+            setOverride(true)
+          }}
+          style={{
+            background: "transparent", color: "#888",
+            border: "1px solid #333",
+            padding: "8px 16px", borderRadius: 8, fontWeight: 500, fontSize: 12,
+            cursor: "pointer", marginTop: 4,
+          }}
+        >
+          Continuar mesmo assim (desktop com janela estreita)
+        </button>
       </div>
     </div>
   )
