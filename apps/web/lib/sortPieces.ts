@@ -11,6 +11,10 @@ export interface SortablePiece {
   height?: number
   status?: string
   segment?: string | null
+  // Fallback do segment quando piece.segment esta vazio. UI usa
+  // `segment ?? mediaFormatSegment` pra display; sort agora usa o mesmo
+  // fallback (2026-05-26 bug fix: ordem nao batia com texto visivel).
+  mediaFormatSegment?: string | null
   media?: string | null
 }
 
@@ -41,7 +45,12 @@ export function sortPieces<T extends SortablePiece>(items: T[], col: SortCol, di
       const bIdx = STATUS_ORDER[b.status ?? "STANDBY"] ?? 99
       cmp = aIdx - bIdx
     } else if (col === "segment") {
-      cmp = (a.segment ?? "").localeCompare(b.segment ?? "", "pt-BR", { sensitivity: "base" })
+      // Fallback identico ao display: segment ?? mediaFormatSegment. Sem isso
+      // pieces com segment vazio (mas com mfSegment) ordenavam como string ""
+      // (sempre primeiro), divergindo do texto visivel na coluna.
+      const aSeg = a.segment ?? a.mediaFormatSegment ?? ""
+      const bSeg = b.segment ?? b.mediaFormatSegment ?? ""
+      cmp = aSeg.localeCompare(bSeg, "pt-BR", { sensitivity: "base" })
     } else if (col === "media") {
       cmp = (a.media ?? "").localeCompare(b.media ?? "", "pt-BR", { sensitivity: "base" })
     }
