@@ -839,13 +839,15 @@ function applyStrokePositionVisual(p: any, position: "inside" | "center" | "outs
       const arr = (p as any).path
       const dString = typeof arr === "string" ? arr : pathArrayToDString(arr)
       if (!dString) return
+      // Fabric clipPath: por convencao usa originX/Y = "center" pra alinhar
+      // com o CENTRO do objeto-pai (independente do origin do pai). NAO usar
+      // absolutePositioned + left/top — gera offset porque Fabric.Path tem
+      // pathOffset interno que move o conteudo relativo a left/top do obj.
+      // Path com mesmas coords + originX:'center' + originY:'center' fica
+      // EXATAMENTE sobreposto ao path-pai (em local space do pai).
       const clip = new PathCtor(dString, {
-        absolutePositioned: true,
-        left: p.left,
-        top: p.top,
-        scaleX: p.scaleX,
-        scaleY: p.scaleY,
-        angle: p.angle,
+        originX: "center",
+        originY: "center",
         fill: "black", // qualquer cor — clipPath usa SO a silhueta
         stroke: undefined,
         strokeWidth: 0,
