@@ -1799,6 +1799,22 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
       const fullText = (Array.isArray(wrappedLines) && wrappedLines.length > 0)
         ? wrappedLines.map(line => Array.isArray(line) ? line.join("") : String(line)).join("\n")
         : (obj.text ?? "")
+      // DIAG 2026-05-27: user reportou 'caixas de texto perdem quebras, ficam
+      // em 1 linha so saindo da peca'. Log diz quantas linhas Fabric wrappeou
+      // + width do textbox + se fullText tem \n. Se _textLines.length>1 mas
+      // fullText sem \n → bug no join. Se _textLines.length=1 → width grande
+      // demais (fabric nao quebrou) ou texto unico sem espacos.
+      console.log(`[psd-text-diag]`, {
+        name,
+        textboxWidth: obj.width,
+        scaleX: obj.scaleX, scaleY: obj.scaleY,
+        rawText: (obj.text ?? "").substring(0, 80),
+        wrappedLineCount: Array.isArray(wrappedLines) ? wrappedLines.length : "no-array",
+        fullTextLineCount: fullText.split("\n").length,
+        fullTextPreview: fullText.substring(0, 80),
+        layerW: w,
+        layerH: h,
+      })
       const styleRuns = buildStyleRuns(obj, fullText, sY)
       const isBold = (obj.fontWeight === "bold" || obj.fontWeight === 700)
       const isItalic = (obj as any).fontStyle === "italic"
@@ -2173,6 +2189,19 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
           smartObject: so,
         } : null)
         const linked = syntheticAsset ? await ensureLinkedSmartObject(syntheticAsset) : null
+        // DIAG 2026-05-27: user reportou 'smart object sendo entregado rasterizado'.
+        // Log diz por que cada SO candidato virou raster: sem asset, sem smartObject,
+        // ou ensureLinked retornou null (ex: fetch falhou).
+        if (!linked && (asset?.smartObject || (obj as any).__smartObjectGuid)) {
+          console.warn(`[PSD-SMART-RASTER]`, {
+            name,
+            reason: !syntheticAsset ? "no-synthetic-asset" : "ensureLinked-returned-null",
+            hasAsset: !!asset,
+            hasAssetSO: !!asset?.smartObject,
+            soFilePath: asset?.smartObject?.filePath ?? (obj as any).__smartObjectFilePath ?? null,
+            soMime: asset?.smartObject?.mime ?? (obj as any).__smartObjectMime ?? null,
+          })
+        }
         if (linked) {
           // Os 4 cantos do retangulo onde a imagem esta posicionada (em pixels do PSD).
           const transform = [
