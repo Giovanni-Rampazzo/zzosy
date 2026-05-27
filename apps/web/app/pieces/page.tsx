@@ -9,7 +9,7 @@ import { ExportDialog } from "@/components/pieces/ExportDialog"
 import { EditableText } from "@/components/EditableText"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
 import { SegmentPicker } from "@/components/pieces/SegmentPicker"
-import { PIECE_STATUS_LIST, statusMeta } from "@/lib/pieceStatus"
+// PIECE_STATUS_LIST/statusMeta removidos junto com filtro de status (2026-05-26)
 import { sortPieces, toggleSort, SortCol, SortDir } from "@/lib/sortPieces"
 import { RowThumb } from "@/components/ui/RowThumb"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
@@ -225,12 +225,12 @@ function PiecesContent() {
   }
 
   // Aplica filtros (status + categoria) e ordenacao
+  // statusFilter removido da UI 2026-05-26 (pedido user). statusFilter state
+  // continua existindo (default "ALL") por compat — filtra todas as pecas.
   const afterStatus = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
   const afterCategory = categoryFilter === "ALL" ? afterStatus : afterStatus.filter(p => (p.mediaFormatCategory ?? "Sem categoria") === categoryFilter)
   const filteredRaw = afterCategory
   const filtered = sort ? sortPieces(filteredRaw, sort.col, sort.dir) : filteredRaw
-  const counts: Record<string, number> = { ALL: pieces.length }
-  for (const s of PIECE_STATUS_LIST) counts[s] = pieces.filter(p => p.status === s).length
 
   // Lista de categorias unicas vindas do MediaFormat associado (pra filtro no topo).
   const allCategories = Array.from(new Set(pieces.map(p => p.mediaFormatCategory ?? "Sem categoria"))).sort()
@@ -358,38 +358,14 @@ function PiecesContent() {
             </>
           }
         />
-        {/* Filtro por status */}
-        <div className="flex flex-wrap gap-2 mb-2">
-          <FilterPill
-            active={statusFilter === "ALL"}
-            onClick={() => setStatusFilter("ALL")}
-            accent="#111111"
-            accentBg="#F5F5F5"
-            accentText="#111111"
-          >
-            Todas <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts.ALL})</span>
-          </FilterPill>
-          {PIECE_STATUS_LIST.map(s => {
-            const meta = statusMeta(s)
-            return (
-              <FilterPill
-                key={s}
-                active={statusFilter === s}
-                onClick={() => setStatusFilter(s)}
-                accent={meta.color}
-                accentBg={meta.bg}
-                accentText={meta.color}
-              >
-                {meta.label} <span style={{ opacity: 0.7, fontWeight: 400 }}>({counts[s]})</span>
-              </FilterPill>
-            )
-          })}
-        </div>
+        {/* Filtro de status REMOVIDO 2026-05-26 (pedido user "tira tudo na
+            selecao em preto"). statusFilter fica em "ALL" sempre — toda a
+            logica de filtragem (PIECE_STATUS_LIST, counts) deletada. */}
 
-        {/* Filtro por categoria — so aparece se ha mais de 1 categoria */}
+        {/* Filtro por categoria simplificado 2026-05-26: sem label "Categoria:",
+            sem counts (N). So pills com nome. So aparece se >1 categoria. */}
         {allCategories.length > 1 && (
           <div className="flex flex-wrap gap-2 mb-3 items-center">
-            <span className="text-xs text-[#555] uppercase tracking-wider font-bold mr-1">Categoria:</span>
             <FilterPill
               active={categoryFilter === "ALL"}
               onClick={() => setCategoryFilter("ALL")}
@@ -408,7 +384,7 @@ function PiecesContent() {
                 accentBg="#F5F5F5"
                 accentText="#111111"
               >
-                {c} <span style={{ opacity: 0.7, fontWeight: 400 }}>({pieces.filter(p => (p.mediaFormatCategory ?? "Sem categoria") === c).length})</span>
+                {c}
               </FilterPill>
             ))}
           </div>
