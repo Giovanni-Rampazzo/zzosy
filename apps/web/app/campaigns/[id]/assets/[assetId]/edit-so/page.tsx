@@ -23,6 +23,9 @@ interface SoData {
   width: number
   height: number
   compositeUrl: string | null
+  /** true = compositeUrl eh SO o fundo (sem texto baked); render text via
+   *  CSS overlay com bbox de cada layer. false = compositeUrl tem tudo. */
+  hasTextOverlay?: boolean
   textLayers: TextLayerDTO[]
 }
 
@@ -183,7 +186,10 @@ export default function EditSoPage() {
         {/* Layout: composite preview esquerda + lista de inputs direita */}
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 420px", gap: 24 }}>
 
-          {/* Preview do composite */}
+          {/* Preview: imagem-fundo (sem textos baked) + overlays CSS pros
+              textos editaveis. Server compoe so non-text layers; texto vem
+              client-side com font do browser. Aspect ratio preservado via
+              wrapper com padding-bottom. */}
           <div style={{
             background: "#3a3a3a",
             backgroundImage: "linear-gradient(45deg, #2e2e2e 25%, transparent 25%), linear-gradient(-45deg, #2e2e2e 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2e2e2e 75%), linear-gradient(-45deg, transparent 75%, #2e2e2e 75%)",
@@ -194,9 +200,48 @@ export default function EditSoPage() {
             minHeight: 400,
           }}>
             {compositeSrc ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={compositeSrc} alt="Preview"
-                style={{ maxWidth: "100%", maxHeight: 600, objectFit: "contain", borderRadius: 4 }} />
+              (() => {
+                // Wrapper que preserva aspect ratio do PSD. Texto overlays
+                // ficam absolutamente posicionados em px do PSD original,
+                // escalados pra display via CSS transform/coordsystem.
+                const maxDispW = 720
+                const maxDispH = 600
+                const aspect = data.width / data.height
+                const dispW = Math.min(maxDispW, maxDispH * aspect)
+                const dispH = dispW / aspect
+                const scale = dispW / data.width
+                return (
+                  <div style={{ position: "relative", width: dispW, height: dispH, borderRadius: 4, overflow: "hidden", background: "white" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={compositeSrc} alt="Preview"
+                      style={{ display: "block", width: "100%", height: "100%", objectFit: "fill" }} />
+                    {/* Text overlays — so quando server marcou hasTextOverlay.
+                        Caso contrario o composite ja tem texto baked. */}
+                    {data.hasTextOverlay !== false && data.textLayers.map(l => {
+                      const k = pathKey(l.path)
+                      const cur = edits[k] !== undefined ? edits[k] : l.text
+                      const bx = (l.bbox.left ?? 0) * scale
+                      const by = (l.bbox.top ?? 0) * scale
+                      const bw = ((l.bbox.right ?? 0) - (l.bbox.left ?? 0)) * scale
+                      const bh = ((l.bbox.bottom ?? 0) - (l.bbox.top ?? 0)) * scale
+                      const fs = l.fontSize * scale
+                      return (
+                        <div key={k} style={{
+                          position: "absolute",
+                          left: bx, top: by, width: bw, height: bh,
+                          color: l.color, fontSize: fs,
+                          fontFamily: "inherit", fontWeight: 700,
+                          lineHeight: 1.1, whiteSpace: "pre-wrap",
+                          overflow: "hidden",
+                          pointerEvents: "none",
+                        }}>
+                          {cur}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()
             ) : (
               <div style={{ color: "#aaa" }}>Sem preview disponivel</div>
             )}

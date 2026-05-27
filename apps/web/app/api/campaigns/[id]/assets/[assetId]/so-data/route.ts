@@ -113,32 +113,81 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const textLayers: TextLayerDTO[] = []
     collectTextLayers(document.layers, [], textLayers)
 
-    // Re-le o PSD com composite habilitado pra gerar preview fresh em data URL.
-    // asset.imageUrl pode estar quebrado (composite original do import veio
-    // preto se a fonte nao existia server-side); aqui pegamos sempre o canvas
-    // atual via ag-psd + napi-canvas.
-    let freshComposite: string | null = null
+    // ESTRATEGIA NOVA 2026-05-26: server NAO renderiza texto (sem fonts =
+    // tudo preto). Em vez disso, compoe SO LAYERS NAO-TEXTO server-side
+    // (imagens, shapes, background) e devolve. Cliente renderiza texto via
+    // CSS overlay com fontes do browser.
+    //
+    // Bug: user reportou 3x que preview tava preto. Causa: PSD tem texto
+    // baked como render Photoshop, mas ag-psd no Node nao tem text engine
+    // — ele entrega canvas all-black no lugar dos textos.
+    let backgroundComposite: string | null = null
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { readPsd } = require("ag-psd") as typeof import("ag-psd")
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createCanvas } = require("@napi-rs/canvas")
       const psdRe = readPsd(ab, {
-        skipLayerImageData: true,
+        skipLayerImageData: false,  // PRECISAMOS dos canvases por layer
         skipThumbnail: true,
-        skipCompositeImageData: false,
+        skipCompositeImageData: true,  // skip composite stored (era preto)
       })
-      const c = (psdRe as any).canvas
-      if (c && typeof c.toBuffer === "function") {
-        const buf: Buffer = c.toBuffer("image/png")
-        freshComposite = `data:image/png;base64,${buf.toString("base64")}`
+      const W = (psdRe as any).width
+      const H = (psdRe as any).height
+      const canvas = createCanvas(W, H)
+      const ctx = canvas.getContext("2d")
+      // Background branco default — se houver layer "Background" no PSD, ela
+      // sobrescreve. Senao, preview nao fica transparente.
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(0, 0, W, H)
+      let skippedTextLayers = 0
+      function walk(layers: any[]) {
+        if (!Array.isArray(layers)) return
+        for (const layer of layers) {
+          if (layer?.hidden) continue
+          // Group: recursa nos children
+          if (Array.isArray(layer?.children)) { walk(layer.children); continue }
+          // Text: skip — vai ser renderizado client-side via CSS overlay
+          if (layer?.text != null) { skippedTextLayers++; continue }
+          // Raster (image/shape/etc): drawImage no canvas composite
+          if (layer?.canvas) {
+            try {
+              const left = layer.left ?? 0
+              const top = layer.top ?? 0
+              const opacity = typeof layer.opacity === "number" ? layer.opacity / 255 : 1
+              ctx.save()
+              ctx.globalAlpha = opacity
+              if (typeof layer.blendMode === "string" && layer.blendMode !== "normal") {
+                // best-effort blend mode mapping; nao critico
+                const blendMap: Record<string, GlobalCompositeOperation> = {
+                  multiply: "multiply", screen: "screen", overlay: "overlay",
+                  darken: "darken", lighten: "lighten", difference: "difference",
+                }
+                if (blendMap[layer.blendMode]) ctx.globalCompositeOperation = blendMap[layer.blendMode]
+              }
+              ctx.drawImage(layer.canvas, left, top)
+              ctx.restore()
+            } catch (e) {
+              console.warn("[so-data GET] drawImage layer falhou:", layer?.name, e)
+            }
+          }
+        }
       }
+      walk((psdRe as any).children ?? [])
+      const buf: Buffer = canvas.toBuffer("image/png")
+      backgroundComposite = `data:image/png;base64,${buf.toString("base64")}`
+      console.log("[so-data GET] composite client-side OK:", { W, H, textLayersSkipped: skippedTextLayers })
     } catch (e) {
-      console.warn("[so-data GET] composite re-render falhou:", e)
+      console.warn("[so-data GET] compose non-text layers falhou:", e)
     }
 
     return NextResponse.json({
       width: document.width,
       height: document.height,
-      compositeUrl: freshComposite ?? asset.imageUrl,
+      // backgroundComposite = composite SEM texto (texto sera overlay no
+      // cliente). Frontend sabe disso e renderiza overlays via bbox+text+style.
+      compositeUrl: backgroundComposite ?? asset.imageUrl,
+      hasTextOverlay: backgroundComposite != null,
       textLayers,
     })
   } catch (e: any) {
