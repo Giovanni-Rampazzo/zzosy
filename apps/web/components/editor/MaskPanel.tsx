@@ -159,18 +159,21 @@ export function MaskPanel({
                 fontSize: 14,
                 color: mask.enabled ? "#F5C400" : "#444",
               }}
-              title={`${mask.type} mask`}
+              title={(mask as any).__fromClipping ? "clipping (clipa no layer abaixo)" : `${mask.type} mask`}
             >
-              {mask.type === "raster" ? "▦" : mask.type === "vector" ? "▭" : "⌐"}
+              {(mask as any).__fromClipping ? "⏎" : mask.type === "raster" ? "▦" : mask.type === "vector" ? "▭" : "⌐"}
             </div>
             <div style={{ flex: 1, lineHeight: 1.3 }}>
               <div style={{ color: "#ccc", fontWeight: 600, textTransform: "capitalize" }}>
-                {mask.type === "clipping" ? "Clipping" : mask.type} Mask
+                {(mask as any).__fromClipping
+                  ? "Clipping Mask (camada abaixo)"
+                  : (mask.type === "clipping" ? "Clipping" : mask.type) + " Mask"}
               </div>
               <div style={{ fontSize: 10, color: "#555" }}>
                 {!mask.enabled && "Disabled · "}
-                {mask.inverted && "Inverted"}
-                {!mask.inverted && mask.enabled && "Active"}
+                {(mask as any).__fromClipping
+                  ? "Clipa na alpha do layer abaixo · será exportada como clipping"
+                  : mask.inverted ? "Inverted" : mask.enabled ? "Active" : ""}
               </div>
             </div>
           </div>
@@ -187,7 +190,7 @@ export function MaskPanel({
               <span style={{ width: 16 }}>{mask.enabled ? "✓" : "○"}</span>
               {mask.enabled ? "Disable Mask" : "Enable Mask"}
             </button>
-            {mask.type !== "clipping" && (
+            {mask.type !== "clipping" && !(mask as any).__fromClipping && (
               <button
                 type="button"
                 onClick={onToggleInverted}

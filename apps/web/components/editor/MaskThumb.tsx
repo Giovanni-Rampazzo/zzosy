@@ -50,22 +50,41 @@ export function MaskThumb({ mask, obj, fc, onFocus, focused = false, size = 16 }
   const border = focused ? "2px solid #F5C400" : "1px solid #666"
   const opacity = disabled ? 0.3 : 1
 
+  // Clipping (originalmente clipping, convertida pra raster pra renderizar):
+  // visual distinto pra nao confundir com raster mask normal (user reportou
+  // 2026-05-27 'misturando as bolas, sao duas coisas diferentes').
+  const isClipping = mask.__fromClipping === true || mask.type === "clipping"
+  const tooltip = isClipping
+    ? "Clipping mask (clipa no layer abaixo) — click to edit"
+    : focused ? "Editing mask" : `${mask.type} mask — click to edit`
+
   return (
     <button
       type="button"
-      title={focused ? "Editing mask" : `${mask.type} mask — click to edit`}
+      title={tooltip}
       onClick={e => { e.stopPropagation(); onFocus?.() }}
       style={{
         width: size, height: size, padding: 0, flexShrink: 0,
-        border, borderRadius: 2, cursor: "pointer",
+        border: isClipping ? (focused ? "2px solid #00BCD4" : "1px solid #00BCD4") : border,
+        borderRadius: 2, cursor: "pointer",
         background: "#000",
         backgroundImage: dataUrl ? `url(${dataUrl})` : undefined,
         backgroundSize: "cover",
         backgroundPosition: "center",
         opacity,
         outline: "none",
+        position: "relative",
       }}
-    />
+    >
+      {isClipping && (
+        <span style={{
+          position: "absolute", bottom: -2, right: -2,
+          fontSize: 9, lineHeight: 1, color: "#00BCD4",
+          background: "#000", borderRadius: 2, padding: "0 1px",
+          pointerEvents: "none",
+        }}>⏎</span>
+      )}
+    </button>
   )
 }
 
