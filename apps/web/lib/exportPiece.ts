@@ -12,6 +12,7 @@ import {
   normalizeBlendModeForAgPsd,
 } from "@/lib/psd/psdHelpers"
 import { leadingPtToFabricLineHeight, applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
+import { stripPerCharFillWhenLayerSet } from "@/lib/stripPerCharFill"
 
 export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
 
@@ -468,7 +469,11 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
       // Layers hidden no PSD não devem renderizar (mas continuam no JSON pra
       // round-trip preservar o estado).
       if (layer.hidden === true) continue
-      const overrides = layer.overrides ?? {}
+      // ANTI-FALHAS: strip per-char fill quando overrides.fill setado.
+      // Sem isso, asset.lastOverride.styles legado (per-char preto do PSD)
+      // ganhava precedencia sobre overrides.fill → export PSD/PNG saia com
+      // texto preto mesmo quando user editou pra branco. Bug recorrente.
+      const overrides = stripPerCharFillWhenLayerSet(layer.overrides ?? {})
       // PSD opacity/blendMode (capturados no import) → Fabric props.
       // Fabric aceita "opacity" 0..1 e "globalCompositeOperation" (canvas spec).
       // Sanity check: opacity < 0.01 = bug do importer antigo (divisão 2x por 255).

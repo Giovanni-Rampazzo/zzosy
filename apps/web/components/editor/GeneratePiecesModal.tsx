@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/Button"
 import { regeneratePieceThumb } from "@/lib/regenerateThumbs"
+import { stripPerCharFillWhenLayerSet } from "@/lib/stripPerCharFill"
 
 // Escala um SVG path d-string pra acompanhar resize. Aplica scale+offset em
 // pares (x,y) das coordenadas. Cobre os comandos absolutos gerados pelo
@@ -325,8 +326,17 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
           //
           // Fallback chain pra cada campo: layer.overrides (matriz user-edited) ->
           // asset.lastOverride (template visual do asset) -> default.
-          const tpl: any = (assetForLayer as any)?.lastOverride ?? {}
-          const merged: any = { ...tpl, ...ov }  // ov sobrescreve tpl quando definido
+          //
+          // ANTI-FALHAS 2026-05-26: stripPerCharFillWhenLayerSet remove per-char
+          // fill/fillBrandIdx do tpl quando merged.fill esta setado. Sem isso, o
+          // asset.lastOverride.styles (que tem per-char colors do PSD original)
+          // ganhava precedencia sobre overrides.fill → peca gerada com texto
+          // preto mesmo quando matriz tinha cor branca. Bug reportado 2x.
+          const tplRaw: any = (assetForLayer as any)?.lastOverride ?? {}
+          const ovRaw: any = ov ?? {}
+          // Merge first pra ter `fill` final, depois strip se setado.
+          const mergedRaw: any = { ...tplRaw, ...ovRaw }
+          const merged: any = stripPerCharFillWhenLayerSet(mergedRaw)
           const baseFontSize = typeof merged.fontSize === "number" ? merged.fontSize : 80
           const newOverrides: any = { ...merged }
           newOverrides.fontSize = baseFontSize * scale

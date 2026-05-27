@@ -91,8 +91,36 @@ export async function PUT(req: Request, ctx: Ctx) {
   // lastOverride: template visual aplicado na matriz. Atualizado quando user
   // edita styles na matriz (applyStyle, text:editing:exited) ou quando salva
   // override por outro caminho. Pecas NAO atualizam isso.
+  //
+  // ANTI-FALHAS 2026-05-26: strip per-char fill quando lastOverride.fill setado.
+  // Garante que lastOverride NUNCA tenha per-char colors residuais (geralmente
+  // do PSD original). Sem isso, peca gerada herdava per-char preto via merge
+  // { ...lastOverride, ...layerOverrides } no GeneratePiecesModal.
   if ("lastOverride" in body) {
-    data.lastOverride = body.lastOverride === null ? null : body.lastOverride
+    const lo = body.lastOverride
+    if (lo === null) {
+      data.lastOverride = null
+    } else if (lo && typeof lo === "object" && typeof lo.fill === "string" && lo.styles) {
+      const cleaned: any = { ...lo }
+      const newStyles: any = {}
+      for (const lk of Object.keys(lo.styles ?? {})) {
+        const line = lo.styles[lk]
+        if (!line || typeof line !== "object") continue
+        const newLine: any = {}
+        for (const ck of Object.keys(line)) {
+          const cs = line[ck]
+          if (!cs || typeof cs !== "object") continue
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { fill: _f, fillBrandIdx: _fb, ...rest } = cs
+          if (Object.keys(rest).length > 0) newLine[ck] = rest
+        }
+        if (Object.keys(newLine).length > 0) newStyles[lk] = newLine
+      }
+      cleaned.styles = Object.keys(newStyles).length > 0 ? newStyles : undefined
+      data.lastOverride = cleaned
+    } else {
+      data.lastOverride = lo
+    }
   }
   if ("content" in body) {
     const c = body.content

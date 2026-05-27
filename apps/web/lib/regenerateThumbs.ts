@@ -1,6 +1,7 @@
 "use client"
 // Re-render thumbnail of pieces that use a given asset.
 // Roda no client em segundo plano (sem bloquear UI).
+import { stripPerCharFillWhenLayerSet } from "@/lib/stripPerCharFill"
 
 interface Asset {
   id: string; type: string; label: string; value: string | null; imageUrl: string | null; content: any
@@ -53,7 +54,10 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
     for (const layer of sorted) {
       const asset = assetMap[layer.assetId]
       if (!asset) continue
-      const overrides = layer.overrides ?? {}
+      // ANTI-FALHAS: se overrides.fill setado, strip per-char fills antigos
+      // (geralmente do PSD original). Sem isso, peca com overrides.fill branco
+      // ainda renderizava texto preto porque per-char tinha precedencia.
+      const overrides = stripPerCharFillWhenLayerSet(layer.overrides ?? {})
       // PSD layer props: opacity + blendMode (canvas globalCompositeOperation).
       // Sem isso, o thumb do KV (gerado via regenerateKVThumb) perdia
       // multiply/screen/overlay → preview ficava diferente do editor que
