@@ -14,9 +14,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
+import { regenerateEmptyPiecesForCampaign } from "@/lib/regenerateEmptyPieces"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+export const maxDuration = 60
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -37,42 +40,41 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
   }
 
-  // Dispara o POST de regenerate-empty-pieces internamente.
-  // Reusa a session-cookie automaticamente porque fetch dispara no mesmo host.
-  const cookieHeader = req.headers.get("cookie") ?? ""
-  const origin = new URL(req.url).origin
-  const apiUrl = `${origin}/api/campaigns/${id}/regenerate-empty-pieces`
-  let result: any = null
+  // Auth tenant: valida que a campanha pertence ao tenant do user.
+  const tenantId = (session.user as any)?.tenantId
+  const campaign = await prisma.campaign.findFirst({
+    where: { id, ...(tenantId ? { client: { tenantId } } : {}) },
+    select: { id: true },
+  })
+  if (!campaign) {
+    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px">
+<h2>❌ Campanha nao encontrada ou sem acesso</h2>
+<p><a href="/campaigns">← Voltar</a></p>
+</body></html>`, { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } })
+  }
+
+  // Executa direto via lib (sem self-fetch — antes o fetch interno falhava
+  // em runtime Next, causando 'Falha interna - fetch failed').
   try {
-    const r = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Cookie": cookieHeader },
-      cache: "no-store",
-    })
-    result = await r.json().catch(() => ({ error: "resposta nao-JSON" }))
-    if (!r.ok) {
+    const result = await regenerateEmptyPiecesForCampaign(id)
+    if ("error" in result) {
       return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:600px;margin:0 auto">
 <h2>❌ Erro na recovery</h2>
-<p>HTTP ${r.status}</p>
-<pre>${JSON.stringify(result, null, 2)}</pre>
+<p><strong>${result.error}</strong></p>
 <p><a href="/campaigns/${id}">← Voltar</a></p>
-</body></html>`, { status: r.status, headers: { "Content-Type": "text/html; charset=utf-8" } })
+</body></html>`, { status: result.status, headers: { "Content-Type": "text/html; charset=utf-8" } })
     }
+    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recovery OK</title><meta http-equiv="refresh" content="2;url=/campaigns/${id}"></head><body style="font-family:system-ui;padding:32px;max-width:600px;margin:0 auto">
+<h2>✅ Recovery completa</h2>
+<p><strong>${result.regeneratedCount}</strong> peça(s) regenerada(s) a partir da matriz.</p>
+${result.skippedCount > 0 ? `<p>${result.skippedCount} peça(s) com conteúdo OK — não tocadas.</p>` : ""}
+<p>Redirecionando pra campanha em 2 segundos…</p>
+<p><a href="/campaigns/${id}">→ Ir agora</a></p>
+</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
   } catch (e: any) {
-    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px">
+    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:600px;margin:0 auto">
 <h2>❌ Falha interna</h2><pre>${String(e?.message ?? e)}</pre>
 <p><a href="/campaigns/${id}">← Voltar</a></p>
 </body></html>`, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } })
   }
-
-  // Sucesso: tela bonita confirmando + auto-redirect em 2s.
-  const count = result?.regeneratedCount ?? 0
-  const skipped = result?.skippedCount ?? 0
-  return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recovery OK</title><meta http-equiv="refresh" content="2;url=/campaigns/${id}"></head><body style="font-family:system-ui;padding:32px;max-width:600px;margin:0 auto">
-<h2>✅ Recovery completa</h2>
-<p><strong>${count}</strong> peça(s) regenerada(s) a partir da matriz.</p>
-${skipped > 0 ? `<p>${skipped} peça(s) com conteúdo OK — não tocadas.</p>` : ""}
-<p>Redirecionando pra campanha em 2 segundos…</p>
-<p><a href="/campaigns/${id}">→ Ir agora</a></p>
-</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
 }
