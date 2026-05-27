@@ -7,6 +7,22 @@ import { getStorage } from "@/lib/storage"
 
 export const dynamic = "force-dynamic"
 
+// MUTEX 2026-05-27: serializa updates de piece.data por pieceId pra evitar
+// race condition. Multiple step-thumbnail uploads em paralelo (step 0,1,2)
+// liam mesmo snapshot, cada um modificava SEU step, ultimo write sobrescrevia
+// os outros — "previews misturados" reportado pelo user.
+//
+// Strategy: cada call espera a promise anterior do mesmo pieceId. Promise
+// resolve quando update terminou (sucesso OU erro — catch impede stuck).
+const __pieceUpdateLocks = new Map<string, Promise<unknown>>()
+
+async function withPieceLock<T>(pieceId: string, work: () => Promise<T>): Promise<T> {
+  const prev = __pieceUpdateLocks.get(pieceId) ?? Promise.resolve()
+  const next = prev.catch(() => {}).then(work)
+  __pieceUpdateLocks.set(pieceId, next.catch(() => {}))
+  return next
+}
+
 /**
  * Upload de thumbnail de um STEP especifico da peca.
  *
@@ -60,33 +76,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { url: publicUrl } = await getStorage().put(key, bytes, "image/png")
     stageData.publicUrl = publicUrl
 
-    stage = "re-read-piece"
-    const fresh = await prisma.piece.findUnique({ where: { id } })
-    if (!fresh) return apiErrors.notFound()
+    // SERIALIZADO 2026-05-27: read+modify+write protegido pelo mutex.
+    // Multiplos uploads paralelos (step 0,1,2) liam snapshot identico e
+    // ultimo write sobrescrevia os anteriores — 'previews misturados'.
+    await withPieceLock(id, async () => {
+      stage = "re-read-piece"
+      const fresh = await prisma.piece.findUnique({ where: { id } })
+      if (!fresh) throw new Error("piece desapareceu durante upload")
 
-    stage = "parse-data"
-    let data: any = {}
-    if (fresh.data) {
-      try {
-        data = JSON.parse(fresh.data)
-      } catch (e: any) {
-        console.error("[step-thumbnail] piece.data JSON malformado:", id, e?.message)
-        // Continua com data={} — pelo menos salva o thumb
-        data = {}
+      stage = "parse-data"
+      let data: any = {}
+      if (fresh.data) {
+        try {
+          data = JSON.parse(fresh.data)
+        } catch (e: any) {
+          console.error("[step-thumbnail] piece.data JSON malformado:", id, e?.message)
+          data = {}
+        }
       }
-    }
-    if (!Array.isArray(data.steps)) data.steps = []
-    while (data.steps.length <= index) data.steps.push({ layers: [], bgColor: data.bgColor ?? "#ffffff" })
-    data.steps[index] = {
-      ...data.steps[index],
-      imageUrl: publicUrl,
-      thumbnailUrl: publicUrl,
-    }
+      if (!Array.isArray(data.steps)) data.steps = []
+      while (data.steps.length <= index) data.steps.push({ layers: [], bgColor: data.bgColor ?? "#ffffff" })
+      data.steps[index] = {
+        ...data.steps[index],
+        imageUrl: publicUrl,
+        thumbnailUrl: publicUrl,
+      }
 
-    stage = "prisma-update"
-    await prisma.piece.update({
-      where: { id },
-      data: { data: JSON.stringify(data) },
+      stage = "prisma-update"
+      await prisma.piece.update({
+        where: { id },
+        data: { data: JSON.stringify(data) },
+      })
     })
 
     return NextResponse.json({ imageUrl: publicUrl, index })
