@@ -6286,7 +6286,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       sfc.renderAll()
       await new Promise(r => setTimeout(r, 100))
-      const dataUrl = sfc.toDataURL({ format: "png", multiplier: 1 })
+      // JPEG quality 0.82 — peca tem bg solido, alpha PNG era luxo nao usado.
+      // ~60% reducao vs PNG (2026-05-26 sweep).
+      const dataUrl = sfc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: 1 })
       sfc.dispose()
       return await (await fetch(dataUrl)).blob()
     } catch (e) {
@@ -6776,7 +6778,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // Thumb HIGH-RES (1920px max, JPEG 0.92). 480/0.85 ficava pixelado no
         // preview de apresentacao e PPTX (slide widescreen tem 960px de largura
         // a 72 DPI; pptxgenjs escala thumb pra 8-12" -> ampliacao 8x).
-        const thumbScale = Math.min(1440 / canvasWRef.current, 1440 / canvasHRef.current, 1)
+        // 1440 → 960 + JPEG quality 0.82 (2026-05-26 perf sweep — peca tem
+        // bg solido, alpha era luxo nao usado).
+        const thumbScale = Math.min(960 / canvasWRef.current, 960 / canvasHRef.current, 1)
         // CROP da area da peca. toDataURL aceita left/top/width/height em
         // coords do CANVAS DOM (px do canvas HTML). A peca renderiza
         // centralizada via viewportTransform[4,5] (offset). Le o offset real
@@ -6786,8 +6790,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
         const dataUrl = fc.toDataURL({
-          // PNG preserva alpha (ver comentario em uploadMatrixThumb).
-          format: "png",
+          format: "jpeg",
+          quality: 0.82,
           multiplier: thumbScale / z,
           left: offsetX,
           top: offsetY,
@@ -6796,7 +6800,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         })
         const blob = await (await fetch(dataUrl)).blob()
         const fd = new FormData()
-        fd.append("thumbnail", blob, "kv-thumb.png")
+        fd.append("thumbnail", blob, "kv-thumb.jpg")
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
         // Broadcast pro /presentation e /pieces refrescarem sem esperar polling
         // de 6s (audit H7). saveNow inlinava o upload sem chamar uploadMatrixThumb
@@ -7784,11 +7788,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
       // Nao precisa propagar de novo aqui no doSave.
 
-      // Gerar e enviar thumbnail do KV (max 1920px maior lado, JPEG 0.92).
-      // High-res necessario pro preview de apresentacao e PPTX exportado nao
-      // ficarem pixelados (slide widescreen escala thumb pra 8-12 polegadas).
+      // Gerar e enviar thumbnail do KV (max 960px maior lado, JPEG 0.82).
+      // 2026-05-26: 1440→960 + PNG→JPEG (peca tem bg solido, alpha era luxo).
       try {
-        const thumbScale = Math.min(1440 / canvasWRef.current, 1440 / canvasHRef.current, 1)
+        const thumbScale = Math.min(960 / canvasWRef.current, 960 / canvasHRef.current, 1)
         // CROP da area da peca. Le offset real do viewportTransform pra
         // cortar exatamente onde a peca renderiza no canvas DOM.
         const z = zoomRef.current || 1
@@ -7796,8 +7799,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
         const dataUrl = fc.toDataURL({
-          // PNG preserva alpha (ver comentario em uploadMatrixThumb).
-          format: "png",
+          format: "jpeg",
+          quality: 0.82,
           multiplier: thumbScale / z,
           left: offsetX,
           top: offsetY,
@@ -7806,7 +7809,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         })
         const blob = await (await fetch(dataUrl)).blob()
         const fd = new FormData()
-        fd.append("thumbnail", blob, "kv-thumb.png")
+        fd.append("thumbnail", blob, "kv-thumb.jpg")
         await fetch(`/api/campaigns/${campaignId}/key-vision/thumbnail`, { method: "POST", body: fd })
         try {
           if (typeof BroadcastChannel !== "undefined") {
@@ -9237,23 +9240,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     if (newObj) {
       // PRESERVA Z-ORDER — addAssetToCanvas adiciona no fim do array (topo
       // visual). Move pro mesmo indice que o currentObj tinha antes.
+      // Fabric v6.9.1 expoe moveObjectTo(obj, idx) — nao moveTo (esse so
+      // existe em v7+ que nao usamos aqui). Outros sites do editor ja usam
+      // moveObjectTo (line 5522, 5754, 5860).
       if (oldZIndex >= 0) {
-        const fcAny = fc as any
         const currentNewIdx = fc.getObjects().indexOf(newObj)
         if (currentNewIdx !== oldZIndex) {
-          if (typeof fcAny.moveTo === "function") {
-            fcAny.moveTo(newObj, oldZIndex)
-          } else {
-            // Fabric v7+ usa moveObjectTo. Fallback manual via _objects splice.
-            try {
-              const objs = (fcAny._objects ?? []) as any[]
-              const cur = objs.indexOf(newObj)
-              if (cur >= 0 && oldZIndex >= 0 && cur !== oldZIndex) {
-                const [item] = objs.splice(cur, 1)
-                objs.splice(oldZIndex, 0, item)
-              }
-            } catch { /* nao critico */ }
-          }
+          try {
+            ;(fc as any).moveObjectTo(newObj, oldZIndex)
+          } catch (e) { editorLog("[swapAsset] moveObjectTo falhou:", e) }
         }
       }
 

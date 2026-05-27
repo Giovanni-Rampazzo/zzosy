@@ -41,7 +41,8 @@ function PiecesContent() {
   const [selected, setSelected] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<"grid" | "list">("grid")
-  const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  // statusFilter removido completo 2026-05-26 (review). UI nao expoe filter
+  // de status (commit a5a28f1) — dead code limpo. Lista mostra todas.
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL")
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>({ col: "name", dir: "asc" })
   const [exportOpen, setExportOpen] = useState(false)
@@ -225,10 +226,9 @@ function PiecesContent() {
   }
 
   // Aplica filtros (status + categoria) e ordenacao
-  // statusFilter removido da UI 2026-05-26 (pedido user). statusFilter state
-  // continua existindo (default "ALL") por compat — filtra todas as pecas.
-  const afterStatus = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
-  const afterCategory = categoryFilter === "ALL" ? afterStatus : afterStatus.filter(p => (p.mediaFormatCategory ?? "Sem categoria") === categoryFilter)
+  // statusFilter removido completo 2026-05-26 (pedido user + cleanup). Lista
+  // sempre mostra todas as pecas (sem filtro de status).
+  const afterCategory = categoryFilter === "ALL" ? pieces : pieces.filter(p => (p.mediaFormatCategory ?? "Sem categoria") === categoryFilter)
   const filteredRaw = afterCategory
   const filtered = sort ? sortPieces(filteredRaw, sort.col, sort.dir) : filteredRaw
 

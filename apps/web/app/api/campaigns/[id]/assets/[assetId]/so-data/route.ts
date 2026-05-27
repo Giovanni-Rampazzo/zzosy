@@ -174,8 +174,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         }
       }
       walk((psdRe as any).children ?? [])
-      const buf: Buffer = canvas.toBuffer("image/png")
-      backgroundComposite = `data:image/png;base64,${buf.toString("base64")}`
+      // JPEG quality 0.82 — bg solido + overlay text. ~60% reducao vs PNG.
+      const buf: Buffer = canvas.toBuffer("image/jpeg", 82)
+      backgroundComposite = `data:image/jpeg;base64,${buf.toString("base64")}`
       console.log("[so-data GET] composite client-side OK:", { W, H, textLayersSkipped: skippedTextLayers })
     } catch (e) {
       console.warn("[so-data GET] compose non-text layers falhou:", e)
@@ -220,25 +221,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     ensureCanvasInit()
     const ab = psdBytes.buffer.slice(psdBytes.byteOffset, psdBytes.byteOffset + psdBytes.byteLength) as ArrayBuffer
 
-    // Captura composite ORIGINAL (pre-edit) via ag-psd direto — usado como
-    // fallback se o re-render pos-write retornar preto/null (caso comum quando
-    // invalidateTextLayers=true + ag-psd sem text engine completo).
-    // Bug reportado 2026-05-26: preview ficava todo preto apos salvar.
-    let originalCompositeBuffer: Buffer | null = null
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { readPsd: readOriginal } = require("ag-psd") as typeof import("ag-psd")
-      const origPsd = readOriginal(ab.slice(0), {
-        skipLayerImageData: true,
-        skipThumbnail: true,
-        skipCompositeImageData: false,
-      })
-      const origCanvas = (origPsd as any).canvas
-      if (origCanvas && typeof origCanvas.toBuffer === "function") {
-        originalCompositeBuffer = origCanvas.toBuffer("image/png")
-      }
-    } catch (e) { console.warn("[so-data PUT] captura composite original falhou:", e) }
-
     const { document } = readPsdDocument(ab, { includeImageData: true, includeComposite: true })
 
     // Aplica edits — cada chave eh "0.1.2" (path joined por .)
@@ -274,46 +256,63 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const { bytes: newBytes } = writePsdDocument(document, { invalidateTextLayers: true })
     const newBuf = Buffer.from(newBytes)
 
-    // Re-render composite via ag-psd (le o PSD recem-escrito, extrai canvas).
-    // ag-psd renderiza texto se tiver canvas adapter + fonts disponiveis.
+    // Re-render composite SEM textos (mesma estrategia do GET, comm b7daa30).
+    // Walk per-layer canvases do PSD recem-escrito, composita so as raster
+    // layers (imagens/shapes/bg), pula text. Texto sera overlay client-side
+    // com fontes do browser. Resultado: NUNCA mais preview preto.
+    // Probe de bytes anterior era inutil (PNG comprime em DEFLATE, bytes !=
+    // pixels). Removido junto com captura original (sem necessidade).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { readPsd } = require("ag-psd") as typeof import("ag-psd")
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createCanvas } = require("@napi-rs/canvas")
     const newAb = newBuf.buffer.slice(newBuf.byteOffset, newBuf.byteOffset + newBuf.byteLength) as ArrayBuffer
-    const psdRe = readPsd(newAb, {
-      skipLayerImageData: true,
-      skipThumbnail: true,
-      skipCompositeImageData: false,
-    })
-    const composite = (psdRe as any).canvas
     let compositeBuffer: Buffer | null = null
-    if (composite && typeof composite.toBuffer === "function") {
-      compositeBuffer = composite.toBuffer("image/png")
-    }
-
-    // Sanity check: composite all-black significa que ag-psd nao conseguiu
-    // renderizar (text engine falta). Detecta via probe central — se 99% dos
-    // pixels da regiao central tem RGB=0, considera preto e usa o original.
-    if (compositeBuffer) {
-      try {
-        const probe = compositeBuffer
-        // PNG header eh 33 bytes; pula ele e checa amostra dos pixels.
-        // Sample simples: conta bytes != 0 nas primeiras 4KB pos-header.
-        const start = 100
-        const end = Math.min(probe.length, start + 4096)
-        let nonZero = 0
-        for (let i = start; i < end; i++) {
-          if (probe[i] !== 0) nonZero++
+    try {
+      const psdRe = readPsd(newAb, {
+        skipLayerImageData: false,  // precisamos dos canvases por layer
+        skipThumbnail: true,
+        skipCompositeImageData: true,  // skip composite stored (era preto)
+      })
+      const W = (psdRe as any).width
+      const H = (psdRe as any).height
+      const canvas = createCanvas(W, H)
+      const ctx = canvas.getContext("2d")
+      // bg branco default — texto overlay no client por cima.
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(0, 0, W, H)
+      function walk(layers: any[]) {
+        if (!Array.isArray(layers)) return
+        for (const layer of layers) {
+          if (layer?.hidden) continue
+          if (Array.isArray(layer?.children)) { walk(layer.children); continue }
+          if (layer?.text != null) continue  // text vai por overlay client-side
+          if (layer?.canvas) {
+            try {
+              const left = layer.left ?? 0
+              const top = layer.top ?? 0
+              const opacity = typeof layer.opacity === "number" ? layer.opacity / 255 : 1
+              ctx.save()
+              ctx.globalAlpha = opacity
+              if (typeof layer.blendMode === "string" && layer.blendMode !== "normal") {
+                const blendMap: Record<string, GlobalCompositeOperation> = {
+                  multiply: "multiply", screen: "screen", overlay: "overlay",
+                  darken: "darken", lighten: "lighten", difference: "difference",
+                }
+                if (blendMap[layer.blendMode]) ctx.globalCompositeOperation = blendMap[layer.blendMode]
+              }
+              ctx.drawImage(layer.canvas, left, top)
+              ctx.restore()
+            } catch (e) { console.warn("[so-data PUT] drawImage layer falhou:", layer?.name, e) }
+          }
         }
-        const ratio = nonZero / (end - start)
-        if (ratio < 0.05 && originalCompositeBuffer) {
-          console.warn("[so-data PUT] composite pos-write parece all-black (nonzero ratio:", ratio, "), usando original como fallback")
-          compositeBuffer = originalCompositeBuffer
-        }
-      } catch (e) { console.warn("[so-data PUT] probe composite falhou:", e) }
-    } else if (originalCompositeBuffer) {
-      // composite null = re-render falhou totalmente. Usa original.
-      console.warn("[so-data PUT] composite pos-write retornou null, usando original")
-      compositeBuffer = originalCompositeBuffer
+      }
+      walk((psdRe as any).children ?? [])
+      // PERF: JPEG quality 0.82 (era PNG) — bg solido + overlay client, sem
+      // necessidade de alpha PNG. ~60% reducao do composite.png.
+      compositeBuffer = canvas.toBuffer("image/jpeg", 82)
+    } catch (e) {
+      console.warn("[so-data PUT] composite non-text falhou:", e)
     }
 
     // Captura paths antigos ANTES do update pra apagar do storage depois
@@ -328,8 +327,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
     let imageUrl = asset.imageUrl
     if (compositeBuffer) {
-      const compositeKey = `campaigns/${id}/smart/${guid}-composite.png`
-      const { url: cUrl } = await storage.put(compositeKey, compositeBuffer, "image/png")
+      const compositeKey = `campaigns/${id}/smart/${guid}-composite.jpg`
+      const { url: cUrl } = await storage.put(compositeKey, compositeBuffer, "image/jpeg")
       imageUrl = cUrl
     }
 
