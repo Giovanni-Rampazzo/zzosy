@@ -729,25 +729,42 @@ function readVectorStroke(vs: any): import("./types").PsdStroke | null {
     // Fallback raro: algumas versoes ag-psd antigas expoe color top-level.
     color = rgbToHex(vs.color)
   }
+  // Maps aceitam AMBOS formatos: PSD codes (legados) E nomes humanos
+  // (vindos do nosso patch de ag-psd que faz decode tolerante a
+  // descritores com 'BlnM.normal' vs 'BlnM.Nrml'). User reportou stroke
+  // saindo com posicao errada (outside em vez de center) — fallback do
+  // map nao reconhecia o nome humano.
   const positionMap: Record<string, "inside" | "center" | "outside"> = {
-    "strokeStyleAlignInside": "inside",
-    "strokeStyleAlignCenter": "center",
-    "strokeStyleAlignOutside": "outside",
+    strokeStyleAlignInside: "inside",
+    strokeStyleAlignCenter: "center",
+    strokeStyleAlignOutside: "outside",
+    inside: "inside",
+    center: "center",
+    outside: "outside",
   }
   const capMap: Record<string, "butt" | "round" | "square"> = {
-    "strokeStyleButtCap": "butt",
-    "strokeStyleRoundCap": "round",
-    "strokeStyleSquareCap": "square",
+    strokeStyleButtCap: "butt",
+    strokeStyleRoundCap: "round",
+    strokeStyleSquareCap: "square",
+    butt: "butt",
+    round: "round",
+    square: "square",
   }
   const joinMap: Record<string, "miter" | "round" | "bevel"> = {
-    "strokeStyleMiterJoin": "miter",
-    "strokeStyleRoundJoin": "round",
-    "strokeStyleBevelJoin": "bevel",
+    strokeStyleMiterJoin: "miter",
+    strokeStyleRoundJoin: "round",
+    strokeStyleBevelJoin: "bevel",
+    miter: "miter",
+    round: "round",
+    bevel: "bevel",
   }
   return {
     width,
     color,
-    position: positionMap[vs.lineAlignment] ?? "outside",
+    // Default agora "center" (era "outside"). Photoshop default eh center,
+    // entao quando vs.lineAlignment estiver missing/unknown, center eh o
+    // mais conservador. Outside fazia stroke estourar pra fora errado.
+    position: positionMap[vs.lineAlignment] ?? "center",
     cap: capMap[vs.lineCapType] ?? "butt",
     join: joinMap[vs.lineJoinType] ?? "miter",
     dash: Array.isArray(vs.lineDashSet) ? vs.lineDashSet.map((u: any) => readUnitsValue(u, 0)) : undefined,
