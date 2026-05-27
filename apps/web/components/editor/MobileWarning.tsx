@@ -3,37 +3,42 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 
 /**
- * Detecta mobile/tablet pequeno + bloqueia o editor com mensagem clara.
- * Editor de canvas Fabric exige mouse + viewport amplo — Touch UX seria
- * trabalho de PROD-12 dedicado. Por enquanto: warning + redirecionar
- * pra outras pages.
+ * Bloqueia o editor em dispositivos SEM mouse/teclado (touch primary).
  *
- * Threshold: 900px (cobre tablets pequenos em portrait). Acima disso
- * libera (laptop pequeno, tablet em landscape).
+ * Lógica: detecta INPUT primário do device via media query `pointer: coarse`.
+ *   - `coarse`: dedo (touch) → mobile/tablet → bloqueia
+ *   - `fine`:   mouse/stylus → desktop ou laptop → libera
+ *
+ * Width da janela é IRRELEVANTE — desktop com janela estreita (split-screen,
+ * sidebar do DevTools, monitor secundário em portrait) tem mouse+teclado e
+ * deve funcionar. A versão anterior bloqueava por `innerWidth < 900` o que
+ * gerava falso positivo em desktops.
+ *
+ * Tablets híbridos (iPad com Magic Keyboard, Surface) reportam `fine` quando
+ * acoplados — passam pelo check corretamente.
  */
 export function MobileWarning() {
-  const [isMobile, setIsMobile] = useState(false)
+  const [blocked, setBlocked] = useState(false)
   const [mounted, setMounted] = useState(false)
-  // 2026-05-27: override pra desktops com janela estreita (split screen,
-  // sidebar, etc). User reportou bloqueio injusto com janela <900px de
-  // largura mesmo tendo mouse+teclado. Override fica salvo no localStorage.
-  const [override, setOverride] = useState(false)
 
   useEffect(() => {
     setMounted(true)
-    // Le override do localStorage
-    try {
-      if (localStorage.getItem("zzosy:editorMobileOverride") === "1") setOverride(true)
-    } catch { /* sem localStorage = sem override */ }
     function check() {
-      setIsMobile(window.innerWidth < 900 || window.matchMedia("(pointer: coarse) and (max-width: 1100px)").matches)
+      // `any-pointer: fine` = ALGUM input device é mouse/stylus, mesmo
+      // que touch também esteja disponível. Hybrid devices (iPad com mouse,
+      // Surface) reportam true aqui. Touch-only mobile reporta false.
+      const hasFinePointer = window.matchMedia("(any-pointer: fine)").matches
+      // Fallback pra browsers antigos sem matchMedia: assume desktop.
+      setBlocked(!hasFinePointer)
     }
     check()
-    window.addEventListener("resize", check)
-    return () => window.removeEventListener("resize", check)
+    // Re-check em events que podem mudar pointer (acoplar/desacoplar teclado)
+    const mql = window.matchMedia("(any-pointer: fine)")
+    mql.addEventListener?.("change", check)
+    return () => mql.removeEventListener?.("change", check)
   }, [])
 
-  if (!mounted || !isMobile || override) return null
+  if (!mounted || !blocked) return null
 
   return (
     <div style={{
@@ -44,11 +49,11 @@ export function MobileWarning() {
     }}>
       <div style={{ fontSize: 32, fontWeight: 800, color: "#F5C400", marginBottom: 16 }}>ZZOSY</div>
       <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
-        Editor disponível só em desktop
+        Editor precisa de mouse e teclado
       </div>
       <p style={{ fontSize: 14, color: "#aaa", maxWidth: 360, lineHeight: 1.5, marginBottom: 24 }}>
-        O editor de peças usa canvas + atalhos de teclado que não funcionam bem em
-        celular ou tablet pequeno. Abre numa tela ≥ 900px.
+        O editor usa canvas + atalhos que exigem cursor preciso. Conecte um
+        teclado/mouse ao dispositivo, ou abra ZZOSY num desktop/laptop.
       </p>
       <div style={{ display: "flex", gap: 12, flexDirection: "column", width: "100%", maxWidth: 320 }}>
         <Link href="/campaigns" style={{
@@ -64,21 +69,6 @@ export function MobileWarning() {
         }}>
           Dashboard
         </Link>
-        <button
-          type="button"
-          onClick={() => {
-            try { localStorage.setItem("zzosy:editorMobileOverride", "1") } catch {}
-            setOverride(true)
-          }}
-          style={{
-            background: "transparent", color: "#888",
-            border: "1px solid #333",
-            padding: "8px 16px", borderRadius: 8, fontWeight: 500, fontSize: 12,
-            cursor: "pointer", marginTop: 4,
-          }}
-        >
-          Continuar mesmo assim (desktop com janela estreita)
-        </button>
       </div>
     </div>
   )
