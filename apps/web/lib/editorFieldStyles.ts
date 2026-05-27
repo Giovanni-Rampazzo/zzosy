@@ -21,14 +21,15 @@
 
 import type { CSSProperties } from "react"
 
-/** Input/select escuro base do editor. BG #111, border #2a2a2a, white text. */
+/** Input/select escuro base do editor. BG #111, border #2a2a2a, white text.
+ *  padding vertical 5 → 3 (2026-05-26 user pediu radical menor). */
 export const inpS: CSSProperties = {
   width: "100%",
   background: "#111",
   border: "1px solid #2a2a2a",
   color: "white",
   fontSize: 12,
-  padding: "5px 8px",
+  padding: "3px 8px",
   borderRadius: 4,
   outline: "none",
 }
@@ -49,14 +50,15 @@ export const numInpS: CSSProperties = {
   width: "100%",
 }
 
-/** Label uppercase pequena das secoes do Properties Panel. */
+/** Label uppercase pequena das secoes do Properties Panel.
+ *  marginBottom 6 → 3 (2026-05-26 user pediu padding radical menor). */
 export const secS: CSSProperties = {
   fontSize: 10,
   fontWeight: 700,
   color: "#666",
   textTransform: "uppercase" as const,
   letterSpacing: 0.6,
-  marginBottom: 6,
+  marginBottom: 3,
 }
 
 /** Grid container padrao pra layout "field principal + number small a direita".

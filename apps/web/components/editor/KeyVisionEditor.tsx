@@ -11228,9 +11228,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               }
             }
             return (
-          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
             {/* BLEND MODE + OPACITY — padrao ZZOSY: blend left, opacity right
-                na MESMA linha (user pedido 2026-05-23). */}
+                na MESMA linha (user pedido 2026-05-23). Padding/gap reduzidos
+                radicalmente 2026-05-26 (user reportou panel muito espacado). */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 8 }}>
               <div>
                 <div style={secS}>Blend mode</div>
@@ -11755,9 +11756,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const setStrokeHex = (hex: string) => setShapeProp("stroke", combineHexAlpha(hex, currentStrokeAlpha))
             const setStrokeAlpha = (pct: number) => setShapeProp("stroke", combineHexAlpha(currentStrokeHex, Math.max(0, Math.min(1, pct / 100))))
             return (
-              <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
                 {/* Label do layer removido (2026-05-22) — redundante com o
-                    painel Layers que ja destaca o ativo. */}
+                    painel Layers que ja destaca o ativo. Padding reduzido
+                    radical 2026-05-26. */}
 
                 {/* BLEND MODE + OPACITY na mesma linha — padrao ZZOSY. */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 92px", gap: 8 }}>
@@ -11894,7 +11896,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             )
           })()
         ) : (
-          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ padding: "8px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
             {/* Label do layer removido (2026-05-22) — painel Layers ja indica
                 qual layer esta ativo, sem duplicar info aqui. */}
             {/* BLEND MODE + OPACITY na mesma linha — padrao ZZOSY. */}
