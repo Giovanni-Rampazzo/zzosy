@@ -377,7 +377,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       clientId: camp?.clientId ?? null,
     })
   } catch (err: any) {
-    console.error("import-psd error:", err)
-    return NextResponse.json({ error: err?.message ?? "Erro interno" }, { status: 500 })
+    // DIAG 2026-05-27: user reportou 500 silencioso no import-psd. Adiciono
+    // stack na response pra debug rapido via Network tab.
+    console.error("import-psd error:", err?.message, err?.stack?.split("\n").slice(0, 6).join(" | "))
+    return NextResponse.json({
+      error: err?.message ?? "Erro interno",
+      stack: err?.stack?.split("\n").slice(0, 8).join("\n"),
+    }, { status: 500 })
   }
 }
