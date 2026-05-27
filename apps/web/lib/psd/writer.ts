@@ -741,8 +741,16 @@ export async function prepareImageDataAsync(doc: PsdDocument): Promise<void> {
   let nodeCanvas: any = null
   if (!isBrowser) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      nodeCanvas = require("@napi-rs/canvas")
+      // CRITICO 2026-05-27: usa eval("require") pra ESCONDER do bundler do
+      // Turbopack/webpack. Sem isso, bundler vê 'require("@napi-rs/canvas")'
+      // como dependencia ESTATICA e tenta empacotar pro CLIENT bundle. Como
+      // @napi-rs/canvas usa 'fs' (Node only), build inteiro do app quebrava
+      // com "Module not found: Can't resolve 'fs'". TODA pagina que importava
+      // (direto ou indireto) este arquivo morria. Causa raiz dos 500/regen
+      // falhas/export quebrado reportados 2026-05-27.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, no-eval
+      const dynamicRequire = eval("require") as NodeRequire
+      nodeCanvas = dynamicRequire("@napi-rs/canvas")
     } catch {
       return // sem canvas em Node = sem fallback possivel
     }
