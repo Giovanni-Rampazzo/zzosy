@@ -49,8 +49,11 @@ interface Piece {
   // Flags anti-falhas (enriquecidos em /api/pieces):
   // isEmpty=true: piece.data com layers=[] (provavel corrupcao)
   // hasBackup=true: tem piece.dataBackup salvo (pode restaurar via UI)
+  // maskCount=N: numero de layers com mask field (raster/vector/clipping).
+  //   Usado pra mostrar banner "X pecas sem mascara — rode Re-aplicar".
   isEmpty?: boolean
   hasBackup?: boolean
+  maskCount?: number
 }
 
 export default function CampaignOverviewPage() {
@@ -725,6 +728,26 @@ export default function CampaignOverviewPage() {
                     await loadAll()
                   } catch (e: any) { alert(`Erro: ${e?.message ?? e}`) }
                 }}>↻ Regenerar da matriz ({emptyPieces.length})</Button>
+              </div>
+            )
+          })()}
+          {/* Estado dos dados — banner sempre visivel pra user saber ANTES de
+              exportar se mascaras estao presentes. User reportou 2026-05-27
+              "exportei e veio tudo sem mascara" — sem essa visibilidade, o
+              user descobre o problema so depois do export. */}
+          {(() => {
+            const totalPieces = visiblePieces.length
+            if (totalPieces === 0) return null
+            const piecesWithMasks = visiblePieces.filter(p => (p.maskCount ?? 0) > 0).length
+            const piecesWithSteps = visiblePieces.filter(p => (p.stepCount ?? 1) > 1).length
+            const totalMaskCount = visiblePieces.reduce((s, p) => s + (p.maskCount ?? 0), 0)
+            const noMasks = piecesWithMasks === 0 && totalMaskCount === 0
+            return (
+              <div style={{ fontSize: 12, color: "#555", marginBottom: 8, padding: "8px 12px", background: noMasks ? "#FFF3CD" : "#F0F9FF", border: `1px solid ${noMasks ? "#FFE69C" : "#BAE6FD"}`, borderRadius: 6, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <span><strong>Estado:</strong></span>
+                <span>🎭 Máscaras: <strong>{piecesWithMasks}/{totalPieces}</strong> peças ({totalMaskCount} total)</span>
+                <span>🎞️ Multi-step: <strong>{piecesWithSteps}/{totalPieces}</strong> peças</span>
+                {noMasks && <span style={{ color: "#664D03", fontWeight: 600 }}>⚠️ Nenhuma peça tem máscaras — clique &quot;Re-aplicar máscaras&quot; abaixo</span>}
               </div>
             )
           })()}

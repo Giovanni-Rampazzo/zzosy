@@ -54,6 +54,10 @@ export async function GET(req: NextRequest) {
     // recuperar agora" pra direcionar user ao recovery.
     let isEmpty = false
     let hasBackup = !!(p as any).dataBackup
+    // DIAG 2026-05-27: conta mascaras na peca pra UI mostrar estado visivel
+    // antes de exportar. Se maskCount=0 em todas pecas, user sabe que precisa
+    // rodar "Re-aplicar mascaras" antes.
+    let maskCount = 0
     // Versionador: timestamp da ultima edicao da peca. Quando muda, navegador
     // re-baixa as imagens (sem mais cache stale).
     const v = new Date(p.updatedAt).getTime()
@@ -79,6 +83,12 @@ export async function GET(req: NextRequest) {
       const rootLayers = Array.isArray(d?.layers) ? d.layers.length : 0
       const stepsHaveLayers = Array.isArray(d?.steps) && d.steps.some((s: any) => Array.isArray(s?.layers) && s.layers.length > 0)
       isEmpty = !d || (rootLayers === 0 && !stepsHaveLayers)
+      // Conta layers com mask field (raster/vector/clipping). Inclui steps.
+      const countMasks = (arr: any[]) => arr.filter(l => l?.mask && l.mask.enabled !== false).length
+      if (Array.isArray(d?.layers)) maskCount += countMasks(d.layers)
+      if (Array.isArray(d?.steps)) for (const s of d.steps) {
+        if (Array.isArray(s?.layers)) maskCount += countMasks(s.layers)
+      }
     } catch {
       // Parse falhou — data corrompido = considera empty
       isEmpty = true
@@ -105,9 +115,9 @@ export async function GET(req: NextRequest) {
       // Strip data + dataBackup do payload lite — sao gigantes, frontend so
       // precisa dos flags (isEmpty, hasBackup).
       const { data: _stripped, dataBackup: _bk, ...pNoData } = p as any
-      return { ...pNoData, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount, isEmpty, hasBackup }
+      return { ...pNoData, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount, isEmpty, hasBackup, maskCount }
     }
-    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount, isEmpty, hasBackup }
+    return { ...p, imageUrl: stampedImageUrl, width, height, format, dpi, media, mediaFormatCategory: mfCategory, mediaFormatSegment, widthValue, heightValue, widthUnit, heightUnit, steps, stepCount, isEmpty, hasBackup, maskCount }
   })
   return NextResponse.json(enriched)
 }
