@@ -199,20 +199,29 @@ function textToAgPsd(l: PsdTextLayer): any {
 }
 
 function charStyleToAgPsd(s: PsdTextLayer["defaultStyle"]): any {
+  // PSD nao tem fontWeight numerico — peso vem do POSTSCRIPT NAME (ex:
+  // "Arial-BoldMT") OU do flag fauxBold (synthetic bold via Faux). Como
+  // nao temos postscript name confiavel (Google Fonts varia), aplicamos
+  // fauxBold pra qualquer weight >= 600. Idem fontStyle italic → fauxItalic.
+  //
+  // Sem isso, PS abre TODO texto em regular (sumiam pesos black/bold/heavy).
+  // Bug 2026-05-27 — user reportou fonte com peso errado no export.
+  const w = typeof s.fontWeight === "number" ? s.fontWeight
+    : (typeof s.fontWeight === "string" && /bold|^[6-9]00$/.test(s.fontWeight) ? 700 : 400)
+  const isBold = w >= 600
+  const isItalic = s.fontStyle === "italic" || s.fauxItalic === true
   return {
     font: { name: s.fontFamily },
     fontSize: s.fontSize,
     fillColor: hexToRgb(s.color),
     tracking: s.tracking,
-    // baselineShift em PONTOS PSD (positive=up). 0/undefined = sem shift.
-    // Round-trip preserva exatamente o sinal/magnitude do PSD original.
     ...(typeof s.baselineShift === "number" && s.baselineShift !== 0
         ? { baselineShift: s.baselineShift } : {}),
     leading: s.leading,
     underline: s.underline,
     strikethrough: s.strikethrough,
-    fauxBold: s.fauxBold,
-    fauxItalic: s.fauxItalic,
+    fauxBold: s.fauxBold ?? isBold,
+    fauxItalic: isItalic,
   }
 }
 
@@ -323,8 +332,43 @@ function shapeToAgPsd(l: PsdShapeLayer, warn: (w: WriteWarning) => void): any {
   // saiam como image apos round-trip via readPsdDocument.
   const knots = svgPathToKnots(l.path)
   if (knots && knots.length > 0) {
+    // BUG FIX 2026-05-27: ag-psd writeBezierKnot faz `points[0] / width` pra
+    // normalizar 0..1. Logo, knots DEVEM estar em coords ABSOLUTAS DO CANVAS
+    // em pixels — ag-psd normaliza por width/height da imagem.
+    //
+    // l.path pode estar em (a) coords LOCAIS [parametric: buildShapePath] OU
+    // (b) coords absolutas do PSD original [import via bezierPathToSvg]. Em
+    // ambos casos a "origem" do path eh l.pathBbox.left/top (Fabric normaliza
+    // via pathOffset). Pra obter canvas-absolute final: subtrair pathBbox
+    // (zerar) e somar bbox layer (posicao atual no canvas).
+    //
+    // Sem isso, shapes saiam ancorados no canto superior esquerdo (parametric)
+    // OU na posicao original do PSD (import), nao na posicao que user moveu.
+    // Foi a causa raiz do shape virar "retangulo" no PS.
+    const pbb = l.pathBbox ?? l.bbox
+    const dx = l.bbox.left - pbb.left
+    const dy = l.bbox.top - pbb.top
+    const sX = pbb.right > pbb.left
+      ? (l.bbox.right - l.bbox.left) / (pbb.right - pbb.left)
+      : 1
+    const sY = pbb.bottom > pbb.top
+      ? (l.bbox.bottom - l.bbox.top) / (pbb.bottom - pbb.top)
+      : 1
+    // Aplica scale (caso shape tenha sido redimensionado no editor) em torno
+    // do pathBbox origin, depois translada pra canvas.
+    const transform = (x: number, y: number): [number, number] => {
+      const rx = (x - pbb.left) * sX + pbb.left
+      const ry = (y - pbb.top) * sY + pbb.top
+      return [rx + dx, ry + dy]
+    }
+    const translatedKnots = knots.map(k => {
+      const [x0, y0] = transform(k.points[0], k.points[1])
+      const [x1, y1] = transform(k.points[2], k.points[3])
+      const [x2, y2] = transform(k.points[4], k.points[5])
+      return { points: [x0, y0, x1, y1, x2, y2] }
+    })
     out.vectorMask = {
-      paths: [{ operation: "combine", knots, open: false }],
+      paths: [{ operation: "combine", knots: translatedKnots, open: false }],
     }
   }
   if (l.fill?.kind === "solid") {
