@@ -204,12 +204,11 @@ async function renderPieceThumb(
     if (bgObj) fc.sendObjectToBack(bgObj)
     fc.renderAll()
 
-    // Thumbnail HIGH-RES (1920px max maior lado, PNG pra preservar alpha).
-    // JPEG flatava mascaras raster com transparencia em cor solida — apresentacao
-    // perdia o look. PNG mantem alpha; ligeiramente maior que JPEG mas pra
-    // screenshots de UI com texto + cor solida a diferenca eh minima.
-    const thumbScale = Math.min(1920 / pieceW, 1920 / pieceH, 1)
-    const dataUrl = fc.toDataURL({ format: "png", multiplier: thumbScale })
+    // Thumbnail compacto (960px max maior lado, JPEG quality 0.82).
+    // 2026-05-26: 1920→960 + PNG→JPEG. Peca tem bg solido, alpha era luxo
+    // nao usado. Mesmo padrao do resto do sistema (perf sweep).
+    const thumbScale = Math.min(960 / pieceW, 960 / pieceH, 1)
+    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: thumbScale })
     fc.dispose()
     const res = await fetch(dataUrl)
     return await res.blob()

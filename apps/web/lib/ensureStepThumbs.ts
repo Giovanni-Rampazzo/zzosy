@@ -22,7 +22,7 @@ type CampaignAssetsFetcher = (campaignId: string) => Promise<any[]>
 
 // Renderiza um step especifico de uma piece num canvas offscreen e retorna
 // PNG blob. Reusa buildPieceCanvas montando piece virtual com data do step.
-async function renderStepBlob(piece: any, assets: any[], stepIdx: number, target = 2400): Promise<Blob | null> {
+async function renderStepBlob(piece: any, assets: any[], stepIdx: number, target = 960): Promise<Blob | null> {
   const data = typeof piece.data === "string" ? JSON.parse(piece.data) : (piece.data ?? {})
   const allSteps = Array.isArray(data?.steps) ? data.steps : []
   const step = allSteps[stepIdx]
@@ -43,7 +43,8 @@ async function renderStepBlob(piece: any, assets: any[], stepIdx: number, target
   try {
     const fc = await buildPieceCanvas(virtualPiece, assets)
     const sc = Math.min(target / W, target / H, 1)
-    const dataUrl = fc.toDataURL({ format: "png", multiplier: sc, enableRetinaScaling: false })
+    // JPEG quality 0.82 (era PNG) — peca tem bg solido. 2026-05-26 perf sweep.
+    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: sc, enableRetinaScaling: false })
     fc.dispose()
     return await (await fetch(dataUrl)).blob()
   } catch (e) {

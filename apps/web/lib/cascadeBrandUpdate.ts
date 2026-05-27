@@ -120,15 +120,15 @@ function resolveBrandRefsInData(data: any, brandColors: BrandColorLike[]): boole
 
 // Renderiza thumb de uma piece (data + assets) e retorna PNG blob via
 // buildPieceCanvas. `target` = max(w,h) do thumb.
-async function renderPieceThumbBlob(piece: any, assets: any[], target = 1600): Promise<Blob | null> {
+async function renderPieceThumbBlob(piece: any, assets: any[], target = 960): Promise<Blob | null> {
   try {
     const fc = await buildPieceCanvas(piece, assets)
     const data = typeof piece.data === "string" ? JSON.parse(piece.data) : (piece.data ?? {})
     const W = data?.width ?? piece.width ?? 1080
     const H = data?.height ?? piece.height ?? 1080
     const sc = Math.min(target / W, target / H, 1)
-    // PNG (nao JPEG) — preserva canal alpha em mascaras raster transparentes.
-    const dataUrl = fc.toDataURL({ format: "png", multiplier: sc, enableRetinaScaling: false })
+    // JPEG quality 0.82 (era PNG) — peca tem bg solido. 2026-05-26 perf sweep.
+    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: sc, enableRetinaScaling: false })
     fc.dispose()
     return await (await fetch(dataUrl)).blob()
   } catch (e) {
