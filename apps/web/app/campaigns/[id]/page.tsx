@@ -153,23 +153,22 @@ export default function CampaignOverviewPage() {
 
   useEffect(() => { loadAll() }, [id])
 
-  // REGEN INTELIGENTE 2026-05-24: ref-guard por piece.id+updatedAt evita
-  // re-regen quando piece nao mudou (impede loop com file watcher). Mas
-  // re-regen QUANDO piece.updatedAt mudou (asset edit, save no editor, etc).
-  // Batches de 3 simultaneos.
-  const regenSeenRef = useRef<Map<string, string>>(new Map())
+  // REGEN INTELIGENTE 2026-05-27: ref-guard por piece.id (session-level).
+  //
+  // BUG ANTERIOR (loop infinito 2026-05-27 identificado via Playwright):
+  // regenSeenRef cacheava por id+updatedAt. Mas regeneratePieceThumb faz
+  // POST /thumbnail que ATUALIZA piece.updatedAt no DB. loadAll() refetcha,
+  // novo updatedAt ≠ cached → useEffect dispara DE NOVO → regen → loop
+  // infinito (~70 fetches/seg). Causava UI travada + server saturado.
+  //
+  // Fix: tracking session-level (id apenas). Cada peca eh regenerada UMA vez
+  // por session. Edits do editor disparam re-regen via BroadcastChannel
+  // (mais explicito, sem race) — ja coberto em outro useEffect.
+  const regenSeenRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (pieces.length === 0) return
-    // Determina quais pieces precisam regen: as que NUNCA regen nesta sessao,
-    // OU as que tiveram updatedAt mais recente desde ultimo regen.
-    // PRIORIDADE 2026-05-27: pieces sem imageUrl (precisam thumb urgente)
-    // antes das que ja tem thumb mas updatedAt mudou.
     const seen = regenSeenRef.current
-    const toRegen = pieces.filter(p => {
-      const key = String(p.updatedAt ?? "")
-      const last = seen.get(p.id)
-      return last !== key
-    })
+    const toRegen = pieces.filter(p => !seen.has(p.id))
     if (toRegen.length === 0) return
     // Sort: pieces sem imageUrl primeiro (urgente). Resto depois.
     toRegen.sort((a, b) => {
@@ -211,17 +210,16 @@ export default function CampaignOverviewPage() {
         const chunk = toRegen.slice(i, i + BATCH)
         await Promise.allSettled(chunk.map(async p => {
           try {
-            const ok = await Promise.race([
+            await Promise.race([
               regeneratePieceThumb(p.id),
               new Promise<boolean>((_, reject) =>
                 setTimeout(() => reject(new Error(`piece timeout ${PIECE_TIMEOUT_MS/1000}s`)), PIECE_TIMEOUT_MS)
               ),
             ])
-            if (ok) seen.set(p.id, String(p.updatedAt ?? ""))
+            seen.add(p.id)
           } catch (e) {
             console.warn("[smart-regen]", p.id, e)
-            // Marca como "seen" mesmo em timeout pra nao re-tentar em loop infinito
-            seen.set(p.id, String(p.updatedAt ?? ""))
+            seen.add(p.id)
           } finally {
             doneCount++
             if (!cancelled) setRegenProgress({ done: doneCount, total: toRegen.length })
