@@ -213,6 +213,67 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
         }
         if (asset.type === "IMAGE" && asset.imageUrl) {
           await renderImageLayerWithMask(layer, asset)
+        } else if (asset.type === "TEXT") {
+          // TEXT render server-side (basico, sem font custom nem per-char styles).
+          // Pega text do asset.content (spans) ou overrides.text.
+          let textContent = layer.overrides?.text ?? ""
+          if (!textContent && asset.content) {
+            try {
+              const spans = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+              if (Array.isArray(spans)) textContent = spans.map((s: any) => s.text ?? "").join("")
+            } catch {}
+          }
+          if (!textContent) { ctx.restore(); continue }
+          const ovrd = layer.overrides ?? {}
+          let asfontSize = ovrd.fontSize ?? 80
+          let asfill = ovrd.fill ?? "#000"
+          let astFontFamily = ovrd.fontFamily ?? "Arial"
+          let asfontWeight = ovrd.fontWeight ?? "normal"
+          // Asset default style fallback
+          if (asset.content) {
+            try {
+              const spans = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+              const def = spans?.[0]?.style ?? {}
+              if (!ovrd.fontSize) asfontSize = def.fontSize ?? asfontSize
+              if (!ovrd.fill) asfill = def.color ?? asfill
+              if (!ovrd.fontFamily) astFontFamily = def.fontFamily ?? astFontFamily
+            } catch {}
+          }
+          const drawX = (layer.posX ?? 0) * scale
+          const drawY = (layer.posY ?? 0) * scale
+          const lScale = (layer.scaleX ?? 1) * scale
+          const fs = (asfontSize as number) * lScale
+          const wRaw = layer.width ?? 400
+          const maxW = wRaw * lScale
+          ctx.fillStyle = asfill as string
+          ctx.font = `${asfontWeight} ${fs}px "${astFontFamily}", Arial, sans-serif`
+          ctx.textBaseline = "top"
+          ctx.textAlign = (ovrd.textAlign as any) ?? "left"
+          // Word-wrap simples: split por space, quebra quando excede maxW
+          const lines: string[] = []
+          for (const sourceLine of String(textContent).split("\n")) {
+            const words = sourceLine.split(" ")
+            let cur = ""
+            for (const w of words) {
+              const tryLine = cur ? cur + " " + w : w
+              const m = ctx.measureText(tryLine)
+              if (m.width > maxW && cur) {
+                lines.push(cur)
+                cur = w
+              } else {
+                cur = tryLine
+              }
+            }
+            if (cur) lines.push(cur)
+          }
+          // Render lines (lineHeight 1.0 default Photoshop)
+          const lineHeight = fs * (ovrd.lineHeight ?? 1.0)
+          lines.forEach((line, i) => {
+            const x = ctx.textAlign === "center" ? drawX + maxW / 2 :
+                      ctx.textAlign === "right" ? drawX + maxW :
+                      drawX
+            ctx.fillText(line, x, drawY + i * lineHeight)
+          })
         } else if (asset.type === "SHAPE") {
           // Parse asset.content → { path, fill, stroke, pathBbox }
           let shape: any = null
