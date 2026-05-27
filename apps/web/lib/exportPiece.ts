@@ -847,13 +847,22 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
 }
 
 async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; assets: Asset[] }> {
-  // cache: "no-store" eh CRITICO. Sem ele, o navegador serve respostas
-  // cacheadas de GETs anteriores. Resultado: o user edita uma peca no editor,
-  // exporta — e o export usa a versao VELHA (cache). Bug "exporta layout
-  // antigo" mesmo com a peca editada no banco.
-  const pres = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
+  // Timeout 15s por fetch — evita hang infinito se servidor demorar.
+  // Sem isso, 1 piece travada bloqueia o worker pool inteiro do
+  // buildDeliveryZip. User reportou "nao exporta" sem stack trace —
+  // possível hang silencioso. AbortController dispara em 15s.
+  async function fetchWithTimeout(url: string, ms = 15000): Promise<Response> {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), ms)
+    try {
+      return await fetch(url, { cache: "no-store", signal: ctrl.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  const pres = await fetchWithTimeout(`/api/pieces/${pieceId}`)
   const piece = await pres.json()
-  const cres = await fetch(`/api/campaigns/${piece.campaignId}`, { cache: "no-store" })
+  const cres = await fetchWithTimeout(`/api/campaigns/${piece.campaignId}`)
   const camp = await cres.json()
   return { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
 }
