@@ -4152,14 +4152,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // roda depois do loop principal. Sem esse passe, undo de movimento em
       // layer com clipping mask removia o efeito visual (user reportou
       // 2026-05-26 "undo na posicao desfaz tambem a mascara clip layer below").
+      //
+      // ANTI-FALHAS 2026-05-26:
+      // 1. Re-computa `all` a cada iteracao (defensivo — caso loadFromJSON
+      //    reorder os objetos vs restored array).
+      // 2. Valida idx > 0 && base existe ANTES de chamar (evita clipPath
+      //    apontando pra null/bg quando base foi deletado pre-snap).
+      // 3. Passa mySeq pro applyClippingMaskNative pra abortar se outra
+      //    applySnapshot disparar durante o await base.clone() (race).
       for (let i = 0; i < restored.length; i++) {
         const obj: any = restored[i]
         const md = obj?.__maskData
-        if (md?.type === "clipping" && md?.enabled !== false) {
-          try { await applyClippingMaskNative(fc, obj) } catch (e) {
-            console.warn("[undo-restore-clipping]", e)
-          }
+        if (!(md?.type === "clipping" && md?.enabled !== false)) continue
+        const allNow = fc.getObjects().filter((o: any) =>
+          !o.__isBg && !o.__isBleedOverlay && !o.__isStrokeGhost
+        )
+        const idxNow = allNow.indexOf(obj)
+        if (idxNow <= 0 || !allNow[idxNow - 1]) {
+          // Sem base valida — limpa clipPath em vez de aplicar (evita estado fantasma).
+          obj.clipPath = null
+          obj.dirty = true
+          continue
         }
+        try { await applyClippingMaskNative(fc, obj, mySeq) } catch (e) {
+          console.warn("[undo-restore-clipping]", e)
+        }
+        // Aborta loop inteiro se applySnapshot novo disparou.
+        if (mySeq !== applySnapshotSeq.current) break
       }
 
       // DESABILITADO 2026-05-18: orphan cleanup pos-restore removia layers
@@ -4218,6 +4237,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         left: 0, top: 0, width: canvasWRef.current, height: canvasHRef.current,
         absolutePositioned: true,
       })
+
+      // ANTI-FALHAS 2026-05-26: RE-SYNC clipping masks APOS BG recreation +
+      // sendObjectToBack. Esses reorderings podem deslocar idx dos objetos no
+      // canvas → applyClippingMaskNative do second pass (que rodou antes)
+      // poderia ter pego base errada. Re-aplica usando ordem FINAL do canvas.
+      // Bug recorrente: undo de movimento desfaz mask. Aqui garantimos que
+      // pos-restore o clipping aponta SEMPRE pro layer correto abaixo.
+      try {
+        const allFinal = fc.getObjects().filter((o: any) =>
+          !o.__isBg && !o.__isBleedOverlay && !o.__isStrokeGhost
+        )
+        for (const obj of allFinal) {
+          const md = (obj as any)?.__maskData
+          if (md?.type === "clipping" && md?.enabled !== false) {
+            await applyClippingMaskNative(fc, obj, mySeq)
+            if (mySeq !== applySnapshotSeq.current) break
+          }
+        }
+      } catch (e) { console.warn("[undo-clipping-resync-post-bg]", e) }
+
       fc.renderAll()
       refreshLayers(fc)
       // BRAND RESYNC POS-UNDO: snaps antigos podem ter fills/cores DESATUALIZADOS
@@ -6044,7 +6083,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
    * Cria clone com absolutePositioned: true. Fabric clipPath assim renderiza
    * em coords absolutas do canvas (mesma posicao do base original).
    */
-  async function applyClippingMaskNative(fc: any, obj: any) {
+  /**
+   * Aplica clipPath nativo de Fabric usando o silhouette do layer ABAIXO.
+   *
+   * ANTI-RACE 2026-05-26: aceita `expectedSeq` opcional. Se `applySnapshotSeq`
+   * mudou entre a chamada e o await base.clone() (= outro undo/redo disparou),
+   * aborta — sem isso o clone do undo antigo sobrescrevia clipPath restaurado
+   * pelo undo mais novo, deixando mask "fantasma" apontando pra base errada.
+   */
+  async function applyClippingMaskNative(fc: any, obj: any, expectedSeq?: number) {
     const all = fc.getObjects().filter((o: any) =>
       !o.__isBg && !o.__isBleedOverlay && !o.__isStrokeGhost
     )
@@ -6060,6 +6107,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       // Clone Fabric do base — mantem mesma geometria pra usar como clipPath.
       // clone() eh assincrono em Fabric v7 (retorna Promise).
       const baseClone = await base.clone()
+      // Stale check pos-await — outra applySnapshot pode ter disparado.
+      if (expectedSeq !== undefined && expectedSeq !== applySnapshotSeq.current) {
+        return
+      }
       ;(baseClone as any).absolutePositioned = true
       // ClipPath nao precisa de fill/stroke pra clipar — so a silhouette
       // (alpha) eh usada. Mas se for IMAGE/TEXT, mantemos como esta —
