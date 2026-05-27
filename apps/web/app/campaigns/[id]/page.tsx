@@ -92,6 +92,9 @@ export default function CampaignOverviewPage() {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>({ col: "name", dir: "asc" })
   // Progress da regen automatica de thumbs (perf indicator)
   const [regenProgress, setRegenProgress] = useState<{ done: number; total: number } | null>(null)
+  // Loading state dos botoes de recovery (repatch-masks, server-render-thumbs)
+  // Sem isso, user clica e fica achando que travou (request 30+ segundos).
+  const [recoveryWorking, setRecoveryWorking] = useState<null | "masks" | "thumbs">(null)
   const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
   const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
   // Drag-and-drop de PSD direto no preview do KV (matriz) e na lista de peças.
@@ -729,19 +732,22 @@ export default function CampaignOverviewPage() {
               Permite user re-aplicar masks + re-render thumbs server quando
               campaign passou por full-recover-from-psd + relink. User pediu
               2026-05-27 botoes diretos sem URL manual. */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-            <Button variant="secondary" size="sm" onClick={async () => {
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <Button variant="secondary" size="sm" loading={recoveryWorking === "masks"} disabled={recoveryWorking !== null} onClick={async () => {
               if (!confirm("Re-aplicar máscaras do PSD original em todas peças?")) return
+              setRecoveryWorking("masks")
               try {
                 const r = await fetch(`/api/campaigns/${id}/repatch-masks`, { method: "POST" })
                 const j = await r.json()
-                if (r.ok) alert(`Máscaras reaplicadas: ${j.masksReapplied} máscaras, ${j.piecesUpdated} peças, ${j.kvLayersUpdated} layers KV`)
+                if (r.ok) alert(`Máscaras reaplicadas: ${j.masksReapplied} máscaras, ${j.piecesUpdated} peças, ${j.kvLayersUpdated} layers KV. Agora clica em "Render server thumbs" pra regenerar as previews.`)
                 else alert("Erro: " + (j.error ?? "?"))
                 await loadAll()
               } catch (e: any) { alert("Erro: " + (e?.message ?? e)) }
+              finally { setRecoveryWorking(null) }
             }}>🎭 Re-aplicar máscaras</Button>
-            <Button variant="secondary" size="sm" onClick={async () => {
+            <Button variant="secondary" size="sm" loading={recoveryWorking === "thumbs"} disabled={recoveryWorking !== null} onClick={async () => {
               if (!confirm("Render server-side todas thumbs sem imageUrl?")) return
+              setRecoveryWorking("thumbs")
               try {
                 const r = await fetch(`/api/campaigns/${id}/server-render-thumbs`, { method: "POST" })
                 const j = await r.json()
@@ -749,7 +755,13 @@ export default function CampaignOverviewPage() {
                 else alert("Erro: " + (j.error ?? "?"))
                 await loadAll()
               } catch (e: any) { alert("Erro: " + (e?.message ?? e)) }
+              finally { setRecoveryWorking(null) }
             }}>⚡ Render server thumbs</Button>
+            {recoveryWorking && (
+              <span style={{ fontSize: 12, color: "#0066CC", fontWeight: 600 }}>
+                {recoveryWorking === "masks" ? "⏳ Lendo PSD + re-aplicando máscaras..." : "⏳ Renderizando previews server-side..."}
+              </span>
+            )}
           </div>
           <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #E0E0E0", gap: 12, flexWrap: "wrap" }}>
