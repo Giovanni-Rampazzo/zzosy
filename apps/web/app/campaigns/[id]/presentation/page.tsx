@@ -207,12 +207,13 @@ export default function PresentationPage() {
       if (ev.key === `zzosy:lastSave:${id}` || ev.key === `zzosy:lastKvSave:${id}`) refetch()
     }
     window.addEventListener("storage", onStorage)
-    // Polling 30s — BroadcastChannel + storage event ja cobrem mudancas same-
-    // browser instantaneamente (99% dos casos). Polling fica so como safety
-    // net pra cross-device updates (edicao num device, view noutro). 2s era
-    // exagero: com 30 pecas e payload pesado virava 4.5MB/min de waste.
-    // Apenas quando aba esta visivel — sem desperdicio em background.
-    const poll = setInterval(() => { if (!document.hidden) refetch() }, 30000)
+    // Polling 5s — compromise entre realtime e perf. 2s (legacy) era exagero
+    // (4.5MB/min waste), 30s (commit fd2874d) era tarde demais — user reportou
+    // 2026-05-26 "preview da apresentacao esta ficando desatualizado".
+    // BroadcastChannel + storage event sao instantaneos quando funcionam, mas
+    // SPA same-tab nav nao dispara BC. 5s + payload lite (sem piece.data) +
+    // ETag/304 mantem custo baixo. Apenas quando aba visivel.
+    const poll = setInterval(() => { if (!document.hidden) refetch() }, 5000)
 
     return () => {
       window.removeEventListener("focus", refetch)

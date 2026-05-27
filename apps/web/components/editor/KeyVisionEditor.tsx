@@ -6446,6 +6446,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           bc.close()
         }
       } catch {}
+      // localStorage backup pro caso de BroadcastChannel falhar (SPA same-tab,
+      // etc). presentation listener escuta zzosy:lastKvSave.
+      try {
+        if (typeof localStorage !== "undefined" && campaignId) {
+          localStorage.setItem(`zzosy:lastKvSave:${campaignId}`, String(Date.now()))
+        }
+      } catch {}
     } catch (e) { console.warn("[uploadMatrixThumb] fail:", e) }
   }
 
@@ -6496,6 +6503,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const bc = new BroadcastChannel("zzosy:pieces")
         bc.postMessage({ type: "piece-updated", pieceId: pId, campaignId, ts: Date.now() })
         bc.close()
+      }
+    } catch {}
+    // localStorage backup: BroadcastChannel as vezes nao dispara (SPA same-tab
+    // navegation, ou browsers com BC bloqueado). Escrever em zzosy:lastSave
+    // ativa o storage event nas outras abas que tem listener (presentation
+    // page). User reportou 2026-05-26 "preview da apresentacao ficando
+    // desatualizado" — esse eh o backup.
+    try {
+      if (typeof localStorage !== "undefined" && campaignId) {
+        localStorage.setItem(`zzosy:lastSave:${campaignId}`, String(Date.now()))
       }
     } catch {}
   }
