@@ -54,6 +54,13 @@ Razao: peso visual uniforme entre 4 acoes da mesma entidade. Primary (fill amare
 - Sem breadcrumb "ZZOSY / cliente / campanha"
 - Sem labels redundantes (PSD name + counters, etc)
 
+### 1.2.1 Botões de NAVEGAÇÃO ZZOSY são exclusivos na sua linha
+
+- Botões de navegação ZZOSY (ex: "← Campanhas", "← Voltar", "← Assets", "← Empresa") NUNCA compartilham linha com botões de AÇÃO (Cartucho, +Adicionar, Importar PSD, etc).
+- Razão: navegação é "saída/retorno" da página. Misturar com actions confunde a hierarquia visual e cria ambiguidade sobre qual é "o próximo passo".
+- Padrão: navegação isolada à direita do título. Actions ficam em OUTRA linha (toolbar interna da lista) ou em sidebar.
+- Sweep: qualquer página que tiver "← Voltar" + outro botão de action na mesma linha precisa separar.
+
 ## 1.3 Espaçamento
 
 - Padding container: 16-32px máximo
