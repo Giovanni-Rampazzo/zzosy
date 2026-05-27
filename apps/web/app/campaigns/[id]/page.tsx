@@ -90,6 +90,8 @@ export default function CampaignOverviewPage() {
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>({ col: "name", dir: "asc" })
+  // Progress da regen automatica de thumbs (perf indicator)
+  const [regenProgress, setRegenProgress] = useState<{ done: number; total: number } | null>(null)
   const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
   const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
   // Drag-and-drop de PSD direto no preview do KV (matriz) e na lista de peças.
@@ -154,6 +156,8 @@ export default function CampaignOverviewPage() {
     if (pieces.length === 0) return
     // Determina quais pieces precisam regen: as que NUNCA regen nesta sessao,
     // OU as que tiveram updatedAt mais recente desde ultimo regen.
+    // PRIORIDADE 2026-05-27: pieces sem imageUrl (precisam thumb urgente)
+    // antes das que ja tem thumb mas updatedAt mudou.
     const seen = regenSeenRef.current
     const toRegen = pieces.filter(p => {
       const key = String(p.updatedAt ?? "")
@@ -161,10 +165,20 @@ export default function CampaignOverviewPage() {
       return last !== key
     })
     if (toRegen.length === 0) return
+    // Sort: pieces sem imageUrl primeiro (urgente). Resto depois.
+    toRegen.sort((a, b) => {
+      const aHas = a.imageUrl ? 1 : 0
+      const bHas = b.imageUrl ? 1 : 0
+      return aHas - bHas  // 0 (sem) vem antes de 1 (com)
+    })
     let cancelled = false
+    setRegenProgress({ done: 0, total: toRegen.length })
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
-      const BATCH = 3
+      // BATCH 3 → 6 (perf 2026-05-27): hardware moderno aguenta 6 renders
+      // Fabric headless paralelos sem OOM. ~50% mais rapido em listas grandes.
+      const BATCH = 6
+      let doneCount = 0
       for (let i = 0; i < toRegen.length; i += BATCH) {
         if (cancelled) break
         const chunk = toRegen.slice(i, i + BATCH)
@@ -174,6 +188,13 @@ export default function CampaignOverviewPage() {
             if (ok) seen.set(p.id, String(p.updatedAt ?? ""))
           } catch (e) { console.warn("[smart-regen]", p.id, e) }
         }))
+        doneCount += chunk.length
+        if (!cancelled) setRegenProgress({ done: doneCount, total: toRegen.length })
+      }
+      // Quando termina, limpa progress + refetch pra mostrar thumbs novos
+      if (!cancelled) {
+        setRegenProgress(null)
+        await loadAll()
       }
     })()
     return () => { cancelled = true }
@@ -678,6 +699,11 @@ export default function CampaignOverviewPage() {
             <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
               Peças geradas ({visiblePieces.length})
               {piecesDragOver && <span style={{ marginLeft: 12, color: "#F09300", fontSize: 11 }}>Solte os PSDs aqui</span>}
+              {regenProgress && regenProgress.total > 0 && (
+                <span style={{ marginLeft: 12, color: "#0066CC", fontSize: 11, fontWeight: 600, textTransform: "none", letterSpacing: 0 }}>
+                  ⟳ Regenerando previews: {regenProgress.done}/{regenProgress.total}
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {visiblePieces.length > 0 && (
