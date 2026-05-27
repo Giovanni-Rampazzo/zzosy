@@ -14,10 +14,22 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { runOrphanCleanup } from "@/lib/storage/autoCleanup"
+import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 export const maxDuration = 300
+
+// SEC FIX 2026-05-27: endpoint era acessivel por qualquer user logado
+// (incluido CSRF via <img>) e poderia apagar arquivos cross-tenant.
+// Agora requer SUPER_ADMIN.
+async function requireSuperAdmin(req: NextRequest): Promise<{ ok: true } | { ok: false; status: number; msg: string }> {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.email) return { ok: false, status: 401, msg: "Nao autenticado" }
+  const me = await prisma.user.findUnique({ where: { email: session.user.email } })
+  if (me?.role !== "SUPER_ADMIN") return { ok: false, status: 403, msg: "Apenas SUPER_ADMIN" }
+  return { ok: true }
+}
 
 async function runCleanup(dryRun: boolean) {
   const result = await runOrphanCleanup({ dryRun })
@@ -29,6 +41,12 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
   }
+  // SEC: SUPER_ADMIN required (era acessivel por qualquer user logado)
+  const adminCheck = await requireSuperAdmin(req)
+  if (!adminCheck.ok) {
+    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ ${adminCheck.msg}</h2></body></html>`, { status: adminCheck.status, headers: { "Content-Type": "text/html" } })
+  }
+
   const { searchParams } = new URL(req.url)
 
   // Dry-run JSON
@@ -37,10 +55,15 @@ export async function GET(req: NextRequest) {
       const result = await runCleanup(true)
       return NextResponse.json(result)
     } catch (e: any) {
-      return NextResponse.json({ error: e?.message ?? "Erro", stack: e?.stack?.split("\n").slice(0, 6).join("\n") }, { status: 500 })
+      return NextResponse.json({
+        error: e?.message ?? "Erro",
+        ...(process.env.NODE_ENV !== "production" ? { stack: e?.stack?.split("\n").slice(0, 6).join("\n") } : {}),
+      }, { status: 500 })
     }
   }
 
+  // SEC: confirm via POST CSRF token would be ideal. Por ora, browser navigation
+  // direto + admin role + visual confirm na pagina HTML eh ok pra hobby.
   // Execute real
   if (searchParams.get("confirm") === "1") {
     try {

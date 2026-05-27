@@ -12,14 +12,22 @@ export const dynamic = "force-dynamic"
 // liam mesmo snapshot, cada um modificava SEU step, ultimo write sobrescrevia
 // os outros — "previews misturados" reportado pelo user.
 //
-// Strategy: cada call espera a promise anterior do mesmo pieceId. Promise
-// resolve quando update terminou (sucesso OU erro — catch impede stuck).
+// MEMORY LEAK FIX 2026-05-27 (auditoria): apos terminar, REMOVE a entry se
+// ainda for a mesma promise. Sem isso, locks acumulavam pra sempre por id.
 const __pieceUpdateLocks = new Map<string, Promise<unknown>>()
 
 async function withPieceLock<T>(pieceId: string, work: () => Promise<T>): Promise<T> {
   const prev = __pieceUpdateLocks.get(pieceId) ?? Promise.resolve()
   const next = prev.catch(() => {}).then(work)
-  __pieceUpdateLocks.set(pieceId, next.catch(() => {}))
+  const tracked = next.catch(() => {})
+  __pieceUpdateLocks.set(pieceId, tracked)
+  // Cleanup: quando esta promise terminar, remove entry SE ainda for ela
+  // (outra chain pode ter substituido nesse meio tempo — keep dela).
+  tracked.then(() => {
+    if (__pieceUpdateLocks.get(pieceId) === tracked) {
+      __pieceUpdateLocks.delete(pieceId)
+    }
+  })
   return next
 }
 

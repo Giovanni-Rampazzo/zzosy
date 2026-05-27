@@ -20,9 +20,19 @@ async function runSharedCleanup(): Promise<{ deletedBytes: number; deletedFiles:
   if (__sharedCleanup) return __sharedCleanup
   __sharedCleanup = (async () => {
     console.warn("[storage] ENOSPC detectado — disparando auto-cleanup de orfaos...")
+    // TIMEOUT 2026-05-27 (auditoria): se cleanup hang (file corrompido,
+    // disco zumbi, query Prisma travada), user requests ficam parados
+    // ate timeout do Railway. 60s sao suficientes pra walk + delete em
+    // disco de 5GB tipico.
+    const CLEANUP_TIMEOUT_MS = 60_000
     try {
       const { runOrphanCleanup } = await import("./autoCleanup")
-      const r = await runOrphanCleanup()
+      const r = await Promise.race([
+        runOrphanCleanup(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`auto-cleanup timeout ${CLEANUP_TIMEOUT_MS/1000}s`)), CLEANUP_TIMEOUT_MS)
+        ),
+      ])
       console.warn(`[storage] auto-cleanup: ${r.deletedFiles} arquivos, ${(r.deletedBytes/1024/1024).toFixed(1)}MB liberados`)
       return { deletedBytes: r.deletedBytes, deletedFiles: r.deletedFiles }
     } catch (cleanupErr) {
