@@ -648,9 +648,12 @@ export default function CampaignOverviewPage() {
                   <Button variant="secondary" size="sm" onClick={async () => {
                     if (!confirm(`Restaurar versão anterior de ${restorables.length} peça(s) com backup?`)) return
                     try {
-                      await Promise.all(restorables.map(p =>
+                      const results = await Promise.all(restorables.map(p =>
                         fetch(`/api/pieces/${p.id}/restore-previous`, { method: "POST" })
+                          .then(async r => ({ id: p.id, ok: r.ok, body: await r.json().catch(() => ({})) }))
                       ))
+                      const failed = results.filter(r => !r.ok)
+                      if (failed.length > 0) alert(`${failed.length} peça(s) falharam: ${failed[0].body?.error ?? "erro"}. Restantes restauradas.`)
                       await loadAll()
                     } catch (e: any) { alert(`Erro: ${e?.message ?? e}`) }
                   }}>↶ Restaurar backup ({restorables.length})</Button>
@@ -658,9 +661,12 @@ export default function CampaignOverviewPage() {
                 <Button variant="secondary" size="sm" onClick={async () => {
                   if (!confirm(`Regenerar ${emptyPieces.length} peça(s) a partir da matriz atual?`)) return
                   try {
-                    await Promise.all(emptyPieces.map(p =>
+                    const results = await Promise.all(emptyPieces.map(p =>
                       fetch(`/api/pieces/${p.id}/regenerate-from-matrix`, { method: "POST" })
+                        .then(async r => ({ id: p.id, ok: r.ok, body: await r.json().catch(() => ({})) }))
                     ))
+                    const failed = results.filter(r => !r.ok)
+                    if (failed.length > 0) alert(`${failed.length} peça(s) falharam: ${failed[0].body?.error ?? "erro"}. Restantes regeneradas.`)
                     await loadAll()
                   } catch (e: any) { alert(`Erro: ${e?.message ?? e}`) }
                 }}>↻ Regenerar da matriz ({emptyPieces.length})</Button>
