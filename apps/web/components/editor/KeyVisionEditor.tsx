@@ -807,51 +807,60 @@ function applyStrokePositionVisual(p: any, position: "inside" | "center" | "outs
     ? p.__naturalStrokeWidth
     : (p.strokeWidth ?? 0)
   p.__naturalStrokeWidth = naturalW
-  // Remove ghost anterior (se reaplicando)
-  if (p.__strokePositionGhost) {
-    p.__strokePositionGhost = null
-  }
-  // Limpa clipPath aplicado por uma execucao anterior
-  if (p.clipPath && p.clipPath.__zzosyStrokePosClip) {
-    p.clipPath = null
-  }
+
+  // Reset state de aplicacao anterior
+  if (p.clipPath && p.clipPath.__zzosyStrokePosClip) p.clipPath = null
+  // paintFirst default Fabric eh "fill" — restaurar
+  p.set("paintFirst", "fill")
 
   if (position === "center" || naturalW === 0) {
     p.set("strokeWidth", naturalW)
     return
   }
+
+  // Helper: converte p.path (array de comandos) → SVG d-string.
+  // Fabric arma `path` como array tipo [['M', x, y], ['L', x, y], ...].
+  // Pra criar clipPath via new Path(d, ...), precisamos do d-string.
+  function pathArrayToDString(arr: any[]): string {
+    if (!Array.isArray(arr)) return ""
+    return arr.map(cmd => {
+      if (!Array.isArray(cmd) || cmd.length === 0) return ""
+      // cmd[0] = letter, resto = numbers
+      return cmd[0] + (cmd.length > 1 ? " " + cmd.slice(1).join(" ") : "")
+    }).join(" ")
+  }
+
   if (position === "inside") {
-    // Dobra width + clipa pelo path proprio. Path tem fill, entao clipPath
-    // sera o path mesmo (silhueta). Stroke 2*W dobrado, clip mantem so o
-    // que cai dentro da silhueta — visual: W pra dentro do path.
+    // Stroke 2*W + clipPath = silhueta do path (absolutePositioned).
+    // Resultado: 2*W desenhado, mas clip mantem so o que CAI DENTRO do path
+    // → visual = W pra dentro (1 lado do stroke 2*W).
     p.set("strokeWidth", naturalW * 2)
     try {
-      const clip = new PathCtor((p as any).path ? null : "", undefined)
-      // Path1Constructor accepts (pathString, options). Use the same path
-      // as the main shape, absolutePositioned for canvas-space clip.
-      // Easier: clone the path d-string from p.
-      // Reconstruir clip de p.path (array de comandos Fabric):
-      const pathSource = (p as any).path
-      const dString = typeof pathSource === "string" ? pathSource : null
-      if (dString) {
-        const clip2 = new PathCtor(dString, {
-          absolutePositioned: true,
-          left: p.left, top: p.top,
-          scaleX: p.scaleX, scaleY: p.scaleY,
-          angle: p.angle,
-        })
-        ;(clip2 as any).__zzosyStrokePosClip = true
-        p.clipPath = clip2
-      }
-      // No-op se nao temos string — Fabric Path stores commands array internally
-      // mas tem `toSVG()` ou similar. Fallback: nada (stroke fica 2*W sem clip).
-      void clip
-    } catch { /* keep stroke 2*W sem clip */ }
+      const arr = (p as any).path
+      const dString = typeof arr === "string" ? arr : pathArrayToDString(arr)
+      if (!dString) return
+      const clip = new PathCtor(dString, {
+        absolutePositioned: true,
+        left: p.left,
+        top: p.top,
+        scaleX: p.scaleX,
+        scaleY: p.scaleY,
+        angle: p.angle,
+        fill: "black", // qualquer cor — clipPath usa SO a silhueta
+        stroke: undefined,
+        strokeWidth: 0,
+      })
+      ;(clip as any).__zzosyStrokePosClip = true
+      p.clipPath = clip
+    } catch (e) {
+      console.warn("[strokePos] inside clip falhou:", e)
+    }
     return
   }
-  // outside: stroke 2*W e PaintFirst='stroke' pra que fill cubra a metade
-  // interna do stroke. Fabric paintFirst='stroke' = desenha stroke ANTES de fill,
-  // entao fill (que pinta o path) cobre a metade interna do stroke.
+
+  // outside: stroke 2*W com paintFirst='stroke'. Fabric paintFirst='stroke'
+  // desenha stroke ANTES de fill. Fill cobre a metade INTERNA do stroke 2*W
+  // → resultado visual: so a metade EXTERNA (1*W pra fora do path).
   p.set("strokeWidth", naturalW * 2)
   p.set("paintFirst", "stroke")
 }
