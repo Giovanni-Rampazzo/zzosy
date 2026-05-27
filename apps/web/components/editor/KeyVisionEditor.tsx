@@ -11797,7 +11797,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 </div>
 
                 {/* FILL — ColorSwatchPicker Figma-style. Opacity INDEPENDENTE
-                    (encodada em rgba do fill). */}
+                    (encodada em rgba do fill). Gradient/Pattern ainda nao
+                    implementados pra shape — roadmap. User pode usar BG do
+                    canvas pra gradients agora. */}
                 <div>
                   <div style={secS}>Fill</div>
                   <ColorSwatchPicker
@@ -11809,6 +11811,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     opacity={Math.round(currentFillAlpha * 100)}
                     onOpacityChange={pct => setFillAlpha(pct)}
                   />
+                  <div style={{ fontSize: 10, color: "#555", marginTop: 4, fontStyle: "italic" }}
+                    title="Gradient/Pattern fill em desenvolvimento. Por enquanto so cor solida. Pra gradients use o background do canvas (BG do KV).">
+                    Gradient · em breve
+                  </div>
                 </div>
 
                 {/* STROKE — cor (ColorSwatchPicker com opacity inline, mesmo
