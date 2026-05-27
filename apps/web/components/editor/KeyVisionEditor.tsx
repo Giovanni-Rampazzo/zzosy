@@ -1284,6 +1284,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // via button "Importar PSD" da topbar. Componente gerencia file picker + upload
   // + redirect; aqui so disparamos importFile programaticamente.
   const psdImporterRef = useRef<PsdImporterHandle | null>(null)
+  // Ref do input file da topbar — pattern simples (sem overlay).
+  // User reportou botao Import PSD nao funcionar. Refactor 2026-05-27.
+  const psdImportInputRef = useRef<HTMLInputElement | null>(null)
   const [layers, setLayers] = useState<any[]>([])
   const [editingLayerAssetId, setEditingLayerAssetId] = useState<string | null>(null)
   // Mask focus mode: o assetId do layer cuja mask esta sendo editada via
@@ -9511,50 +9514,44 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             <button>). Pattern <label><input display:none> parou de disparar
             picker no Next 16+React 19. 2026-05-24. Style mantem look dark
             transparente da topbar (Button secondary nao serve aqui). */}
-        <span style={{ position: "relative", display: "inline-block" }}>
-          <button
-            type="button"
-            title="Import PSD for this campaign (replaces current Key Vision)"
-            disabled={psdImporterRef.current?.isLoading() || false}
-            style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer", color: "#aaa", userSelect: "none" }}
-            // FALLBACK 2026-05-27: user reportou clique no botao nao funcionar
-            // (so drag-drop). Causa: overlay input sem z-index ficava ATRAS
-            // do button em alguns browsers/situacoes. Fallback dispara click
-            // no input sibling se o overlay nao capturar. React de-duplica
-            // gestures do mesmo tick — sem risco abrir 2x.
-            onClick={(e) => {
-              if (psdImporterRef.current?.isLoading()) return
-              if ((e.target as HTMLElement).tagName !== "INPUT") {
-                const input = (e.currentTarget.parentElement?.querySelector('input[type="file"]') as HTMLInputElement | null)
-                input?.click()
-              }
-            }}
-          >
-            {psdImporterRef.current?.isLoading() ? "Importing…" : "Import PSD"}
-          </button>
-          <input
-            type="file"
-            accept=".psd"
-            disabled={psdImporterRef.current?.isLoading() || false}
-            tabIndex={-1}
-            // FIX 2026-05-27: zIndex: 1 (era ausente) — input precisa ficar
-            // acima do button irmao pra capturar clicks. Sem isso, click as
-            // vezes batia no button (que so tinha title, sem onClick).
-            style={{ position: "absolute", inset: 0, opacity: 0, zIndex: 1, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer" }}
-            onChange={async (e) => {
-              const f = e.target.files?.[0]
-              e.target.value = ""
-              if (!f) return
-              if (psdImporterRef.current?.isLoading()) return
-              const doImport = async () => {
-                try { await psdImporterRef.current?.importFile(f) }
-                catch (err) { console.error("[Importar PSD] falhou:", err) }
-              }
-              if (isDirtyRef.current) setConfirmExit(() => doImport)
-              else doImport()
-            }}
-          />
-        </span>
+        {/* IMPORT PSD — refactor 2026-05-27: padrao simples ref + onClick
+            em vez de overlay input. User reportou overlay nao funcionar em
+            alguns casos. Hidden input + button.onClick.click() eh o padrao
+            React canonico que sempre funciona. */}
+        <button
+          type="button"
+          title="Import PSD for this campaign (replaces current Key Vision)"
+          disabled={psdImporterRef.current?.isLoading() || false}
+          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer", color: "#aaa", userSelect: "none" }}
+          onClick={() => {
+            if (psdImporterRef.current?.isLoading()) return
+            psdImportInputRef.current?.click()
+          }}
+        >
+          {psdImporterRef.current?.isLoading() ? "Importing…" : "Import PSD"}
+        </button>
+        <input
+          ref={psdImportInputRef}
+          type="file"
+          accept=".psd"
+          // display:none NAO usado — Chrome+Next 16 bloqueia .click() em
+          // <input display:none> (comentario antigo de 2026-05-24 confirma).
+          // Off-screen com opacity:0 + tabIndex:-1 funciona em todos os browsers.
+          style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, opacity: 0 }}
+          tabIndex={-1}
+          onChange={async (e) => {
+            const f = e.target.files?.[0]
+            e.target.value = ""
+            if (!f) return
+            if (psdImporterRef.current?.isLoading()) return
+            const doImport = async () => {
+              try { await psdImporterRef.current?.importFile(f) }
+              catch (err) { console.error("[Importar PSD] falhou:", err) }
+            }
+            if (isDirtyRef.current) setConfirmExit(() => doImport)
+            else doImport()
+          }}
+        />
         {/* Botao Assets movido pro topo do Properties Panel (2026-05-22)
             pra reduzir poluicao visual da topbar. */}
         {isPieceMode && pieceId && (
