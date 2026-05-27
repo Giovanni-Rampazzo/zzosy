@@ -22,6 +22,21 @@ export async function maskToAgPsd(mask: LayerMask | null | undefined): Promise<{
 
   try {
     if (mask.type === "raster" && mask.raster) {
+      // ROUND-TRIP CLIPPING (2026-05-27): se essa raster mask nasceu de uma
+      // clipping chain (importer marca __fromClipping=true via clipping.ts),
+      // exporta de volta como CLIPPING — não como raster.
+      //
+      // Por que: o silhouette raster é só uma cópia bakeada da alpha do layer
+      // BASE de baixo. Se exportamos como raster, o PSD fica com mask gigante
+      // (98KB) e o Photoshop NÃO mostra como clipping (perde o tipo + a
+      // ligação dinâmica ao layer base — usuario edita PA_Sicredi e IMG_A
+      // não acompanha). User reportou 2026-05-27 "máscaras erradas".
+      //
+      // Importer sempre converte clipping → raster pra editor renderizar,
+      // mas no export queremos voltar pra clipping puro.
+      if ((mask as any).__fromClipping === true) {
+        return { clipping: true }
+      }
       // Carrega o PNG da raster mask num canvas pra ag-psd serializar.
       const canvas = await loadPngToCanvas(mask.raster.dataUrl)
       return {
