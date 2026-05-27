@@ -243,26 +243,25 @@ export default function PresentationPage() {
     }
   }, [id])
 
-  // REGEN INTELIGENTE 2026-05-24: ref-guard por piece.id+updatedAt impede
-  // loop com watcher e re-regen redundante; re-dispara quando piece muda.
-  // PERSISTENCIA 2026-05-26: regenSeen agora salva em localStorage pra
-  // sobreviver a refresh/navegacao. Sem isso, cada page load re-regenerava
-  // todas as pieces (cada regen leva 2-5s + bloqueia load de imagens da
-  // apresentacao). Storage key inclui campaignId pra nao colidir entre campanhas.
+  // REGEN INTELIGENTE 2026-05-27 (revisado): SESSION-LEVEL Set (id apenas).
+  // Bug anterior: usava id+updatedAt Map. Cada regen disparava POST que
+  // atualiza piece.updatedAt no DB. Polling 5s buscava pieces com NOVO
+  // updatedAt → seen.get(id)!=key → re-regen → loop → flicker das imagens
+  // (URL muda quando ?v=updatedAt muda).
+  //
+  // Fix: regenera UMA vez por session por id. Edits explicitos vem via
+  // BroadcastChannel + manual refresh — nao via polling cycle.
   const REGEN_STORAGE_KEY = `zzosy:regenSeen:${id}`
-  const regenSeenRef = useRef<Map<string, string>>(new Map())
-  // Hidrata da localStorage no mount uma unica vez.
+  const regenSeenRef = useRef<Set<string>>(new Set())
   const regenHydratedRef = useRef(false)
   if (!regenHydratedRef.current && typeof window !== "undefined") {
     regenHydratedRef.current = true
     try {
       const raw = localStorage.getItem(REGEN_STORAGE_KEY)
       if (raw) {
-        const obj = JSON.parse(raw)
-        if (obj && typeof obj === "object") {
-          for (const [k, v] of Object.entries(obj)) {
-            if (typeof v === "string") regenSeenRef.current.set(k, v)
-          }
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) for (const id of arr) {
+          if (typeof id === "string") regenSeenRef.current.add(id)
         }
       }
     } catch { /* ignore */ }
@@ -270,10 +269,7 @@ export default function PresentationPage() {
   useEffect(() => {
     if (pieces.length === 0) return
     const seen = regenSeenRef.current
-    const toRegen = pieces.filter((p: any) => {
-      const key = String(p.updatedAt ?? "")
-      return seen.get(p.id) !== key
-    })
+    const toRegen = pieces.filter((p: any) => !seen.has(p.id))
     if (toRegen.length === 0) return
     let cancelled = false
     ;(async () => {
@@ -284,16 +280,17 @@ export default function PresentationPage() {
         const chunk = toRegen.slice(i, i + BATCH)
         await Promise.allSettled(chunk.map(async (p: any) => {
           try {
-            const ok = await regeneratePieceThumb(p.id)
-            if (ok) seen.set(p.id, String(p.updatedAt ?? ""))
-          } catch (e) { console.warn("[smart-regen]", p.id, e) }
+            await regeneratePieceThumb(p.id)
+            seen.add(p.id)  // marca como visto independente de sucesso pra evitar retry loop
+          } catch (e) {
+            console.warn("[smart-regen]", p.id, e)
+            seen.add(p.id)
+          }
         }))
       }
-      // Persiste o map atualizado.
       try {
-        const obj: Record<string, string> = {}
-        seen.forEach((v, k) => { obj[k] = v })
-        localStorage.setItem(REGEN_STORAGE_KEY, JSON.stringify(obj))
+        const arr = Array.from(seen)
+        localStorage.setItem(REGEN_STORAGE_KEY, JSON.stringify(arr))
       } catch { /* localStorage quota cheia ou desabilitada */ }
     })()
     return () => { cancelled = true }

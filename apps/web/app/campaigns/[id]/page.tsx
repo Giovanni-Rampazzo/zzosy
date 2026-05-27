@@ -46,6 +46,9 @@ interface Piece {
   createdAt: string
   updatedAt?: string
   stepCount?: number
+  // Step thumbs enriquecidos em /api/pieces (route.ts ~linha 66).
+  // Cada step tem index + imageUrl/thumbnailUrl ja stampado com ?v=updatedAt.
+  steps?: Array<{ index: number; imageUrl?: string | null; thumbnailUrl?: string | null }> | null
   // Flags anti-falhas (enriquecidos em /api/pieces):
   // isEmpty=true: piece.data com layers=[] (provavel corrupcao)
   // hasBackup=true: tem piece.dataBackup salvo (pode restaurar via UI)
@@ -523,7 +526,7 @@ export default function CampaignOverviewPage() {
             (preview em cima, acoes embaixo, ambos stacked), lista de pecas
             ocupa a coluna da direita. Garante mais espaco vertical pra peca
             list e densidade maior na KV. Breakpoint <900px volta a stack. */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 14, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 240px) 1fr", gap: 14, alignItems: "start" }}>
         {/* Preview KV + actions sidebar — agora em coluna (preview + acoes stacked) */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1016,7 +1019,25 @@ export default function CampaignOverviewPage() {
                       </td>
                       <td style={{ padding: "8px 8px", cursor: "pointer" }}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
-                        <RowThumb src={p.imageUrl ?? null} alt={p.name} fallbackText={p.format} />
+                        {/* Multi-step: linha de thumbs (1 por step) lado a lado.
+                            Single-step: RowThumb normal. User pediu 2026-05-27
+                            'preview dos steps um do lado do outro na linha de
+                            cada peca'. */}
+                        {Array.isArray(p.steps) && p.steps.length >= 2 ? (
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            {p.steps.map(s => (
+                              <RowThumb
+                                key={s.index}
+                                src={s.thumbnailUrl ?? s.imageUrl ?? null}
+                                alt={`${p.name} step ${s.index + 1}`}
+                                fallbackText={`${s.index + 1}`}
+                                size={40}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <RowThumb src={p.imageUrl ?? null} alt={p.name} fallbackText={p.format} />
+                        )}
                       </td>
                       <td style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                         onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)}>
