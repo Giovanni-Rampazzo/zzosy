@@ -117,7 +117,9 @@ export default function CampaignOverviewPage() {
     // rapida (back/forward). Sair silenciosamente — proximo render dispara
     // loadAll de novo com id correto.
     if (!id) return
-    const url = `/api/campaigns/${id}`
+    // PERF 2026-05-27: ?lite=true (skip KV.data/layers — 98KB+ raster mask).
+    // Overview nao usa esses campos. Editor passa sem lite quando abre.
+    const url = `/api/campaigns/${id}?lite=true`
     let cRes: Response
     try { cRes = await fetch(url, { cache: "no-store" }) }
     catch (e) { console.warn("[LOAD-ALL] fetch falhou:", e); setLoading(false); return }

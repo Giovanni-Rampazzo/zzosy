@@ -27,11 +27,12 @@ export async function GET(req: Request, ctx: Ctx) {
   const { id } = await ctx.params
   const tenantId = (session.user as any).tenantId
 
-  // PERF 2026-05-27: select especifico do client. Antes incluia brandLogoUrl
-  // (PNG base64 55KB) em TODA fetch do campaign, mesmo quando o frontend nao
-  // precisava do logo. User reportou "sistema muito lento" — endpoint era
-  // 158KB; com esse fix cai pra ~103KB (-35%). Pra usos que precisam do logo
-  // (PPTX builder), buscar via /api/clients/[id] separado.
+  // PERF 2026-05-27: ?lite=true pula keyVision.data + keyVision.layers
+  // (que pode ter 98KB+ de raster mask de clipping). Editor passa full,
+  // overview/regen passam lite. brandLogoUrl ja foi removido em 2b3f1d21.
+  const url = new URL(req.url)
+  const lite = url.searchParams.get("lite") === "true"
+
   const campaign = await prisma.campaign.findFirst({
     where: { id, client: { tenantId } },
     include: {
@@ -39,12 +40,12 @@ export async function GET(req: Request, ctx: Ctx) {
         select: {
           id: true, name: true, tenantId: true, slug: true,
           brandColors: true, brandTypography: true, brandFont: true,
-          // brandLogoUrl: NAO incluir (PNG base64 ~55KB). PPTX builder busca
-          // via /api/clients/[id] separado quando precisa.
         },
       },
       assets: { orderBy: { order: "asc" }, include: { smartObject: true } },
-      keyVision: true,
+      keyVision: lite
+        ? { select: { id: true, campaignId: true, bgColor: true, width: true, height: true, thumbnailUrl: true, createdAt: true, updatedAt: true } }
+        : true,
       _count: { select: { pieces: true } },
     },
   })
@@ -58,8 +59,10 @@ export async function GET(req: Request, ctx: Ctx) {
     })),
     keyVision: campaign.keyVision ? {
       ...campaign.keyVision,
-      data: parseJson(campaign.keyVision.data),
-      layers: parseJson(campaign.keyVision.layers),
+      ...(lite ? {} : {
+        data: parseJson((campaign.keyVision as any).data),
+        layers: parseJson((campaign.keyVision as any).layers),
+      }),
     } : null,
   })
 }
