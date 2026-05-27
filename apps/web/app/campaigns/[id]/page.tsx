@@ -426,15 +426,11 @@ export default function CampaignOverviewPage() {
               />
             </h1>
           </div>
+          {/* Header so com nav ZZOSY isolada — regra CLAUDE.md 1.2.1 (user
+              pediu 2026-05-26): "botao Campanhas que e navegacao do zzosy
+              nunca deve ter outro botao na mesma linha". Cartucho movido pra
+              row de actions abaixo (toolbar da lista). */}
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => router.push(`/campaigns/${id}/cartridges`)}
-              title="Browse cartucho — assets do library do cliente com filtros + add em lote"
-            >
-              Cartucho
-            </Button>
             {campaign.client?.id && (
               <Button
                 variant="primary"
@@ -446,6 +442,19 @@ export default function CampaignOverviewPage() {
               </Button>
             )}
           </div>
+        </div>
+
+        {/* Row de actions globais da campanha — separada do header de
+            navegacao por regra ZZOSY 1.2.1. */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => router.push(`/campaigns/${id}/cartridges`)}
+            title="Browse cartucho — assets do library do cliente com filtros + add em lote"
+          >
+            Cartucho
+          </Button>
         </div>
 
         {/* Subnav REMOVIDO 2026-05-24 (user pedido). Agora cada botao vai
