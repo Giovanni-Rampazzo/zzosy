@@ -67,9 +67,16 @@ function alphaToGrayscale(c: HTMLCanvasElement): HTMLCanvasElement | null {
   tctx.drawImage(c, 0, 0)
   const id = tctx.getImageData(0, 0, w, h)
   const dd = id.data
+  // BUG FIX 2026-05-27: antes setava dd[i+3]=255 (alpha=opaco em tudo).
+  // Fabric clipPath usa canal ALPHA pra decidir o que clipa → silhouette
+  // virava "mostre tudo" → IMG_A renderizava SEM clipping visual.
+  // User reportou 'continua sem mascarar'.
+  // Fix: PRESERVAR alpha original. RGB recebem alpha grayscale (debug visual),
+  // mas alpha channel mantem original — Fabric usa esse canal pra clip.
   for (let i = 0; i < dd.length; i += 4) {
-    dd[i] = dd[i + 1] = dd[i + 2] = dd[i + 3]
-    dd[i + 3] = 255
+    const a = dd[i + 3]
+    dd[i] = dd[i + 1] = dd[i + 2] = a
+    // dd[i + 3] preserva valor original (a) — nao re-set pra 255
   }
   tctx.putImageData(id, 0, 0)
   return tmp
