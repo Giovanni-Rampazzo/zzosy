@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { apiErrors } from "@/lib/apiError"
+import { stripPerCharFillWhenLayerSet } from "@/lib/stripPerCharFill"
 
 export const dynamic = "force-dynamic"
 
@@ -92,34 +93,15 @@ export async function PUT(req: Request, ctx: Ctx) {
   // edita styles na matriz (applyStyle, text:editing:exited) ou quando salva
   // override por outro caminho. Pecas NAO atualizam isso.
   //
-  // ANTI-FALHAS 2026-05-26: strip per-char fill quando lastOverride.fill setado.
-  // Garante que lastOverride NUNCA tenha per-char colors residuais (geralmente
-  // do PSD original). Sem isso, peca gerada herdava per-char preto via merge
-  // { ...lastOverride, ...layerOverrides } no GeneratePiecesModal.
+  // ANTI-FALHAS 2026-05-26 (revisado): strip SO per-char fill REDUNDANTE
+  // (= igual ao layer fill). Per-char DIFERENTE preservado (user editou
+  // char especifico com cor diferente). Helper smart em lib/stripPerCharFill.
   if ("lastOverride" in body) {
     const lo = body.lastOverride
     if (lo === null) {
       data.lastOverride = null
-    } else if (lo && typeof lo === "object" && typeof lo.fill === "string" && lo.styles) {
-      const cleaned: any = { ...lo }
-      const newStyles: any = {}
-      for (const lk of Object.keys(lo.styles ?? {})) {
-        const line = lo.styles[lk]
-        if (!line || typeof line !== "object") continue
-        const newLine: any = {}
-        for (const ck of Object.keys(line)) {
-          const cs = line[ck]
-          if (!cs || typeof cs !== "object") continue
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { fill: _f, fillBrandIdx: _fb, ...rest } = cs
-          if (Object.keys(rest).length > 0) newLine[ck] = rest
-        }
-        if (Object.keys(newLine).length > 0) newStyles[lk] = newLine
-      }
-      cleaned.styles = Object.keys(newStyles).length > 0 ? newStyles : undefined
-      data.lastOverride = cleaned
     } else {
-      data.lastOverride = lo
+      data.lastOverride = stripPerCharFillWhenLayerSet(lo)
     }
   }
   if ("content" in body) {
