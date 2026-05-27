@@ -40,6 +40,12 @@ export async function GET(req: Request, ctx: Ctx) {
         select: {
           id: true, name: true, tenantId: true, slug: true,
           brandColors: true, brandTypography: true, brandFont: true,
+          // REVERT 2026-05-27 (auditoria pos b58caa8d): brandLogoUrl precisa
+          // vir aqui — eh consumido por TopNav.tsx, ClientLogoBadge.tsx,
+          // KeyVisionEditor.tsx e useBrand.ts. Otimizacao quebrou logos no
+          // app inteiro. O ganho de 55KB vale menos que ter logo funcionando.
+          // /api/pieces continua sem (duplicacao em N pecas era pior).
+          brandLogoUrl: true,
         },
       },
       assets: { orderBy: { order: "asc" }, include: { smartObject: true } },
