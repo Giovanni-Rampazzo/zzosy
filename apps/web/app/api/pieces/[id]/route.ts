@@ -67,6 +67,39 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       error: "Status ENTREGUE eh automatico — use /api/deliveries pra entregar",
     }, { status: 400 })
   }
+
+  // ANTI-FALHAS 2026-05-26: backup do data anterior antes de sobrescrever.
+  // Server guard: rejeita save se newData.layers vazio MAS oldData.layers
+  // tinha conteudo (sinal de save fantasma). E SEMPRE copia old.data pra
+  // dataBackup pra recovery via /api/pieces/[id]/restore-previous.
+  if ("data" in data && typeof data.data === "string" && data.data.length > 0) {
+    try {
+      const newParsed = JSON.parse(data.data)
+      const oldParsed = existing.data ? JSON.parse(existing.data) : null
+      const newLayerCount = Array.isArray(newParsed?.layers) ? newParsed.layers.length : 0
+      const oldLayerCount = Array.isArray(oldParsed?.layers) ? oldParsed.layers.length : 0
+      const newStepsHasLayers = Array.isArray(newParsed?.steps) && newParsed.steps.some((s: any) => Array.isArray(s?.layers) && s.layers.length > 0)
+      const oldStepsHasLayers = Array.isArray(oldParsed?.steps) && oldParsed.steps.some((s: any) => Array.isArray(s?.layers) && s.layers.length > 0)
+      const newEmpty = newLayerCount === 0 && !newStepsHasLayers
+      const oldHasContent = oldLayerCount > 0 || oldStepsHasLayers
+      if (newEmpty && oldHasContent) {
+        console.error("[piece PATCH] BLOQUEADO save vazio — oldLayers:", oldLayerCount, "stepsHadLayers:", oldStepsHasLayers)
+        return NextResponse.json({
+          error: "Save bloqueado — tentou gravar layers vazios sobre conteudo existente",
+          oldLayerCount,
+          newLayerCount,
+        }, { status: 409 })
+      }
+      // Backup: copia data atual pra dataBackup ANTES de update. Recovery
+      // 1-revision rolling — sobrescreve a cada save bem-sucedido.
+      if (existing.data) {
+        data.dataBackup = existing.data
+      }
+    } catch (e) {
+      console.warn("[piece PATCH] parse data falhou (passando sem backup):", e)
+    }
+  }
+
   const piece = await prisma.piece.update({ where: { id }, data })
   // Auto-merge: quando user grava segment numa peca, append na Tenant.taxonomy
   // (source-of-truth: gerenciado via ClientSettingsCard em /clients/[id]/edit

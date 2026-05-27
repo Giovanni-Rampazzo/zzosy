@@ -291,6 +291,26 @@ export default function CampaignOverviewPage() {
     }
   }
 
+  // Restore previous version — reverte piece.data pra dataBackup. Swap, entao
+  // clicar de novo desfaz. User pediu 2026-05-26 anti-falhas robusto.
+  async function restoreSelectedPrevious() {
+    if (selected.length === 0) return
+    if (!confirm(`Restaurar versão anterior de ${selected.length} peça(s)? Cada peça volta pro estado salvo ANTES do último save. Clique de novo desfaz.`)) return
+    try {
+      const results = await Promise.all(selected.map(id =>
+        fetch(`/api/pieces/${id}/restore-previous`, { method: "POST" }).then(async r => ({ id, ok: r.ok, body: await r.json().catch(() => ({})) }))
+      ))
+      const failed = results.filter(r => !r.ok)
+      if (failed.length > 0) {
+        alert(`${failed.length} peça(s) sem backup disponível. Restantes restauradas.`)
+      }
+      setSelected([])
+      await loadAll()
+    } catch (e: any) {
+      alert(`Erro: ${e?.message ?? e}`)
+    }
+  }
+
   function duplicateSelected() {
     if (selected.length === 0) return
     setDupDialog({ ids: selected })
@@ -606,6 +626,7 @@ export default function CampaignOverviewPage() {
                       <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
                       <Button variant="info" size="sm" onClick={duplicateSelected} title="Duplica as peças selecionadas (status volta para Standby)">Duplicar ({selected.length})</Button>
                       <Button variant="secondary" size="sm" onClick={regenSelectedFromMatrix} title="Regenera os layers das peças selecionadas a partir da matriz atual (substitui o conteúdo). Útil pra recuperar peças corrompidas/vazias.">↻ Da matriz ({selected.length})</Button>
+                      <Button variant="secondary" size="sm" onClick={restoreSelectedPrevious} title="Restaura versão anterior (estado salvo ANTES do último save). Clique de novo desfaz.">↶ Versão anterior ({selected.length})</Button>
                       <Button variant="secondary" size="sm" onClick={() => setBulkStatusOpen(o => !o)}>Status</Button>
                       <Button variant="primary" size="sm" onClick={() => setExportOpen(true)}>Exportar ({selected.length})</Button>
                     </>

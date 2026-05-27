@@ -313,6 +313,13 @@ model Piece {
   copy          String?         @db.LongText
   status        String          @default("STANDBY")
   data          String?         @db.LongText
+  /// ANTI-FALHAS 2026-05-26: backup do `data` anterior. Server-side, em
+  /// /api/pieces/[id] PATCH antes de sobrescrever piece.data, copia valor
+  /// antigo pra ca. User pode reverter via /api/pieces/[id]/restore-previous
+  /// se o save atual corromper conteudo (bug recorrente: piece.data zerado
+  /// com layers=[]). 1-revision rolling backup — recovery imediata sem
+  /// perder metadata (name/segment/copy/status).
+  dataBackup    String?         @db.LongText
   /// Render exportavel (PNG/JPG da peca em resolucao max). Antes este campo
   /// fazia dobro como imageUrl + thumbnail; agora `thumbnailUrl` carrega a
   /// preview/lista e imageUrl fica reservado pro export final.
