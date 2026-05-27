@@ -694,7 +694,7 @@ function convertMask(m: PsdMaskData | null): LayerMask | null {
     if (m.imageData.format !== "dataUrl" || typeof m.imageData.data !== "string") {
       return null // sem dataUrl o raster nao tem como ser fabric.Image clipPath
     }
-    return {
+    const out: any = {
       type: "raster",
       enabled: !m.disabled,
       inverted: m.invert,
@@ -706,6 +706,11 @@ function convertMask(m: PsdMaskData | null): LayerMask | null {
         height: m.bbox.bottom - m.bbox.top,
       },
     }
+    // Propaga __fromClipping (set by resolveLayerClippingMask em clipping.ts)
+    // pra export poder reescrever como clipping em vez de raster. Bug 2026-05-27:
+    // sem isso, clipping→raster→raster (perde tipo), em vez de clipping→raster→clipping.
+    if ((m as any).__fromClipping === true) out.__fromClipping = true
+    return out
   }
   if (m.kind === "vector") {
     return {
