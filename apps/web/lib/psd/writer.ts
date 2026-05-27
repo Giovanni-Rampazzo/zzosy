@@ -166,7 +166,17 @@ function textToAgPsd(l: PsdTextLayer): any {
   // nameSource ('lnsr' tag): PS usa pra auto-renomear layers ao editar texto.
   //  - 'srct' = "source" = nome vem do conteudo → PS atualiza ao editar
   //  - 'lyr ' = "layer"  = manual              → PS NAO mexe
-  const baselineX = l.bbox.left
+  // baselineX depende do paragraph align — PS POINT text justifica em
+  // torno do anchor (baselineX). Sem isso, center-align fica anchored em
+  // bbox.left, expandindo igualmente pra esquerda + direita do left edge
+  // → metade do texto sai da bbox. User reportou "AR off-canvas" no PSD
+  // exportado quando o editor mostrava texto centralizado (2026-05-27).
+  const align = l.paragraph?.align ?? "left"
+  const bx = l.bbox.left
+  const bw = l.bbox.right - l.bbox.left
+  const baselineX = align === "center" ? bx + bw / 2
+    : align === "right" ? bx + bw
+    : bx
   const baselineY = l.bbox.top + l.defaultStyle.fontSize
   // BUG SUBTIL: ag-psd interpreta `styleRuns: []` (array vazio) como "0 runs"
   // e ZERA o text.style default no PSD final. Texto sem per-char runs (caso
