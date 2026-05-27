@@ -2297,6 +2297,65 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
         {loading ? (progress || "Processing...") : "Import PSD"}
       </Button>
       {error && <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>{error}</div>}
+
+      {/* PROGRESS OVERLAY 2026-05-27: user pediu 'barra de processo'.
+          Overlay modal com texto da fase atual + barra indeterminada
+          (PSD import nao tem % real — fases discretas: Lendo, Extraindo,
+          Enviando, Gerando). Aparece SEMPRE que loading=true. */}
+      {loading && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 10000,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 32,
+          }}
+        >
+          <div style={{
+            background: "white", borderRadius: 12,
+            padding: "24px 32px", maxWidth: 480, width: "100%",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.3)",
+            fontFamily: "system-ui, -apple-system, sans-serif",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              <div style={{
+                width: 24, height: 24,
+                border: "3px solid #F5C400",
+                borderTopColor: "transparent",
+                borderRadius: "50%",
+                animation: "psdImportSpin 0.8s linear infinite",
+              }} />
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#111" }}>
+                Importando PSD…
+              </div>
+            </div>
+            <div style={{
+              fontSize: 13, color: "#555", marginBottom: 14, minHeight: 18,
+              lineHeight: 1.4, wordBreak: "break-word",
+            }}>
+              {progress || "Iniciando…"}
+            </div>
+            {/* Barra indeterminada (animacao de gradient deslizante) */}
+            <div style={{
+              height: 6, background: "#eee", borderRadius: 3, overflow: "hidden",
+              position: "relative",
+            }}>
+              <div style={{
+                position: "absolute", inset: 0,
+                background: "linear-gradient(90deg, transparent, #F5C400, transparent)",
+                animation: "psdImportSlide 1.2s ease-in-out infinite",
+              }} />
+            </div>
+            <style>{`
+              @keyframes psdImportSpin { to { transform: rotate(360deg) } }
+              @keyframes psdImportSlide {
+                0% { transform: translateX(-100%) }
+                100% { transform: translateX(100%) }
+              }
+            `}</style>
+          </div>
+        </div>
+      )}
       {missingFontsModal && (
         <div
           onClick={() => setMissingFontsModal(null)}
