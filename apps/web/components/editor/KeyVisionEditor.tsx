@@ -1,5 +1,5 @@
 "use client"
-import React, { useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { FontPicker, WeightPicker } from "./FontPicker"
@@ -1212,6 +1212,32 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [selected, setSelected] = useState<any>(null)
   // Toggle do popover "+ Add asset" ao lado do botao ASSETS no Properties.
   const [showAddAsset, setShowAddAsset] = useState(false)
+  // Auto-dismiss do popover de assets apos 3s sem interacao (user pedido
+  // 2026-05-27: 'quando eu clicar em + quero que os assets desaparecam em
+  // 3 segundos se ninguem selecionar nenhum'). Pausa enquanto mouse esta
+  // sobre o popover; reinicia quando sai.
+  const addAssetDismissTimerRef = useRef<number | null>(null)
+  const clearAddAssetDismissTimer = useCallback(() => {
+    if (addAssetDismissTimerRef.current != null) {
+      window.clearTimeout(addAssetDismissTimerRef.current)
+      addAssetDismissTimerRef.current = null
+    }
+  }, [])
+  const startAddAssetDismissTimer = useCallback(() => {
+    clearAddAssetDismissTimer()
+    addAssetDismissTimerRef.current = window.setTimeout(() => {
+      setShowAddAsset(false)
+      addAssetDismissTimerRef.current = null
+    }, 3000)
+  }, [clearAddAssetDismissTimer])
+  useEffect(() => {
+    if (!showAddAsset) {
+      clearAddAssetDismissTimer()
+      return
+    }
+    startAddAssetDismissTimer()
+    return clearAddAssetDismissTimer
+  }, [showAddAsset, startAddAssetDismissTimer, clearAddAssetDismissTimer])
   // Font section collapsada por DEFAULT no Properties panel pra reduzir scroll
   // (user pedido 2026-05-26 — bloco grande Font/Size/Weight/LineHeight/etc).
   // Padrao Mask: chevron pra expandir/recolher.
@@ -10961,12 +10987,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               no + mostra lista de assets imediato. Click em asset = adiciona +
               fecha. Sem popover "Selecione um asset" intermediario. */}
           {showAddAsset && (
-            <div style={{
-              position: "absolute", top: "calc(100% + 4px)", left: 16, right: 16,
-              background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.4)", padding: 4, zIndex: 300,
-              display: "flex", flexDirection: "column", maxHeight: 360, overflowY: "auto",
-            }}>
+            <div
+              onMouseEnter={clearAddAssetDismissTimer}
+              onMouseLeave={startAddAssetDismissTimer}
+              style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 16, right: 16,
+                background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.4)", padding: 4, zIndex: 300,
+                display: "flex", flexDirection: "column", maxHeight: 360, overflowY: "auto",
+              }}>
               {(campaign.assets ?? []).length === 0 ? (
                 <div style={{ padding: 12, fontSize: 12, color: "#666", textAlign: "center" }}>Nenhum asset</div>
               ) : (
