@@ -2235,11 +2235,19 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   {
     const { maskToAgPsd, normalizeVectorMaskCoords } = await import("@/lib/maskToAgPsd")
     let psdLayerIdx = 1 // pula o background
+    // DIAG 2026-05-27: user reportou PSDs sem mask. Conta tipos pra saber se
+    // a mask se perdeu antes do export (data sem mask) OU durante (data tem
+    // mas writer dropou). Log final tem pieceId + counts → user abre console
+    // e ve EXATAMENTE onde quebra.
+    const diag = { totalObjs: 0, withMaskData: 0, applied: { raster: 0, vector: 0, clipping: 0 }, baked: 0 }
     for (const obj of objects) {
       if ((obj as any).__isBg) continue
+      diag.totalObjs++
       const maskData = (obj as any).__maskData
       const psdLayer = psdLayers[psdLayerIdx]
       const maskAlreadyBaked = (obj as any).__maskAlreadyBaked === true
+      if (maskData) diag.withMaskData++
+      if (maskAlreadyBaked) diag.baked++
       if (maskData && psdLayer) {
         const agpsdMask = await maskToAgPsd(maskData)
         // Raster mask: se o canvas do layer ja tem a mask bakeada (caso comum
@@ -2247,11 +2255,15 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
         // pular essa mask aqui evita DUPLA aplicacao no Photoshop. Sintoma:
         // PSD aberto cortava a interseccao da mask consigo mesma — quase nada
         // visivel. Vector/clipping nao sao bakeados, entao continuam passando.
-        if (agpsdMask.mask && !maskAlreadyBaked) psdLayer.mask = agpsdMask.mask
-        if (agpsdMask.vectorMask) psdLayer.vectorMask = normalizeVectorMaskCoords(agpsdMask.vectorMask, W, H)
-        if (agpsdMask.clipping) psdLayer.clipping = true
+        if (agpsdMask.mask && !maskAlreadyBaked) { psdLayer.mask = agpsdMask.mask; diag.applied.raster++ }
+        if (agpsdMask.vectorMask) { psdLayer.vectorMask = normalizeVectorMaskCoords(agpsdMask.vectorMask, W, H); diag.applied.vector++ }
+        if (agpsdMask.clipping) { psdLayer.clipping = true; diag.applied.clipping++ }
       }
       psdLayerIdx++
+    }
+    console.log(`[psd-export-mask-diag] piece="${pieceLite.name}" id=${pieceLite.id ?? "?"} layers=${diag.totalObjs} withMaskData=${diag.withMaskData} baked=${diag.baked} applied=R${diag.applied.raster}/V${diag.applied.vector}/C${diag.applied.clipping}`)
+    if (diag.totalObjs > 0 && diag.withMaskData === 0) {
+      console.warn(`[psd-export-mask-diag] ⚠️ Peca "${pieceLite.name}" NAO tem mask em piece.data — rode "🎭 Re-aplicar máscaras" antes de exportar`)
     }
   }
 
