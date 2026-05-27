@@ -72,8 +72,17 @@ ${result.skippedCount > 0 ? `<p>${result.skippedCount} peça(s) com conteúdo OK
 <p><a href="/campaigns/${id}">→ Ir agora</a></p>
 </body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
   } catch (e: any) {
-    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:600px;margin:0 auto">
-<h2>❌ Falha interna</h2><pre>${String(e?.message ?? e)}</pre>
+    const stack = e?.stack ?? String(e)
+    const name = e?.name ?? "Error"
+    const msg = e?.message ?? String(e)
+    const cause = e?.cause ? `\nCAUSE: ${JSON.stringify(e.cause, null, 2)}` : ""
+    console.error("[auto-recover] catch:", e)
+    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:900px;margin:0 auto">
+<h2>❌ Falha interna</h2>
+<p><strong>${name}:</strong> ${msg}</p>
+<details open><summary>Stack trace</summary>
+<pre style="background:#f4f4f4;padding:12px;font-size:11px;overflow:auto">${stack}${cause}</pre>
+</details>
 <p><a href="/campaigns/${id}">← Voltar</a></p>
 </body></html>`, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } })
   }
