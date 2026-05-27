@@ -2500,6 +2500,20 @@ export async function buildDeliveryZip(
   // 2026-05-27 "para em apresentacao pronta".
   onProgress?.(`Iniciando export de ${total} arquivo(s)...`)
 
+  // Diagnostico per-piece pra DIAGNOSTICO.txt no ZIP — assim user abre o ZIP
+  // e ve EXATAMENTE quantas masks/steps tem por peca, sem precisar abrir
+  // browser console. User reportou 2026-05-27 "exportei e veio sem mascara"
+  // sem feedback no que aconteceu — esse arquivo dá visibilidade direta.
+  type Diag = { name: string; layers: number; masksInData: number; steps: number; formats: string[]; errors: string[] }
+  const diagByPiece = new Map<string, Diag>()
+  for (const piece of pieces) {
+    const d = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
+    const layers: any[] = Array.isArray(d?.layers) ? d.layers : []
+    const masksInData = layers.filter(l => l?.mask && l.mask.enabled !== false).length
+    const steps = Array.isArray(d?.steps) ? d.steps.length : 0
+    diagByPiece.set(piece.name, { name: piece.name, layers: layers.length, masksInData, steps, formats: [], errors: [] })
+  }
+
   // Paraleliza com CONCURRENCY 3 → 6 (perf 2026-05-27 user reportou entrega
   // lenta). buildBlob roda Fabric+canvas, CPU heavy mas IO-bound em parte
   // (image loads, font loads). 6 hardware moderno aguenta. ~50% mais rapido.
@@ -2532,12 +2546,16 @@ export async function buildDeliveryZip(
         const folderPath = `${mediaFolder}/${fmt.toUpperCase()}`
         const fileName = `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`
         zip.file(`${folderPath}/${fileName}`, buf)
+        const d = diagByPiece.get(piece.name)
+        if (d && !d.formats.includes(fmt)) d.formats.push(fmt)
       } catch (e: any) {
         console.error("Falha exportar", piece.name, fmt, {
           message: e?.message,
           stack: e?.stack,
           pieceId: (piece as any).id,
         })
+        const d = diagByPiece.get(piece.name)
+        if (d) d.errors.push(`${fmt}: ${e?.message ?? "erro"}`)
       }
       done++
       // Inclui ETA + duracao parcial pra UX visivel
@@ -2557,6 +2575,51 @@ export async function buildDeliveryZip(
       const buf = await f.blob.arrayBuffer()
       zip.file(`${f.folder}/${f.name}`, buf)
     }
+  }
+
+  // DIAGNOSTICO.txt: relatorio per-peca + totais. User abre o ZIP e ve
+  // imediatamente se masks/steps foram exportadas (vs precisar abrir browser
+  // console). User pediu 2026-05-27 "tudo sem mascara" — assim ele tem
+  // evidencia objetiva do que entrou no ZIP.
+  {
+    const ts = new Date().toISOString()
+    const rows = [...diagByPiece.values()].sort((a, b) => a.name.localeCompare(b.name))
+    const totalMasks = rows.reduce((s, r) => s + r.masksInData, 0)
+    const totalSteps = rows.reduce((s, r) => s + r.steps, 0)
+    const piecesWithMasks = rows.filter(r => r.masksInData > 0).length
+    const piecesWithSteps = rows.filter(r => r.steps > 0).length
+    const piecesWithErrors = rows.filter(r => r.errors.length > 0).length
+    const fmtsRequested = formats.join(", ")
+    let txt = `ZZOSY — Diagnóstico da entrega\n`
+    txt += `Gerado em: ${ts}\n`
+    txt += `Campanha: ${campaignName ?? "?"}\n`
+    txt += `Formatos solicitados: ${fmtsRequested}\n\n`
+    txt += `RESUMO\n`
+    txt += `------\n`
+    txt += `Peças exportadas: ${rows.length}\n`
+    txt += `Peças com máscara(s) em piece.data: ${piecesWithMasks}/${rows.length} (total ${totalMasks} máscaras)\n`
+    txt += `Peças multi-step: ${piecesWithSteps}/${rows.length} (total ${totalSteps} steps)\n`
+    txt += `Peças com erro durante export: ${piecesWithErrors}\n\n`
+    if (totalMasks === 0 && rows.length > 0) {
+      txt += `⚠️  NENHUMA PEÇA TEM MÁSCARA EM piece.data\n`
+      txt += `    Os PSDs exportados NÃO terão máscaras. Para corrigir:\n`
+      txt += `    1. Abra a página da campanha\n`
+      txt += `    2. Clique em "🎭 Re-aplicar máscaras"\n`
+      txt += `    3. Re-exporte a entrega\n\n`
+    }
+    txt += `POR PEÇA\n`
+    txt += `--------\n`
+    for (const r of rows) {
+      txt += `${r.name}\n`
+      txt += `  layers=${r.layers}  masks=${r.masksInData}  steps=${r.steps}  formatos=${r.formats.join("/") || "(falha)"}\n`
+      if (r.errors.length > 0) {
+        for (const err of r.errors) txt += `  ERRO: ${err}\n`
+      }
+    }
+    const txtBlob = new Blob([txt], { type: "text/plain;charset=utf-8" })
+    const txtBuf = await txtBlob.arrayBuffer()
+    zip.file("DIAGNOSTICO.txt", txtBuf)
+    console.log("[buildDeliveryZip] DIAGNOSTICO:", { totalMasks, totalSteps, piecesWithMasks, piecesWithErrors })
   }
 
   onProgress?.(`Empacotando zip...`)
