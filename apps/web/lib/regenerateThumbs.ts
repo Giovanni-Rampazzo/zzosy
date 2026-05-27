@@ -272,6 +272,12 @@ async function renderPieceThumbViaExport(pieceLike: { data: any; width: number; 
   }
 }
 
+// Cache de campaign por id, TTL 10s. Sem isso, cada peca regen fazia 1
+// GET /api/campaigns separado (5 pecas = 5 fetches do MESMO campaign).
+// User reportou 2026-05-27 'sistema muito lento ate em local'.
+const __campCache = new Map<string, { ts: number; data: any }>()
+const __CAMP_CACHE_TTL_MS = 10_000
+
 export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
   try {
     const pieceRes = await fetch(`/api/pieces/${pieceId}`, { cache: "no-store" })
@@ -279,9 +285,17 @@ export async function regeneratePieceThumb(pieceId: string): Promise<boolean> {
     const piece = await pieceRes.json()
     const campaignId = piece?.campaignId
     if (!campaignId) return false
-    const campRes = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
-    if (!campRes.ok) return false
-    const camp = await campRes.json()
+    // Cache hit: pula fetch do campaign (5x ganho em batch regen).
+    let camp: any
+    const cached = __campCache.get(campaignId)
+    if (cached && Date.now() - cached.ts < __CAMP_CACHE_TTL_MS) {
+      camp = cached.data
+    } else {
+      const campRes = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+      if (!campRes.ok) return false
+      camp = await campRes.json()
+      __campCache.set(campaignId, { ts: Date.now(), data: camp })
+    }
     const assets: Asset[] = Array.isArray(camp?.assets) ? camp.assets : []
     const pdata = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
     if (!pdata) return false
