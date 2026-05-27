@@ -6691,6 +6691,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }
           return layer
         })
+      // ANTI-FALHAS 2026-05-26: GUARD CRITICO. Se newLayers virou vazio mas
+      // oldData.layers tinha conteudo, ABORTA o save. Sinaliza bug grave
+      // (objetos perderam __assetId em massa, e.g. undo bug, init falhou,
+      // race condition). Sobrescrever com vazio = perda permanente de dados.
+      // User reportou 2026-05-26 (Image #59): peca abriu vazia (so BG) no
+      // editor — todos os layers haviam sumido. Esse guard previne salvar
+      // estado fantasma sobre o estado bom existente no DB.
+      const oldLayerCount = Array.isArray(oldData?.layers) ? oldData.layers.length : 0
+      const oldStepsHasLayers = Array.isArray(oldData?.steps) && oldData.steps.some((s: any) => Array.isArray(s?.layers) && s.layers.length > 0)
+      if (newLayers.length === 0 && (oldLayerCount > 0 || oldStepsHasLayers)) {
+        console.error("[SAVE-NOW] ABORTADO: newLayers vazio mas oldData tinha", oldLayerCount, "layers. Anti-falhas — nao gravar estado fantasma.")
+        srvLog("saveNow-ABORTED-EMPTY", { oldLayerCount, oldStepsHasLayers, fcObjects: fc.getObjects().length })
+        savingInFlightRef.current = false
+        setSaving(false)
+        return
+      }
       const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current, layers: newLayers }
       // (bgOpacity acima persiste a opacidade do BG no piece.data — back-compat:
       // peças antigas sem o campo são tratadas como 1.0 no load)
