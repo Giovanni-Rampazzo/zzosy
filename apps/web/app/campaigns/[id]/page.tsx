@@ -281,9 +281,18 @@ export default function CampaignOverviewPage() {
     if (selected.length === 0) return
     if (!confirm(`Regenerar layers de ${selected.length} peça(s) a partir da matriz atual? O conteúdo atual delas será SUBSTITUÍDO.`)) return
     try {
-      await Promise.all(selected.map(id =>
+      // Promise.all com erro reportado per-piece — espelhando restoreSelected.
+      // Antes Promise.all dos fetches engolia 4xx/5xx silenciosamente (r.ok
+      // nunca verificado), entao bulk "regen" parecia ok mas algumas falhavam.
+      const results = await Promise.all(selected.map(id =>
         fetch(`/api/pieces/${id}/regenerate-from-matrix`, { method: "POST" })
+          .then(async r => ({ id, ok: r.ok, body: await r.json().catch(() => ({})) }))
       ))
+      const failed = results.filter(r => !r.ok)
+      if (failed.length > 0) {
+        const sample = failed[0].body?.error ?? "erro desconhecido"
+        alert(`${failed.length} peça(s) falharam: ${sample}. Restantes regeneradas.`)
+      }
       setSelected([])
       await loadAll()
     } catch (e: any) {

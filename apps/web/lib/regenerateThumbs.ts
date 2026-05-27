@@ -1,7 +1,6 @@
 "use client"
 // Re-render thumbnail of pieces that use a given asset.
 // Roda no client em segundo plano (sem bloquear UI).
-import { stripPerCharFillWhenLayerSet } from "@/lib/stripPerCharFill"
 
 interface Asset {
   id: string; type: string; label: string; value: string | null; imageUrl: string | null; content: any

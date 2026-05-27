@@ -172,9 +172,17 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     delete newData.activeStepIndex
   }
 
+  // Anti-falhas: backup do data atual ANTES de sobrescrever — permite
+  // reverter o regen via /restore-previous. Sem isso, "Versão anterior"
+  // depois de regen voltava pro estado pre-regen-anterior (sequencia de
+  // backups out-of-order). Preserva regen como acao reversivel.
   await prisma.piece.update({
     where: { id },
-    data: { data: JSON.stringify(newData), imageUrl: null },  // imageUrl=null força regen do thumb
+    data: {
+      data: JSON.stringify(newData),
+      dataBackup: piece.data ?? null,  // estado pre-regen, pra rollback
+      imageUrl: null,  // forca regen do thumb
+    },
   })
 
   return NextResponse.json({

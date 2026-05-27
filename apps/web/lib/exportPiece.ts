@@ -12,7 +12,6 @@ import {
   normalizeBlendModeForAgPsd,
 } from "@/lib/psd/psdHelpers"
 import { leadingPtToFabricLineHeight, applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
-import { stripPerCharFillWhenLayerSet } from "@/lib/stripPerCharFill"
 
 export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
 
