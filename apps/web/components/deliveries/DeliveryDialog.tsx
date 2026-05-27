@@ -152,9 +152,10 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
         // viravam mojibake (Op+�+�o) ao abrir via unzip CLI / Windows Explorer.
         // NFD + strip combining marks + replace dashes pra evitar.
         const safeName = (p.name || "peca")
-          .normalize("NFD").replace(/[̀-ͯ]/g, "")
-          .replace(/[—–]/g, "-")
+          .normalize("NFD").replace(/[̀-ͯ]/g, "") // strip combining diacritical marks
+          .replace(/[—–]/g, "-") // em-dash, en-dash → ASCII hyphen
           .replace(/[\\/:*?"<>|]/g, "_")
+          .replace(/[^\x20-\x7e]/g, "_") // qualquer non-ASCII restante vira _
           .trim() || "peca"
         const txtBlob = new Blob([p.copy!.trim()], { type: "text/plain;charset=utf-8" })
         extraFiles.push({ folder: "Copy", name: `${safeName}.txt`, blob: txtBlob })
