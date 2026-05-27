@@ -207,8 +207,9 @@ export default function MediasPage() {
                   const lblS: React.CSSProperties = {fontSize:12,fontWeight:700,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888"}
                   return (
                     <>
-                      <div style={{width:180, ...lblS}}>Mídia</div>
+                      <div style={{width:160, ...lblS}}>Mídia</div>
                       <div style={{width:130, ...lblS}}>Veículo</div>
+                      <div style={{width:60, ...lblS}}>Preview</div>
                       <div style={{width:170, ...lblS}}>Formato</div>
                       <div style={{width:160, ...lblS}}>Dimensão</div>
                       <div style={{width:180, ...lblS}}>Segmento</div>
@@ -234,8 +235,26 @@ export default function MediasPage() {
                       : `${formatNum(wV)} ${wU} × ${formatNum(hV)} ${hU}`
                     return (
                   <div key={f.id} style={{display:"flex",alignItems:"center",padding:"6px 16px",borderBottom:"1px solid #f0f0f0"}}>
-                    <div style={{width:180,fontWeight:600,fontSize:14}}>{f.media}</div>
+                    <div style={{width:160,fontWeight:600,fontSize:14}}>{f.media}</div>
                     <div style={{width:130,fontSize:13,color:"#666"}}>{f.vehicle}</div>
+                    {/* Preview visual do aspect ratio do formato — solid box
+                        escalado pra caber em 44x36 max preservando proporcao.
+                        User pediu 2026-05-27 pra visualizar formato rapido. */}
+                    <div style={{width:60,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {(() => {
+                        const maxW = 44, maxH = 36
+                        const ratio = f.width / f.height
+                        const boxW = ratio >= maxW / maxH ? maxW : maxH * ratio
+                        const boxH = ratio >= maxW / maxH ? maxW / ratio : maxH
+                        return (
+                          <div title={`${f.width}×${f.height}`} style={{
+                            width: boxW, height: boxH,
+                            background: "#3FA110",
+                            borderRadius: 2,
+                          }} />
+                        )
+                      })()}
+                    </div>
                     <div style={{width:170,fontSize:13,color:"#666"}}>{f.format}</div>
                     <div style={{width:160,fontSize:13,color:"#666"}}>{dimText}</div>
                     <div style={{width:180,fontSize:13,color:"#666"}}>{f.segment ?? ""}</div>
