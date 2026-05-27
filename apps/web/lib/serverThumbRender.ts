@@ -311,7 +311,6 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
     // lastBaseAlpha: silhueta do ultimo layer non-clipping renderizado pra
     // offscreen. Usado como destination-in mask pra clippers acima dele.
     let lastBaseAlpha: any = null
-    const { createCanvas } = getCanvasModule()
 
     for (let i = 0; i < sorted.length; i++) {
       const layer = sorted[i]
