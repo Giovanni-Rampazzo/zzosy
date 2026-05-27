@@ -1216,9 +1216,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // (user pedido 2026-05-26 — bloco grande Font/Size/Weight/LineHeight/etc).
   // Padrao Mask: chevron pra expandir/recolher.
   const [fontSectionOpen, setFontSectionOpen] = useState(false)
-  // Toggle do seletor SOLID/LINEAR/RADIAL no Background panel — so aparece
-  // quando user clica no swatch da cor (user pedido 2026-05-23).
-  const [showBgTypeSelector, setShowBgTypeSelector] = useState(false)
+  // Seletor SOLID/LINEAR/RADIAL no Background panel — SEMPRE visivel
+  // (user pedido 2026-05-27 revogou a decisao anterior de 2026-05-23: 'ja
+  // pode aparecer tudo de uma vez'). State mantido como const true pra
+  // nao precisar editar todos os usos.
+  const showBgTypeSelector = true
   // Tab key toggle: esconde Layers + Properties pra preview limpo (Photoshop-style).
   // User pedido 2026-05-23. effLayersPanelWidth/effPropsPanelWidth computados
   // mais abaixo (depois que layersPanelWidth/propsPanelWidth foram declarados).
@@ -11141,7 +11143,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const bgStr = typeof bgColor === "string" ? bgColor : "#ffffff"
               const activeBrand = layer?.colorBrandIdx
               return (
-                <div style={{ marginBottom: 14 }} onMouseDown={() => setShowBgTypeSelector(true)}>
+                <div style={{ marginBottom: 14 }}>
                   <ColorSwatchPicker
                     value={bgStr}
                     onChange={(hex, brandIdx) => changeBg(hex, brandIdx)}

@@ -247,66 +247,77 @@ export function ColorSwatchPicker({
           </div>
 
           {/* List scrollavel */}
+          {/* Filtra a cor ATUAL (value) das listas — ela ja eh mostrada no
+              header com hex input. Mostrar de novo na lista eh duplicacao.
+              User pediu 2026-05-27: 'apenas a lista das outras cores'. */}
           <div style={{ overflowY: "auto" }}>
-            {brandColors.length > 0 && (
-              <>
-                <div style={groupLabelS}>Brand colors</div>
-                {brandColors.map((bc, i) => {
-                  const activeByRef = activeBrandIdx === i
-                  const activeByHex = !activeByRef && value.toLowerCase() === bc.hex.toLowerCase()
-                  const active = activeByRef || activeByHex
-                  // Sem nome no DS → mostra so hex na esquerda. Right hex fica
-                  // omitido pra nao duplicar. Com nome → nome esquerda + hex direita.
-                  const hasName = !!bc.name && bc.name.trim().length > 0
-                  return (
-                    <button key={`bc-${i}-${bc.hex}`} type="button"
-                      onClick={() => { onChange(bc.hex, i); setOpen(false) }}
-                      style={{ ...itemS, background: active ? "#252525" : "transparent" }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#2a2a2a" : "#1f1f1f" }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#252525" : "transparent" }}
-                    >
-                      <div style={{ width: 20, height: 20, borderRadius: 3, background: bc.hex, border: "1px solid #2a2a2a", flexShrink: 0 }} />
-                      {hasName ? (
-                        <>
-                          <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
-                            {bc.name}
+            {(() => {
+              const curLow = (value || "").toLowerCase()
+              const filteredBrand = brandColors
+                .map((bc, i) => ({ bc, i }))
+                .filter(({ bc, i }) => {
+                  // Mantem entrada se eh referenciada por brandIdx (activeBrandIdx) E
+                  // hex bate — nesse caso preserva pra mostrar "linkada". Senao,
+                  // filtra qualquer entrada com mesma cor da current.
+                  if (activeBrandIdx === i) return false
+                  return bc.hex.toLowerCase() !== curLow
+                })
+              const filteredDefaults = defaultSwatches.filter(c => c.toLowerCase() !== curLow)
+              return (
+                <>
+                  {filteredBrand.length > 0 && (
+                    <>
+                      <div style={groupLabelS}>Brand colors</div>
+                      {filteredBrand.map(({ bc, i }) => {
+                        const hasName = !!bc.name && bc.name.trim().length > 0
+                        return (
+                          <button key={`bc-${i}-${bc.hex}`} type="button"
+                            onClick={() => { onChange(bc.hex, i); setOpen(false) }}
+                            style={{ ...itemS, background: "transparent" }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#1f1f1f" }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                          >
+                            <div style={{ width: 20, height: 20, borderRadius: 3, background: bc.hex, border: "1px solid #2a2a2a", flexShrink: 0 }} />
+                            {hasName ? (
+                              <>
+                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
+                                  {bc.name}
+                                </div>
+                                <div style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textTransform: "uppercase" }}>
+                                  {bc.hex}
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: "monospace", textTransform: "uppercase", color: "#ccc" }}>
+                                {bc.hex}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </>
+                  )}
+                  {filteredDefaults.length > 0 && (
+                    <>
+                      <div style={groupLabelS}>Default</div>
+                      {filteredDefaults.map(c => (
+                        <button key={`def-${c}`} type="button"
+                          onClick={() => { onChange(c, undefined); setOpen(false) }}
+                          style={{ ...itemS, background: "transparent" }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#1f1f1f" }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                        >
+                          <div style={{ width: 20, height: 20, borderRadius: 3, background: c, border: "1px solid #2a2a2a", flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: "monospace", textTransform: "uppercase", color: "#ccc" }}>
+                            {c}
                           </div>
-                          <div style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textTransform: "uppercase" }}>
-                            {bc.hex}
-                          </div>
-                        </>
-                      ) : (
-                        <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: "monospace", textTransform: "uppercase", color: "#ccc" }}>
-                          {bc.hex}
-                        </div>
-                      )}
-                    </button>
-                  )
-                })}
-              </>
-            )}
-            {defaultSwatches.length > 0 && (
-              <>
-                <div style={groupLabelS}>Default</div>
-                {defaultSwatches.map(c => {
-                  const active = value.toLowerCase() === c.toLowerCase()
-                  // Default swatches nunca tem nome — sempre mostra hex direto.
-                  return (
-                    <button key={`def-${c}`} type="button"
-                      onClick={() => { onChange(c, undefined); setOpen(false) }}
-                      style={{ ...itemS, background: active ? "#252525" : "transparent" }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#2a2a2a" : "#1f1f1f" }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? "#252525" : "transparent" }}
-                    >
-                      <div style={{ width: 20, height: 20, borderRadius: 3, background: c, border: "1px solid #2a2a2a", flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: "monospace", textTransform: "uppercase", color: "#ccc" }}>
-                        {c}
-                      </div>
-                    </button>
-                  )
-                })}
-              </>
-            )}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </div>
       )}
