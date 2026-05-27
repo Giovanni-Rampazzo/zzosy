@@ -86,30 +86,25 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
     const layers: any[] = Array.isArray(pData.layers) ? pData.layers : []
     const sorted = [...layers].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
 
-    // Helper: aplica mask na ctx ANTES de drawImage. ctx ja deve estar
-    // em save() — caller faz restore depois. Suporta raster + vector +
-    // clipping (clip to layer below).
+    // Mask handling — suporta raster + vector + clipping (clip to layer below).
     //
     // Estrategia:
     //  - vector: Path2D do svg path → ctx.clip (corta render seguinte)
-    //  - raster: cria offscreen canvas com mask alpha, depois apos drawImage
-    //    do conteudo usa composite "destination-in" pra preservar so onde
-    //    mask tem alpha. Mas mask precisa ser aplicada APOS conteudo. Solucao:
-    //    desenha conteudo num offscreen canvas, aplica raster mask,
-    //    blit offscreen no ctx principal.
-    //  - clipping: usa layer.path/bbox do layer ABAIXO. Se nao disponivel,
-    //    skip (limitacao). Pra clipping correto seria preciso lookahead
-    //    no proximo layer. Por enquanto skip + log.
-    async function applyVectorMaskClip(mask: any) {
+    //  - raster: offscreen com mask alpha + composite destination-in
+    //  - clipping: render layer num offscreen + destination-in com silhueta do
+    //    primeiro layer non-clipping ABAIXO (lastBaseAlpha). Multiplos clippers
+    //    consecutivos compartilham o mesmo base (Photoshop behavior).
+    //
+    // 2026-05-27: implementacao do clipping. Antes, clipping era ignorado
+    // (thumb mostrava layer sem clip). User reportou "mascaras se perdendo".
+    function applyVectorMaskClip(targetCtx: any, mask: any) {
       const vpath = mask?.vector?.path
       if (!vpath) return false
       try {
         const p2d = new (canvasModule.Path2D ?? globalThis.Path2D)(vpath)
-        // Aplica scale do thumb pra clip ficar no espaco do canvas thumb.
-        // Vector path eh em coords absolutas do PSD.
-        ctx.scale(scale, scale)
-        ctx.clip(p2d)
-        ctx.scale(1 / scale, 1 / scale)
+        targetCtx.scale(scale, scale)
+        targetCtx.clip(p2d)
+        targetCtx.scale(1 / scale, 1 / scale)
         return true
       } catch (e) {
         console.warn("[serverThumbRender] vector mask falhou:", e)
@@ -117,7 +112,7 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
       }
     }
 
-    async function renderImageLayerWithMask(layer: any, asset: any) {
+    async function renderImageLayer(targetCtx: any, layer: any, asset: any) {
       const buf = await fetchImageBuffer(asset.imageUrl)
       if (!buf) return
       const img = await loadImageBuffer(buf)
@@ -133,13 +128,14 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
       const maskEnabled = mask && mask.enabled !== false
       const maskType = maskEnabled ? mask?.type : null
 
-      // RASTER MASK: render num offscreen primeiro, aplica mask, blit no ctx.
+      // RASTER MASK: render em offscreen secundario, aplica mask, blit.
+      // (Mesmo dentro de uma renderizacao que ja foi pra offscreen — usamos
+      //  um sub-offscreen pra nao contaminar o offscreen do clipping group.)
       if (maskType === "raster" && mask.raster?.dataUrl) {
         try {
           const { createCanvas } = getCanvasModule()
           const off = createCanvas(thumbW, thumbH)
           const octx = off.getContext("2d") as any
-          // Draw image no offscreen
           if (typeof layer.rotation === "number" && layer.rotation !== 0) {
             octx.translate(drawX, drawY)
             octx.rotate((layer.rotation * Math.PI) / 180)
@@ -147,7 +143,6 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
           } else {
             octx.drawImage(img, drawX, drawY, drawW, drawH)
           }
-          // Load raster mask + apply
           const m = mask.raster
           const maskMatch = /^data:([^;]+);base64,(.+)$/.exec(m.dataUrl)
           if (maskMatch) {
@@ -158,162 +153,198 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
               const maskY = (m.posY ?? 0) * scale
               const maskW = (m.width ?? 0) * scale
               const maskH = (m.height ?? 0) * scale
-              // destination-in: keep dest pixels onde mask tem alpha
               octx.globalCompositeOperation = mask.inverted ? "destination-out" : "destination-in"
               octx.drawImage(maskImg, maskX, maskY, maskW, maskH)
               octx.globalCompositeOperation = "source-over"
             }
           }
-          // Blit offscreen no ctx principal
-          ctx.drawImage(off, 0, 0)
+          targetCtx.drawImage(off, 0, 0)
           return
         } catch (e) {
           console.warn("[serverThumbRender] raster mask falhou:", e)
-          // fallback: draw sem mask
         }
       }
 
       // VECTOR MASK: clip antes de draw
       if (maskType === "vector") {
-        const applied = await applyVectorMaskClip(mask)
+        const applied = applyVectorMaskClip(targetCtx, mask)
         if (applied) {
           if (typeof layer.rotation === "number" && layer.rotation !== 0) {
-            ctx.translate(drawX, drawY)
-            ctx.rotate((layer.rotation * Math.PI) / 180)
-            ctx.drawImage(img, 0, 0, drawW, drawH)
+            targetCtx.translate(drawX, drawY)
+            targetCtx.rotate((layer.rotation * Math.PI) / 180)
+            targetCtx.drawImage(img, 0, 0, drawW, drawH)
           } else {
-            ctx.drawImage(img, drawX, drawY, drawW, drawH)
+            targetCtx.drawImage(img, drawX, drawY, drawW, drawH)
           }
           return
         }
       }
 
-      // CLIPPING MASK ou sem mask: drawImage normal
-      // (Clipping mask = clip to layer below — server-side seria complexo
-      //  porque precisa silhouette do layer abaixo. Skip por agora; thumb
-      //  vai mostrar layer sem clip. Browser regen aplica certo depois.)
+      // Sem mask (ou clipping — sera tratado fora pelo lastBaseAlpha)
       if (typeof layer.rotation === "number" && layer.rotation !== 0) {
-        ctx.translate(drawX, drawY)
-        ctx.rotate((layer.rotation * Math.PI) / 180)
-        ctx.drawImage(img, 0, 0, drawW, drawH)
+        targetCtx.translate(drawX, drawY)
+        targetCtx.rotate((layer.rotation * Math.PI) / 180)
+        targetCtx.drawImage(img, 0, 0, drawW, drawH)
       } else {
-        ctx.drawImage(img, drawX, drawY, drawW, drawH)
+        targetCtx.drawImage(img, drawX, drawY, drawW, drawH)
       }
     }
 
-    for (const layer of sorted) {
+    function renderTextLayer(targetCtx: any, layer: any, asset: any) {
+      let textContent = layer.overrides?.text ?? ""
+      if (!textContent && asset.content) {
+        try {
+          const spans = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+          if (Array.isArray(spans)) textContent = spans.map((s: any) => s.text ?? "").join("")
+        } catch {}
+      }
+      if (!textContent) return
+      const ovrd = layer.overrides ?? {}
+      let asfontSize = ovrd.fontSize ?? 80
+      let asfill = ovrd.fill ?? "#000"
+      let astFontFamily = ovrd.fontFamily ?? "Arial"
+      let asfontWeight = ovrd.fontWeight ?? "normal"
+      if (asset.content) {
+        try {
+          const spans = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+          const def = spans?.[0]?.style ?? {}
+          if (!ovrd.fontSize) asfontSize = def.fontSize ?? asfontSize
+          if (!ovrd.fill) asfill = def.color ?? asfill
+          if (!ovrd.fontFamily) astFontFamily = def.fontFamily ?? astFontFamily
+        } catch {}
+      }
+      const drawX = (layer.posX ?? 0) * scale
+      const drawY = (layer.posY ?? 0) * scale
+      const lScale = (layer.scaleX ?? 1) * scale
+      const fs = (asfontSize as number) * lScale
+      const wRaw = layer.width ?? 400
+      const maxW = wRaw * lScale
+      targetCtx.fillStyle = asfill as string
+      targetCtx.font = `${asfontWeight} ${fs}px "${astFontFamily}", Arial, sans-serif`
+      targetCtx.textBaseline = "top"
+      targetCtx.textAlign = (ovrd.textAlign as any) ?? "left"
+      const lines: string[] = []
+      for (const sourceLine of String(textContent).split("\n")) {
+        const words = sourceLine.split(" ")
+        let cur = ""
+        for (const w of words) {
+          const tryLine = cur ? cur + " " + w : w
+          const m = targetCtx.measureText(tryLine)
+          if (m.width > maxW && cur) {
+            lines.push(cur)
+            cur = w
+          } else {
+            cur = tryLine
+          }
+        }
+        if (cur) lines.push(cur)
+      }
+      const lineHeight = fs * (ovrd.lineHeight ?? 1.0)
+      lines.forEach((line, i) => {
+        const x = targetCtx.textAlign === "center" ? drawX + maxW / 2 :
+                  targetCtx.textAlign === "right" ? drawX + maxW :
+                  drawX
+        targetCtx.fillText(line, x, drawY + i * lineHeight)
+      })
+    }
+
+    function renderShapeLayer(targetCtx: any, layer: any, asset: any) {
+      let shape: any = null
+      try { shape = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content } catch {}
+      if (!shape?.path) return
+      const overrides = layer.overrides ?? {}
+      const fill = overrides.fill ?? shape.fill?.color ?? "transparent"
+      const lScale = (layer.scaleX ?? 1) * scale
+      const lScaleY = (layer.scaleY ?? 1) * scale
+      const drawX = (layer.posX ?? 0) * scale
+      const drawY = (layer.posY ?? 0) * scale
+      targetCtx.translate(drawX, drawY)
+      targetCtx.scale(lScale, lScaleY)
+      if (shape.pathBbox?.left || shape.pathBbox?.top) {
+        targetCtx.translate(-shape.pathBbox.left, -shape.pathBbox.top)
+      }
+      try {
+        const p = new (canvasModule.Path2D ?? globalThis.Path2D)(shape.path)
+        if (fill && fill !== "transparent") {
+          targetCtx.fillStyle = fill
+          targetCtx.fill(p)
+        }
+        if (shape.stroke?.color && (shape.stroke.width ?? 0) > 0) {
+          targetCtx.strokeStyle = shape.stroke.color
+          targetCtx.lineWidth = shape.stroke.width
+          targetCtx.stroke(p)
+        }
+      } catch (e) {
+        console.warn("[serverThumbRender] Path2D falhou:", e)
+      }
+    }
+
+    async function renderLayerToCtx(targetCtx: any, layer: any, asset: any) {
+      if (asset.type === "IMAGE" && asset.imageUrl) {
+        await renderImageLayer(targetCtx, layer, asset)
+      } else if (asset.type === "TEXT") {
+        renderTextLayer(targetCtx, layer, asset)
+      } else if (asset.type === "SHAPE") {
+        renderShapeLayer(targetCtx, layer, asset)
+      }
+    }
+
+    // Pre-pass: identifica layers que participam de clipping group
+    // (clipper OU base imediatamente abaixo). So esses precisam offscreen
+    // — resto renderiza direto em ctx (perf).
+    const needsOffscreen = new Set<number>()
+    for (let i = 0; i < sorted.length; i++) {
+      const cur = sorted[i]
+      if (cur.hidden === true) continue
+      const isClipping = cur.mask?.type === "clipping" && cur.mask?.enabled !== false
+      if (!isClipping) continue
+      needsOffscreen.add(i)
+      // Acha base (primeiro non-clipping non-hidden abaixo)
+      for (let j = i - 1; j >= 0; j--) {
+        const prev = sorted[j]
+        if (prev.hidden === true) continue
+        const prevClipping = prev.mask?.type === "clipping" && prev.mask?.enabled !== false
+        if (!prevClipping) { needsOffscreen.add(j); break }
+      }
+    }
+
+    // lastBaseAlpha: silhueta do ultimo layer non-clipping renderizado pra
+    // offscreen. Usado como destination-in mask pra clippers acima dele.
+    let lastBaseAlpha: any = null
+    const { createCanvas } = getCanvasModule()
+
+    for (let i = 0; i < sorted.length; i++) {
+      const layer = sorted[i]
       if (layer.hidden === true) continue
       const asset = assetsMap.get(layer.assetId)
       if (!asset) continue
-      ctx.save()
+      const isClipping = layer.mask?.type === "clipping" && layer.mask?.enabled !== false
+      const opacity = (typeof layer.opacity === "number" && layer.opacity < 1) ? layer.opacity : 1
+      const useOffscreen = needsOffscreen.has(i)
+
       try {
-        // Aplica opacity da layer
-        if (typeof layer.opacity === "number" && layer.opacity < 1) {
-          ctx.globalAlpha = layer.opacity
+        if (useOffscreen) {
+          const off = createCanvas(thumbW, thumbH)
+          const octx = off.getContext("2d") as any
+          await renderLayerToCtx(octx, layer, asset)
+          if (isClipping && lastBaseAlpha) {
+            octx.globalCompositeOperation = "destination-in"
+            octx.drawImage(lastBaseAlpha, 0, 0)
+            octx.globalCompositeOperation = "source-over"
+          }
+          ctx.save()
+          if (opacity < 1) ctx.globalAlpha = opacity
+          ctx.drawImage(off, 0, 0)
+          ctx.restore()
+          if (!isClipping) lastBaseAlpha = off
+        } else {
+          ctx.save()
+          if (opacity < 1) ctx.globalAlpha = opacity
+          await renderLayerToCtx(ctx, layer, asset)
+          ctx.restore()
         }
-        if (asset.type === "IMAGE" && asset.imageUrl) {
-          await renderImageLayerWithMask(layer, asset)
-        } else if (asset.type === "TEXT") {
-          // TEXT render server-side (basico, sem font custom nem per-char styles).
-          // Pega text do asset.content (spans) ou overrides.text.
-          let textContent = layer.overrides?.text ?? ""
-          if (!textContent && asset.content) {
-            try {
-              const spans = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
-              if (Array.isArray(spans)) textContent = spans.map((s: any) => s.text ?? "").join("")
-            } catch {}
-          }
-          if (!textContent) { ctx.restore(); continue }
-          const ovrd = layer.overrides ?? {}
-          let asfontSize = ovrd.fontSize ?? 80
-          let asfill = ovrd.fill ?? "#000"
-          let astFontFamily = ovrd.fontFamily ?? "Arial"
-          let asfontWeight = ovrd.fontWeight ?? "normal"
-          // Asset default style fallback
-          if (asset.content) {
-            try {
-              const spans = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
-              const def = spans?.[0]?.style ?? {}
-              if (!ovrd.fontSize) asfontSize = def.fontSize ?? asfontSize
-              if (!ovrd.fill) asfill = def.color ?? asfill
-              if (!ovrd.fontFamily) astFontFamily = def.fontFamily ?? astFontFamily
-            } catch {}
-          }
-          const drawX = (layer.posX ?? 0) * scale
-          const drawY = (layer.posY ?? 0) * scale
-          const lScale = (layer.scaleX ?? 1) * scale
-          const fs = (asfontSize as number) * lScale
-          const wRaw = layer.width ?? 400
-          const maxW = wRaw * lScale
-          ctx.fillStyle = asfill as string
-          ctx.font = `${asfontWeight} ${fs}px "${astFontFamily}", Arial, sans-serif`
-          ctx.textBaseline = "top"
-          ctx.textAlign = (ovrd.textAlign as any) ?? "left"
-          // Word-wrap simples: split por space, quebra quando excede maxW
-          const lines: string[] = []
-          for (const sourceLine of String(textContent).split("\n")) {
-            const words = sourceLine.split(" ")
-            let cur = ""
-            for (const w of words) {
-              const tryLine = cur ? cur + " " + w : w
-              const m = ctx.measureText(tryLine)
-              if (m.width > maxW && cur) {
-                lines.push(cur)
-                cur = w
-              } else {
-                cur = tryLine
-              }
-            }
-            if (cur) lines.push(cur)
-          }
-          // Render lines (lineHeight 1.0 default Photoshop)
-          const lineHeight = fs * (ovrd.lineHeight ?? 1.0)
-          lines.forEach((line, i) => {
-            const x = ctx.textAlign === "center" ? drawX + maxW / 2 :
-                      ctx.textAlign === "right" ? drawX + maxW :
-                      drawX
-            ctx.fillText(line, x, drawY + i * lineHeight)
-          })
-        } else if (asset.type === "SHAPE") {
-          // Parse asset.content → { path, fill, stroke, pathBbox }
-          let shape: any = null
-          try { shape = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content } catch {}
-          if (!shape?.path) { ctx.restore(); continue }
-          const overrides = layer.overrides ?? {}
-          const fill = overrides.fill ?? shape.fill?.color ?? "transparent"
-          const lScale = (layer.scaleX ?? 1) * scale
-          const lScaleY = (layer.scaleY ?? 1) * scale
-          const drawX = (layer.posX ?? 0) * scale
-          const drawY = (layer.posY ?? 0) * scale
-          // SVG path via Path2D
-          ctx.translate(drawX, drawY)
-          ctx.scale(lScale, lScaleY)
-          // pathBbox: o path SVG usa coords absolutas do PSD. Trans pra origem.
-          if (shape.pathBbox?.left || shape.pathBbox?.top) {
-            ctx.translate(-shape.pathBbox.left, -shape.pathBbox.top)
-          }
-          try {
-            const p = new (canvasModule.Path2D ?? globalThis.Path2D)(shape.path)
-            if (fill && fill !== "transparent") {
-              ctx.fillStyle = fill
-              ctx.fill(p)
-            }
-            if (shape.stroke?.color && (shape.stroke.width ?? 0) > 0) {
-              ctx.strokeStyle = shape.stroke.color
-              ctx.lineWidth = shape.stroke.width
-              ctx.stroke(p)
-            }
-          } catch (e) {
-            // Path2D pode nao aceitar todos SVG paths
-            console.warn("[serverThumbRender] Path2D falhou:", e)
-          }
-        }
-        // TEXT: skip — browser auto-regen renderiza depois (texto eh dificil
-        // server-side: fonts custom, per-char styles, charSpacing...)
       } catch (e) {
         console.warn("[serverThumbRender] layer falhou:", layer.assetId, e)
-      } finally {
-        ctx.restore()
       }
     }
 

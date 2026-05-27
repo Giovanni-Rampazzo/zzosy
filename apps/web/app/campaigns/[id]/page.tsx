@@ -191,19 +191,36 @@ export default function CampaignOverviewPage() {
 
       // BATCH 6 → 10 (perf 2026-05-27 round 2): com pre-warm de assets,
       // hardware aguenta mais renders paralelos. ~30% mais rapido vs round 1.
+      // PROGRESS PER-PIECE (2026-05-27): antes incrementava por batch — com
+      // batch=10 + 6 pieces, 0/6 ficava preso ate todas as 6 terminarem.
+      // Agora atualiza assim que cada uma completa.
+      // TIMEOUT 45s por peca: regeneratePieceThumb usa Fabric+canvas que
+      // pode travar em font load ou image fetch. Sem timeout, 1 peca travada
+      // bloqueia todas as outras do batch (Promise.allSettled aguarda todas).
       const BATCH = 10
+      const PIECE_TIMEOUT_MS = 45_000
       let doneCount = 0
       for (let i = 0; i < toRegen.length; i += BATCH) {
         if (cancelled) break
         const chunk = toRegen.slice(i, i + BATCH)
         await Promise.allSettled(chunk.map(async p => {
           try {
-            const ok = await regeneratePieceThumb(p.id)
+            const ok = await Promise.race([
+              regeneratePieceThumb(p.id),
+              new Promise<boolean>((_, reject) =>
+                setTimeout(() => reject(new Error(`piece timeout ${PIECE_TIMEOUT_MS/1000}s`)), PIECE_TIMEOUT_MS)
+              ),
+            ])
             if (ok) seen.set(p.id, String(p.updatedAt ?? ""))
-          } catch (e) { console.warn("[smart-regen]", p.id, e) }
+          } catch (e) {
+            console.warn("[smart-regen]", p.id, e)
+            // Marca como "seen" mesmo em timeout pra nao re-tentar em loop infinito
+            seen.set(p.id, String(p.updatedAt ?? ""))
+          } finally {
+            doneCount++
+            if (!cancelled) setRegenProgress({ done: doneCount, total: toRegen.length })
+          }
         }))
-        doneCount += chunk.length
-        if (!cancelled) setRegenProgress({ done: doneCount, total: toRegen.length })
       }
       // Quando termina, limpa progress + refetch pra mostrar thumbs novos
       if (!cancelled) {
