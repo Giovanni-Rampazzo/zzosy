@@ -54,10 +54,10 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
     for (const layer of sorted) {
       const asset = assetMap[layer.assetId]
       if (!asset) continue
-      // ANTI-FALHAS: se overrides.fill setado, strip per-char fills antigos
-      // (geralmente do PSD original). Sem isso, peca com overrides.fill branco
-      // ainda renderizava texto preto porque per-char tinha precedencia.
-      const overrides = stripPerCharFillWhenLayerSet(layer.overrides ?? {})
+      // Strip per-char fill REMOVIDO 2026-05-26 — render fiel ao estado salvo.
+      // Bug recorrente "texto preto" eh atacado server-side (PUT) e em
+      // generate (GeneratePiecesModal). Render aqui nao deve modificar.
+      const overrides = layer.overrides ?? {}
       // PSD layer props: opacity + blendMode (canvas globalCompositeOperation).
       // Sem isso, o thumb do KV (gerado via regenerateKVThumb) perdia
       // multiply/screen/overlay → preview ficava diferente do editor que

@@ -469,11 +469,12 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
       // Layers hidden no PSD não devem renderizar (mas continuam no JSON pra
       // round-trip preservar o estado).
       if (layer.hidden === true) continue
-      // ANTI-FALHAS: strip per-char fill quando overrides.fill setado.
-      // Sem isso, asset.lastOverride.styles legado (per-char preto do PSD)
-      // ganhava precedencia sobre overrides.fill → export PSD/PNG saia com
-      // texto preto mesmo quando user editou pra branco. Bug recorrente.
-      const overrides = stripPerCharFillWhenLayerSet(layer.overrides ?? {})
+      // Strip per-char fill REMOVIDO daqui 2026-05-26 — user reportou thumbs
+      // verdes (so BG, sem conteudo) apos commit que adicionou strip aqui.
+      // Pra evitar regressao silenciosa, render eh fiel ao estado salvo;
+      // strip continua em GeneratePiecesModal + server PUT (sites menos
+      // criticos pro render visivel).
+      const overrides = layer.overrides ?? {}
       // PSD opacity/blendMode (capturados no import) → Fabric props.
       // Fabric aceita "opacity" 0..1 e "globalCompositeOperation" (canvas spec).
       // Sanity check: opacity < 0.01 = bug do importer antigo (divisão 2x por 255).
