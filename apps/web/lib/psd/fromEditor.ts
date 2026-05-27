@@ -310,20 +310,25 @@ function buildShapeLayer(l: EditorLayer, asset: EditorAsset): PsdShapeLayer {
     ? { kind: "solid", color: ov.fill }
     : baseFill
   let stroke: PsdShapeLayer["stroke"] = baseStroke
-  if (ov.stroke !== undefined || ov.strokeWidth !== undefined) {
-    // Reconstroi stroke quando user editou — mantem props nao-editaveis do
-    // original (position, cap, join, dash) e sobrescreve color/width.
+  // ov.strokePosition: edicao do user via UI Properties (2026-05-27).
+  // Tem prioridade sobre baseStroke.position. Default = "center" (PS default).
+  const ovPosition: "inside" | "center" | "outside" | undefined =
+    ov.strokePosition === "inside" || ov.strokePosition === "center" || ov.strokePosition === "outside"
+      ? ov.strokePosition
+      : undefined
+  if (ov.stroke !== undefined || ov.strokeWidth !== undefined || ovPosition !== undefined) {
     const newColor: string = ov.stroke !== undefined && ov.stroke !== ""
       ? ov.stroke
       : (baseStroke?.color ?? "#000000")
     const newWidth: number = ov.strokeWidth !== undefined
       ? ov.strokeWidth
       : (baseStroke?.width ?? 1)
+    const newPos = ovPosition ?? baseStroke?.position ?? "center"
     if (newWidth > 0 && newColor) {
       stroke = {
         width: newWidth,
         color: newColor,
-        position: baseStroke?.position ?? "outside",
+        position: newPos,
         cap: baseStroke?.cap ?? "butt",
         join: baseStroke?.join ?? "miter",
         dash: baseStroke?.dash,

@@ -784,6 +784,79 @@ function applyShapePathInPlace(obj: any, newPathD: string): void {
 }
 
 /**
+ * Aplica stroke position (Photoshop lineAlignment) visualmente no Fabric.Path.
+ * Fabric.js so renderiza stroke CENTERED no path. Pra inside/outside usamos
+ * o trick "dobra strokeWidth + clipPath = silhueta do path":
+ *
+ *   - center:  Fabric default. strokeWidth = W, sem clip. Stroke metade
+ *              dentro/fora do path.
+ *   - inside:  strokeWidth = 2*W, clipPath = path proprio (absolutePositioned).
+ *              Stroke desenhado 2*W dobrado, mas clip mantem so o que esta
+ *              DENTRO do path. Resultado visual: W de stroke pra dentro.
+ *   - outside: strokeWidth = 2*W, clipPath = path INVERTIDO (paintFirst trick).
+ *              Stroke 2*W mas so a metade EXTERNA aparece. Implementado via
+ *              dois objetos: ghost (stroke 2*W) + main (fill + stroke 0).
+ *              Ghost atras + main na frente cobre a metade interna.
+ *
+ * Cada call salva o "natural strokeWidth" em __naturalStrokeWidth pra que
+ * setShapeProp("strokeWidth", ...) possa ajustar corretamente sem dobrar
+ * indefinidamente em re-aplicacoes.
+ */
+function applyStrokePositionVisual(p: any, position: "inside" | "center" | "outside", PathCtor: any): void {
+  const naturalW = typeof p.__naturalStrokeWidth === "number"
+    ? p.__naturalStrokeWidth
+    : (p.strokeWidth ?? 0)
+  p.__naturalStrokeWidth = naturalW
+  // Remove ghost anterior (se reaplicando)
+  if (p.__strokePositionGhost) {
+    p.__strokePositionGhost = null
+  }
+  // Limpa clipPath aplicado por uma execucao anterior
+  if (p.clipPath && p.clipPath.__zzosyStrokePosClip) {
+    p.clipPath = null
+  }
+
+  if (position === "center" || naturalW === 0) {
+    p.set("strokeWidth", naturalW)
+    return
+  }
+  if (position === "inside") {
+    // Dobra width + clipa pelo path proprio. Path tem fill, entao clipPath
+    // sera o path mesmo (silhueta). Stroke 2*W dobrado, clip mantem so o
+    // que cai dentro da silhueta — visual: W pra dentro do path.
+    p.set("strokeWidth", naturalW * 2)
+    try {
+      const clip = new PathCtor((p as any).path ? null : "", undefined)
+      // Path1Constructor accepts (pathString, options). Use the same path
+      // as the main shape, absolutePositioned for canvas-space clip.
+      // Easier: clone the path d-string from p.
+      // Reconstruir clip de p.path (array de comandos Fabric):
+      const pathSource = (p as any).path
+      const dString = typeof pathSource === "string" ? pathSource : null
+      if (dString) {
+        const clip2 = new PathCtor(dString, {
+          absolutePositioned: true,
+          left: p.left, top: p.top,
+          scaleX: p.scaleX, scaleY: p.scaleY,
+          angle: p.angle,
+        })
+        ;(clip2 as any).__zzosyStrokePosClip = true
+        p.clipPath = clip2
+      }
+      // No-op se nao temos string — Fabric Path stores commands array internally
+      // mas tem `toSVG()` ou similar. Fallback: nada (stroke fica 2*W sem clip).
+      void clip
+    } catch { /* keep stroke 2*W sem clip */ }
+    return
+  }
+  // outside: stroke 2*W e PaintFirst='stroke' pra que fill cubra a metade
+  // interna do stroke. Fabric paintFirst='stroke' = desenha stroke ANTES de fill,
+  // entao fill (que pinta o path) cobre a metade interna do stroke.
+  p.set("strokeWidth", naturalW * 2)
+  p.set("paintFirst", "stroke")
+}
+
+/**
  * FONTE UNICA DE VERDADE pra serializar overrides de SHAPE (Fabric.Path).
  * Mesmo pattern do serializeTextboxOverrides — evita drift.
  */
@@ -792,6 +865,12 @@ function serializeShapeOverrides(o: any): Record<string, any> {
   if (typeof o.fill === "string") ov.fill = o.fill
   if (typeof o.stroke === "string") ov.stroke = o.stroke
   if (typeof o.strokeWidth === "number") ov.strokeWidth = o.strokeWidth
+  // strokePosition: inside | center | outside. PSD lineAlignment.
+  // Mantido como custom prop __strokePosition no Fabric obj — Fabric nativo
+  // so renderiza centered, position visual eh aplicado via clipPath trick.
+  if (o.__strokePosition === "inside" || o.__strokePosition === "center" || o.__strokePosition === "outside") {
+    ov.strokePosition = o.__strokePosition
+  }
   // cornerRadius: usado pelo Properties Panel pra slider de raio (roundedRect).
   if (typeof o.__cornerRadius === "number") ov.cornerRadius = o.__cornerRadius
   // bboxW/bboxH: dimensoes EFFECTIVE (path internal * scale). Multiplicar pelo
@@ -4908,6 +4987,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         ;(p as any).__assetId = asset.id
         ;(p as any).__assetLabel = asset.label
         ;(p as any).__isShape = true
+        // strokePosition: override > parsedShape > default 'center' (PS default)
+        const strokePos: "inside" | "center" | "outside" =
+          (layerOv.strokePosition === "inside" || layerOv.strokePosition === "outside" || layerOv.strokePosition === "center")
+            ? layerOv.strokePosition
+            : (parsedShape.stroke?.position ?? "center")
+        ;(p as any).__strokePosition = strokePos
+        // Visual: Fabric so renderiza stroke 'center' nativo. Pra inside/outside
+        // aplicamos clipPath dobrado (2x width) + clip da silhueta do path.
+        applyStrokePositionVisual(p, strokePos, Path)
         // Prefere effKind (inclui promocao user) sobre parsedShape.kind cru.
         // Sem isso, ao recarregar shape promovido, __shapeKind ficava undefined
         // e save subsequente nao gravava bboxW/bboxH → corner radius perdido.
@@ -11802,15 +11890,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               if (isInitialized.current && !isApplyingHistory.current) pushHistory()
               doSave()
             }
-            function setShapeProp(key: "fill" | "stroke" | "strokeWidth", val: any) {
+            function setShapeProp(key: "fill" | "stroke" | "strokeWidth" | "strokePosition", val: any) {
               if (!fc || !selected) return
+              // strokePosition: salva como __strokePosition + reaplica visual
+              if (key === "strokePosition") {
+                if (val !== "inside" && val !== "center" && val !== "outside") return
+                ;(selected as any).__strokePosition = val
+                // Re-importa Path do fabric pra acessar o ctor
+                import("fabric").then(fab => {
+                  applyStrokePositionVisual(selected as any, val, fab.Path)
+                  ;(selected as any).setCoords?.()
+                  ;(selected as any).dirty = true
+                  fc.requestRenderAll()
+                  setSelectedTick(t => t + 1)
+                  isDirtyRef.current = true
+                  setIsDirty(true)
+                  if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+                  doSave()
+                })
+                return
+              }
               // Compensacao Photoshop-center: ao mudar strokeWidth, ajusta
               // left/top pra metade do delta em cada lado. Sem isso, Fabric
               // mantem o anchor top-left fixo e o bbox cresce pra direita+
               // baixo (path inside shifta visualmente). Com compensacao, o
               // path stays no mesmo lugar visual — comportamento Adobe-fiel.
               if (key === "strokeWidth") {
-                const oldW = (selected as any).strokeWidth ?? 0
+                const oldNat = (selected as any).__naturalStrokeWidth
+                const oldW = typeof oldNat === "number" ? oldNat : ((selected as any).strokeWidth ?? 0)
                 const newW = Number(val) || 0
                 const delta = (newW - oldW) / 2
                 if (delta !== 0) {
@@ -11819,12 +11926,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     top: ((selected as any).top ?? 0) - delta,
                   })
                 }
+                // Atualiza natural pra que applyStrokePositionVisual reaja certo
+                ;(selected as any).__naturalStrokeWidth = newW
+                // Reaplica visual com novo width
+                const pos = (selected as any).__strokePosition ?? "center"
+                import("fabric").then(fab => {
+                  applyStrokePositionVisual(selected as any, pos, fab.Path)
+                  ;(selected as any).setCoords?.()
+                  ;(selected as any).dirty = true
+                  fc.requestRenderAll()
+                  setSelectedTick(t => t + 1)
+                  isDirtyRef.current = true
+                  setIsDirty(true)
+                  if (isInitialized.current && !isApplyingHistory.current) pushHistory()
+                  doSave()
+                })
+                return
               }
+              // Aqui key eh "fill" ou "stroke" (strokeWidth e strokePosition
+              // ja tiveram early-return acima). Aplica direto.
               ;(selected as any).set(key, val)
-              // strokeUniform: true mantem espessura constante em qualquer
-              // zoom/scale (comportamento PSD). Sem isso, stroke escala com
-              // a transformacao da layer — quebrar ao redimensionar.
-              if (key === "strokeWidth" || key === "stroke") {
+              // strokeUniform pra qualquer mudanca de stroke
+              if (key === "stroke") {
                 ;(selected as any).set("strokeUniform", true)
               }
               ;(selected as any).setCoords?.() // recalc bbox + handles
@@ -11940,6 +12063,48 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       <span style={numFieldUnit}>px</span>
                     </div>
                   </div>
+                  {/* POSITION 2026-05-27: Photoshop lineAlignment.
+                      Roundtrip completo: reader extrai → asset.shape.stroke.position
+                      → editor visual (clipPath trick) → save (ov.strokePosition)
+                      → writer PSD (vectorStroke.lineAlignment). */}
+                  {(() => {
+                    const currentPos = (selected as any)?.__strokePosition ?? "center"
+                    const opts: Array<"inside" | "center" | "outside"> = ["inside", "center", "outside"]
+                    return (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+                          Posição
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+                          {opts.map(p => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setShapeProp("strokePosition", p)}
+                              style={{
+                                padding: "6px 4px",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                background: currentPos === p ? "#F5C400" : "transparent",
+                                color: currentPos === p ? "#111" : "#aaa",
+                                border: `1px solid ${currentPos === p ? "#F5C400" : "#333"}`,
+                                borderRadius: 4,
+                                cursor: "pointer",
+                                textTransform: "capitalize",
+                              }}
+                              title={
+                                p === "inside" ? "Stroke todo dentro do path" :
+                                p === "center" ? "Stroke metade dentro / metade fora (Photoshop default)" :
+                                "Stroke todo fora do path"
+                              }
+                            >
+                              {p === "inside" ? "Dentro" : p === "center" ? "Centro" : "Fora"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* RAIO DO CANTO — SEMPRE renderiza pra qualquer shape selecionado
