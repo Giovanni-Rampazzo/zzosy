@@ -259,6 +259,38 @@ export default function CampaignOverviewPage() {
     setDupDialog({ ids: [id], originalFormat: p?.format })
   }
 
+  // Regenera piece.data a partir da matriz atual. Util pra restaurar pecas
+  // corrompidas (layers vazios) sem perder name/segment/copy/status.
+  // User pediu 2026-05-26 apos reportar 8 pecas com piece.data zerado.
+  async function regenFromMatrix(id: string) {
+    if (!confirm("Regenerar layers desta peça a partir da matriz atual? O conteúdo atual será SUBSTITUÍDO.")) return
+    try {
+      const r = await fetch(`/api/pieces/${id}/regenerate-from-matrix`, { method: "POST" })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        alert(`Erro ao regenerar: ${err?.error ?? r.statusText}`)
+        return
+      }
+      await loadAll()
+    } catch (e: any) {
+      alert(`Erro: ${e?.message ?? e}`)
+    }
+  }
+
+  async function regenSelectedFromMatrix() {
+    if (selected.length === 0) return
+    if (!confirm(`Regenerar layers de ${selected.length} peça(s) a partir da matriz atual? O conteúdo atual delas será SUBSTITUÍDO.`)) return
+    try {
+      await Promise.all(selected.map(id =>
+        fetch(`/api/pieces/${id}/regenerate-from-matrix`, { method: "POST" })
+      ))
+      setSelected([])
+      await loadAll()
+    } catch (e: any) {
+      alert(`Erro: ${e?.message ?? e}`)
+    }
+  }
+
   function duplicateSelected() {
     if (selected.length === 0) return
     setDupDialog({ ids: selected })
@@ -573,6 +605,7 @@ export default function CampaignOverviewPage() {
                       <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Cancelar</Button>
                       <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
                       <Button variant="info" size="sm" onClick={duplicateSelected} title="Duplica as peças selecionadas (status volta para Standby)">Duplicar ({selected.length})</Button>
+                      <Button variant="secondary" size="sm" onClick={regenSelectedFromMatrix} title="Regenera os layers das peças selecionadas a partir da matriz atual (substitui o conteúdo). Útil pra recuperar peças corrompidas/vazias.">↻ Da matriz ({selected.length})</Button>
                       <Button variant="secondary" size="sm" onClick={() => setBulkStatusOpen(o => !o)}>Status</Button>
                       <Button variant="primary" size="sm" onClick={() => setExportOpen(true)}>Exportar ({selected.length})</Button>
                     </>
