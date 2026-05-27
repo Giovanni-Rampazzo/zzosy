@@ -2504,27 +2504,47 @@ export async function buildDeliveryZip(
   // e ve EXATAMENTE quantas masks/steps tem por peca, sem precisar abrir
   // browser console. User reportou 2026-05-27 "exportei e veio sem mascara"
   // sem feedback no que aconteceu — esse arquivo dá visibilidade direta.
+  //
+  // CRITICO 2026-05-27: try/catch obrigatorio — sem ele, 1 piece com data
+  // malformada (null, JSON quebrado, etc) CRASHAVA o buildDeliveryZip ANTES
+  // dos workers comecarem, deixando user vendo "Iniciando export..." pra
+  // sempre. User reportou "nao esta exportando, demora demais".
   type Diag = { name: string; layers: number; masksInData: number; steps: number; formats: string[]; errors: string[] }
   const diagByPiece = new Map<string, Diag>()
   for (const piece of pieces) {
-    const d = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
-    const layers: any[] = Array.isArray(d?.layers) ? d.layers : []
-    const masksInData = layers.filter(l => l?.mask && l.mask.enabled !== false).length
-    const steps = Array.isArray(d?.steps) ? d.steps.length : 0
+    let layers: any[] = []
+    let steps = 0
+    let masksInData = 0
+    try {
+      const d = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
+      if (Array.isArray(d?.layers)) layers = d.layers
+      masksInData = layers.filter(l => l?.mask && l.mask.enabled !== false).length
+      if (Array.isArray(d?.steps)) steps = d.steps.length
+    } catch {
+      // Data malformada — diag mostra layers=0 mas export continua
+    }
     diagByPiece.set(piece.name, { name: piece.name, layers: layers.length, masksInData, steps, formats: [], errors: [] })
   }
 
-  // Paraleliza com CONCURRENCY 3 → 6 (perf 2026-05-27 user reportou entrega
-  // lenta). buildBlob roda Fabric+canvas, CPU heavy mas IO-bound em parte
-  // (image loads, font loads). 6 hardware moderno aguenta. ~50% mais rapido.
-  // Em 23 pieces × 4 fmts (92 tasks): ~120s → ~60s.
-  const CONCURRENCY = 6
+  // CONCURRENCY 6 → 4 (2026-05-27): user reportou export demorando demais.
+  // Com 6 PSDs em paralelo, CPU saturava (cada PSD: Fabric + ag-psd + image
+  // loads). 4 paralelos = throughput melhor por menos contencao + UI menos
+  // travada.
+  const CONCURRENCY = 4
   let cursor = 0
   const t0 = Date.now()
-  // Timeout por task: se buildBlob travar (e.g. font load, fabric stuck),
-  // skip apos 90s e continua restante. Sem isso, 1 peca travada = entrega
-  // inteira travada.
-  const TASK_TIMEOUT_MS = 90_000
+  // Timeout por task 90s → 60s (2026-05-27): PSDs que demoram >60s
+  // tipicamente nao completam mesmo em 90s. Falhar mais cedo + reportar
+  // no DIAGNOSTICO.txt é melhor que esperar 90s/task.
+  const TASK_TIMEOUT_MS = 60_000
+  // Heartbeat: tick a cada 2s atualizando o progress com elapsed/done atual.
+  // Sem isso, user via mesma mensagem estatica por 30s+ enquanto 1 task PSD
+  // rodava — parecia travado. User reportou 2026-05-27 "demora demais".
+  let currentInProgressMsg = "Iniciando export..."
+  const heartbeat = setInterval(() => {
+    const elapsedSec = ((Date.now() - t0) / 1000).toFixed(0)
+    onProgress?.(`${done}/${total} (${elapsedSec}s) — ${currentInProgressMsg}`)
+  }, 2000)
   async function worker() {
     while (true) {
       const i = cursor++
@@ -2532,9 +2552,10 @@ export async function buildDeliveryZip(
       const { piece, fmt, mediaFolder } = tasks[i]
       // Progress ANTES do buildBlob — user ve o que esta sendo processado
       // mesmo que demore. Sem isso, primeira task de 15s parece travada.
+      currentInProgressMsg = `gerando ${piece.name} (${fmt})...`
       const inProgress = done + 1
       const elapsedStart = Date.now() - t0
-      onProgress?.(`${inProgress}/${total} (${(elapsedStart/1000).toFixed(0)}s) — gerando ${piece.name} (${fmt})...`)
+      onProgress?.(`${inProgress}/${total} (${(elapsedStart/1000).toFixed(0)}s) — ${currentInProgressMsg}`)
       try {
         const blob = await Promise.race([
           buildBlob(piece, fmt),
@@ -2564,7 +2585,11 @@ export async function buildDeliveryZip(
       onProgress?.(`${done}/${total} (${(elapsed/1000).toFixed(0)}s, ETA ${eta}s) — ${piece.name} (${fmt})`)
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()))
+  try {
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()))
+  } finally {
+    clearInterval(heartbeat)
+  }
   const totalSec = ((Date.now() - t0) / 1000).toFixed(1)
   console.log(`[buildDeliveryZip] ${total} tasks em ${totalSec}s (CONCURRENCY=${CONCURRENCY})`)
 
