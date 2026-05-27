@@ -2483,6 +2483,10 @@ export async function buildDeliveryZip(
   }
   const total = tasks.length
   let done = 0
+  // Progress imediato: sem isso, user via "Apresentação pronta" travado ate
+  // a primeira peca terminar de exportar (15-30s pra PSD). User reportou
+  // 2026-05-27 "para em apresentacao pronta".
+  onProgress?.(`Iniciando export de ${total} arquivo(s)...`)
 
   // Paraleliza com CONCURRENCY 3 → 6 (perf 2026-05-27 user reportou entrega
   // lenta). buildBlob roda Fabric+canvas, CPU heavy mas IO-bound em parte
@@ -2491,13 +2495,27 @@ export async function buildDeliveryZip(
   const CONCURRENCY = 6
   let cursor = 0
   const t0 = Date.now()
+  // Timeout por task: se buildBlob travar (e.g. font load, fabric stuck),
+  // skip apos 90s e continua restante. Sem isso, 1 peca travada = entrega
+  // inteira travada.
+  const TASK_TIMEOUT_MS = 90_000
   async function worker() {
     while (true) {
       const i = cursor++
       if (i >= tasks.length) return
       const { piece, fmt, mediaFolder } = tasks[i]
+      // Progress ANTES do buildBlob — user ve o que esta sendo processado
+      // mesmo que demore. Sem isso, primeira task de 15s parece travada.
+      const inProgress = done + 1
+      const elapsedStart = Date.now() - t0
+      onProgress?.(`${inProgress}/${total} (${(elapsedStart/1000).toFixed(0)}s) — gerando ${piece.name} (${fmt})...`)
       try {
-        const blob = await buildBlob(piece, fmt)
+        const blob = await Promise.race([
+          buildBlob(piece, fmt),
+          new Promise<Blob>((_, reject) =>
+            setTimeout(() => reject(new Error(`task timeout ${TASK_TIMEOUT_MS/1000}s`)), TASK_TIMEOUT_MS)
+          ),
+        ])
         const buf = await blob.arrayBuffer()
         const folderPath = `${mediaFolder}/${fmt.toUpperCase()}`
         const fileName = `${buildFileName(campaignName, piece)}.${EXT_MAP[fmt]}`

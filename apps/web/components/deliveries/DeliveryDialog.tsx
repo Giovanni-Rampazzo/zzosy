@@ -146,6 +146,10 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
       }
 
       // 1) Gerar ZIP no browser
+      // Progress imediato pra eliminar gap entre "Apresentacao pronta" e
+      // primeiro update do buildDeliveryZip. User reportou 2026-05-27 "para
+      // em apresentacao pronta" — primeira peca de 30s parecia hang.
+      setProgress(`Preparando export (${piecesToExport.length} peças × ${formats.size} formato(s))...`)
       const zipBlob = await buildDeliveryZip(piecesToExport, Array.from(formats), campaignName, setProgress, extraFiles.length > 0 ? extraFiles : undefined)
 
       // 2) Nome do ZIP usa codigo da campanha quando existir
