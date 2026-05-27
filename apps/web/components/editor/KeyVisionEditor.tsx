@@ -9397,6 +9397,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         >
           {saving ? "Saving…" : "Save"}
         </button>
+        {/* Nome da peca ao lado do Save (user pediu 2026-05-26). Pra matriz,
+            mostra "Matriz · <nome campanha>". Pra peca, "<nome peca>".
+            Subtilo — peso normal, color suave, sem competir com o CTA. */}
+        <div style={{
+          marginLeft: 12,
+          fontSize: 13, fontWeight: 500,
+          color: "#bbb",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          maxWidth: 320,
+        }} title={isPieceMode ? (piece?.name ?? "") : (campaign?.name ? `Matriz · ${campaign.name}` : "Matriz")}>
+          {isPieceMode ? (piece?.name ?? "") : (campaign?.name ? `Matriz · ${campaign.name}` : "Matriz")}
+        </div>
         {/* Apresentacao movida pro fim (depois de Gerar Pecas) — botao amarelo
             destaque na extremidade direita da topbar (2026-05-22). */}
         {/* Steps nav movido pra monitor toolbar (2026-05-23). */}
