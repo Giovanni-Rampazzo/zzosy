@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useLayoutEffect, useState, useRef } from "react"
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
 import TopNav from "@/components/TopNav"
@@ -1081,7 +1081,9 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
           <EditableText value={asset.label} variant="inline" onSave={(v) => onLabelChange(asset.id, v)} />
         </div>
-        {isShape ? null : (
+        {isShape ? (
+          <ShapeColorEdit asset={asset} campaignId={campaignIdParam!} />
+        ) : (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ cursor: "pointer", fontSize: 12, color: "#666", border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px", background: "#F8F9FA", display: "inline-block" }} title="PNG/JPG/WebP/SVG ou PSD (vira Smart Object)">
               Trocar imagem
@@ -1104,6 +1106,70 @@ function AssetRow({ asset, isLast, saving, onTextChange, onLabelChange, onImageU
         <GamBadgeBar asset={asset} onSaveToLibrary={onSaveToLibrary} onDetach={onDetach} onUpdate={onUpdate} />
         <Button variant="danger" size="sm" onClick={(e) => onDelete(asset.id, asset.label, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
       </div>
+    </div>
+  )
+}
+
+/* Editor inline de cor pra SHAPE rows. User pediu 2026-05-26 "cade o botao
+ * editar aqui?" — antes shape so tinha Apagar. Agora click no swatch abre
+ * native color picker; muda asset.content.fill.color via PUT debounced 350ms.
+ * Broadcasts cross-tab pra refetch + regen thumbs ja existente. */
+function ShapeColorEdit({ asset, campaignId }: { asset: any; campaignId: string }) {
+  const initial = (() => {
+    try {
+      const s = typeof asset.content === "string" ? JSON.parse(asset.content) : asset.content
+      const c = s?.fill?.color
+      // Strip alpha do rgba se houver — color input HTML so aceita #rrggbb.
+      if (typeof c === "string" && c.startsWith("#") && c.length === 7) return c
+      return "#888888"
+    } catch { return "#888888" }
+  })()
+  const [color, setColor] = useState(initial)
+  const [saving, setSaving] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => { setColor(initial) }, [initial])
+  const save = useCallback(async (hex: string) => {
+    setSaving(true)
+    try {
+      const s = typeof asset.content === "string" ? JSON.parse(asset.content) : (asset.content ?? {})
+      const newContent = { ...s, fill: { ...(s?.fill ?? { kind: "solid" }), kind: "solid", color: hex } }
+      await fetch(`/api/campaigns/${campaignId}/assets/${asset.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newContent }),
+      })
+      // Broadcast pro KV/pecas refrescarem
+      try {
+        if (typeof BroadcastChannel !== "undefined") {
+          const bc = new BroadcastChannel("zzosy:campaigns")
+          bc.postMessage({ type: "campaign-updated", campaignId, ts: Date.now() })
+          bc.close()
+        }
+      } catch {}
+    } finally { setSaving(false) }
+  }, [asset.content, asset.id, campaignId])
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <label style={{
+        cursor: "pointer", fontSize: 12, color: "#111",
+        border: "1px solid #E0E0E0", borderRadius: 4, padding: "6px 12px",
+        background: "#F8F9FA", display: "inline-flex", alignItems: "center", gap: 8,
+      }} title="Click pra editar a cor do shape">
+        <span style={{ width: 16, height: 16, borderRadius: 3, background: color, border: "1px solid #C0C0C0", display: "inline-block" }} />
+        <span style={{ fontWeight: 500 }}>{saving ? "Salvando…" : "Editar cor"}</span>
+        <input
+          type="color"
+          value={color}
+          onChange={e => {
+            const v = e.target.value
+            setColor(v)
+            if (debounceRef.current) clearTimeout(debounceRef.current)
+            debounceRef.current = setTimeout(() => save(v), 350)
+          }}
+          style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }}
+          tabIndex={-1}
+        />
+      </label>
     </div>
   )
 }
