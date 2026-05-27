@@ -1026,13 +1026,24 @@ export default function CampaignOverviewPage() {
                         {Array.isArray(p.steps) && p.steps.length >= 2 ? (
                           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             {p.steps.map(s => (
-                              <RowThumb
+                              <div
                                 key={s.index}
-                                src={s.thumbnailUrl ?? s.imageUrl ?? null}
-                                alt={`${p.name} step ${s.index + 1}`}
-                                fallbackText={`${s.index + 1}`}
-                                size={40}
-                              />
+                                role="button"
+                                tabIndex={0}
+                                title={`Abrir step ${s.index + 1} no editor`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  router.push(`/editor?campaignId=${id}&pieceId=${p.id}&stepIndex=${s.index}`)
+                                }}
+                                style={{ cursor: "pointer", lineHeight: 0 }}
+                              >
+                                <RowThumb
+                                  src={s.thumbnailUrl ?? s.imageUrl ?? null}
+                                  alt={`${p.name} step ${s.index + 1}`}
+                                  fallbackText={`${s.index + 1}`}
+                                  size={40}
+                                />
+                              </div>
                             ))}
                           </div>
                         ) : (
