@@ -708,6 +708,32 @@ export default function CampaignOverviewPage() {
               </div>
             )
           })()}
+          {/* Toolbar de recovery — sempre visivel (independente de emptyPieces).
+              Permite user re-aplicar masks + re-render thumbs server quando
+              campaign passou por full-recover-from-psd + relink. User pediu
+              2026-05-27 botoes diretos sem URL manual. */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <Button variant="secondary" size="sm" onClick={async () => {
+              if (!confirm("Re-aplicar máscaras do PSD original em todas peças?")) return
+              try {
+                const r = await fetch(`/api/campaigns/${id}/repatch-masks`, { method: "POST" })
+                const j = await r.json()
+                if (r.ok) alert(`Máscaras reaplicadas: ${j.masksReapplied} máscaras, ${j.piecesUpdated} peças, ${j.kvLayersUpdated} layers KV`)
+                else alert("Erro: " + (j.error ?? "?"))
+                await loadAll()
+              } catch (e: any) { alert("Erro: " + (e?.message ?? e)) }
+            }}>🎭 Re-aplicar máscaras</Button>
+            <Button variant="secondary" size="sm" onClick={async () => {
+              if (!confirm("Render server-side todas thumbs sem imageUrl?")) return
+              try {
+                const r = await fetch(`/api/campaigns/${id}/server-render-thumbs`, { method: "POST" })
+                const j = await r.json()
+                if (r.ok) alert(`Thumbs server-side: ${j.ok}/${j.total} em ${(j.durationMs/1000).toFixed(1)}s`)
+                else alert("Erro: " + (j.error ?? "?"))
+                await loadAll()
+              } catch (e: any) { alert("Erro: " + (e?.message ?? e)) }
+            }}>⚡ Render server thumbs</Button>
+          </div>
           <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #E0E0E0", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
