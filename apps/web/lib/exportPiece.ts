@@ -858,6 +858,23 @@ async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; asse
   return { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
 }
 
+// Cache de fetches durante uma sessao de export massivo. TTL 30s.
+// Sem isso, buildDeliveryZip com 23 pieces × 4 fmts = 92 tasks dispara
+// 92-184 fetches sequenciais ao /api/campaigns + /api/pieces (~90s
+// network roundtrip). User reportou 2026-05-27 "demorando demais".
+const __exportCache = new Map<string, { ts: number; value: any }>()
+const __EXPORT_CACHE_TTL_MS = 30_000
+
+function _cacheGet<T>(key: string): T | null {
+  const e = __exportCache.get(key)
+  if (!e) return null
+  if (Date.now() - e.ts > __EXPORT_CACHE_TTL_MS) { __exportCache.delete(key); return null }
+  return e.value as T
+}
+function _cacheSet(key: string, value: any) {
+  __exportCache.set(key, { ts: Date.now(), value })
+}
+
 async function renderToCanvas(pieceLite: { id?: string; name: string; data: any; width: number; height: number; __virtualStepOriginalId?: string }): Promise<{ canvas: HTMLCanvasElement; dpi: number }> {
   // Sempre busca peça + assets do servidor (sync) caso tenha id
   let piece: any = pieceLite
@@ -865,30 +882,41 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
   if (pieceLite.id) {
     if (pieceLite.id.startsWith("kv-")) {
       const campaignId = pieceLite.id.slice(3)
-      const r = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
-      if (r.ok) {
-        const camp = await r.json()
-        if (Array.isArray(camp.assets)) {
-          assets = camp.assets.map(normalizeAsset)
-        }
+      const cacheKey = `camp:${campaignId}`
+      let camp: any = _cacheGet(cacheKey)
+      if (!camp) {
+        const r = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+        if (r.ok) { camp = await r.json(); _cacheSet(cacheKey, camp) }
       }
+      if (camp && Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
     } else if (pieceLite.__virtualStepOriginalId) {
       // Peca virtual de step: busca SO os assets da campanha. Mantem o
       // piece.data como veio em pieceLite (com layers do step especifico).
-      // Sem isso, o data do banco (com TODOS os steps) sobrescreveria os
-      // layers do step e o export sairia errado/vazio.
-      const r = await fetch(`/api/pieces/${pieceLite.id}`, { cache: "no-store" })
-      if (r.ok) {
-        const p = await r.json()
-        const cres = await fetch(`/api/campaigns/${p.campaignId}`, { cache: "no-store" })
-        if (cres.ok) {
-          const camp = await cres.json()
-          if (Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
+      const pCacheKey = `piece:${pieceLite.id}`
+      let p: any = _cacheGet(pCacheKey)
+      if (!p) {
+        const r = await fetch(`/api/pieces/${pieceLite.id}`, { cache: "no-store" })
+        if (r.ok) { p = await r.json(); _cacheSet(pCacheKey, p) }
+      }
+      if (p?.campaignId) {
+        const cacheKey = `camp:${p.campaignId}`
+        let camp: any = _cacheGet(cacheKey)
+        if (!camp) {
+          const cres = await fetch(`/api/campaigns/${p.campaignId}`, { cache: "no-store" })
+          if (cres.ok) { camp = await cres.json(); _cacheSet(cacheKey, camp) }
         }
+        if (camp && Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
       }
       // NAO sobrescreve piece — fica como pieceLite (com data do step certo).
     } else {
-      const fetched = await fetchPieceWithAssets(pieceLite.id)
+      // fetchPieceWithAssets cache by id — quando exportar 4 fmts da mesma
+      // peca, segunda+ chamadas reusam cache (network 1x em vez de 4x).
+      const cacheKey = `pieceAssets:${pieceLite.id}`
+      let fetched: any = _cacheGet(cacheKey)
+      if (!fetched) {
+        fetched = await fetchPieceWithAssets(pieceLite.id)
+        _cacheSet(cacheKey, fetched)
+      }
       piece = fetched.piece
       assets = fetched.assets
     }
