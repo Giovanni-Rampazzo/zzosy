@@ -847,10 +847,12 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
 }
 
 async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; assets: Asset[] }> {
-  // Timeout 15s por fetch — evita hang infinito se servidor demorar.
-  // Sem isso, 1 piece travada bloqueia o worker pool inteiro do
-  // buildDeliveryZip. User reportou "nao exporta" sem stack trace —
-  // possível hang silencioso. AbortController dispara em 15s.
+  // CACHE 2026-05-27: PSD path nao usava cache; cada PSD task fazia 2 fetches.
+  // Com expandSteps gerando N pecas virtuais por peca real, era N×2 fetches
+  // do MESMO piece/campaign. Cache reduz pra 1 par por sessao.
+  const cacheKey = `pieceWithAssets:${pieceId}`
+  const cached = _cacheGet<{ piece: any; assets: Asset[] }>(cacheKey)
+  if (cached) return cached
   async function fetchWithTimeout(url: string, ms = 15000): Promise<Response> {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), ms)
@@ -864,7 +866,9 @@ async function fetchPieceWithAssets(pieceId: string): Promise<{ piece: any; asse
   const piece = await pres.json()
   const cres = await fetchWithTimeout(`/api/campaigns/${piece.campaignId}`)
   const camp = await cres.json()
-  return { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
+  const result = { piece, assets: Array.isArray(camp.assets) ? camp.assets.map(normalizeAsset) : [] }
+  _cacheSet(cacheKey, result)
+  return result
 }
 
 // Cache de fetches durante uma sessao de export massivo. TTL 30s.
@@ -2533,10 +2537,16 @@ export async function buildDeliveryZip(
   const CONCURRENCY = 4
   let cursor = 0
   const t0 = Date.now()
-  // Timeout por task 90s → 60s (2026-05-27): PSDs que demoram >60s
-  // tipicamente nao completam mesmo em 90s. Falhar mais cedo + reportar
-  // no DIAGNOSTICO.txt é melhor que esperar 90s/task.
-  const TASK_TIMEOUT_MS = 60_000
+  // Timeout POR FORMATO (2026-05-27): user reportou TODOS PSDs timeout em 90s.
+  // PSDs sao MUITO mais pesados (Fabric + ag-psd + linkedFiles + image fetches +
+  // smart objects). PNG/JPG/PDF sao bem mais rapidos. Dar timeout uniforme
+  // estava matando todos os PSDs antes deles completarem.
+  const TASK_TIMEOUT_BY_FMT: Record<string, number> = {
+    PSD: 240_000,  // 4min: PSDs grandes com smart objects podem demorar
+    PNG: 60_000,
+    JPG: 60_000,
+    PDF: 90_000,
+  }
   // Heartbeat: tick a cada 2s atualizando o progress com elapsed/done atual.
   // Sem isso, user via mesma mensagem estatica por 30s+ enquanto 1 task PSD
   // rodava — parecia travado. User reportou 2026-05-27 "demora demais".
@@ -2556,11 +2566,12 @@ export async function buildDeliveryZip(
       const inProgress = done + 1
       const elapsedStart = Date.now() - t0
       onProgress?.(`${inProgress}/${total} (${(elapsedStart/1000).toFixed(0)}s) — ${currentInProgressMsg}`)
+      const timeoutMs = TASK_TIMEOUT_BY_FMT[fmt] ?? 90_000
       try {
         const blob = await Promise.race([
           buildBlob(piece, fmt),
           new Promise<Blob>((_, reject) =>
-            setTimeout(() => reject(new Error(`task timeout ${TASK_TIMEOUT_MS/1000}s`)), TASK_TIMEOUT_MS)
+            setTimeout(() => reject(new Error(`task timeout ${timeoutMs/1000}s (${fmt})`)), timeoutMs)
           ),
         ])
         const buf = await blob.arrayBuffer()
