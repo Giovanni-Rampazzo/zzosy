@@ -1453,6 +1453,17 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     if (asset.smartObject) {
       try {
         const so = asset.smartObject
+        // GUID GUARD 2026-05-27: ag-psd exige /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/.
+        // PSDs antigos importados (LATAM com PA_Sicredi.smartObject.guid="3")
+        // crasham o export inteiro com 'Placed layer ID must be in GUID format'.
+        // Se invalido, regenera GUID novo aqui (perda de identidade SO mas
+        // export sobrevive).
+        const GUID_RE = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/
+        if (!so.guid || !GUID_RE.test(so.guid)) {
+          const fresh = makeGuid()
+          console.warn(`[PSD] asset ${asset.label} smartObject.guid invalido (${JSON.stringify(so.guid)}) — regerando: ${fresh}`)
+          ;(so as any).guid = fresh
+        }
         const res = await fetch(so.filePath)
         if (!res.ok) throw new Error(`fetch smart object falhou: ${res.status}`)
         const bytes = new Uint8Array(await res.arrayBuffer())
