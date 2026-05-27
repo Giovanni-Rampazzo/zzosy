@@ -1,27 +1,18 @@
-// Helper anti-falhas: se overrides.fill esta setado (= layer color decidida
-// pelo user), remove fill + fillBrandIdx de TODOS os styles per-char.
-// Sem isso, per-char fills antigos (geralmente do PSD original, importado
-// com cor preta default) ganham precedencia sobre o overrides.fill no
-// renderer e o texto fica com cor errada.
+// Helper anti-falhas: limpa per-char fill REDUNDANTE (= igual ao layer fill).
 //
-// Bug recorrente: user muda cor pra branco na matriz, peca gerada continua
-// preta porque asset.lastOverride.styles tem per-char colors do PSD nao
-// strippados, e generate peca copia esses styles.
+// IMPORTANTE 2026-05-26 REVISTO: versao anterior strippava TODOS per-char
+// quando overrides.fill setado. Quebrava feature legitima de "Olá branco +
+// Mundo amarelo" (per-char com cor DIFERENTE do layer — intencional).
 //
-// Aplicado em 3 sites (defense in depth):
-//  - lib/stripPerCharFill (este arquivo) — fonte unica
-//  - GeneratePiecesModal — strip ao gerar peca a partir da matriz
-//  - regenerateThumbs.buildThumbnailFromPieceData — strip antes de Fabric
-//  - exportPiece.buildPieceCanvas — strip antes de renderizar pra export
+// Versao smart: so remove per-char fill QUANDO bate exatamente com o layer
+// fill — preservando casos onde user pintou chars com cor diferente.
 //
-// Regra ZZOSY (CLAUDE.md 2.8 precedencia):
-//   charFills[i] > overrides.fill > asset.content[span].style.color
+// Bug que ainda eh protegido contra: estado legado onde overrides.styles tem
+// per-char fill IDENTICO a overrides.fill (redundante, ocupando bytes sem
+// efeito visual). Strip aqui limpa.
 //
-// Mas a regra implicita: charFills (per-char) so deve existir quando o user
-// ATIVAMENTE setou (selecionou chars + escolheu cor). Se overrides.fill foi
-// setado SEM seleção (= todo o texto), os per-char foram strippados na hora
-// no editor. Esta funcao garante que esse strip eh aplicado tambem em estado
-// LEGADO (gerado antes do fix, importado do PSD, etc).
+// Per-char legitimo (diferente do layer) permanece — Fabric renderiza
+// charFills > layer fill conforme regra ZZOSY 2.8.
 
 export interface OverridesLike {
   fill?: string
@@ -31,34 +22,53 @@ export interface OverridesLike {
   [k: string]: any
 }
 
+function normHex(c: unknown): string {
+  if (typeof c !== "string") return ""
+  return c.trim().toLowerCase()
+}
+
 /**
- * Retorna copia das overrides com per-char fill/fillBrandIdx removidos quando
- * overrides.fill esta setado. Se overrides.fill nao esta setado, retorna
- * overrides como veio (sem mexer — user pode ter so per-char fills sem
- * layer fill, padrao valido).
+ * Retorna copia das overrides com per-char fill/fillBrandIdx REDUNDANTES
+ * removidos (= igual ao layer fill). Per-char DIFERENTES (= user editou chars
+ * especificos com outra cor) sao PRESERVADOS.
+ *
+ * Se overrides.fill nao esta setado, retorna overrides como veio.
+ *
+ * Per-char redundante eh comum em estado LEGADO: PSD import setava per-char
+ * pra cada char com cor do default, e quando user mudou layer fill no editor,
+ * applyStyle "fill" strippa per-char do OBJ atual mas estado serializado
+ * antigo ainda tem o residuo. Aqui limpa sem mexer no legitimo.
  */
 export function stripPerCharFillWhenLayerSet<T extends OverridesLike>(overrides: T): T {
   if (!overrides) return overrides
-  // Sem layer fill setado: nada a strippar — per-char eh a unica fonte.
-  if (typeof overrides.fill !== "string" && typeof overrides.fillBrandIdx !== "number") return overrides
+  const layerFill = normHex(overrides.fill)
+  const layerBrandIdx = typeof overrides.fillBrandIdx === "number" ? overrides.fillBrandIdx : null
+  // Sem layer fill nem brandIdx: nada pra comparar — per-char eh a unica fonte.
+  if (!layerFill && layerBrandIdx === null) return overrides
   if (!overrides.styles || typeof overrides.styles !== "object") return overrides
 
-  // Detecta se HA algum per-char fill pra strippar — evita clonar
-  // desnecessariamente quando ja esta limpo.
-  let hasPerCharFill = false
+  // Detecta per-char fill REDUNDANTE (igual ao layer) — alvo do strip.
+  // Per-char com cor diferente do layer fill = preservar (legitimo user-edit).
+  let hasRedundant = false
   outer: for (const lineKey of Object.keys(overrides.styles)) {
     const line = overrides.styles[lineKey]
     if (!line || typeof line !== "object") continue
     for (const colKey of Object.keys(line)) {
       const cs = line[colKey]
       if (!cs || typeof cs !== "object") continue
-      if ("fill" in cs || "fillBrandIdx" in cs) { hasPerCharFill = true; break outer }
+      const charFill = normHex(cs.fill)
+      const charBrandIdx = typeof cs.fillBrandIdx === "number" ? cs.fillBrandIdx : null
+      // Redundante se: char fill bate com layer fill OU char brandIdx bate.
+      if ((layerFill && charFill && charFill === layerFill) ||
+          (layerBrandIdx !== null && charBrandIdx === layerBrandIdx)) {
+        hasRedundant = true
+        break outer
+      }
     }
   }
-  if (!hasPerCharFill) return overrides
+  if (!hasRedundant) return overrides
 
-  // Clone shallow + clone styles deep o suficiente pra mutar sem affetar
-  // original. Outras props (fontSize per-char) preservadas.
+  // Clone com strip seletivo.
   const newStyles: Record<string, Record<string, any>> = {}
   for (const lineKey of Object.keys(overrides.styles)) {
     const line = overrides.styles[lineKey]
@@ -67,9 +77,19 @@ export function stripPerCharFillWhenLayerSet<T extends OverridesLike>(overrides:
     for (const colKey of Object.keys(line)) {
       const cs = line[colKey]
       if (!cs || typeof cs !== "object") continue
-      // Copia tudo menos fill/fillBrandIdx
-      const { fill: _f, fillBrandIdx: _fb, ...rest } = cs as any
-      if (Object.keys(rest).length > 0) newLine[colKey] = rest
+      const charFill = normHex(cs.fill)
+      const charBrandIdx = typeof cs.fillBrandIdx === "number" ? cs.fillBrandIdx : null
+      const isRedundant = (layerFill && charFill && charFill === layerFill) ||
+                          (layerBrandIdx !== null && charBrandIdx === layerBrandIdx)
+      if (isRedundant) {
+        // Strip apenas fill/fillBrandIdx; preserva fontSize/etc per-char.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { fill: _f, fillBrandIdx: _fb, ...rest } = cs as any
+        if (Object.keys(rest).length > 0) newLine[colKey] = rest
+      } else {
+        // Per-char com cor DIFERENTE — preserva intacto (user editou chars).
+        newLine[colKey] = cs
+      }
     }
     if (Object.keys(newLine).length > 0) newStyles[lineKey] = newLine
   }
