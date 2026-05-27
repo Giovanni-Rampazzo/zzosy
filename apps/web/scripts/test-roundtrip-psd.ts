@@ -78,7 +78,7 @@ initializeCanvas(createCanvas as any)
   }
 
   console.log("\n=== STEP 4: writer (PsdDocument → bytes) ===")
-  const { bytes: outBytes, warnings } = writePsdDocument(psdDoc, { writeImageData: false })
+  const { bytes: outBytes, warnings } = writePsdDocument(psdDoc, {} as any)
   const len = outBytes instanceof ArrayBuffer ? outBytes.byteLength : (outBytes as any).length
   console.log(`Output bytes: ${len}`)
   if (warnings.length > 0) {
