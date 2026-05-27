@@ -612,6 +612,11 @@ export default function CampaignOverviewPage() {
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Button variant="secondary" size="sm"
+                  onClick={() => psdMatrixPickerRef.current?.click()}
+                  title="Substitui a matriz (KV) com um novo PSD. Pecas existentes ficam, mas re-mapeadas pros novos assets.">
+                  Import PSD
+                </Button>
+                <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/assets`)}
                   title="Lista de assets desta campanha">
                   Assets
