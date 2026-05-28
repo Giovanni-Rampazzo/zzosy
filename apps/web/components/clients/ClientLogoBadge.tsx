@@ -26,7 +26,7 @@ interface Props {
   disableNavigation?: boolean
   /** Onclick custom (executado depois da navegacao, ou em vez se disableNavigation). */
   onClick?: (e: MouseEvent) => void
-  /** Title (tooltip). Default "Abrir pagina da empresa". */
+  /** Title (tooltip). Default "Abrir pagina do cliente". */
   title?: string
   style?: React.CSSProperties
 }
@@ -51,7 +51,7 @@ export function ClientLogoBadge({
     if (!disableNavigation) router.push(`/clients/${client.id}`)
   }
 
-  const computedTitle = title ?? (disableNavigation ? client.name : "Abrir pagina da empresa")
+  const computedTitle = title ?? (disableNavigation ? client.name : "Abrir pagina do cliente")
   const cursor = disableNavigation && !onClick ? "default" : "pointer"
 
   if (client.brandLogoUrl) {

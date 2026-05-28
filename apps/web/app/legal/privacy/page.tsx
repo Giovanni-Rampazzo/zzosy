@@ -26,7 +26,7 @@ export default function PrivacyPage() {
       <h2 style={h2}>2. Dados que Coletamos</h2>
       <ul>
         <li><strong>Cadastro</strong>: nome, e-mail, senha (armazenada como hash bcrypt).</li>
-        <li><strong>Empresa</strong>: razão social, CNPJ, dados de cobrança quando aplicável.</li>
+        <li><strong>Cliente</strong>: razão social, CNPJ, dados de cobrança quando aplicável.</li>
         <li><strong>Conteúdo</strong>: arquivos enviados (PSDs, imagens, smart objects, fontes
           custom), peças geradas, campanhas, clientes cadastrados na conta.</li>
         <li><strong>Uso</strong>: logs de acesso, IP, user-agent, ações realizadas (auditoria).</li>

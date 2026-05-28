@@ -6,9 +6,9 @@ import { useActiveClient } from "@/lib/activeClientContext"
 
 // Formatos = catalogo GLOBAL de formatos de midia (dimensoes/veiculos) do
 // tenant. Tambem acessivel via /clients/[id]/edit > card "Formatos de midia".
-// Fluxo: Empresas → Campanhas → Peças → Formatos → Aprovação → Entregas.
+// Fluxo: Clientes → Campanhas → Peças → Formatos → Aprovação → Entregas.
 const links = [
-  { href: "/dashboard", label: "Empresas" },
+  { href: "/dashboard", label: "Clientes" },
   { href: "/campaigns", label: "Campanhas" },
   { href: "/pieces", label: "Peças" },
   { href: "/medias", label: "Formatos" },
@@ -21,7 +21,7 @@ export default function TopNav() {
   const { data: session } = useSession()
   const activeClient = useActiveClient()
 
-  // Logo da empresa ativa substitui o "ZZOSY". Se cliente nao tem logo,
+  // Logo do cliente ativo substitui o "ZZOSY". Se cliente nao tem logo,
   // nao mostra NADA (regra user 2026-05-24). Sem cliente ativo (paginas
   // globais como /dashboard, /campaigns lista), tambem fica vazio.
   const showClientLogo = !!activeClient?.brandLogoUrl

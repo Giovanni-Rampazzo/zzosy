@@ -44,7 +44,7 @@ export function NewClientModal({ onClose, onCreated }: Props) {
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"white",borderRadius:12,width:480,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
         <div style={{padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
-          <span style={{fontWeight:700,fontSize:16}}>Nova Empresa</span>
+          <span style={{fontWeight:700,fontSize:16}}>Novo Cliente</span>
         </div>
         <form onSubmit={handleSubmit} style={{padding:24,display:"flex",flexDirection:"column",gap:16}}>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -52,7 +52,7 @@ export function NewClientModal({ onClose, onCreated }: Props) {
             <input
               value={form.name}
               onChange={e => set("name", e.target.value)}
-              placeholder="Nome da empresa"
+              placeholder="Nome do cliente"
               required
               style={{padding:"8px 12px",border:"1px solid #E0E0E0",borderRadius:6,fontSize:13,outline:"none",fontFamily:"inherit"}}
             />

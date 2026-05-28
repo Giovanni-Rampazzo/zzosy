@@ -5,7 +5,7 @@
  * (botoes de acao da pagina) inline a DIREITA. Diferenciacao clara entre
  * navegacao (tabs underline-style) e CTAs (botoes solidos).
  *
- * Removido o "← Empresa" — o breadcrumb da pagina ja faz esse role, e
+ * Removido o "← Cliente" — o breadcrumb da pagina ja faz esse role, e
  * existe a aba "Campanhas" no TopNav global pra subir o nivel.
  */
 import { useRouter } from "next/navigation"

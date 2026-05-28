@@ -63,7 +63,7 @@ export default function CampaignOverviewPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [campaign, setCampaign] = useState<Campaign | null>(null)
-  // Hookea cliente da campaign no TopNav (logo da empresa substitui ZZOSY)
+  // Hookea cliente da campaign no TopNav (logo do cliente substitui ZZOSY)
   useSetActiveClient(campaign?.client ? {
     id: campaign.client.id,
     name: campaign.client.name ?? "",

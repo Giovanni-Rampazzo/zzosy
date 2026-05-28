@@ -748,7 +748,7 @@ export default function EditClientPage() {
         </div>
 
         {/* SETTINGS GLOBAIS — listas controladas (segmentos, categorias, filtros)
-            do TENANT. Compartilhadas entre todas as empresas/campanhas/pecas. */}
+            do TENANT. Compartilhadas entre todos os clientes/campanhas/pecas. */}
         <div style={{maxWidth:640,marginBottom:24}}>
           <CollapsibleCard
             title="Configurações"

@@ -207,7 +207,7 @@ Separado de `/uploads/campaigns/{campaignId}/` pra não acoplar lifecycle.
 11. ✅ Cartridge import `.zzosy` — `PUT /api/clients/[id]/library/cartridge` parseia + persiste binaries em /uploads/clients/[id]/library/ + cria ClientLibraryAsset(s)
 12. ✅ Apply cartridge `POST /api/campaigns/[id]/apply-cartridge` (multipart upload OU libraryAssetIds JSON). Match por slotKey, criar novos pros não-matched, suporte a mapping manual override.
 13. ✅ Apply cartridge UI: `ApplyCartridgeButton` no header `/campaigns/[id]` — modal com upload .zzosy + atalho "aplicar todo library"
-14. ✅ Link "Library" no header de `/clients/[id]` (botão secondary ao lado de "← Empresas")
+14. ✅ Link "Library" no header de `/clients/[id]` (botão secondary ao lado de "← Clientes")
 15. ⚠️ Manual mapping modal (fallback ambiguidade) — backend já aceita `mapping` param, UI futura
 
 ### Pendente (próxima sessão)
@@ -376,7 +376,7 @@ Estado atual: **dev/beta interno**, single-tenant test data, sem CI/CD, sem moni
 
 **🟡 PROD-14. Páginas legais** — Termos de Uso + Política de Privacidade (LGPD-compliant). Boilerplate ajustado. **1 dia**
 
-**🟡 PROD-15. Onboarding flow polido** — `/welcome` existe mas é placeholder. Wizard: cria primeira empresa → primeira campanha → tour do editor. **3 dias**
+**🟡 PROD-15. Onboarding flow polido** — `/welcome` existe mas é placeholder. Wizard: cria primeiro cliente → primeira campanha → tour do editor. **3 dias**
 
 **✅ PROD-16. Páginas de erro custom** — `app/not-found.tsx` (404 com Voltar ao Dashboard), `app/error.tsx` (error boundary com retry + ref digest + logger), `app/global-error.tsx` (root layout failure com retry). Branding ZZOSY (amarelo + DM Sans + 2px border).
 

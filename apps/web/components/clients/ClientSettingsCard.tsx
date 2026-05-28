@@ -118,7 +118,7 @@ export function ClientSettingsCard({ initial, onStatusChange }: Props) {
   return (
     <div>
       <p style={{fontSize:12,color:"#666",margin:"0 0 18px",lineHeight:1.5}}>
-        Listas globais usadas em todas as empresas, campanhas e peças. Valores criados
+        Listas globais usadas em todos os clientes, campanhas e peças. Valores criados
         em qualquer entidade são adicionados aqui automaticamente. Edite ou remova
         a qualquer momento.
       </p>

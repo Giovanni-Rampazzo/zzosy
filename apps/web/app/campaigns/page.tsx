@@ -29,7 +29,7 @@ export default function CampaignsPage() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
-  // Modal "+ Nova Campanha" (analogo ao "+ Nova Empresa" da dashboard).
+  // Modal "+ Nova Campanha" (analogo ao "+ Novo Cliente" da dashboard).
   const [showNew, setShowNew] = useState(false)
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [newForm, setNewForm] = useState<{ name: string; clientId: string; code: string }>({ name: "", clientId: "", code: "" })
@@ -50,7 +50,7 @@ export default function CampaignsPage() {
           setNewForm(f => ({ ...f, clientId: list[0].id }))
         }
       } catch (e) {
-        setCreateError("Falha ao carregar empresas")
+        setCreateError("Falha ao carregar clientes")
       }
     }
   }
@@ -78,7 +78,7 @@ export default function CampaignsPage() {
       setShowNew(false)
       setNewForm({ name: "", clientId: "", code: "" })
       // Navega direto pra pagina da campanha criada — mesmo padrao de
-      // "+ Nova Empresa" que sai do dashboard pra page da empresa.
+      // "+ Novo Cliente" que sai do dashboard pra page do cliente.
       router.push(`/campaigns/${created.id}`)
     } catch (err: any) {
       setCreateError(err?.message ?? "Erro ao criar")
@@ -291,8 +291,8 @@ export default function CampaignsPage() {
         )}
       </div>
 
-      {/* Modal "+ Nova Campanha" — analogo ao "+ Nova Empresa" do dashboard.
-          Select de Empresa + Nome + Codigo opcional. POST + redirect pra
+      {/* Modal "+ Nova Campanha" — analogo ao "+ Novo Cliente" do dashboard.
+          Select de Cliente + Nome + Codigo opcional. POST + redirect pra
           /campaigns/{id}. */}
       {showNew && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -302,9 +302,9 @@ export default function CampaignsPage() {
             </div>
             <form onSubmit={createCampaign} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.5px", color: "#888", display: "block", marginBottom: 5 }}>Empresa *</label>
+                <label style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.5px", color: "#888", display: "block", marginBottom: 5 }}>Cliente *</label>
                 {clients.length === 0 ? (
-                  <div style={{ fontSize: 12, color: "#888", padding: "8px 0" }}>Carregando empresas…</div>
+                  <div style={{ fontSize: 12, color: "#888", padding: "8px 0" }}>Carregando clientes…</div>
                 ) : (
                   <select
                     value={newForm.clientId}

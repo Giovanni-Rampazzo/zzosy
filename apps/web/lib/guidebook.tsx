@@ -123,7 +123,7 @@ export const GUIDEBOOK_SECTIONS: GuidebookSection[] = [
     content: (
       <>
         <p>O ZZOSY é multi-tenant. Estrutura hierárquica:</p>
-        <pre style={PRE_STYLE}>{`Tenant (empresa que assinou ZZOSY)
+        <pre style={PRE_STYLE}>{`Tenant (organização que assinou ZZOSY)
   └─ User (admin/editor do tenant)
   └─ Client (marca/cliente do tenant — ex: "Sicredi")
       └─ BrandColors, brandFont, logoUrl

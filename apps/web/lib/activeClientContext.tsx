@@ -3,7 +3,7 @@
  * ActiveClientContext — guarda o cliente "ativo" no contexto da navegação atual.
  * Páginas que abrem um recurso de cliente (campaign, editor, piece, etc) chamam
  * `useSetActiveClient(client)` num useEffect ao montar. TopNav consome via
- * `useActiveClient()` pra mostrar o logo da empresa no lugar do logo ZZOSY.
+ * `useActiveClient()` pra mostrar o logo do cliente no lugar do logo ZZOSY.
  *
  * Páginas globais sem contexto de cliente (dashboard, /campaigns, /pieces lista)
  * chamam `useSetActiveClient(null)` pra limpar.

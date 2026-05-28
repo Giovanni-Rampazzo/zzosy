@@ -570,7 +570,7 @@ export const PsdPieceImporter = forwardRef<PsdPieceImporterHandle, Props>(functi
         window.alert(
           `PSD(s) usa(m) fonte(s) não instalada(s):\n• ${missing.join("\n• ")}\n\n` +
           `Sem essas fontes o editor renderiza com fallback (métricas diferentes).\n` +
-          `Faça upload dos .ttf/.otf na página de edição da empresa, aba 'Fontes da marca'.`
+          `Faça upload dos .ttf/.otf na página de edição do cliente, aba 'Fontes da marca'.`
         )
       }
       fontsAccumulated.clear()

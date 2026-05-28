@@ -10,8 +10,8 @@ export const runtime = "nodejs"
 type Ctx = { params: Promise<{ id: string }> }
 
 /**
- * Duplica uma empresa (Client) — apenas METADATA (nome, contato, cores, fontes).
- * NAO duplica campanhas/peças (cada empresa tem suas proprias). Nome ganha sufixo " (cópia)".
+ * Duplica um cliente (Client) — apenas METADATA (nome, contato, cores, fontes).
+ * NAO duplica campanhas/peças (cada cliente tem suas proprias). Nome ganha sufixo " (cópia)".
  */
 export async function POST(_req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
 
   const original = await prisma.client.findUnique({ where: { id } })
   if (!original || original.tenantId !== tenantId) {
-    return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 })
+    return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 })
   }
 
   try {

@@ -107,10 +107,10 @@ export default function ClientPage() {
               size="md"
               onClick={() => router.push("/dashboard")}
             >
-              ← Empresas
+              ← Clientes
             </Button>
             {/* Header limpo 2026-05-24 (user pedido "tira tudo isso"):
-                swatches de cor, font name, Design System + Editar empresa
+                swatches de cor, font name, Design System + Editar cliente
                 buttons removidos. Acesso a essas areas via /clients/[id]/edit
                 e /clients/[id]/design-system direto pelas URLs ou via outros
                 lugares do app (Configuracoes na edit page). */}
@@ -123,7 +123,7 @@ export default function ClientPage() {
         {/* Lista de campanhas — PROTAGONISTA da pagina. Botao "+ Nova Campanha"
             fica no header da SECAO de campanhas (alinhado ao titulo "Campanhas"),
             nao no header da pagina. Razao: o CTA pertence ao contexto da lista,
-            nao da identidade da empresa. */}
+            nao da identidade do cliente. */}
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
               <div style={{display:"flex",alignItems:"baseline",gap:10}}>

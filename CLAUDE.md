@@ -25,7 +25,7 @@ Dividido em 3 partes:
 - NUNCA usar primary em ROW DE AÇÕES — usar padrão de 4 botões outline (ver 1.1.B)
 
 ### 1.1.B Padrão de Row de Ações (4 botões outline)
-Em TODA linha/card que representa uma entidade (Empresa, Campanha, Peça), a row de ações segue ordem fixa, todos OUTLINE:
+Em TODA linha/card que representa uma entidade (Cliente, Campanha, Peça), a row de ações segue ordem fixa, todos OUTLINE:
 
 | Ordem | Variant | Label | Função |
 |---|---|---|---|
@@ -56,7 +56,7 @@ Razao: peso visual uniforme entre 4 acoes da mesma entidade. Primary (fill amare
 
 ### 1.2.1 Botões de NAVEGAÇÃO ZZOSY são exclusivos na sua linha
 
-- Botões de navegação ZZOSY (ex: "← Campanhas", "← Voltar", "← Assets", "← Empresa") NUNCA compartilham linha com botões de AÇÃO (Cartucho, +Adicionar, Importar PSD, etc).
+- Botões de navegação ZZOSY (ex: "← Campanhas", "← Voltar", "← Assets", "← Clientes") NUNCA compartilham linha com botões de AÇÃO (Cartucho, +Adicionar, Importar PSD, etc).
 - Razão: navegação é "saída/retorno" da página. Misturar com actions confunde a hierarquia visual e cria ambiguidade sobre qual é "o próximo passo".
 - Padrão: navegação isolada à direita do título. Actions ficam em OUTRA linha (toolbar interna da lista) ou em sidebar.
 - Sweep: qualquer página que tiver "← Voltar" + outro botão de action na mesma linha precisa separar.

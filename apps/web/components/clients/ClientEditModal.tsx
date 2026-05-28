@@ -72,7 +72,7 @@ export function ClientEditModal({ client, onClose, onSaved }: Props) {
       <div
         style={{ background: "#fff", borderRadius: 10, width: "100%", maxWidth: 520, maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: 20, borderBottom: "1px solid #eee" }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Editar empresa</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Editar cliente</h2>
         </div>
 
         <div style={{ padding: 20, flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 14 }}>

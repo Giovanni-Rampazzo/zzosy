@@ -67,7 +67,7 @@ export default function DashboardPage() {
       const res = await fetch(`/api/clients/${clientId}/duplicate`, { method: "POST" })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert("Falha ao duplicar empresa: " + (err.detail ?? err.error ?? "?"))
+        alert("Falha ao duplicar cliente: " + (err.detail ?? err.error ?? "?"))
         return
       }
       await fetchClients()
@@ -82,23 +82,23 @@ export default function DashboardPage() {
 
         {/* Padrao ZZOSY: botao de acao primaria dentro da box da lista, nao
             em header separado acima. Header da tabela: titulos das colunas
-            + botao + Nova Empresa alinhado a direita. */}
+            + botao + Novo Cliente alinhado a direita. */}
         <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr style={{borderBottom:"1px solid #E0E0E0"}}>
                 <th style={{padding:"8px 8px",width:72}}></th>
-                {["Empresa","Contato","E-mail","Campanhas"].map(h => (
+                {["Cliente","Contato","E-mail","Campanhas"].map(h => (
                   <th key={h} style={{textAlign:"left",fontSize:11,fontWeight:600,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",padding:"8px 16px"}}>{h}</th>
                 ))}
                 <th style={{textAlign:"right",padding:"6px 16px"}}>
-                  <Button size="sm" onClick={() => setShowModal(true)}>+ Nova Empresa</Button>
+                  <Button size="sm" onClick={() => setShowModal(true)}>+ Novo Cliente</Button>
                 </th>
               </tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan={6} style={{textAlign:"center",padding:48,color:"#888",fontSize:13}}>Carregando...</td></tr>}
-              {!loading && clients.length === 0 && <tr><td colSpan={6} style={{textAlign:"center",padding:48,color:"#888",fontSize:13}}>Nenhuma empresa ainda. Crie a primeira!</td></tr>}
+              {!loading && clients.length === 0 && <tr><td colSpan={6} style={{textAlign:"center",padding:48,color:"#888",fontSize:13}}>Nenhum cliente ainda. Crie o primeiro!</td></tr>}
               {clients.map(c => (
                 <tr key={c.id} style={{borderBottom:"1px solid #f0f0f0"}}>
                   <td style={{padding:"8px 8px",cursor:"pointer"}} onClick={() => router.push(`/clients/${c.id}`)}>
@@ -137,10 +137,10 @@ export default function DashboardPage() {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <div style={{background:"white",borderRadius:12,width:480,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
             <div style={{display:"flex",alignItems:"center",padding:"16px 24px",borderBottom:"1px solid #E0E0E0"}}>
-              <div style={{fontWeight:700,fontSize:16}}>Nova Empresa</div>
+              <div style={{fontWeight:700,fontSize:16}}>Novo Cliente</div>
             </div>
             <form onSubmit={createClient} style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
-              {[["name","Nome *","Nome da empresa"],["contact","Contato","Nome do contato"],["email","E-mail","email@empresa.com"],["phone","Telefone","(11) 99999-9999"],["address","Endereço","Cidade, Estado"]].map(([k,l,p]) => (
+              {[["name","Nome *","Nome do cliente"],["contact","Contato","Nome do contato"],["email","E-mail","email@cliente.com"],["phone","Telefone","(11) 99999-9999"],["address","Endereço","Cidade, Estado"]].map(([k,l,p]) => (
                 <div key={k}>
                   <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase" as const,letterSpacing:"0.5px",color:"#888",display:"block",marginBottom:5}}>{l}</label>
                   <input

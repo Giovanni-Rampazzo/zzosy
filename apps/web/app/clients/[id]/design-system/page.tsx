@@ -576,7 +576,7 @@ export default function EditClientPage() {
         </button>
 
         <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"#888",marginBottom:20}}>
-          <span style={{cursor:"pointer"}} onClick={() => router.push("/dashboard")}>Empresas</span>
+          <span style={{cursor:"pointer"}} onClick={() => router.push("/dashboard")}>Clientes</span>
           <span style={{color:"#ccc"}}>/</span>
           <span style={{cursor:"pointer"}} onClick={() => router.push(`/clients/${id}`)}>{client.name}</span>
           <span style={{color:"#ccc"}}>/</span>
@@ -682,7 +682,7 @@ export default function EditClientPage() {
           </div>
         </form>
 
-        {/* Os dados administrativos da empresa (nome, contato, etc) vivem em
+        {/* Os dados administrativos do cliente (nome, contato, etc) vivem em
             /clients/[id]/edit. Aqui ficam SOMENTE as configs visuais. */}
 
         {/* CARD: Identidade Visual (auto-save) */}
@@ -1089,10 +1089,10 @@ export default function EditClientPage() {
         <div style={{display:"none"}}>
           <div style={{fontSize:14,fontWeight:700,color:"#991B1B",marginBottom:8}}>Zona de perigo</div>
           <p style={{fontSize:12,color:"#666",margin:"0 0 16px",lineHeight:1.5}}>
-            Apagar a empresa remove permanentemente todas as campanhas, peças e entregas associadas. Esta ação não pode ser desfeita.
+            Apagar o cliente remove permanentemente todas as campanhas, peças e entregas associadas. Esta ação não pode ser desfeita.
           </p>
           {!confirmDelete ? (
-            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>Apagar empresa</Button>
+            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>Apagar cliente</Button>
           ) : (
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <label style={{fontSize:12,color:"#666"}}>

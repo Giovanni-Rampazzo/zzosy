@@ -32,7 +32,7 @@ interface Sample {
 
 const SAMPLES: Sample[] = [
   { varName: "--zz-text-display", label: "Display · hero / landing", weight: 900, color: "var(--zz-text-primary)", example: "ZZOSY Studio" },
-  { varName: "--zz-text-h1", label: "H1 · título de página", weight: 700, color: "var(--zz-text-primary)", example: "Empresas" },
+  { varName: "--zz-text-h1", label: "H1 · título de página", weight: 700, color: "var(--zz-text-primary)", example: "Clientes" },
   { varName: "--zz-text-h2", label: "H2 · subtítulo de seção", weight: 700, color: "var(--zz-text-primary)", example: "Campanhas ativas" },
   { varName: "--zz-text-xl", label: "XL · título de card", weight: 700, color: "var(--zz-text-primary)", example: "Cliente XYZ" },
   { varName: "--zz-text-lg", label: "LG · título de linha", weight: 600, color: "var(--zz-text-primary)", example: "Promoção de natal 2026" },
