@@ -31,8 +31,9 @@ export interface ImportResult {
 }
 
 export interface ImportOptions {
-  /** Hook de progresso pra UI exibir percentual ou texto. */
-  onProgress?: (msg: string) => void
+  /** Hook de progresso. `percent` (0-100) preenchido quando ha estimativa
+   *  confiavel: fases fixas + upload real via XHR.upload.onprogress. */
+  onProgress?: (msg: string, percent?: number) => void
   /** Hook chamado pra cada warning conforme acontece. */
   onWarning?: (w: ReadWarning | BuildWarning) => void
   /** PSD muito grande? skipMaster pula upload do .psd original (faz upload
@@ -64,7 +65,7 @@ export async function importPsdToCampaign(
   const warnings: Array<ReadWarning | BuildWarning> = []
   const skipMasterThreshold = options.skipMasterIfLarger ?? DEFAULT_SKIP_MASTER
 
-  options.onProgress?.("Lendo PSD…")
+  options.onProgress?.("Lendo PSD…", 5)
   let bytes: ArrayBuffer
   try {
     bytes = await file.arrayBuffer()
@@ -72,7 +73,7 @@ export async function importPsdToCampaign(
     return { ok: false, error: `Falha ao ler bytes do PSD: ${e?.message ?? e}`, warnings, requiredFonts: [] }
   }
 
-  options.onProgress?.("Decodificando layers…")
+  options.onProgress?.("Decodificando layers…", 15)
   let document
   try {
     const result = readPsdDocument(bytes, {
@@ -103,7 +104,7 @@ export async function importPsdToCampaign(
   // caia em rect bbox fallback → foto recortada em quadrado em vez da
   // shield curve. Agora cada layer com clipping tem mask.kind="raster" com
   // a silhueta Adobe-fiel ja resolved.
-  options.onProgress?.("Resolvendo clipping chains…")
+  options.onProgress?.("Resolvendo clipping chains…", 30)
   const clipStats = await resolveAllClippingChains(document)
   if (clipStats.pending > 0) {
     console.warn(`[psd-new] ${clipStats.pending} clipping chains nao resolvidas (base sem canvas?). Camadas afetadas vao renderizar SEM mask.`)
@@ -115,13 +116,13 @@ export async function importPsdToCampaign(
   // Fase 3: propaga folder masks (mask de pasta intersectada com mask propria
   // de cada child). Adobe: composite do folder eh APENAS onde folder.mask
   // eh opaca, e cada child dentro vale a intersecao com sua mask propria.
-  options.onProgress?.("Propagando folder masks…")
+  options.onProgress?.("Propagando folder masks…", 45)
   const folderMaskStats = await propagateFolderMasks(document)
   if (folderMaskStats.propagated > 0) {
     console.log(`[psd-new] ${folderMaskStats.propagated} folder masks propagadas pros children`)
   }
 
-  options.onProgress?.("Mapeando assets…")
+  options.onProgress?.("Mapeando assets…", 55)
   let build: CampaignBuild
   try {
     build = buildCampaignFromPsd(document)
@@ -142,7 +143,7 @@ export async function importPsdToCampaign(
     }
   }
 
-  options.onProgress?.(`Enviando ${build.assets.length} assets ao servidor…`)
+  options.onProgress?.(`Enviando ${build.assets.length} assets…`, 60)
 
   // Monta FormData esperado pelo endpoint POST /api/campaigns/[id]/import-psd
   const fd = new FormData()
@@ -225,21 +226,37 @@ export async function importPsdToCampaign(
     fd.append("psd", file, file.name)
   }
 
-  let res: Response
+  // XHR (nao fetch) pra capturar upload.onprogress — fetch nao expoe progresso
+  // de upload no browser. Mapeia 60→90% conforme bytes enviados.
+  type XhrResult = { ok: boolean; status: number; body: string }
+  let xhrResult: XhrResult
   try {
-    res = await fetch(`/api/campaigns/${campaignId}/import-psd`, {
-      method: "POST",
-      body: fd,
+    xhrResult = await new Promise<XhrResult>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open("POST", `/api/campaigns/${campaignId}/import-psd`)
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable) {
+          const fraction = evt.loaded / evt.total
+          const pct = 60 + Math.round(fraction * 30) // 60→90
+          options.onProgress?.(`Enviando ${build.assets.length} assets…`, pct)
+        }
+      }
+      xhr.upload.onload = () => {
+        options.onProgress?.("Processando no servidor…", 92)
+      }
+      xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body: xhr.responseText ?? "" })
+      xhr.onerror = () => reject(new Error("network error"))
+      xhr.onabort = () => reject(new Error("abortado"))
+      xhr.send(fd)
     })
   } catch (e: any) {
-    return { ok: false, error: `Falha no fetch: ${e?.message ?? e}`, warnings, requiredFonts: build.requiredFonts }
+    return { ok: false, error: `Falha no upload: ${e?.message ?? e}`, warnings, requiredFonts: build.requiredFonts }
   }
 
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "")
+  if (!xhrResult.ok) {
     return {
       ok: false,
-      error: `HTTP ${res.status}: ${txt}`,
+      error: `HTTP ${xhrResult.status}: ${xhrResult.body}`,
       warnings,
       requiredFonts: build.requiredFonts,
     }
@@ -252,6 +269,7 @@ export async function importPsdToCampaign(
   // NOTA: no escopo desse modulo, `document` eh o PsdDocument local (linha 76).
   // Checa o DOM via globalThis pra nao colidir.
   if (typeof (globalThis as any).document !== "undefined" && document.composite?.data) {
+    options.onProgress?.("Gerando preview…", 96)
     try {
       await uploadCompositeAsThumb(campaignId, document.composite)
     } catch (e) {
@@ -260,7 +278,7 @@ export async function importPsdToCampaign(
   }
 
   const durationMs = Math.round(performance.now() - t0)
-  options.onProgress?.(`Import concluido em ${durationMs}ms`)
+  options.onProgress?.(`Import concluido em ${durationMs}ms`, 100)
   return {
     ok: true,
     stats: {

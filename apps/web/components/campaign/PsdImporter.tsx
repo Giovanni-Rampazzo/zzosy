@@ -1241,6 +1241,8 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [progress, setProgress] = useState("")
+  // Percent (0-100) da fase atual. null = indeterminada (legacy fallback).
+  const [progressPercent, setProgressPercent] = useState<number | null>(null)
   // Estado pro modal de fontes faltando. Cada fonte tem status (pending/
   // uploading/done) pra UI mostrar progresso de upload inline.
   type FontUpload = { name: string; status: "pending" | "uploading" | "done" | "error"; errorMsg?: string }
@@ -1271,6 +1273,7 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
     setLoading(true)
     setError("")
     setProgress("Lendo PSD...")
+    setProgressPercent(0)
 
     // Fase 7: pipeline novo (Adobe-fidelity) eh agora o DEFAULT.
     // Legacy mantido apenas como fallback automatico caso o novo crashe —
@@ -1282,7 +1285,10 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
       try {
         const { importPsdToCampaign } = await import("@/lib/psd/importer")
         const result = await importPsdToCampaign(file, campaignId, {
-          onProgress: (m) => setProgress(m),
+          onProgress: (m, p) => {
+            setProgress(m)
+            if (typeof p === "number") setProgressPercent(p)
+          },
           onWarning: (w) => console.warn(`[psd-new ${w.kind}]`, w.layerName, w.message),
         })
         if (!result.ok) {
@@ -1325,6 +1331,7 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
 
         onImported()
         setLoading(false)
+        setProgressPercent(null)
         return
       } catch (e: any) {
         console.error("[psd-new] crash:", e)
@@ -2268,6 +2275,7 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
     } finally {
       setLoading(false)
       setProgress("")
+      setProgressPercent(null)
     }
   }
 
@@ -2335,17 +2343,36 @@ export const PsdImporter = forwardRef<PsdImporterHandle, Props>(function PsdImpo
             }}>
               {progress || "Iniciando…"}
             </div>
-            {/* Barra indeterminada (animacao de gradient deslizante) */}
+            {/* Barra: determinada quando ha % real (pipeline novo), indeterminada
+                como fallback (legacy ainda nao instrumentado). */}
             <div style={{
               height: 6, background: "#eee", borderRadius: 3, overflow: "hidden",
               position: "relative",
             }}>
-              <div style={{
-                position: "absolute", inset: 0,
-                background: "linear-gradient(90deg, transparent, #F5C400, transparent)",
-                animation: "psdImportSlide 1.2s ease-in-out infinite",
-              }} />
+              {progressPercent != null ? (
+                <div style={{
+                  position: "absolute", top: 0, left: 0, bottom: 0,
+                  width: `${Math.max(0, Math.min(100, progressPercent))}%`,
+                  background: "linear-gradient(90deg, #FFD84D, #F5C400)",
+                  borderRadius: 3,
+                  transition: "width 0.25s ease-out",
+                }} />
+              ) : (
+                <div style={{
+                  position: "absolute", inset: 0,
+                  background: "linear-gradient(90deg, transparent, #F5C400, transparent)",
+                  animation: "psdImportSlide 1.2s ease-in-out infinite",
+                }} />
+              )}
             </div>
+            {progressPercent != null && (
+              <div style={{
+                fontSize: 11, color: "#888", marginTop: 6, textAlign: "right",
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {Math.round(progressPercent)}%
+              </div>
+            )}
             <style>{`
               @keyframes psdImportSpin { to { transform: rotate(360deg) } }
               @keyframes psdImportSlide {
