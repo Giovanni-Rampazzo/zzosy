@@ -880,7 +880,7 @@ export default function CampaignOverviewPage() {
                 : `Nenhuma peça com este status.`}
             </div>
           ) : view === "grid" ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(var(--zz-card-grid-min), 1fr))", gap: "var(--zz-card-grid-gap)" }}>
               {visiblePieces.map(p => (
                 <div key={p.id}
                   style={{
@@ -950,14 +950,12 @@ export default function CampaignOverviewPage() {
                         }
                       }}
                     />
-                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: "auto", gap: 6, flexWrap: "nowrap" }}>
-                      {/* Botoes compactos pra caber em 1 linha no card grid
-                          (~260px). padding 4x10 + font 11 + gap 6 = labels
-                          legiveis sem corte. Bug fix 2026-05-28. */}
-                      <Button variant="danger" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
-                      <Button variant="info" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
-                      <Button variant="secondary" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
-                      <Button variant="view" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: "auto", gap: "var(--zz-btn-compact-gap)", flexWrap: "nowrap" }}>
+                      {/* Botoes compactos via design tokens — editor em /admin/settings/design-tokens */}
+                      <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                      <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
+                      <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                      <Button variant="view" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                     </div>
                   </div>
                 </div>
@@ -1071,13 +1069,12 @@ export default function CampaignOverviewPage() {
                         />
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", gap: 6 }}>
-                          {/* Sweep 2026-05-28: padding 4x10 + font 11 + gap 6,
-                              alinhado com grid view. Labels legiveis. */}
-                          <Button variant="danger" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
-                          <Button variant="info" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
-                          <Button variant="secondary" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
-                          <Button variant="view" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
+                        <div style={{ display: "inline-flex", gap: "var(--zz-btn-compact-gap)" }}>
+                          {/* Botoes compactos via design tokens */}
+                          <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                          <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
+                          <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                          <Button variant="view" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                         </div>
                       </td>
                     </tr>

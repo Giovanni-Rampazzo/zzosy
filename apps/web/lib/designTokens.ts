@@ -5,7 +5,7 @@
  * que use `var(--zz-xxx)` reage imediatamente.
  */
 
-export type TokenGroup = "Cor" | "Borda" | "Traço" | "Raio" | "Fundo" | "Semantica" | "Tipografia"
+export type TokenGroup = "Cor" | "Borda" | "Traço" | "Raio" | "Fundo" | "Semantica" | "Tipografia" | "Linhas" | "Botões" | "Cards"
 
 export interface TokenDef {
   key: string
@@ -56,6 +56,20 @@ export const TOKENS: TokenDef[] = [
   { key: "--zz-text-h2", label: "Subtítulo (h2)", type: "size", default: "18px", group: "Tipografia" },
   { key: "--zz-text-h1", label: "Título (h1)", type: "size", default: "22px", group: "Tipografia" },
   { key: "--zz-text-display", label: "Display (hero)", type: "size", default: "28px", group: "Tipografia" },
+  // Linhas (table rows, list items)
+  { key: "--zz-row-pad-y", label: "Padding vertical da linha", type: "size", default: "10px", group: "Linhas", hint: "Altura interna de cells e list items" },
+  { key: "--zz-row-pad-x", label: "Padding horizontal da linha", type: "size", default: "12px", group: "Linhas" },
+  { key: "--zz-row-gap", label: "Gap entre linhas/celulas", type: "size", default: "8px", group: "Linhas" },
+  // Botoes compactos (action row em cards/tabelas)
+  { key: "--zz-btn-compact-px", label: "Padding X (botão compacto)", type: "size", default: "10px", group: "Botões", hint: "Row de Apagar/Duplicar/Editar/Entrar" },
+  { key: "--zz-btn-compact-py", label: "Padding Y (botão compacto)", type: "size", default: "4px", group: "Botões" },
+  { key: "--zz-btn-compact-fs", label: "Font size (botão compacto)", type: "size", default: "11px", group: "Botões" },
+  { key: "--zz-btn-compact-gap", label: "Gap entre botões", type: "size", default: "6px", group: "Botões" },
+  // Card grid
+  { key: "--zz-card-grid-min", label: "Largura mín do card", type: "size", default: "260px", group: "Cards", hint: "minmax do grid auto-fill" },
+  { key: "--zz-card-grid-gap", label: "Gap entre cards", type: "size", default: "16px", group: "Cards" },
+  { key: "--zz-card-pad", label: "Padding interno do card", type: "size", default: "16px", group: "Cards" },
+  { key: "--zz-card-pad-sm", label: "Padding interno (card sm)", type: "size", default: "12px", group: "Cards" },
 ]
 
 const STORAGE_KEY = "zzosy.designTokens.v1"

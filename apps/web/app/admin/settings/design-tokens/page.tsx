@@ -163,16 +163,47 @@ export default function DesignTokensPage() {
               <div style={{ fontSize: 12, color: "var(--zz-text-secondary)" }}>Subtitulo secundario</div>
               <div style={{ fontSize: 11, color: "var(--zz-text-muted)", marginTop: 6 }}>Texto muted, valor menor</div>
             </div>
-            <div style={{ fontSize: 11, color: "var(--zz-text-muted)", marginBottom: 12 }}>Row hover</div>
-            <div style={{ border: "1px solid var(--zz-border-default)", borderRadius: "var(--zz-radius-md)", overflow: "hidden" }}>
-              {["Linha 1", "Linha 2", "Linha 3"].map((l, i) => (
+            <div style={{ fontSize: 11, color: "var(--zz-text-muted)", marginBottom: 12 }}>Row hover (com tokens --zz-row-pad-y/x)</div>
+            <div style={{ border: "1px solid var(--zz-border-default)", borderRadius: "var(--zz-radius-md)", overflow: "hidden", marginBottom: 16 }}>
+              {["Linha 1", "Linha 2 (hover simulado)", "Linha 3"].map((l, i) => (
                 <div key={i} style={{
-                  padding: "8px 12px",
-                  fontSize: 12,
+                  padding: "var(--zz-row-pad-y) var(--zz-row-pad-x)",
+                  fontSize: "var(--zz-text-base)",
                   color: "var(--zz-text-primary)",
                   borderBottom: i < 2 ? "1px solid var(--zz-border-light)" : "none",
                   background: i === 1 ? "var(--zz-bg-subtle)" : "var(--zz-bg-card)",
-                }}>{l}{i === 1 && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--zz-text-muted)" }}>(simulando hover)</span>}</div>
+                }}>{l}</div>
+              ))}
+            </div>
+
+            {/* Botoes compactos — replica row de Apagar/Duplicar/Editar/Entrar */}
+            <div style={{ fontSize: 11, color: "var(--zz-text-muted)", marginBottom: 12 }}>Row de ações compacta (4 botões padrão ZZOSY)</div>
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "var(--zz-btn-compact-gap)", flexWrap: "nowrap", marginBottom: 16, padding: 8, background: "var(--zz-bg-subtle)", borderRadius: "var(--zz-radius-md)" }}>
+              <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Apagar</Button>
+              <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Duplicar</Button>
+              <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Editar</Button>
+              <Button variant="view" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Entrar</Button>
+            </div>
+
+            {/* Card de peça (replica /campaigns/[id] grid) */}
+            <div style={{ fontSize: 11, color: "var(--zz-text-muted)", marginBottom: 12 }}>Card de peça (replica /campaigns/[id])</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(var(--zz-card-grid-min), 1fr))", gap: "var(--zz-card-grid-gap)" }}>
+              {[1, 2].map(i => (
+                <div key={i} style={{ background: "var(--zz-bg-card)", borderRadius: "var(--zz-radius-lg)", border: "1px solid var(--zz-border-default)", display: "flex", flexDirection: "column" }}>
+                  <div style={{ height: 120, background: "var(--zz-bg-subtle)", borderRadius: "var(--zz-radius-lg) var(--zz-radius-lg) 0 0", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--zz-text-muted)", fontSize: "var(--zz-text-sm)" }}>
+                    Preview {i}
+                  </div>
+                  <div style={{ padding: "var(--zz-card-pad-sm)", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ fontSize: "var(--zz-text-md)", fontWeight: 600 }}>Peça {i}</div>
+                    <div style={{ fontSize: "var(--zz-text-sm)", color: "var(--zz-text-muted)" }}>1080 × 1440 px</div>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "var(--zz-btn-compact-gap)", flexWrap: "nowrap", marginTop: "auto" }}>
+                      <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Apagar</Button>
+                      <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Duplicar</Button>
+                      <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Editar</Button>
+                      <Button variant="view" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Entrar</Button>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           </div>

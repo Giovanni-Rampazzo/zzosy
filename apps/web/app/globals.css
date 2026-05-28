@@ -37,6 +37,21 @@
   --zz-text-h2: 18px;
   --zz-text-h1: 22px;
   --zz-text-display: 28px;
+  /* Linhas (table rows, list items) */
+  --zz-row-pad-y: 10px;
+  --zz-row-pad-x: 12px;
+  --zz-row-gap: 8px;
+  /* Botoes compactos (action row em cards/tabelas) */
+  --zz-btn-compact-px: 10px;
+  --zz-btn-compact-py: 4px;
+  --zz-btn-compact-fs: 11px;
+  --zz-btn-compact-gap: 6px;
+  /* Card grid (auto-fill minmax) */
+  --zz-card-grid-min: 260px;
+  --zz-card-grid-gap: 16px;
+  /* Card content padding */
+  --zz-card-pad: 16px;
+  --zz-card-pad-sm: 12px;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
