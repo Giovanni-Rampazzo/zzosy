@@ -618,7 +618,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                   onKeyDown={(e) => e.stopPropagation()}
                   style={{
                     width: "100%",
-                    fontSize: "1.05cqw",
+                    fontSize: "1.5cqw",
                     lineHeight: 1.5,
                     color: TEXT_DARK,
                     fontFamily: getFontStack(brand),
@@ -627,7 +627,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                     outline: "none",
                     resize: "none",
                     padding: 0,
-                    minHeight: "1.05cqw",
+                    minHeight: "1.5cqw",
                     // Auto-resize via field-sizing-content (Chrome 123+). Cresce ate
                     // a altura disponivel; fallback nativo do textarea pra outros.
                     fieldSizing: "content" as any,
@@ -636,7 +636,7 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
               ) : (
                 <div style={{
                   width: "100%",
-                  fontSize: "1.05cqw",
+                  fontSize: "1.5cqw",
                   lineHeight: 1.5,
                   color: TEXT_DARK,
                   fontFamily: getFontStack(brand),
