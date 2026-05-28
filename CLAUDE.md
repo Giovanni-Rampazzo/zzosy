@@ -54,6 +54,20 @@ Razao: peso visual uniforme entre 4 acoes da mesma entidade. Primary (fill amare
 - Sem breadcrumb "ZZOSY / cliente / campanha"
 - Sem labels redundantes (PSD name + counters, etc)
 
+### 1.2.0 ESTRUTURA DE TOPO DA PÁGINA (2 linhas fixas)
+
+Toda página ZZOSY tem 2 linhas de topo fixas, nessa ordem:
+
+1. **LINHA 1 — TopNav GLOBAL** (`components/TopNav.tsx`)
+   - Logo (Sicredi / brand do cliente ativo) | links principais (Clientes, Campanhas, Peças, Formatos, Aprovação, Entregas) | Admin | Account | Avatar
+   - Distribuição atual: 👌. NÃO mexer sem motivo forte.
+
+2. **LINHA 2 — Navegação CONTEXTUAL da página** (header da page)
+   - **EXCLUSIVA pra botões de NAVEGAÇÃO** do ZZOSY (← Voltar, breadcrumbs, etc).
+   - **NUNCA tem botões de AÇÃO** (Cartucho, +Adicionar, Importar PSD, Salvar, Exportar). Esses vão pra sidebars, toolbars internas, ou outras linhas.
+   - Razão: 2 linhas com responsabilidade clara — Linha 1 navega globalmente, Linha 2 navega dentro da página. Misturar com action quebra a previsibilidade.
+   - Conteúdo permitido nessa linha: título + "← Voltar"; ou breadcrumb contextual; ou abas (se a página tiver subnav).
+
 ### 1.2.1 Botões de NAVEGAÇÃO ZZOSY são exclusivos na sua linha
 
 - Botões de navegação ZZOSY (ex: "← Campanhas", "← Voltar", "← Assets", "← Clientes") NUNCA compartilham linha com botões de AÇÃO (Cartucho, +Adicionar, Importar PSD, etc).
