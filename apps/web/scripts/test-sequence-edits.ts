@@ -255,6 +255,59 @@ const abcExtend = migrateStyles("ABC", "ABCDEFGH", { 0: { 0: { color: Y }, 1: { 
 check("texto-novo: NAO breaka ABC->ABCDEFGH (prefix preserved)", (abcExtend[0] as any)?.[0]?.color === Y)
 check("texto-novo: NAO breaka ABC->ABCDEFGH (C verde preserved)", (abcExtend[0] as any)?.[2]?.color === G)
 
+// ============================================================
+section("ESPACO COM OVERRIDE: 'abc def' anda com o texto")
+// ============================================================
+// User clarificou 2026-05-28: o espaço PRECISA ter cor per-char pra cor
+// "andar" com o texto. Sistema ja trata espaco como char regular (linha
+// e col incrementam). User pode pintar o espaco igual letra.
+
+const W = "#FFFFFF", C = "#00FFFF", M = "#FF00FF"
+// "abc def" com espaco AZUL (override explicito)
+const abcdefSpaceColored: any = {
+  0: {
+    0: { color: Y },    // a amarelo
+    1: { color: B },    // b azul
+    2: { color: G },    // c verde
+    3: { color: C },    // ' ' CIANO (override explicito do user)
+    4: { color: M },    // d magenta
+    5: { color: W },    // e branco
+    6: { color: Y },    // f amarelo
+  },
+}
+
+// Cenario A: edit "abc def" -> "xyz def" (substitui abc por xyz)
+const editA = migrateStyles("abc def", "xyz def", abcdefSpaceColored)
+console.log("  abc def -> xyz def:", JSON.stringify(editA))
+check("space.A: x amarelo (de a)", editA[0]?.[0]?.color === Y)
+check("space.A: y azul (de b)", editA[0]?.[1]?.color === B)
+check("space.A: z verde (de c)", editA[0]?.[2]?.color === G)
+check("space.A: ' ' ciano (preservado pelo equal)", editA[0]?.[3]?.color === C)
+check("space.A: d magenta (equal)", editA[0]?.[4]?.color === M)
+check("space.A: e branco (equal)", editA[0]?.[5]?.color === W)
+check("space.A: f amarelo (equal)", editA[0]?.[6]?.color === Y)
+
+// Cenario B: 'abcdef' (sem espaco) -> 'abc def' (insere espaco no meio)
+const abcdefNoSpace: any = {
+  0: { 0:{color:Y}, 1:{color:B}, 2:{color:G}, 3:{color:M}, 4:{color:W}, 5:{color:Y} },
+}
+const editB = migrateStyles("abcdef", "abc def", abcdefNoSpace)
+console.log("  abcdef -> abc def:", JSON.stringify(editB))
+check("space.B: a amarelo", editB[0]?.[0]?.color === Y)
+check("space.B: b azul", editB[0]?.[1]?.color === B)
+check("space.B: c verde", editB[0]?.[2]?.color === G)
+check("space.B: ' ' inserido herda de c (verde, vizinho esquerdo)", editB[0]?.[3]?.color === G)
+check("space.B: d magenta", editB[0]?.[4]?.color === M)
+
+// Cenario C: 'abc def' -> 'abc DEF' (substitui def maiusculo)
+const editC = migrateStyles("abc def", "abc DEF", abcdefSpaceColored)
+console.log("  abc def -> abc DEF:", JSON.stringify(editC))
+check("space.C: abc preserved (equal)", editC[0]?.[0]?.color === Y && editC[0]?.[1]?.color === B && editC[0]?.[2]?.color === G)
+check("space.C: ' ' ciano preserved (equal)", editC[0]?.[3]?.color === C)
+check("space.C: D magenta (replace inherit de d)", editC[0]?.[4]?.color === M)
+check("space.C: E branco (replace inherit de e)", editC[0]?.[5]?.color === W)
+check("space.C: F amarelo (replace inherit de f)", editC[0]?.[6]?.color === Y)
+
 console.log(`\n  ${pass} PASS / ${fail} FAIL`)
 if (fails.length > 0) {
   console.log("\nFalhas:")
