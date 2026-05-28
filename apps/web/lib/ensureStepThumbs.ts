@@ -27,14 +27,16 @@ async function renderStepBlob(piece: any, assets: any[], stepIdx: number, target
   const allSteps = Array.isArray(data?.steps) ? data.steps : []
   const step = allSteps[stepIdx]
   if (!step) return null
+  // BG canonico do step (bgLayers preferido) com fallback pro data root.
+  const { bgFromAny, packBgForSave } = await import("@/lib/bgLayers")
+  const stepBgLayers = bgFromAny({ bgLayers: step.bgLayers, bgColor: step.bgColor, bgOpacity: step.bgOpacity })
+  const bgPacked = packBgForSave(stepBgLayers.length > 0 ? stepBgLayers : bgFromAny(data))
   const virtualPiece = {
     ...piece,
     data: {
       ...data,
       layers: Array.isArray(step.layers) ? step.layers : [],
-      bgColor: step.bgColor ?? data.bgColor ?? "#ffffff",
-      bgOpacity: typeof step.bgOpacity === "number" ? step.bgOpacity : data.bgOpacity,
-      bgLayers: Array.isArray(step.bgLayers) ? step.bgLayers : data.bgLayers,
+      ...bgPacked,
       version: 2,
     },
   }

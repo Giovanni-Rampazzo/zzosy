@@ -145,76 +145,30 @@ interface Props {
 
 // Renderiza preview de UMA peca: cria canvas no tamanho da peca e desenha os
 // objetos da matriz com escala pelo MENOR LADO (preserva proporcao do layout)
+// CORE 5 (2026-05-28): renderer unificado via buildPieceCanvas. Antes esta
+// funcao serializava o canvas live via toObject e re-renderizava — 4a
+// divergencia identificada pelo arquiteto. Agora renderiza a partir do
+// pieceData canonico, MESMO renderer do export PSD/PNG/thumb pos-save.
 async function renderPieceThumb(
-  matrixCanvas: any,
+  pieceData: any,
+  assets: any[],
   pieceW: number,
   pieceH: number,
-  matrixW: number,
-  matrixH: number
 ): Promise<Blob | null> {
   try {
-    const fabric = await import("fabric")
-    const StaticCanvas = (fabric as any).StaticCanvas
-    const el = document.createElement("canvas")
-    el.width = pieceW; el.height = pieceH
-
-    // Pega cor real do BG do editor: hoje BG eh um OBJETO com fill (nao a propriedade
-    // backgroundColor do Fabric Canvas, que fica preto por default no JPEG export).
-    const matrixBgObj = matrixCanvas.getObjects().find((o: any) => o.__isBg)
-    const realBgColor = matrixBgObj?.fill ?? matrixCanvas.backgroundColor ?? "#fff"
-
-    const fc = new StaticCanvas(el, { width: pieceW, height: pieceH, enableRetinaScaling: false })
-
-    // Escala pelo MENOR lado (uma dimensao cabe, layout preservado)
-    const scale = Math.min(pieceW / matrixW, pieceH / matrixH)
-    const offsetX = (pieceW - matrixW * scale) / 2
-    const offsetY = (pieceH - matrixH * scale) / 2
-
-    // Serializa matriz e carrega no canvas da peca.
-    // Usa toObject (nao toJSON): em Fabric v6 Canvas.toJSON() ignora silenciosamente
-    // o array de props extras — soh toObject(props) repassa pra _toObjectMethod.
-    // Sem isso, __assetId/__assetLabel se perdiam na clonagem matriz->peca.
-    const json = (matrixCanvas as any).toObject(["__assetId", "__assetLabel", "__isBg", "__isImage"])
-    // Fabric v6 quirk: 2o arg de loadFromJSON eh REVIVER per-objeto, nao
-    // callback de conclusao — passar `() => resolve()` ali resolvia a Promise
-    // no PRIMEIRO objeto desserializado, e o codigo prosseguia com canvas vazio.
-    // Aguarda apenas a Promise retornada pelo Fabric v6.
-    await fc.loadFromJSON(json)
-    await new Promise(r => setTimeout(r, 200))
-
-    // CRITICO: setar backgroundColor DEPOIS do loadFromJSON (ele sobrescreve com o do JSON
-    // que vem vazio/transparente, fazendo o JPEG export ficar preto). A cor real vem do
-    // OBJETO __isBg do editor, nao da propriedade backgroundColor do Canvas.
-    fc.backgroundColor = realBgColor
-
-    // Aplica escala em todos os objetos
-    for (const obj of fc.getObjects()) {
-      if ((obj as any).__isBg) {
-        obj.set({ left: 0, top: 0, width: pieceW, height: pieceH, scaleX: 1, scaleY: 1 })
-        continue
-      }
-      obj.set({
-        left: (obj.left ?? 0) * scale + offsetX,
-        top: (obj.top ?? 0) * scale + offsetY,
-        scaleX: (obj.scaleX ?? 1) * scale,
-        scaleY: (obj.scaleY ?? 1) * scale,
-      })
-      obj.setCoords()
-    }
-    const bgObj = fc.getObjects().find((o: any) => o.__isBg)
-    if (bgObj) fc.sendObjectToBack(bgObj)
-    fc.renderAll()
-
-    // Thumbnail compacto (960px max maior lado, JPEG quality 0.82).
-    // 2026-05-26: 1920→960 + PNG→JPEG. Peca tem bg solido, alpha era luxo
-    // nao usado. Mesmo padrao do resto do sistema (perf sweep).
+    const { buildPieceCanvas } = await import("@/lib/exportPiece")
+    const fc = await buildPieceCanvas({
+      id: undefined, name: "thumb",
+      data: pieceData, width: pieceW, height: pieceH,
+    } as any, assets)
+    if (!fc) return null
     const thumbScale = Math.min(960 / pieceW, 960 / pieceH, 1)
     const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: thumbScale })
-    fc.dispose()
+    try { fc.dispose() } catch {}
     const res = await fetch(dataUrl)
     return await res.blob()
   } catch (e) {
-    console.warn("thumb fail:", e)
+    console.warn("renderPieceThumb (unified) fail:", e)
     return null
   }
 }
@@ -428,9 +382,11 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
         continue
       }
 
-      // Gera thumbnail no tamanho/proporcao da peca (rapido — usa o fc do editor).
-      // Se falhar, registramos no createdIds pra fallback regen offscreen embaixo.
-      const thumb = await renderPieceThumb(fc, f.width, f.height, matrixW, matrixH)
+      // Gera thumbnail no tamanho/proporcao da peca via renderer canonico
+      // (buildPieceCanvas). Antes serializava o canvas live e re-renderizava
+      // — 4a divergencia. Agora usa pieceData + assets direto. Garante que
+      // thumb === editor canvas === export PSD/PNG.
+      const thumb = await renderPieceThumb(pieceData, camp.assets ?? [], f.width, f.height)
       if (!thumb) {
         console.warn(`[generate] thumbnail falhou pra "${f.vehicle} — ${f.format}" — agendando regen offscreen`)
         failures.push(`${f.vehicle} — ${f.format} (thumb null — tentando regen)`)

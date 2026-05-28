@@ -117,14 +117,15 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
         if (!step || !Array.isArray(step.layers)) return
         const stepUsesAsset = step.layers.some((l: any) => l?.assetId === assetId)
         if (!stepUsesAsset) return
-        // bgLayers DO STEP (nao apenas bgColor) — senao step com gradient/
-        // imagem de bg cai pra cor solida no thumb e desbate do editor. Bug
-        // identificado 2026-05-27: thumbs de step ignoravam bg multilayer.
+        // BG canonico do step (helper unificado bgFromAny). Inclui bgColor
+        // legacy derivado pra back-compat com renderers que ainda leem root.
+        const { bgFromAny, packBgForSave } = await import("@/lib/bgLayers")
+        const stepBg = bgFromAny(step)
+        const bgFinal = stepBg.length > 0 && stepBg[0] !== undefined ? stepBg : bgFromAny(pdata)
         const pseudoStepPiece = {
           version: 2,
           width: W, height: H,
-          bgColor: step.bgColor ?? pdata.bgColor ?? "#ffffff",
-          bgLayers: step.bgLayers ?? pdata.bgLayers,
+          ...packBgForSave(bgFinal),
           layers: step.layers,
         }
         try {
