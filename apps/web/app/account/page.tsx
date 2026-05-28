@@ -34,6 +34,39 @@ export default function AccountPage() {
   const [savedBrand, setSavedBrand] = useState(false)
   const logoInputRef = useRef<HTMLInputElement>(null)
   const secondaryInputRef = useRef<HTMLInputElement>(null)
+  // Card Seguranca (trocar senha)
+  const [currentPwd, setCurrentPwd] = useState("")
+  const [newPwd, setNewPwd] = useState("")
+  const [confirmPwd, setConfirmPwd] = useState("")
+  const [pwdLoading, setPwdLoading] = useState(false)
+  const [pwdError, setPwdError] = useState<string | null>(null)
+  const [pwdSuccess, setPwdSuccess] = useState(false)
+
+  async function changePassword() {
+    setPwdError(null); setPwdSuccess(false)
+    if (newPwd.length < 8) { setPwdError("Nova senha precisa ter no minimo 8 caracteres"); return }
+    if (newPwd !== confirmPwd) { setPwdError("Confirmacao nao bate com a nova senha"); return }
+    if (currentPwd === newPwd) { setPwdError("A nova senha precisa ser diferente da atual"); return }
+    setPwdLoading(true)
+    try {
+      const r = await fetch("/api/auth/change-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: currentPwd, newPassword: newPwd }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setPwdError(j?.error ?? "Erro ao trocar senha")
+      } else {
+        setPwdSuccess(true)
+        setCurrentPwd(""); setNewPwd(""); setConfirmPwd("")
+        setTimeout(() => setPwdSuccess(false), 3500)
+      }
+    } catch (e: any) {
+      setPwdError(e?.message ?? "Erro de conexao")
+    } finally {
+      setPwdLoading(false)
+    }
+  }
 
   useEffect(() => {
     fetch("/api/account/brand").then(r => r.json()).then(d => setBrand(d ?? {}))
@@ -229,6 +262,59 @@ export default function AccountPage() {
           </div>
 
           <Button onClick={saveBrand} loading={savingBrand}>Salvar marca</Button>
+        </div>
+
+        {/* SEGURANCA — trocar senha */}
+        <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",padding:24,marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.8px",color:"#888"}}>Segurança</div>
+            {pwdSuccess && <span style={{fontSize:11,color:"#16a34a",fontWeight:600}}>✓ Senha alterada</span>}
+          </div>
+          <p style={{fontSize:12,color:"#888",marginBottom:18,marginTop:0}}>
+            Troque a senha que você usa pra entrar no ZZOSY. Mínimo 8 caracteres.
+          </p>
+          <div style={{display:"flex",flexDirection:"column",gap:12,maxWidth:380}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Senha atual</label>
+              <input
+                type="password"
+                value={currentPwd}
+                onChange={e => setCurrentPwd(e.target.value)}
+                autoComplete="current-password"
+                style={inp}
+              />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Nova senha</label>
+              <input
+                type="password"
+                value={newPwd}
+                onChange={e => setNewPwd(e.target.value)}
+                autoComplete="new-password"
+                style={inp}
+              />
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.5px",color:"#888"}}>Confirmar nova senha</label>
+              <input
+                type="password"
+                value={confirmPwd}
+                onChange={e => setConfirmPwd(e.target.value)}
+                autoComplete="new-password"
+                style={inp}
+              />
+            </div>
+            {pwdError && <p style={{fontSize:12,color:"#dc2626",margin:0}}>{pwdError}</p>}
+            <div>
+              <Button
+                onClick={changePassword}
+                loading={pwdLoading}
+                disabled={!currentPwd || !newPwd || !confirmPwd}
+              >
+                Trocar senha
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div style={{textAlign:"right"}}>
