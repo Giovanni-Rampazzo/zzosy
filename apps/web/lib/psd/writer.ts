@@ -202,9 +202,16 @@ function textToAgPsd(l: PsdTextLayer): any {
       style: charStyleToAgPsd({ ...l.defaultStyle, ...r.style }),
     }))
   }
+  // Canvas TRANSPARENTE no bbox — text layer tambem precisa, senao ag-psd
+  // colapsa bbox e PS perde positioning/selecao. Texto eh rasterizado pelo
+  // PS do descriptor; canvas serve so pra firmar bbox.
+  const txtBw = l.bbox.right - l.bbox.left
+  const txtBh = l.bbox.bottom - l.bbox.top
+  const txtCanvas = makeTransparentCanvas(txtBw, txtBh)
   return {
     nameSource: l.nameSource ?? "srct",
     text,
+    ...(txtCanvas ? { canvas: txtCanvas } : {}),
   }
 }
 
@@ -341,6 +348,48 @@ function contentKindToPlacedType(content: PsdSmartObjectLayer["content"]): "unkn
   return "unknown"
 }
 
+/**
+ * Cria canvas transparente de WxH. Necessario pra QUALQUER layer que nao
+ * tenha raster proprio (SHAPE/TEXT/GROUP), pq ag-psd colapsa bbox pra um
+ * PONTO se layer.canvas/imageData ausente (psdWriter.js linha 671):
+ *
+ *   if (!(layer.canvas || layer.imageData) || !width || !height) {
+ *     right = left; bottom = top;  // <-- bbox vira ponto
+ *   }
+ *
+ * Bbox-ponto faz PS:
+ *  - SHAPE: nao renderiza (precisa do bbox pra clipar vectorMask)
+ *  - TEXT: bbox 0x0 break selection/cursor positioning
+ *  - GROUP: bbox 0x0 breaks visibility toggles
+ *
+ * Solucao: passar canvas TRANSPARENTE no tamanho do bbox. PS re-rasteriza
+ * shape do vectorMask + vectorFill, e re-rasteriza text do descriptor —
+ * o canvas transparente serve so pra estabelecer bbox correto.
+ *
+ * 2026-05-27 — root cause da elipse invisivel + texto serif no PSD aberto.
+ */
+function makeTransparentCanvas(width: number, height: number): any | null {
+  const w = Math.max(1, Math.round(width))
+  const h = Math.max(1, Math.round(height))
+  // Browser
+  if (typeof document !== "undefined") {
+    const c = document.createElement("canvas")
+    c.width = w
+    c.height = h
+    // ja eh transparente por default — nao precisa fillRect
+    return c
+  }
+  // Node — require dinamico pra escapar do bundler
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, no-eval
+    const dynamicRequire = eval("require") as NodeRequire
+    const { createCanvas } = dynamicRequire("@napi-rs/canvas")
+    return createCanvas(w, h)
+  } catch {
+    return null
+  }
+}
+
 // ── SHAPE ────────────────────────────────────────────────────────────
 
 function shapeToAgPsd(l: PsdShapeLayer, warn: (w: WriteWarning) => void): any {
@@ -455,6 +504,13 @@ function shapeToAgPsd(l: PsdShapeLayer, warn: (w: WriteWarning) => void): any {
       message: "Shape exportado sem vectorFill/vectorStroke original (round-trip parcial). Reabra no PS pra editar paths.",
     })
   }
+  // Canvas TRANSPARENTE no tamanho do bbox — sem isso, ag-psd colapsa bbox
+  // pra ponto, PS NAO renderiza o shape. Ver makeTransparentCanvas() pra
+  // explicacao completa.
+  const bw = l.bbox.right - l.bbox.left
+  const bh = l.bbox.bottom - l.bbox.top
+  const canvas = makeTransparentCanvas(bw, bh)
+  if (canvas) out.canvas = canvas
   return out
 }
 
