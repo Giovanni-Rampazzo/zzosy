@@ -509,7 +509,15 @@ function emitShapeLayer(l: PsdShapeLayer, parentPath: string[], ctx: BuildContex
     },
     effects: hasEffects(l.effects) ? l.effects : undefined,
     pixelsIncludeEffects: false, // shapes vetoriais: effects sempre live
-    mask: convertMask(l.mask),
+    // SHAPE layers tem vectorMask que EH o proprio path do shape (silhueta).
+    // O reader extrai esse vectorMask como `l.mask` de kind "vector". Passar
+    // adiante via convertMask faz o editor aplicar uma mascara redundante
+    // sobre o shape — qualquer falha de render do vector mask faz a shape
+    // SUMIR (user reportou 2026-05-27: "nao estou vendo a elipse").
+    //
+    // Mascaras DE VERDADE em shape sao raster (alpha grayscale) OU clipping
+    // (de outra layer). Filtra "vector" pra ignorar o auto-mask da silhueta.
+    mask: l.mask?.kind === "vector" ? null : convertMask(l.mask),
     hidden: !l.visible || undefined,
     locked: l.locked || undefined,
   })

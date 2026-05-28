@@ -27,6 +27,7 @@ initializeCanvas(createCanvas as any)
       const sl: any = l
       console.log(`    path (1st 200 chars)=${(sl.path ?? "").slice(0, 200)}`)
       console.log(`    pathBbox=${JSON.stringify(sl.pathBbox)} fill=${JSON.stringify(sl.fill)} stroke=${JSON.stringify(sl.stroke)}`)
+      console.log(`    mask=${sl.mask ? JSON.stringify({ kind: sl.mask.kind, bbox: sl.mask.bbox, disabled: sl.mask.disabled, defaultColor: sl.mask.defaultColor, fromClipping: sl.mask.__fromClipping }) : "null"}`)
     }
   })
 
@@ -34,7 +35,7 @@ initializeCanvas(createCanvas as any)
   console.log("\n=== Assets ===")
   build.assets.forEach((a: any, i) => {
     const c = typeof a.content === "string" ? a.content.slice(0, 200) : JSON.stringify(a.content).slice(0, 200)
-    console.log(`  A${i}: type=${a.type} label=${a.label}`)
+    console.log(`  A${i}: type=${a.type} label=${a.label} mask=${a.mask ? JSON.stringify({ kind: a.mask.kind, bbox: a.mask.bbox }) : "null"}`)
     console.log(`     content=${c}`)
     if (a.shape) console.log(`     shape=${JSON.stringify(a.shape).slice(0, 200)}`)
   })
