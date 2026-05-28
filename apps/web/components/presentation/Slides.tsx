@@ -334,13 +334,17 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
   const primary = getPrimary(brand)
   const dims = formatDims(width, height, widthValue, heightValue, widthUnit, heightUnit)
   const clickable = !!onClick
-  // copyLocal: estado interno editavel. Sincroniza com prop copy ao mudar
-  // a peca (re-render externo). Auto-save com debounce.
+  // copyLocal: estado interno editavel. Re-sincroniza com prop copy APENAS
+  // quando o pieceId muda (slide trocou de peca). Antes a dependency era
+  // [copy, pieceId] — o pai re-renderizava em cada keystroke (devido ao
+  // onCopyChange propagar imediato) → prop copy mudava → useEffect resetava
+  // copyLocal → cursor pulava e digitacao falhava com flick. User reportou
+  // 2026-05-28: "fica carregando de um jeito flick que atrapalha".
   const [copyLocal, setCopyLocal] = React.useState(copy ?? "")
   const [editing, setEditing] = React.useState(false)
-  const [saving, setSaving] = React.useState(false)
   const saveTimerRef = React.useRef<any>(null)
-  React.useEffect(() => { setCopyLocal(copy ?? "") }, [copy, pieceId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useEffect(() => { setCopyLocal(copy ?? "") }, [pieceId])
 
   const hasCopy = copyLocal.trim().length > 0
   const editable = !!pieceId
@@ -456,11 +460,13 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
 
   function handleCopyChange(next: string) {
     setCopyLocal(next)
-    onCopyChange?.(next)
-    if (!pieceId) return
+    // onCopyChange + PATCH agendados juntos no debounce — sem isso, propagar
+    // pro pai em cada keystroke fazia re-render dos N slides irmaos. Agora
+    // pai so recebe quando user para de digitar por 600ms.
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
-      setSaving(true)
+      onCopyChange?.(next)
+      if (!pieceId) return
       try {
         await fetch(`/api/pieces/${pieceId}`, {
           method: "PATCH",
@@ -468,7 +474,6 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
           body: JSON.stringify({ copy: next || null }),
         })
       } catch (e) { console.warn("[slide copy] save fail:", e) }
-      finally { setSaving(false) }
     }, 600)
   }
 
@@ -593,7 +598,8 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
               flexShrink: 0,
             }}>
               <span>Legenda:</span>
-              {saving && <span style={{ fontSize: "0.85cqw", fontWeight: 500, fontStyle: "normal", opacity: 0.7 }}>salvando…</span>}
+              {/* Indicador "salvando…" removido 2026-05-28 — aparecia/some
+                  a cada 600ms causando flick. Save eh silencioso agora. */}
             </div>
             {/* Corpo — padding sutil (vertical menor que lateral pra respiro proporcional).
                 NÃO usa flex:1 pra que o card encolha quando o texto for curto. */}
