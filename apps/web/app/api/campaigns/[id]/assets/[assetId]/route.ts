@@ -115,6 +115,13 @@ export async function PUT(req: Request, ctx: Ctx) {
     return NextResponse.json({ ...asset, content: parseContent(asset.content) })
   }
 
+  // Caso 2 PREP: tambem migra asset.lastOverride.styles quando text muda.
+  // lastOverride.styles eh o template per-char usado por GeneratePiecesModal
+  // pra criar NOVAS pecas. Sem migrar, ao adicionar/remover char no asset
+  // e gerar nova peca, os styles per-char ficavam alinhados nas posicoes
+  // ANTIGAS do texto antigo → nova peca tinha per-char misplaced.
+  // 2026-05-27 — pensando no sistema inteiro (asset edit → pecas geradas).
+
   // Caso 2: É TEXT e content mudou -> transação atômica que migra TUDO
   // Importante: usar transaction garante que ou atualiza asset+matriz+todas peças,
   // ou nada é alterado (rollback em caso de falha em qualquer step).
@@ -129,6 +136,18 @@ export async function PUT(req: Request, ctx: Ctx) {
   // intermediário "" zerava o override.text e o save seguinte não
   // achava \n pra migrar.
   const skipMigrate = newText.trim().length === 0
+
+  // Migra lastOverride.styles (template pra novas pecas geradas) com o
+  // mesmo texto/diff. Sem isso, nova peca herda per-char alinhado ao texto
+  // ANTIGO. Caso lastOverride nao tenha styles ou nao tenha sido fornecido
+  // no body, le do banco e migra.
+  if (textChanged && !skipMigrate) {
+    const currentLo: any = data.lastOverride ?? oldAsset?.lastOverride ?? null
+    if (currentLo && currentLo.styles && Object.keys(currentLo.styles).length > 0) {
+      const migratedStyles = migrateStyles(oldText, newText, currentLo.styles)
+      data.lastOverride = { ...currentLo, styles: migratedStyles }
+    }
+  }
 
   // Pre-buscar matriz e peças (fora da transação para reduzir tempo de lock)
   const [kv, pieces] = await Promise.all([

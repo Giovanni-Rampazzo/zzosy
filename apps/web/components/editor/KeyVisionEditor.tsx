@@ -7056,17 +7056,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // ja gerado esta em piece.imageUrl. Usar isso como imageUrl do step ativo
     // quando transitamos pra multi-step pela primeira vez (ex: addStep).
     const fallbackImg = (!oldSteps.length && activeStepIndexRef.current === 0) ? (p?.imageUrl ?? null) : null
-    // CRITICO 2026-05-27: DEEP CLONE de bgLayers. Sem isso, o snapshot
-    // armazenado em inactiveStepsRef compartilhava a MESMA referencia do
-    // array bgLayersRef. Quando o user trocava de step e mudava o bg, o
-    // updateCurrentBg fazia `bgLayersRef.current[idx] = next` (mutacao do
-    // array por indice). Como o snapshot do step anterior apontava pro
-    // MESMO array, ele tambem via a nova cor → save persistia o mesmo bg
-    // pros 2 steps. User reportou: 'a porra dos steps esta salvando o
-    // mesmo background nos 2 steps'.
-    const bgClone = bgLayersRef.current.map(l => ({ ...l, stops: (l as any).stops ? (l as any).stops.map((s: any) => ({ ...s })) : undefined }))
+    // CRITICO 2026-05-27: DEEP CLONE de bgLayers E layers. Snapshots em
+    // inactiveStepsRef compartilhavam referencias com bgLayersRef e com
+    // os objetos Fabric (via layer.overrides.styles = o.styles by ref).
+    // Mutacoes posteriores (mudar bg/per-char no step ativo) afetavam
+    // os snapshots dos OUTROS steps → save persistia mesmo state pra
+    // todos. User reportou: 'a porra dos steps esta salvando o mesmo
+    // background nos 2 steps'. Mesmo problema vale pra per-char styles
+    // (obj.styles mutado por applyStyle).
+    //
+    // JSON parse/stringify clona TUDO (mais seguro que spread shallow
+    // pra objetos profundos como styles[lineKey][colKey]).
+    const bgClone = JSON.parse(JSON.stringify(bgLayersRef.current))
+    const layersClone = JSON.parse(JSON.stringify(layers))
     return {
-      layers,
+      layers: layersClone,
       bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgClone as BgLayerData[],
       imageUrl: oldActive.imageUrl ?? fallbackImg,
       thumbnailUrl: oldActive.thumbnailUrl ?? fallbackImg,
