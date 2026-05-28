@@ -71,6 +71,10 @@ export default function AdminPage() {
               {t==="overview"?"Visão Geral":t==="users"?"Usuários":t==="email"?"E-mail":"Settings"}
             </button>
           ))}
+          {/* Atalho direto pro Guidebook (rota separada, nao tab) */}
+          <button onClick={()=>router.push("/admin/guidebook")} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.5)", fontWeight:400, fontSize:"0.875rem", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", padding:"4px 0", borderBottom:"2px solid transparent" }}>
+            📖 Guidebook
+          </button>
         </div>
         <button onClick={()=>router.push("/dashboard")} style={{ background:"rgba(255,255,255,0.1)", border:"none", color:"#FFF", padding:"6px 14px", borderRadius:"6px", fontSize:"0.8rem", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>← Dashboard</button>
       </div>
@@ -227,6 +231,7 @@ export default function AdminPage() {
         {tab==="settings" && (
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:"16px", maxWidth:"1000px" }}>
             {[
+              { href:"/admin/guidebook", title:"📖 Guidebook do sistema", desc:"Sitemap, conceitos (matriz/peca/asset), logicas (per-char, BG, render), PSD round-trip, tutoriais. Fonte unica de conhecimento." },
               { href:"/admin/settings/design-tokens", title:"Design Tokens", desc:"Edita cores, bordas e raios do sistema. Mudancas aplicam ao vivo em todo ZZOSY." },
               { href:"/admin/settings/typography", title:"Tipografia", desc:"Hierarquia de textos do ZZOSY (h1 a xs). Edita tamanhos e familia da fonte." },
               { href:"/admin/settings/overrides", title:"Overrides Playground", desc:"Sandbox pra estudar comportamento de matriz, pecas e per-char styles." },
