@@ -98,9 +98,6 @@ export default function CampaignOverviewPage() {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>({ col: "name", dir: "asc" })
   // Progress da regen automatica de thumbs (perf indicator)
   const [regenProgress, setRegenProgress] = useState<{ done: number; total: number } | null>(null)
-  // Loading state dos botoes de recovery (repatch-masks, server-render-thumbs)
-  // Sem isso, user clica e fica achando que travou (request 30+ segundos).
-  const [recoveryWorking, setRecoveryWorking] = useState<null | "masks" | "thumbs">(null)
   const [codeSuggestions, setCodeSuggestions] = useState<string[]>([])
   const [segmentSuggestions, setSegmentSuggestions] = useState<string[]>([])
   // Drag-and-drop de PSD direto no preview do KV (matriz) e na lista de peças.
@@ -505,28 +502,19 @@ export default function CampaignOverviewPage() {
           </div>
         </div>
 
-        {/* Row de actions globais da campanha — separada do header de
-            navegacao por regra ZZOSY 1.2.1. */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => router.push(`/campaigns/${id}/cartridges`)}
-            title="Browse cartucho — assets do library do cliente com filtros + add em lote"
-          >
-            Cartucho
-          </Button>
-        </div>
-
         {/* Subnav REMOVIDO 2026-05-24 (user pedido). Agora cada botao vai
             pra seu contexto correto na sidebar: Assets+KV em MATRIZ, Pecas
             removido (ja tem PECAS GERADAS embaixo), Apresentacao em ENTREGA. */}
 
-        {/* Layout 2026-05-25 (user pedido): KV box em COLUNA na esquerda
-            (preview em cima, acoes embaixo, ambos stacked), lista de pecas
-            ocupa a coluna da direita. Garante mais espaco vertical pra peca
-            list e densidade maior na KV. Breakpoint <900px volta a stack. */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 240px) 1fr", gap: 14, alignItems: "start" }}>
+        {/* Layout 2026-05-28 (3 colunas): esquerda=INPUT (Cartucho, Import,
+            Assets, KV, +Gerar peça), centro=DADOS (tabela de peças), direita=
+            EXPORT (Apresentação, Entrega). Lógica: informação entra à
+            esquerda → vemos no centro → exportamos à direita. Banner de
+            "Estado: máscaras/multi-step" + toolbar "Re-aplicar máscaras /
+            Render server thumbs" removidos do main — viraram comandos
+            avançados (Cmd-K ou similar futuramente). Breakpoint <900px volta
+            a stack. */}
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 240px) 1fr minmax(200px, 240px)", gap: 14, alignItems: "start" }}>
         {/* Preview KV + actions sidebar — agora em coluna (preview + acoes stacked) */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -609,11 +597,16 @@ export default function CampaignOverviewPage() {
               Outros ficam secondary. Reduz ruido visual e guia o user. */}
           {(() => {
             const hasAssets = !!campaign.assets && campaign.assets.length > 0
-            const hasPieces = pieces.length > 0
-            // Layout final 2026-05-24 (mockup user): TODOS botoes mesmo
-            // estilo (secondary), com gap maior separando grupos visuais.
+            // Layout 2026-05-28: lista da esquerda agora so botoes de INPUT.
+            // Cartucho subiu pro topo da sidebar, Apresentacao + Entrega
+            // foram pra 3a coluna (EXPORT).
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Button variant="secondary" size="sm"
+                  onClick={() => router.push(`/campaigns/${id}/cartridges`)}
+                  title="Browse cartucho — assets do library do cliente com filtros + add em lote">
+                  Cartucho
+                </Button>
                 <Button variant="secondary" size="sm"
                   onClick={() => psdMatrixPickerRef.current?.click()}
                   title="Substitui a matriz (KV) com um novo PSD. Pecas existentes ficam, mas re-mapeadas pros novos assets.">
@@ -635,18 +628,6 @@ export default function CampaignOverviewPage() {
                   disabled={!hasAssets}
                   title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}>
                   + Gerar peça
-                </Button>
-                <Button variant="secondary" size="sm"
-                  onClick={() => router.push(`/campaigns/${id}/presentation`)}
-                  disabled={!hasPieces}
-                  title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}>
-                  Apresentação
-                </Button>
-                <Button variant="secondary" size="sm"
-                  onClick={() => setDeliveryOpen(true)}
-                  disabled={!hasPieces}
-                  title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}>
-                  Entrega
                 </Button>
               </div>
             )
@@ -739,76 +720,13 @@ export default function CampaignOverviewPage() {
               </div>
             )
           })()}
-          {/* Estado dos dados — banner sempre visivel pra user saber ANTES de
-              exportar se mascaras estao presentes. User reportou 2026-05-27
-              "exportei e veio tudo sem mascara" — sem essa visibilidade, o
-              user descobre o problema so depois do export. */}
-          {(() => {
-            const totalPieces = visiblePieces.length
-            if (totalPieces === 0) return null
-            const piecesWithMasks = visiblePieces.filter(p => (p.maskCount ?? 0) > 0).length
-            const piecesWithSteps = visiblePieces.filter(p => (p.stepCount ?? 1) > 1).length
-            const totalMaskCount = visiblePieces.reduce((s, p) => s + (p.maskCount ?? 0), 0)
-            const noMasks = piecesWithMasks === 0 && totalMaskCount === 0
-            return (
-              <div style={{ fontSize: 12, color: "#555", marginBottom: 8, padding: "8px 12px", background: noMasks ? "#FFF3CD" : "#F0F9FF", border: `1px solid ${noMasks ? "#FFE69C" : "#BAE6FD"}`, borderRadius: 6, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                <span><strong>Estado:</strong></span>
-                <span>🎭 Máscaras: <strong>{piecesWithMasks}/{totalPieces}</strong> peças ({totalMaskCount} total)</span>
-                <span>🎞️ Multi-step: <strong>{piecesWithSteps}/{totalPieces}</strong> peças</span>
-                {noMasks && <span style={{ color: "#664D03", fontWeight: 600 }}>⚠️ Nenhuma peça tem máscaras — clique &quot;Re-aplicar máscaras&quot; abaixo</span>}
-              </div>
-            )
-          })()}
-          {/* Toolbar de recovery — sempre visivel (independente de emptyPieces).
-              Permite user re-aplicar masks + re-render thumbs server quando
-              campaign passou por full-recover-from-psd + relink. User pediu
-              2026-05-27 botoes diretos sem URL manual. */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <Button variant="secondary" size="sm" loading={recoveryWorking === "masks"} disabled={recoveryWorking !== null} onClick={async () => {
-              if (!confirm("Re-aplicar máscaras do PSD original em todas peças?")) return
-              setRecoveryWorking("masks")
-              try {
-                const r = await fetch(`/api/campaigns/${id}/repatch-masks`, { method: "POST" })
-                const j = await r.json()
-                if (r.ok) {
-                  // Diagnostico per-piece pra detectar mismatch (PSD com N
-                  // layers vs piece com M layers — match por zIndex falha).
-                  // User reportou "tudo sem mascara" — diagnostico ajuda a
-                  // entender se foi mismatch ou outra causa.
-                  const mismatches = Array.isArray(j.perPiece) ? j.perPiece.filter((p: any) => p.mismatch) : []
-                  let detail = `Máscaras reaplicadas: ${j.masksReapplied} aplicações em ${j.piecesUpdated}/${j.perPiece?.length ?? "?"} peças.\n`
-                  detail += `PSD tem ${j.psdLayerCount} layers, ${j.masksAvailable} com máscara.\n`
-                  if (mismatches.length > 0) {
-                    detail += `\n⚠️ ${mismatches.length} peças com layer count diferente do PSD (mask match por zIndex pode estar errado):\n`
-                    detail += mismatches.slice(0, 5).map((p: any) => `  • ${p.name}: ${p.layers} layers (esperado ${j.psdLayerCount})`).join("\n")
-                    if (mismatches.length > 5) detail += `\n  ... + ${mismatches.length - 5} outras`
-                  }
-                  detail += `\n\nProximo passo: clica "Render server thumbs" pra regenerar previews.`
-                  console.log("[repatch-masks] resultado:", j)
-                  alert(detail)
-                } else alert("Erro: " + (j.error ?? "?"))
-                await loadAll()
-              } catch (e: any) { alert("Erro: " + (e?.message ?? e)) }
-              finally { setRecoveryWorking(null) }
-            }}>🎭 Re-aplicar máscaras</Button>
-            <Button variant="secondary" size="sm" loading={recoveryWorking === "thumbs"} disabled={recoveryWorking !== null} onClick={async () => {
-              if (!confirm("Render server-side todas thumbs sem imageUrl?")) return
-              setRecoveryWorking("thumbs")
-              try {
-                const r = await fetch(`/api/campaigns/${id}/server-render-thumbs`, { method: "POST" })
-                const j = await r.json()
-                if (r.ok) alert(`Thumbs server-side: ${j.ok}/${j.total} em ${(j.durationMs/1000).toFixed(1)}s`)
-                else alert("Erro: " + (j.error ?? "?"))
-                await loadAll()
-              } catch (e: any) { alert("Erro: " + (e?.message ?? e)) }
-              finally { setRecoveryWorking(null) }
-            }}>⚡ Render server thumbs</Button>
-            {recoveryWorking && (
-              <span style={{ fontSize: 12, color: "#0066CC", fontWeight: 600 }}>
-                {recoveryWorking === "masks" ? "⏳ Lendo PSD + re-aplicando máscaras..." : "⏳ Renderizando previews server-side..."}
-              </span>
-            )}
-          </div>
+          {/* Banner "Estado" (Mascaras X/Y, Multi-step X/Y, alerta noMasks) +
+              toolbar "Re-aplicar mascaras / Render server thumbs" REMOVIDOS
+              2026-05-28 (user pedido). Sao comandos de recovery/diagnostico,
+              nao operacao do dia-a-dia. Sera reposicionado como menu avancado
+              ou comando paleta (Cmd-K) no futuro. Endpoints continuam
+              funcionando: /api/campaigns/[id]/repatch-masks e
+              /api/campaigns/[id]/server-render-thumbs. */}
           <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #E0E0E0", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
@@ -1088,6 +1006,32 @@ export default function CampaignOverviewPage() {
         </div>
           )
         })()}
+
+        {/* Sidebar EXPORT (3a coluna 2026-05-28): logica "esquerda=input,
+            centro=dados, direita=export". Apresentacao eh o CTA principal
+            depois das pecas geradas — variant primary (fill amarelo). */}
+        <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 1, marginBottom: 10 }}>EXPORTAR</div>
+          {(() => {
+            const hasPieces = pieces.length > 0
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Button variant="primary" size="md"
+                  onClick={() => router.push(`/campaigns/${id}/presentation`)}
+                  disabled={!hasPieces}
+                  title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}>
+                  Apresentação
+                </Button>
+                <Button variant="secondary" size="sm"
+                  onClick={() => setDeliveryOpen(true)}
+                  disabled={!hasPieces}
+                  title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}>
+                  Entrega
+                </Button>
+              </div>
+            )
+          })()}
+        </div>
         </div>
       </div>
 
