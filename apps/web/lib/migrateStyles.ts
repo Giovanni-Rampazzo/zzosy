@@ -89,20 +89,43 @@ function diff(a: string, b: string): DiffOp[] {
       i--
     }
   }
-  // Otimização: pares delete+insert adjacentes na mesma posição viram replace.
-  // (Word/Photoshop tratam "selecionar e digitar" como replace, herdando estilo do antigo)
+  // Otimização: blocos contiguos de delete + blocos contiguos de insert
+  // viram replaces 1:1 (Word/Photoshop "selecionar e digitar"). Versao
+  // anterior so casava UM par adjacente — em replace-total (ABC->XYZ),
+  // todos deletes vinham primeiro, todos inserts depois, e apenas o
+  // ultimo delete pareava com o primeiro insert → X/Y/Z herdavam cor do
+  // C. Bug 2026-05-28.
   const optimized: DiffOp[] = []
-  for (let k = 0; k < ops.length; k++) {
-    const op = ops[k]
-    const next = ops[k + 1]
-    if (op.type === "delete" && next?.type === "insert") {
-      optimized.push({ type: "replace", i: op.i, j: next.j })
+  let k = 0
+  while (k < ops.length) {
+    // Coleta bloco contiguo de deletes
+    const dels: { i: number }[] = []
+    while (k < ops.length && ops[k].type === "delete") {
+      dels.push({ i: (ops[k] as any).i })
       k++
-    } else if (op.type === "insert" && next?.type === "delete") {
-      optimized.push({ type: "replace", i: next.i, j: op.j })
+    }
+    // Coleta bloco contiguo de inserts
+    const inss: { j: number }[] = []
+    while (k < ops.length && ops[k].type === "insert") {
+      inss.push({ j: (ops[k] as any).j })
       k++
-    } else {
-      optimized.push(op)
+    }
+    // Casa 1:1 enquanto tem dos dois lados
+    const pairs = Math.min(dels.length, inss.length)
+    for (let p = 0; p < pairs; p++) {
+      optimized.push({ type: "replace", i: dels[p].i, j: inss[p].j })
+    }
+    // Sobras viram delete OU insert puros
+    for (let p = pairs; p < dels.length; p++) {
+      optimized.push({ type: "delete", i: dels[p].i })
+    }
+    for (let p = pairs; p < inss.length; p++) {
+      optimized.push({ type: "insert", j: inss[p].j })
+    }
+    // equal ou outro tipo no current k
+    if (k < ops.length && ops[k].type !== "delete" && ops[k].type !== "insert") {
+      optimized.push(ops[k])
+      k++
     }
   }
   return optimized
@@ -140,14 +163,20 @@ export function migrateStyles(
       flatNew[op.j] = flatOld[op.i]
       lastSeenOldIdx = op.i
     } else if (op.type === "insert") {
-      // Herda do caractere ANTERIOR no texto novo (que ja foi processado antes desse insert).
-      // Se for o primeiro caractere absoluto, herda do proximo caractere conhecido.
+      // Herda do caractere ANTERIOR no texto novo (Adobe/Figma rule).
+      // Se for inicio absoluto E nao temos contexto anterior, olha ADIANTE
+      // no flatOld pelo proximo char conhecido (Adobe-style fallback).
       if (op.j > 0 && flatNew[op.j - 1]) {
         flatNew[op.j] = flatNew[op.j - 1]
       } else if (lastSeenOldIdx >= 0 && flatOld[lastSeenOldIdx]) {
         flatNew[op.j] = flatOld[lastSeenOldIdx]
       } else {
-        flatNew[op.j] = null
+        // Look ahead: encontra primeiro char com style nao-null em flatOld.
+        let aheadStyle: any = null
+        for (let f = 0; f < flatOld.length; f++) {
+          if (flatOld[f]) { aheadStyle = flatOld[f]; break }
+        }
+        flatNew[op.j] = aheadStyle
       }
     }
     // delete: nada a fazer
