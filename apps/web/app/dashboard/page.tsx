@@ -9,7 +9,7 @@ import { ClientEditModal } from "@/components/clients/ClientEditModal"
 interface Client {
   id: string; name: string; email: string | null; contact: string | null
   phone?: string | null; address?: string | null; brandLogoUrl?: string | null
-  _count: { campaigns: number }; createdAt: string
+  _count: { campaigns: number; pieces: number }; createdAt: string
 }
 
 export default function DashboardPage() {
@@ -88,7 +88,7 @@ export default function DashboardPage() {
             <thead>
               <tr style={{borderBottom:"1px solid #E0E0E0"}}>
                 <th style={{padding:"8px 8px",width:72}}></th>
-                {["Cliente","Contato","E-mail","Campanhas"].map(h => (
+                {["Cliente","Campanhas","Peças"].map(h => (
                   <th key={h} style={{textAlign:"left",fontSize:11,fontWeight:600,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",padding:"8px 16px"}}>{h}</th>
                 ))}
                 <th style={{textAlign:"right",padding:"6px 16px"}}>
@@ -105,9 +105,8 @@ export default function DashboardPage() {
                     <RowThumb src={c.brandLogoUrl} alt={c.name} fallbackText={c.name} fallbackBg={colorFromString(c.name)} />
                   </td>
                   <td style={{padding:"12px 16px",fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={() => router.push(`/clients/${c.id}`)}>{c.name}</td>
-                  <td style={{padding:"12px 16px",fontSize:13,color:"#555"}}>{c.contact ?? "—"}</td>
-                  <td style={{padding:"12px 16px",fontSize:13,color:"#555"}}>{c.email ?? "—"}</td>
                   <td style={{padding:"12px 16px",fontSize:13}}>{c._count.campaigns}</td>
+                  <td style={{padding:"12px 16px",fontSize:13}}>{c._count.pieces}</td>
                   <td style={{padding:"12px 16px",textAlign:"right"}}>
                     <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                       {confirmDelete === c.id ? (

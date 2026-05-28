@@ -18,12 +18,26 @@ export async function GET() {
   if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
 
+  // Inclui contagem de pieces via aggregation de campaigns. Pieces nao tem
+  // FK direta pro Client (estao em Campaign), entao agregamos cliente a
+  // cliente. Pra tenants com volume gigante, otimizar com groupBy.
   const clients = await prisma.client.findMany({
     where: { tenantId },
-    include: { _count: { select: { campaigns: true } } },
+    include: {
+      _count: { select: { campaigns: true } },
+      campaigns: { select: { _count: { select: { pieces: true } } } },
+    },
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(clients)
+  const enriched = clients.map(c => {
+    const pieces = c.campaigns.reduce((sum: number, cam: any) => sum + (cam._count?.pieces ?? 0), 0)
+    const { campaigns, ...rest } = c
+    return {
+      ...rest,
+      _count: { campaigns: c._count.campaigns, pieces },
+    }
+  })
+  return NextResponse.json(enriched)
 }
 
 export async function POST(req: Request) {
