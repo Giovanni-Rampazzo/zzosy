@@ -21,9 +21,13 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          # package-lock.json fica na raiz do monorepo (workspaces), nao em
+          # apps/web. Path errado quebrava o setup-node antes mesmo do npm ci.
+          cache-dependency-path: package-lock.json
 
-      - name: Install
+      - name: Install (root workspace)
+        # npm ci na raiz instala todos os workspaces (apps/web inclusive)
+        working-directory: .
         run: npm ci
 
       - name: Prisma generate
