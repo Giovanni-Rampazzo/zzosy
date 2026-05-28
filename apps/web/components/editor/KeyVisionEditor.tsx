@@ -543,7 +543,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Ref pro input file de upload de fonte do modal. Re-uso entre as fontes:
   // pendingFontUpload guarda a variante clicada ANTES do picker.
   const fontUploadInputRef = useRef<HTMLInputElement>(null)
+  const fontUploadMultiInputRef = useRef<HTMLInputElement>(null)
   const pendingFontUpload = useRef<{ family: string; weight: number; style: "normal" | "italic"; label: string } | null>(null)
+  // Labels de variantes em upload atualmente — feedback visual "Uploading…"
+  // no botao. Adicionado 2026-05-28: user reportou ausencia de feedback,
+  // achou que estava faltando botao "Enviar" depois do file picker.
+  const [uploadingFonts, setUploadingFonts] = useState<Set<string>>(new Set())
 
   // Carregar campanha + peça (se for modo peça)
   useEffect(() => {
@@ -11817,6 +11822,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       fc.requestRenderAll()
                     }
                   } catch (e) { editorLog("[font-fallback-clear] falha:", e) }
+                  // CRITICO 2026-05-28: persiste KV/peca AGORA, sem esperar
+                  // user clicar "Salvar". Sem isso, layers[].overrides no banco
+                  // continuavam apontando pra fonte missing → ao reabrir o
+                  // editor, detection re-reportava a mesma fonte como missing.
+                  // User reportou: "substitui a fonte... fecho o editor e
+                  // volto, ele pede a fonte de novo".
+                  try {
+                    await performSave()
+                  } catch (e) { editorLog("[font-substitute] performSave falha:", e) }
                 }
 
                 return (
@@ -11912,41 +11926,67 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     >
                       Apply
                     </button>
-                    {/* Coluna 5: botao SUBIR ARQUIVO */}
+                    {/* Coluna 5: botao SUBIR ARQUIVO. Loading state quando
+                        em upload — feedback visual pra user nao achar que
+                        nao aconteceu nada (reportado 2026-05-28). */}
                     <button
                       onClick={() => {
+                        if (uploadingFonts.has(mf.label)) return
                         pendingFontUpload.current = mf
                         fontUploadInputRef.current?.click()
                       }}
+                      disabled={uploadingFonts.has(mf.label)}
                       title={`Upload .ttf/.otf file for "${mf.label}"`}
                       style={{
-                        background: "transparent", color: "#facc15",
-                        border: "1px solid #facc15", borderRadius: 6,
+                        background: uploadingFonts.has(mf.label) ? "#2a2a2a" : "transparent",
+                        color: uploadingFonts.has(mf.label) ? "#888" : "#facc15",
+                        border: `1px solid ${uploadingFonts.has(mf.label) ? "#444" : "#facc15"}`,
+                        borderRadius: 6,
                         padding: "8px 10px", fontSize: 11, fontWeight: 700,
-                        cursor: "pointer",
+                        cursor: uploadingFonts.has(mf.label) ? "wait" : "pointer",
                       }}
                     >
-                      Upload
+                      {uploadingFonts.has(mf.label) ? "Enviando…" : "Upload"}
                     </button>
                   </div>
                 )
               })}
             </div>
-            <div style={{ padding: "12px 20px", borderTop: "1px solid #2a2a2a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 11, color: "#666" }}>
-                Replacements and uploads are saved to the client — available in future campaigns.
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #2a2a2a", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 11, color: "#666", flex: 1, minWidth: 200 }}>
+                Substituicoes e uploads sao salvos no cliente — disponiveis em campanhas futuras.
               </div>
-              <button
-                onClick={() => setFontsModalOpen(false)}
-                style={{
-                  background: "#facc15", color: "#000",
-                  border: "none", borderRadius: 6,
-                  padding: "8px 18px", fontSize: 12, fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {/* Multi-upload (2026-05-28): subir varias fontes de uma vez.
+                    Auto-match por filename → atribui peso/estilo detectados.
+                    Resolve quantas missings o filename bater. */}
+                <button
+                  onClick={() => fontUploadMultiInputRef.current?.click()}
+                  disabled={uploadingFonts.size > 0}
+                  title="Subir varios .ttf/.otf de uma vez (auto-match por nome de arquivo)"
+                  style={{
+                    background: "transparent",
+                    color: uploadingFonts.size > 0 ? "#555" : "#facc15",
+                    border: `1px solid ${uploadingFonts.size > 0 ? "#444" : "#facc15"}`,
+                    borderRadius: 6,
+                    padding: "8px 14px", fontSize: 12, fontWeight: 700,
+                    cursor: uploadingFonts.size > 0 ? "wait" : "pointer",
+                  }}
+                >
+                  {uploadingFonts.size > 0 ? "Enviando…" : "Subir varias fontes"}
+                </button>
+                <button
+                  onClick={() => setFontsModalOpen(false)}
+                  style={{
+                    background: "#facc15", color: "#000",
+                    border: "none", borderRadius: 6,
+                    padding: "8px 18px", fontSize: 12, fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -11963,6 +12003,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           pendingFontUpload.current = null
           const clientId = campaign?.client?.id
           if (!file || !pending || !clientId) return
+          setUploadingFonts(prev => { const s = new Set(prev); s.add(pending.label); return s })
           try {
             const dataUrl = await new Promise<string>((resolve, reject) => {
               const r = new FileReader()
@@ -11972,9 +12013,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             })
             const { detectFontMetadata, loadCustomFontFamily } = await import("@/lib/google-fonts")
             const meta = detectFontMetadata(file.name)
-            // Usa o family puro (sem peso/estilo) do missing — o arquivo carrega
-            // com weight/style detectados do filename. loadCustomFontFamily
-            // registra varios @font-face com aliases pra cobrir o nome PSD.
             const family = pending.family
             const cRes = await fetch(`/api/clients/${clientId}`)
             const cData = await cRes.json()
@@ -11989,8 +12027,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               body: JSON.stringify(patchBody),
             })
             loadCustomFontFamily(family, updatedFiles)
-            // Re-checa via measureText. Cada variante eh testada individualmente —
-            // user pode ter subido so a Bold; Italic e SemiBold ainda missing.
             try {
               const probeCanvas = document.createElement("canvas")
               const ctx = probeCanvas.getContext("2d")
@@ -12004,9 +12040,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     const baseW = ctx.measureText(SAMPLE).width
                     ctx.font = `${mf.style} ${mf.weight} 72px "${escFamily}", ${fb}`
                     const testW = ctx.measureText(SAMPLE).width
-                    if (Math.abs(testW - baseW) > 0.5) return false // resolvida
+                    if (Math.abs(testW - baseW) > 0.5) return false
                   }
-                  return true // ainda missing
+                  return true
                 })
                 setMissingFonts(stillMissing)
               } else {
@@ -12025,9 +12061,124 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               }
               fc.requestRenderAll()
             }
+            // CRITICO 2026-05-28: salva KV/peca agora pra que ao reabrir, o
+            // canvas use o customFontFile (KV layers overrides ja apontam pra
+            // family que agora carrega via loadCustomFontFamily). Sem isso,
+            // ao reabrir o detection ainda achava a fonte missing porque ela
+            // SO existia no client.customFontFiles, mas o canvas precisa de
+            // KV salvo pra refletir o estado atual.
+            try { await performSave() } catch (e) { editorLog("[font-upload] performSave falha:", e) }
           } catch (err) {
             console.warn("[font-upload] falhou:", err)
-            alert("Failed to upload the font. Make sure it is a valid .ttf or .otf file.")
+            alert("Falha no upload da fonte. Verifique se eh um .ttf ou .otf valido.")
+          } finally {
+            setUploadingFonts(prev => { const s = new Set(prev); s.delete(pending.label); return s })
+          }
+        }}
+      />
+      {/* Input MULTI 2026-05-28: aceita N arquivos de uma vez. Auto-match
+          por filename (detectFontMetadata → weight+style) cruzado com a
+          familia da missing. Arquivos sem match sao adicionados como
+          customFontFiles do cliente mas nao "resolvem" missings (ficam
+          disponiveis pra uso futuro). */}
+      <input
+        ref={fontUploadMultiInputRef}
+        type="file"
+        multiple
+        accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf"
+        style={{ display: "none" }}
+        onChange={async (e) => {
+          const files = Array.from(e.target.files ?? [])
+          e.target.value = ""
+          const clientId = campaign?.client?.id
+          if (files.length === 0 || !clientId) return
+          // Marca TODAS as missings como uploading enquanto processa
+          const allMissingLabels = missingFonts.map(m => m.label)
+          setUploadingFonts(prev => { const s = new Set(prev); allMissingLabels.forEach(l => s.add(l)); return s })
+          try {
+            const { detectFontMetadata, loadCustomFontFamily } = await import("@/lib/google-fonts")
+            const cRes = await fetch(`/api/clients/${clientId}`)
+            const cData = await cRes.json()
+            const existingFiles: any[] = Array.isArray(cData.customFontFiles) ? cData.customFontFiles : []
+            const newFiles: any[] = []
+            const familiesAffected = new Set<string>()
+            for (const file of files) {
+              try {
+                const dataUrl = await new Promise<string>((resolve, reject) => {
+                  const r = new FileReader()
+                  r.onload = () => resolve(r.result as string)
+                  r.onerror = () => reject(new Error("read fail"))
+                  r.readAsDataURL(file)
+                })
+                const meta = detectFontMetadata(file.name)
+                // Match: procura uma missing cujo family bata com o filename
+                // (case-insensitive, ignorando espacos). Sem match, atribui
+                // a primeira missing family (palpite) — usuario sempre pode
+                // re-organizar editando os arquivos do cliente depois.
+                const baseName = file.name.replace(/\.(ttf|otf|woff2?|TTF|OTF|WOFF2?)$/, "")
+                const normalize = (s: string) => s.toLowerCase().replace(/[\s_-]/g, "")
+                const nBase = normalize(baseName)
+                const matched = missingFonts.find(mf => nBase.includes(normalize(mf.family)))
+                const family = matched?.family ?? (missingFonts[0]?.family ?? baseName)
+                familiesAffected.add(family)
+                newFiles.push({ url: dataUrl, weight: meta.weight, style: meta.style, fileName: file.name })
+              } catch (e) {
+                console.warn("[font-multi-upload] arquivo falhou:", file.name, e)
+              }
+            }
+            if (newFiles.length === 0) {
+              alert("Nenhum arquivo valido foi processado.")
+              return
+            }
+            const updatedFiles = [...existingFiles, ...newFiles]
+            const patchBody: any = { customFontFiles: updatedFiles }
+            if (!cData.brandFont || cData.brandFont.trim() === "") {
+              const firstFamily = Array.from(familiesAffected)[0]
+              if (firstFamily) patchBody.brandFont = firstFamily
+            }
+            await fetch(`/api/clients/${clientId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(patchBody),
+            })
+            // Registra @font-face pra cada family afetada
+            for (const fam of familiesAffected) {
+              loadCustomFontFamily(fam, updatedFiles)
+            }
+            // Re-checa via measureText TODAS as missings de uma vez
+            try {
+              const probeCanvas = document.createElement("canvas")
+              const ctx = probeCanvas.getContext("2d")
+              if (ctx) {
+                const SAMPLE = "mwiI@#$%MNOQRS 1234567890"
+                const FALLBACKS = ["serif", "sans-serif", "monospace"]
+                const stillMissing = missingFonts.filter(mf => {
+                  const escFamily = mf.family.replace(/"/g, '\\"')
+                  for (const fb of FALLBACKS) {
+                    ctx.font = `${mf.style} ${mf.weight} 72px ${fb}`
+                    const baseW = ctx.measureText(SAMPLE).width
+                    ctx.font = `${mf.style} ${mf.weight} 72px "${escFamily}", ${fb}`
+                    const testW = ctx.measureText(SAMPLE).width
+                    if (Math.abs(testW - baseW) > 0.5) return false
+                  }
+                  return true
+                })
+                setMissingFonts(stillMissing)
+              }
+            } catch (e) { editorLog("[font-multi-upload] re-check falha:", e) }
+            const fc = fabricRef.current
+            if (fc) {
+              fc.getObjects().forEach((o: any) => {
+                if ((o.type === "textbox" || o.type === "i-text") && o.initDimensions) o.initDimensions()
+              })
+              fc.requestRenderAll()
+            }
+            try { await performSave() } catch (e) { editorLog("[font-multi-upload] performSave falha:", e) }
+          } catch (err) {
+            console.warn("[font-multi-upload] falhou:", err)
+            alert("Falha no upload das fontes.")
+          } finally {
+            setUploadingFonts(prev => { const s = new Set(prev); allMissingLabels.forEach(l => s.delete(l)); return s })
           }
         }}
       />
