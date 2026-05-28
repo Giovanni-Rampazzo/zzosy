@@ -218,6 +218,43 @@ check("rebuild space: D amarelo", dSpace.find((s:any) => s.text.startsWith("D"))
 // Espaco herda azul (de B na pos 1) — agrupa com D? Depende se Y===Y...
 // D=Y, " "=B (diferente), so separa. Vou checar manualmente.
 
+// ============================================================
+section("TEXTO NOVO: 123456 -> Car los\\nantonio (apagou+reescreveu)")
+// ============================================================
+// User reportou 2026-05-28: apagou todo 123456 (per-char colorido) e
+// reescreveu "Car los\nantonio". Algoritmo positional 1:1 mapeava
+// 1->C, 2->a, etc. e "antonio" herdava cor do char 6. Resultado bizarro.
+//
+// Heuristica nova: noCommon + muchLonger -> reset per-char.
+const colors123456 = {
+  0: {
+    0: { color: "#FF0000" }, // 1 vermelho
+    1: { color: "#FF8800" }, // 2 laranja
+    2: { color: "#FFFF00" }, // 3 amarelo
+    3: { color: "#00FF00" }, // 4 verde
+    4: { color: "#0000FF" }, // 5 azul
+    5: { color: "#FF00FF" }, // 6 magenta
+  },
+}
+const resetCase = migrateStyles("123456", "Car los\nantonio", colors123456 as any)
+console.log("  resetCase:", JSON.stringify(resetCase))
+check("texto-novo: per-char zerado (apagou+reescreveu texto muito maior)", Object.keys(resetCase).length === 0)
+
+// Tambem: 'antonio' linha 2 nao deve herdar do char 6
+const resetExpectedEmpty = migrateStyles("Olá", "Tchau mundo, sera que vai funcionar?", { 0: { 0: { color: "#F00" } } } as any)
+check("texto-novo: outro caso reset (Olá -> texto muito maior)", Object.keys(resetExpectedEmpty).length === 0)
+
+// MAS: nao breaka ABC -> DEF (same length, positional)
+const abcDef = migrateStyles("ABC", "DEF", { 0: { 0: { color: Y }, 1: { color: B }, 2: { color: G } } } as any)
+check("texto-novo: NAO breaka ABC->DEF (D=A_color)", (abcDef[0] as any)?.[0]?.color === Y)
+check("texto-novo: NAO breaka ABC->DEF (E=B_color)", (abcDef[0] as any)?.[1]?.color === B)
+check("texto-novo: NAO breaka ABC->DEF (F=C_color)", (abcDef[0] as any)?.[2]?.color === G)
+
+// E: nao breaka ABC -> ABCDEFGH (tem prefix, mantem positional)
+const abcExtend = migrateStyles("ABC", "ABCDEFGH", { 0: { 0: { color: Y }, 1: { color: B }, 2: { color: G } } } as any)
+check("texto-novo: NAO breaka ABC->ABCDEFGH (prefix preserved)", (abcExtend[0] as any)?.[0]?.color === Y)
+check("texto-novo: NAO breaka ABC->ABCDEFGH (C verde preserved)", (abcExtend[0] as any)?.[2]?.color === G)
+
 console.log(`\n  ${pass} PASS / ${fail} FAIL`)
 if (fails.length > 0) {
   console.log("\nFalhas:")

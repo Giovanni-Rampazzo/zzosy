@@ -483,6 +483,15 @@ export default function CampaignAssetsPage() {
         suffixLen < (newText.length - prefixLen) &&
         prevText[prevText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
       ) suffixLen++
+      // HEURISTICA "TEXTO NOVO" (2026-05-28, bate com migrateStyles do server):
+      // sem common prefix nem suffix E new muito maior que old → reset.
+      // Cobre "apagou tudo + reescreveu texto completamente novo" sem
+      // quebrar ABC->DEF (mesmo length).
+      const noCommon = prefixLen === 0 && suffixLen === 0
+      const muchLonger = prevText.length > 0 && newText.length > prevText.length * 2
+      if (noCommon && muchLonger) {
+        return [{ text: newText, style: defaultStyle }]
+      }
       // Style char-by-char pro newText
       // REGRA POSICIONAL (Adobe/Figma + server migrateStyles bate aqui):
       //  - prefix: mantem style char-a-char do prev

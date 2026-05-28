@@ -148,6 +148,34 @@ export function migrateStyles(
   if (!oldStyles || Object.keys(oldStyles).length === 0) return {}
   if (oldText === newText) return oldStyles
 
+  // HEURISTICA "TEXTO NOVO" (2026-05-28): se o user APAGOU TUDO e reescreveu
+  // texto MUITO DIFERENTE (sem common prefix nem suffix, e new bem maior),
+  // tratar como reset — per-char antigo nao faz sentido na nova string.
+  //
+  // User reportou: 123456 (per-char colorido) -> Car los\nantonio.
+  // Algoritmo posicional 1:1 mapeava 1->C, 2->a, 3->r, etc. e "antonio"
+  // herdava cor do char 6. Resultado bizarro: primeira linha colorida,
+  // segunda toda da mesma cor.
+  //
+  // Threshold: zero prefix + zero suffix + newText.length > 2x oldText.length
+  // (ou old vazio). Cobre o caso "apagou e reescreveu novo" sem quebrar
+  // o caso "ABC -> DEF" (mesmo length, prefix=0 suffix=0 mas user quer
+  // positional).
+  if (oldText.length > 0 && newText.length > 0) {
+    let prefixLen = 0
+    const minLen = Math.min(oldText.length, newText.length)
+    while (prefixLen < minLen && oldText[prefixLen] === newText[prefixLen]) prefixLen++
+    let suffixLen = 0
+    while (
+      suffixLen < (oldText.length - prefixLen) &&
+      suffixLen < (newText.length - prefixLen) &&
+      oldText[oldText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
+    ) suffixLen++
+    const noCommon = prefixLen === 0 && suffixLen === 0
+    const muchLonger = newText.length > oldText.length * 2
+    if (noCommon && muchLonger) return {}
+  }
+
   const flatOld = flattenStyles(oldText, oldStyles)
   const flatNew: FlatStyles = new Array(newText.length).fill(null)
 
