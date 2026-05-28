@@ -1847,7 +1847,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         bgColorRef.current = bg
         const bop = typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1
         bgOpacityRef.current = bop
-        setBgOpacity(bop)
+        // setBgOpacity sera re-chamado abaixo com o valor real de bgLayers[0]
+        // (caso divirja do legacy pdata.bgOpacity).
         // Migra legacy → bgLayers[]: se pdata.bgLayers existe usa, senao cria
         // um BG solid com bgColor/bgOpacity (compat com pieces antigas).
         bgLayersRef.current = Array.isArray(pdata?.bgLayers) && pdata.bgLayers.length > 0
@@ -1859,6 +1860,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               locked: l.locked === true ? true : undefined,
             }))
           : [{ kind: "solid", color: bg, opacity: bop }]
+        // Re-sync bgColorRef/bgOpacityRef com bgLayers[0]. Sem isso, peca
+        // salva com bgColor legacy != bgLayers[0].color mostra cor divergente
+        // entre canvas (le bgLayersRef) e Properties panel (le bgColor state).
+        // 2026-05-28 bug reportado: panel rosa, canvas verde.
+        bgColorRef.current = bgLayerLegacyColor(bgLayersRef.current[0])
+        bgOpacityRef.current = bgLayersRef.current[0].opacity ?? 1
         // STEPS: inicializa buffer dos steps inativos + indice ativo.
         // O save grava TODOS os steps em data.steps (incluindo o ativo). No load,
         // precisamos:
@@ -1888,7 +1895,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // Agora seta states (dispara render + init do canvas)
         setPiece(p)
         setCanvasW(pw); setCanvasH(ph)
-        setBgColor(bg)
+        // bgColor/bgOpacity state TEM que derivar de bgLayersRef[0], senao
+        // Properties panel mostra valores diferentes do canvas (canvas pinta
+        // a partir de bgLayers, panel mostra bgColor state). Quando
+        // pdata.bgColor (legacy root) diverge de pdata.bgLayers[0] (caso
+        // comum em pecas salvas antes do schema migrar), o panel mostrava
+        // rosa e o canvas verde. Bug 2026-05-28 reportado em screenshot.
+        // Fix: panel agora le direto do bgLayers via bgLayerLegacyColor —
+        // mesmo helper que o canvas usa pra pintar.
+        setBgColor(bgLayerLegacyColor(bgLayersRef.current[0]))
+        setBgOpacity(bgLayersRef.current[0].opacity ?? 1)
         if (camp.assets?.length) setAssetId(camp.assets[0].id)
         setCampaign(camp)
       } else {
@@ -3414,10 +3430,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         bgLayersRef.current = bgLayersToLoad
         bgColorRef.current = bgLayerLegacyColor(bgLayersToLoad[0])
         bgOpacityRef.current = bgLayersToLoad[0].opacity
-        if (loadIdx !== null && loadIdx !== savedActiveIdx) {
-          setBgColor(bgLayerLegacyColor(bgLayersToLoad[0]))
-          setBgOpacity(bgLayersToLoad[0].opacity)
-        }
+        // SEMPRE sincronizar state com bgLayers carregado — antes era so
+        // quando loadIdx !== savedActiveIdx, mas isso deixava cor divergente
+        // se pdata.bgColor (legacy root) != pdata.bgLayers[0].color.
+        setBgColor(bgLayerLegacyColor(bgLayersToLoad[0]))
+        setBgOpacity(bgLayersToLoad[0].opacity)
 
         if (pdata?.version === 2 && Array.isArray(layersToLoad)) {
           // Renderiza cada layer da peca
