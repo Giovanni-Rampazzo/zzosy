@@ -6826,11 +6826,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         for (let i = 0; i < stepCountRef.current; i++) {
           if (i === activeStepIndexRef.current) {
             const oldActive = oldSteps[i] ?? {}
+            // DEEP CLONE bgLayers — sem isso, snapshot compartilha referencia
+            // do array bgLayersRef. updateCurrentBg muta por indice e os
+            // snapshots de outros steps veem a nova cor. User reportou:
+            // 'a porra dos steps esta salvando o mesmo background nos 2 steps'.
+            const bgClone = bgLayersRef.current.map(l => ({ ...l, stops: (l as any).stops ? (l as any).stops.map((s: any) => ({ ...s })) : undefined }))
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
-              // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
-              // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
+              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgClone,
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
               thumbnailUrl: oldActive.thumbnailUrl ?? (i === 0 ? pieceImgFallback : null),
             })
@@ -7053,9 +7056,18 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // ja gerado esta em piece.imageUrl. Usar isso como imageUrl do step ativo
     // quando transitamos pra multi-step pela primeira vez (ex: addStep).
     const fallbackImg = (!oldSteps.length && activeStepIndexRef.current === 0) ? (p?.imageUrl ?? null) : null
+    // CRITICO 2026-05-27: DEEP CLONE de bgLayers. Sem isso, o snapshot
+    // armazenado em inactiveStepsRef compartilhava a MESMA referencia do
+    // array bgLayersRef. Quando o user trocava de step e mudava o bg, o
+    // updateCurrentBg fazia `bgLayersRef.current[idx] = next` (mutacao do
+    // array por indice). Como o snapshot do step anterior apontava pro
+    // MESMO array, ele tambem via a nova cor → save persistia o mesmo bg
+    // pros 2 steps. User reportou: 'a porra dos steps esta salvando o
+    // mesmo background nos 2 steps'.
+    const bgClone = bgLayersRef.current.map(l => ({ ...l, stops: (l as any).stops ? (l as any).stops.map((s: any) => ({ ...s })) : undefined }))
     return {
       layers,
-      bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
+      bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgClone as BgLayerData[],
       imageUrl: oldActive.imageUrl ?? fallbackImg,
       thumbnailUrl: oldActive.thumbnailUrl ?? fallbackImg,
     }
@@ -7861,11 +7873,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         for (let i = 0; i < stepCountRef.current; i++) {
           if (i === activeStepIndexRef.current) {
             const oldActive = oldSteps[i] ?? {}
+            // DEEP CLONE bgLayers — sem isso, snapshot compartilha referencia
+            // do array bgLayersRef. updateCurrentBg muta por indice e os
+            // snapshots de outros steps veem a nova cor. User reportou:
+            // 'a porra dos steps esta salvando o mesmo background nos 2 steps'.
+            const bgClone = bgLayersRef.current.map(l => ({ ...l, stops: (l as any).stops ? (l as any).stops.map((s: any) => ({ ...s })) : undefined }))
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
-              // Preserva imageUrl/thumbnailUrl gerados anteriormente. O upload
-              // do thumb novo (uploadPieceThumb após o save) sobrescreve esses.
+              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgClone,
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
               thumbnailUrl: oldActive.thumbnailUrl ?? (i === 0 ? pieceImgFallback : null),
             })
