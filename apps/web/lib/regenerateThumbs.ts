@@ -33,97 +33,33 @@ function broadcastKvUpdated(campaignId: string) {
   } catch {}
 }
 
+// UNIFICADO 2026-05-27: delegate pra buildPieceCanvas (mesmo renderer do export
+// PSD/PNG) pra GARANTIR que thumb === editor === export. Antes esse renderer
+// simplificado tinha so TEXT+IMAGE (sem SHAPE), nao convertia styles per-char
+// no formato Fabric v7 (array vs object), e ignorava effects + bgLayers
+// multi-layer. Sintoma: shape sumia do thumb, per-char nao aparecia, gradiente
+// de bg renderizava como cor solida. Bug recorrente reportado.
 async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Promise<Blob | null> {
-  const fabric = await import("fabric")
-  const StaticCanvas = (fabric as any).StaticCanvas
-  const Textbox = (fabric as any).Textbox
-  const FabricImage = (fabric as any).FabricImage ?? (fabric as any).Image
-
+  if (pieceData?.version !== 2) return null
   const W = pieceData?.width ?? 1080
   const H = pieceData?.height ?? 1080
-  const bgColor = pieceData?.bgColor ?? "#ffffff"
-
-  const el = document.createElement("canvas")
-  el.width = W; el.height = H
-  const fc = new StaticCanvas(el, { width: W, height: H, enableRetinaScaling: false, backgroundColor: bgColor })
-
-  if (pieceData?.version === 2 && Array.isArray(pieceData?.layers)) {
-    const assetMap = Object.fromEntries(assets.map(a => [a.id, a]))
-    const sorted = [...pieceData.layers].sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
-    for (const layer of sorted) {
-      const asset = assetMap[layer.assetId]
-      if (!asset) continue
-      // Strip per-char fill REMOVIDO 2026-05-26 — render fiel ao estado salvo.
-      // Bug recorrente "texto preto" eh atacado server-side (PUT) e em
-      // generate (GeneratePiecesModal). Render aqui nao deve modificar.
-      const overrides = layer.overrides ?? {}
-      // PSD layer props: opacity + blendMode (canvas globalCompositeOperation).
-      // Sem isso, o thumb do KV (gerado via regenerateKVThumb) perdia
-      // multiply/screen/overlay → preview ficava diferente do editor que
-      // respeita esses. Sintoma reportado: layer em multiply aparece como
-      // imagem normal sobreposta no thumb da matriz.
-      const psdProps: any = {}
-      if (typeof layer.opacity === "number" && layer.opacity < 1 && layer.opacity >= 0.01) {
-        psdProps.opacity = layer.opacity
-      }
-      if (typeof layer.blendMode === "string" && layer.blendMode && layer.blendMode !== "source-over") {
-        psdProps.globalCompositeOperation = layer.blendMode
-      }
-      if (asset.type === "TEXT") {
-        const spans = parseContent(asset.content)
-        const fullText = spans.length ? spans.map((s: any) => s.text).join("") : (asset.value ?? asset.label)
-        const def = spans[0]?.style ?? {}
-        const t = new Textbox(fullText, {
-          left: layer.posX, top: layer.posY,
-          width: Math.max(layer.width ?? 400, 100),
-          fontSize: overrides.fontSize ?? def.fontSize ?? 80,
-          fontFamily: overrides.fontFamily ?? def.fontFamily ?? "Arial",
-          fontWeight: overrides.fontWeight ?? def.fontWeight ?? "normal",
-          fill: overrides.fill ?? def.color ?? "#111",
-          scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1,
-          angle: layer.rotation ?? 0,
-          charSpacing: overrides.charSpacing ?? 0,
-          lineHeight: overrides.lineHeight ?? 1.16,
-          textAlign: overrides.textAlign ?? "left",
-          styles: overrides.styles ?? undefined,
-          ...psdProps,
-        })
-        fc.add(t)
-      } else if ((asset.type === "IMAGE" || asset.type === "SMART_OBJECT") && asset.imageUrl) {
-        try {
-          const img = await new Promise<any>((resolve, reject) => {
-            const ie = new window.Image()
-            ie.crossOrigin = "anonymous"
-            ie.onload = () => resolve(new FabricImage(ie, {
-              left: layer.posX, top: layer.posY,
-              scaleX: layer.scaleX ?? 1, scaleY: layer.scaleY ?? 1,
-              angle: layer.rotation ?? 0,
-              ...psdProps,
-            }))
-            ie.onerror = reject
-            ie.src = asset.imageUrl!
-          })
-          fc.add(img)
-        } catch (e) { /* ignora */ }
-      }
-    }
-    fc.renderAll()
-    await new Promise(r => setTimeout(r, 200))
-
-    // PERF 2026-05-26: 1440 → 960 (display max ~600-900px em apresentacao).
-    // 40% reducao de bytes sem perda visual perceptivel.
-    const thumbScale = Math.min(960 / W, 960 / H, 1)
-    // PERF: PNG → JPEG quality 0.82 — thumbs nunca tem transparencia util
-    // (peca tem bg solido sempre). Reduz ~60% tamanho vs PNG. Quality 0.82
-    // eh sweet spot Adobe — sem artifacts visiveis em fotos/gradientes.
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: thumbScale })
-    fc.dispose()
+  try {
+    const { buildPieceCanvas } = await import("@/lib/exportPiece")
+    const fc = await buildPieceCanvas({
+      id: undefined, name: "thumb",
+      data: pieceData, width: W, height: H,
+    } as any, assets)
+    if (!fc) return null
+    // PERF 2026-05-26: 1440 → 960 + JPEG 0.82. ~60% reducao bytes sem perda visual.
+    const scale = Math.min(960 / W, 960 / H, 1)
+    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: scale })
+    try { fc.dispose() } catch {}
     const res = await fetch(dataUrl)
     return await res.blob()
+  } catch (e) {
+    console.warn("[buildThumbnailFromPieceData]", e)
+    return null
   }
-
-  fc.dispose()
-  return null
 }
 
 // Concorrencia limitada — Fabric StaticCanvas usa GPU/canvas memory. Demais
@@ -181,10 +117,14 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
         if (!step || !Array.isArray(step.layers)) return
         const stepUsesAsset = step.layers.some((l: any) => l?.assetId === assetId)
         if (!stepUsesAsset) return
+        // bgLayers DO STEP (nao apenas bgColor) — senao step com gradient/
+        // imagem de bg cai pra cor solida no thumb e desbate do editor. Bug
+        // identificado 2026-05-27: thumbs de step ignoravam bg multilayer.
         const pseudoStepPiece = {
           version: 2,
           width: W, height: H,
           bgColor: step.bgColor ?? pdata.bgColor ?? "#ffffff",
+          bgLayers: step.bgLayers ?? pdata.bgLayers,
           layers: step.layers,
         }
         try {
@@ -238,39 +178,11 @@ export async function regeneratePieceThumbsForAsset(campaignId: string, assetId:
  * Roda no client em background — busca a peca + assets, renderiza headlessly
  * via Fabric StaticCanvas, e faz upload pro endpoint de thumbnail.
  */
-/**
- * Renderiza piece via buildPieceCanvas (mesmo renderer do export PSD/PNG).
- * Garante que thumb bate com o que o user ve no editor / vai pro PSD.
- *
- * Substitui buildThumbnailFromPieceData (renderer simplificado que faltava
- * SHAPE branch, mask raster correto, layer effects, etc). Bug fix 2026-05-24:
- * 'preview nao bate com editor — green box some, masks erradas'.
- */
-async function renderPieceThumbViaExport(pieceLike: { data: any; width: number; height: number }, assets: Asset[]): Promise<Blob | null> {
-  try {
-    const { buildPieceCanvas } = await import("@/lib/exportPiece")
-    const fc = await buildPieceCanvas({
-      id: undefined,
-      name: "thumb",
-      data: pieceLike.data,
-      width: pieceLike.width,
-      height: pieceLike.height,
-    } as any, assets)
-    if (!fc) return null
-    const W = pieceLike.width
-    const H = pieceLike.height
-    // PERF 2026-05-26: 1440 → 960 (display max em apresentacao). JPEG quality
-    // 0.82 (era PNG) — 60% reducao sem perda visual em pecas com bg solido.
-    const scale = Math.min(960 / W, 960 / H, 1)
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: scale })
-    try { fc.dispose() } catch {}
-    const res = await fetch(dataUrl)
-    return await res.blob()
-  } catch (e) {
-    console.warn("[renderPieceThumbViaExport]", e)
-    return null
-  }
-}
+// renderPieceThumbViaExport REMOVIDO 2026-05-27: era duplicata de
+// buildThumbnailFromPieceData (agora unificado pra usar buildPieceCanvas).
+// Mantemos so 1 renderer source-of-truth.
+const renderPieceThumbViaExport = (pieceLike: { data: any; width: number; height: number }, assets: Asset[]) =>
+  buildThumbnailFromPieceData(pieceLike.data, assets)
 
 // Cache de campaign por id, TTL 10s + in-flight dedup. Sem in-flight,
 // 5 regens paralelas faziam 5 fetches simultaneos (todas viam cache miss
