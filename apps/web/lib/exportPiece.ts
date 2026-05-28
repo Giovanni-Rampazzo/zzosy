@@ -688,6 +688,35 @@ export async function buildPieceCanvas(piece: any, assets: Asset[]): Promise<any
                 // Marca pro export PSD nao re-aplicar a mask (evita dupla mask:
                 // canvas baked + mask ag-psd = Photoshop corta a interseccao).
                 if (maskBaked) (fImg as any).__maskAlreadyBaked = true
+                // Color Overlay (PSD Layer Style) — BlendColor.tint aplicado
+                // como filter pra image. Fix 2026-05-28: faltava no
+                // buildPieceCanvas → cata vento (PNG branco + colorOverlay
+                // verde escuro) aparecia BRANCO nos previews/apresentacao,
+                // mesmo renderizando OK no editor (que usa applyFabricEffects).
+                // Render pula se pixelsIncludeColorOverlay=true (PSD ja
+                // bakeado) ou se cor ausente.
+                if (
+                  layerEffects?.colorOverlay?.color &&
+                  (layer as any).pixelsIncludeColorOverlay !== true
+                ) {
+                  try {
+                    const BlendColor = (fabric as any).filters?.BlendColor ?? (fabric as any).BlendColor
+                    if (BlendColor) {
+                      const alpha = Math.max(0, Math.min(1,
+                        typeof layerEffects.colorOverlay.opacity === "number"
+                          ? layerEffects.colorOverlay.opacity : 1
+                      ))
+                      ;(fImg as any).filters = [new BlendColor({
+                        color: layerEffects.colorOverlay.color,
+                        mode: "tint",
+                        alpha,
+                      })]
+                      if (typeof (fImg as any).applyFilters === "function") (fImg as any).applyFilters()
+                    }
+                  } catch (e) {
+                    console.warn("[buildPieceCanvas] colorOverlay falhou:", e)
+                  }
+                }
                 resolve(fImg)
               }
               ie.onerror = reject
