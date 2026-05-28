@@ -78,8 +78,14 @@ export async function renderPieceThumbServer(piece: { id: string; data: string |
     const canvas = createCanvas(thumbW, thumbH)
     const ctx = canvas.getContext("2d") as any
 
-    // BG fill (solid + opacity)
-    const bgColor = pData.bgColor ?? "#ffffff"
+    // BG fill (solid + opacity). bgLayers[0] tem prioridade sobre bgColor
+    // legacy — sem isso, peca com bgLayers={verde} mas bgColor=rosa rendia
+    // rosa no thumb mas verde no editor. Bug 2026-05-28 (sweep drift).
+    // Server-side thumb so suporta solid; gradient/image cai pra bgColor.
+    const bgLayer0 = Array.isArray(pData.bgLayers) && pData.bgLayers.length > 0 ? pData.bgLayers[0] : null
+    const bgColor = (bgLayer0?.kind === "solid" && typeof bgLayer0.color === "string")
+      ? bgLayer0.color
+      : (pData.bgColor ?? "#ffffff")
     ctx.fillStyle = bgColor
     ctx.fillRect(0, 0, thumbW, thumbH)
 

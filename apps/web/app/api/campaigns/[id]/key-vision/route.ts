@@ -46,7 +46,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   const bgColor = body.bgColor ?? "#ffffff"
   const newLayers = Array.isArray(body.layers) ? body.layers : []
   const layersStr = JSON.stringify(newLayers)
-  const data = body.data != null ? JSON.stringify(body.data) : "{}"
+  // bgLayers (novo schema multi-layer com gradient/image) vai DENTRO de data
+  // — o model KeyVision tem so a coluna escalar bgColor (legacy). Sem isso,
+  // matriz salvava gradient/image mas server descartava silenciosamente e
+  // reload trazia so cor solida. Bug 2026-05-28 (sweep drift bgColor/bgLayers).
+  const dataObj: any = body.data && typeof body.data === "object" ? { ...body.data } : {}
+  if (Array.isArray(body.bgLayers)) dataObj.bgLayers = body.bgLayers
+  if (typeof body.bgOpacity === "number") dataObj.bgOpacity = body.bgOpacity
+  const data = JSON.stringify(dataObj)
   const matrixW = body.width ?? 1920
   const matrixH = body.height ?? 1080
 

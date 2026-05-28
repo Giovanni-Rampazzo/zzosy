@@ -270,11 +270,19 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
     // BG da matriz: propaga o ARRAY bgLayers completo (gradient/image preservados),
     // nao apenas a cor solida. Antes copiava so bg.fill que virava '[object Object]'
     // quando o BG era gradient — peca abria com fundo branco/quebrado.
-    const matrixBgLayers = Array.isArray(camp.keyVision?.bgLayers) && camp.keyVision.bgLayers.length > 0
-      ? camp.keyVision.bgLayers
+    //
+    // bgLayers da matriz vive em keyVision.data.bgLayers (model KeyVision
+    // so tem coluna escalar bgColor). Bug 2026-05-28: estava lendo
+    // camp.keyVision.bgLayers que server nunca retorna — caia sempre no
+    // fallback solid.
+    const kvData: any = camp.keyVision?.data ?? null
+    const matrixBgLayers = kvData && Array.isArray(kvData.bgLayers) && kvData.bgLayers.length > 0
+      ? kvData.bgLayers
       : null
     const matrixBgColor = typeof camp.keyVision?.bgColor === "string" ? camp.keyVision.bgColor : "#ffffff"
-    const matrixBgOpacity = typeof camp.keyVision?.bgOpacity === "number" ? camp.keyVision.bgOpacity : 1
+    const matrixBgOpacity = (kvData && typeof kvData.bgOpacity === "number")
+      ? kvData.bgOpacity
+      : (typeof camp.keyVision?.bgOpacity === "number" ? camp.keyVision.bgOpacity : 1)
 
     let i = 0
     for (const f of selectedFormats) {

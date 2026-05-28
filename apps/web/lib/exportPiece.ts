@@ -2442,6 +2442,10 @@ function expandSteps(
           ...d,
           layers: step.layers,
           bgColor: step.bgColor ?? d.bgColor,
+          bgOpacity: (step as any).bgOpacity ?? d.bgOpacity,
+          // bgLayers do step (gradient/imagem). Sem isso, step com bg multi-
+          // layer vira cor solida no export. Bug 2026-05-28 (sweep drift).
+          bgLayers: (step as any).bgLayers ?? d.bgLayers,
           // remove o campo steps pra nao confundir o resto do pipeline
           steps: undefined,
           activeStepIndex: undefined,

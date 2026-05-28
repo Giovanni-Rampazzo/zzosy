@@ -98,7 +98,7 @@ interface Campaign {
     customFontFiles?: CustomFontFile[] | null
   }
   assets: Asset[]
-  keyVision: { bgColor: string; layers: Layer[] | null; width?: number; height?: number } | null
+  keyVision: { bgColor: string; layers: Layer[] | null; width?: number; height?: number; data?: any } | null
 }
 
 // BG vira layer real (igual Photoshop). Pode ter varias empilhadas; ordem
@@ -1915,13 +1915,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const bg = typeof rawBg === "string" ? rawBg : "#ffffff"
         const cw = camp.keyVision?.width ?? DEFAULT_W
         const ch = camp.keyVision?.height ?? DEFAULT_H
-        bgColorRef.current = bg
         canvasWRef.current = cw
         canvasHRef.current = ch
-        setBgColor(bg)
         setCanvasW(cw); setCanvasH(ch)
-        // Matriz so suporta 1 BG por enquanto (multi-BG eh por peca em V1)
-        bgLayersRef.current = [{ kind: "solid", color: bg, opacity: 1 }]
+        // bgLayers da matriz vive em keyVision.data.bgLayers (novo schema).
+        // Sem isso, gradient/imagem de bg da matriz vira solid no reload.
+        // Bug 2026-05-28 (sweep drift bgColor/bgLayers).
+        const kvData: any = camp.keyVision?.data ?? null
+        const kvBgLayersRaw = kvData && Array.isArray(kvData.bgLayers) ? kvData.bgLayers : null
+        bgLayersRef.current = (kvBgLayersRaw && kvBgLayersRaw.length > 0)
+          ? kvBgLayersRaw.map(migrateBgLayerJson)
+          : [{ kind: "solid", color: bg, opacity: 1 }]
+        // Derivar bgColor/bgOpacity de bgLayers[0] — single source of truth.
+        bgColorRef.current = bgLayerLegacyColor(bgLayersRef.current[0])
+        bgOpacityRef.current = bgLayersRef.current[0].opacity ?? 1
+        setBgColor(bgColorRef.current)
+        setBgOpacity(bgOpacityRef.current)
         if (camp.assets?.length) setAssetId(camp.assets[0].id)
         setCampaign(camp)
       }
@@ -6826,7 +6835,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         setSaving(false)
         return
       }
-      const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current, layers: newLayers }
+      // bgColor/bgOpacity DERIVADOS de bgLayers[0] no save — single source of
+      // truth. Sem isso, bgColorRef podia divergir de bgLayers e o save
+      // perpetuava drift (panel mostrava cor X, canvas pintava Y).
+      const __saveBgColor = bgLayerLegacyColor(bgLayersRef.current[0])
+      const __saveBgOpacity = bgLayersRef.current[0]?.opacity ?? 1
+      const newData: any = { ...oldData, version: 2, width: canvasWRef.current, height: canvasHRef.current, bgColor: __saveBgColor, bgOpacity: __saveBgOpacity, bgLayers: bgLayersRef.current, layers: newLayers }
       // (bgOpacity acima persiste a opacidade do BG no piece.data — back-compat:
       // peças antigas sem o campo são tratadas como 1.0 no load)
       // STEPS: mesmo tratamento do performSave. Sem isso, "Salvar e sair"
@@ -6850,7 +6864,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const bgClone = bgLayersRef.current.map(l => ({ ...l, stops: (l as any).stops ? (l as any).stops.map((s: any) => ({ ...s })) : undefined }))
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgClone,
+              bgColor: __saveBgColor, bgOpacity: __saveBgOpacity, bgLayers: bgClone,
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
               thumbnailUrl: oldActive.thumbnailUrl ?? (i === 0 ? pieceImgFallback : null),
             })
@@ -6969,7 +6983,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           return
         }
       }
-      await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
+      await fetch(`/api/campaigns/${campaignId}/key-vision`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bgColor: bgLayerLegacyColor(bgLayersRef.current[0]), bgOpacity: bgLayersRef.current[0]?.opacity ?? 1, bgLayers: bgLayersRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current }) })
       try {
         // Thumb HIGH-RES (1920px max, JPEG 0.92). 480/0.85 ficava pixelado no
         // preview de apresentacao e PPTX (slide widescreen tem 960px de largura
@@ -7024,7 +7038,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // snapshot em inactiveStepsRef. Replica a logica do performSave modo peca.
   function serializeCurrentStep(): { layers: any[]; bgColor: string; bgOpacity: number; bgLayers: BgLayerData[]; imageUrl?: string | null; thumbnailUrl?: string | null } {
     const fc = fabricRef.current
-    if (!fc) return { layers: [], bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current }
+    // bgColor/bgOpacity DERIVADOS de bgLayers[0] — single source of truth.
+    // Antes vinham de bgColorRef/bgOpacityRef separadamente, criando drift
+    // potencial (bug 2026-05-28). Helper bgLayerLegacyColor cobre solid/
+    // gradient/image (pega 1o stop / branco).
+    const derivedBgColor = bgLayerLegacyColor(bgLayersRef.current[0])
+    const derivedBgOpacity = bgLayersRef.current[0]?.opacity ?? 1
+    if (!fc) return { layers: [], bgColor: derivedBgColor, bgOpacity: derivedBgOpacity, bgLayers: bgLayersRef.current }
     const layers = fc.getObjects()
       .filter((o: any) => {
         if (o.__isBg) return false
@@ -7088,7 +7108,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const layersClone = JSON.parse(JSON.stringify(layers))
     return {
       layers: layersClone,
-      bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgClone as BgLayerData[],
+      bgColor: derivedBgColor, bgOpacity: derivedBgOpacity, bgLayers: bgClone as BgLayerData[],
       imageUrl: oldActive.imageUrl ?? fallbackImg,
       thumbnailUrl: oldActive.thumbnailUrl ?? fallbackImg,
     }
@@ -7862,12 +7882,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
       }
 
+      // bgColor/bgOpacity DERIVADOS de bgLayers[0] — single source of truth
+      // (ver fix 2026-05-28 em performSave).
+      const __saveBgColor = bgLayerLegacyColor(bgLayersRef.current[0])
+      const __saveBgOpacity = bgLayersRef.current[0]?.opacity ?? 1
       const newData: any = {
         ...oldData,
         version: 2,
         width: canvasWRef.current,
         height: canvasHRef.current,
-        bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
+        bgColor: __saveBgColor, bgOpacity: __saveBgOpacity, bgLayers: bgLayersRef.current,
         layers: newLayers,
       }
       // STEPS: se a peca tem multiplos steps, persiste TODOS em data.steps[].
@@ -7901,7 +7925,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const bgClone = bgLayersRef.current.map(l => ({ ...l, stops: (l as any).stops ? (l as any).stops.map((s: any) => ({ ...s })) : undefined }))
             fullSteps.push({
               layers: newLayers,
-              bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgClone,
+              bgColor: __saveBgColor, bgOpacity: __saveBgOpacity, bgLayers: bgClone,
               imageUrl: oldActive.imageUrl ?? (i === 0 ? pieceImgFallback : null),
               thumbnailUrl: oldActive.thumbnailUrl ?? (i === 0 ? pieceImgFallback : null),
             })
@@ -7994,7 +8018,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       await fetch(`/api/campaigns/${campaignId}/key-vision`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
+        body: JSON.stringify({ bgColor: bgLayerLegacyColor(bgLayersRef.current[0]), bgOpacity: bgLayersRef.current[0]?.opacity ?? 1, bgLayers: bgLayersRef.current, layers: layersToSave, width: canvasWRef.current, height: canvasHRef.current })
       })
       // Nota: lastOverride dos assets ja foi atualizado em tempo real via
       // updateAssetLastOverride() chamado em text:editing:exited e applyStyle.
@@ -9788,7 +9812,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const pseudoData = {
                 version: 2,
                 width: W, height: H,
-                bgColor: bgColorRef.current, bgOpacity: bgOpacityRef.current, bgLayers: bgLayersRef.current,
+                bgColor: bgLayerLegacyColor(bgLayersRef.current[0]),
+                bgOpacity: bgLayersRef.current[0]?.opacity ?? 1,
+                bgLayers: bgLayersRef.current,
                 layers,
                 sourceWidth: W,
                 sourceHeight: H,
