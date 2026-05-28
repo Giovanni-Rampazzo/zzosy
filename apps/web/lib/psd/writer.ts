@@ -197,10 +197,17 @@ function textToAgPsd(l: PsdTextLayer): any {
     },
   }
   if (l.styleRuns.length > 0) {
-    text.styleRuns = l.styleRuns.map(r => ({
-      length: r.length,
-      style: charStyleToAgPsd({ ...l.defaultStyle, ...r.style }),
-    }))
+    // PSD styleRuns sao CONSECUTIVOS — a sequencia de `{length, style}` precisa
+    // cobrir text.length completo, sem gaps. Se passarmos so os runs com
+    // override (ex: [{start:0,len:1,green},{start:2,len:1,red}] pra "GIO"),
+    // ag-psd serializa { len:1+1 = 2 } e o PS reinterpreta o segundo run como
+    // colado no fim do primeiro → char 1 vira vermelho, char 2 vira default.
+    // Fix: preencher gaps (e cauda) com {length, defaultStyle} runs.
+    text.styleRuns = fillStyleRunGaps(l.styleRuns, l.text.length, l.defaultStyle)
+      .map(r => ({
+        length: r.length,
+        style: charStyleToAgPsd({ ...l.defaultStyle, ...r.style }),
+      }))
   }
   // Canvas TRANSPARENTE no bbox — text layer tambem precisa, senao ag-psd
   // colapsa bbox e PS perde positioning/selecao. Texto eh rasterizado pelo
@@ -213,6 +220,32 @@ function textToAgPsd(l: PsdTextLayer): any {
     text,
     ...(txtCanvas ? { canvas: txtCanvas } : {}),
   }
+}
+
+// Preenche gaps entre styleRuns com runs do defaultStyle. PSD styleRuns sao
+// sequenciais (cada run comeca onde o anterior terminou) — total das lengths
+// = text.length. Se passarmos sparse runs, ag-psd "compacta" e cada run rola
+// pra esquerda, descalibrando posicoes.
+function fillStyleRunGaps(
+  runs: { start: number; length: number; style: any }[],
+  textLen: number,
+  defaultStyle: any,
+): { start: number; length: number; style: any }[] {
+  if (textLen <= 0) return []
+  const sorted = [...runs].sort((a, b) => a.start - b.start)
+  const out: { start: number; length: number; style: any }[] = []
+  let cursor = 0
+  for (const r of sorted) {
+    if (r.start > cursor) {
+      out.push({ start: cursor, length: r.start - cursor, style: {} })
+    }
+    out.push({ start: r.start, length: r.length, style: r.style })
+    cursor = r.start + r.length
+  }
+  if (cursor < textLen) {
+    out.push({ start: cursor, length: textLen - cursor, style: {} })
+  }
+  return out
 }
 
 // Map weight numerico → sufixo do font name (convencao Adobe/Google).

@@ -144,6 +144,20 @@ initializeCanvas(createCanvas as any)
   check("reimport: styleRuns presente", textL2.styleRuns.length > 0)
   console.log("  styleRuns lidos:", JSON.stringify(textL2.styleRuns))
 
+  // CRITICO: PSD styleRuns precisam estar alinhados nas posicoes corretas:
+  // char 0 = verde (G), char 2 = vermelho (O). Sem fillStyleRunGaps, o
+  // vermelho colapsava pra posicao 1 e a posicao 2 caia pro default.
+  function colorAt(runs: any[], pos: number): string | null {
+    let cur = 0
+    for (const r of runs) {
+      if (pos >= cur && pos < cur + r.length) return (r.style?.color ?? "").toLowerCase()
+      cur += r.length
+    }
+    return null
+  }
+  check("reimport: char 0 (G) verde", colorAt(textL2.styleRuns, 0) === "#00ff00")
+  check("reimport: char 2 (O) vermelho", colorAt(textL2.styleRuns, 2) === "#ff0000")
+
   // ── RESULTADO ───────────────────────────────────────────────────
   console.log(`\n=== RESULT: ${pass} PASS, ${fail} FAIL ===`)
   process.exit(fail === 0 ? 0 : 1)
