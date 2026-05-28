@@ -55,6 +55,7 @@ import {
   parseSimpleSvgPathToFabric, applyShapePathInPlace, applyStrokePositionVisual,
   serializeShapeOverrides,
 } from "@/lib/editor/shapeOverrides"
+import { clampTextboxWidth } from "@/lib/editor/textboxWidth"
 import {
   psdColorToHex, sampleHexAt, isCanvasUniform, extractPsdBgLayer,
   psdTextLayerToOverride, applyPsdLayerMetadata,
@@ -1909,7 +1910,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         // pressionar Enter num textbox manual-wrap colapsa pra natural width da
         // linha mais longa (UNWRAPPED) — o famoso "reset" reportado pelo user.
         const hasNewline = typeof obj.text === "string" && obj.text.includes("\n")
-        if (hasNewline || obj.__userResizedWidth) return
+        const skipPointAutofit = hasNewline || obj.__userResizedWidth
         clearTimeout(autoFitTimer.current)
         autoFitTimer.current = setTimeout(() => {
           if (!alive) return
@@ -1918,19 +1919,33 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // Re-check do guard: se um undo disparou nos 120ms entre o text:changed
           // e o timer, abortar — auto-fit nao deve modificar estado restaurado.
           if (isApplyingHistory.current) return
-          // Re-check newline/manual-resize: user pode ter pressionado Enter ou
-          // redimensionado nos 120ms do debounce.
-          if (typeof obj.text === "string" && obj.text.includes("\n")) return
-          if (obj.__userResizedWidth) return
           try {
-            const oldWidth = obj.width
-            obj.set("width", 5000)
-            if (obj.initDimensions) obj.initDimensions()
-            const measured = obj.calcTextWidth ? obj.calcTextWidth() : oldWidth
-            const newWidth = Math.max(20, Math.ceil(measured) + 8)
-            obj.set("width", newWidth)
-            if (obj.initDimensions) obj.initDimensions()
-            obj.setCoords()
+            const nowHasNewline = typeof obj.text === "string" && obj.text.includes("\n")
+            const nowUserResized = !!obj.__userResizedWidth
+            const stillSkip = nowHasNewline || nowUserResized
+            // POINT TEXT auto-fit: huggar largura do conteudo (measured + 8).
+            // So roda em textbox single-line sem manual-resize — multi-line e
+            // user-resized preservam width intencional.
+            if (!skipPointAutofit && !stillSkip) {
+              const oldWidth = obj.width
+              obj.set("width", 5000)
+              if (obj.initDimensions) obj.initDimensions()
+              const measured = obj.calcTextWidth ? obj.calcTextWidth() : oldWidth
+              const newWidth = Math.max(20, Math.ceil(measured) + 8)
+              obj.set("width", newWidth)
+              if (obj.initDimensions) obj.initDimensions()
+              obj.setCoords()
+            } else if (obj.initDimensions) {
+              // Pra clamp poder medir linhas com width atual, garante medicao
+              // fresh apos o ultimo texto digitado.
+              obj.initDimensions()
+            }
+            // Regra ZZOSY: width <= min(longest_line * 1.30, canvas_right - left).
+            // Aplica em TODOS textboxes (incluindo multi-line e user-resized) —
+            // o intent eh "nao estourar a borda do canvas nem inflar muito alem
+            // do texto". Single-line auto-fit acima ja deixa tight, clamp aqui
+            // funciona como segundo guard pro canvas border.
+            clampTextboxWidth(obj, canvasWRef.current)
             fc.requestRenderAll()
           } catch (err) { console.warn("auto-fit textbox fail:", err) }
         }, 120)
@@ -2079,7 +2094,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         if (!alive || !fc) return
         e.preventDefault()
         const delta = e.deltaY > 0 ? -0.05 : 0.05
-        const newZ = Math.min(3, Math.max(0.05, zoomRef.current + delta))
+        const newZ = Math.min(16, Math.max(0.05, zoomRef.current + delta))
         // Pega coords do mouse RELATIVAS ao canvas DOM (cursor pos no canvas).
         const canvasEl = (fc as any).lowerCanvasEl
           ?? (fc as any).lower?.el
@@ -4523,6 +4538,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }
         } } catch (e) { editorLog("[autofit-text-shrink] erro:", e) }
       } catch (e) { editorLog("[autofit-text] erro:", e) }
+      // Regra global ZZOSY: width <= min(longest_line * 1.30, canvas_right - left).
+      // Aplicado DEPOIS do expand/shrink anterior pra que cubra tambem casos
+      // que esses pulam (layerWidthSaved, lineCount > expectedLines, etc).
+      // Sem isso, textboxes saved com width muito > conteudo (ex: PSD bbox
+      // largo, manual resize antigo) carregavam estouradas alem da borda da
+      // peca, com handles longe e area clicavel inflada.
+      try { clampTextboxWidth(t, canvasWRef.current) } catch (e) { editorLog("[clamp-textbox-load] erro:", e) }
       ;(t as any).__assetId = asset.id
       ;(t as any).__assetLabel = asset.label
       if (typeof fillBrandIdx === "number") (t as any).__fillBrandIdx = fillBrandIdx
@@ -8129,7 +8151,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
   function changeZoom(delta: number) {
     const fc = fabricRef.current; if (!fc) return
-    applyZoom(fc, Math.min(3, Math.max(0.05, zoomRef.current + delta)))
+    applyZoom(fc, Math.min(16, Math.max(0.05, zoomRef.current + delta)))
   }
 
   /**
@@ -8264,7 +8286,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const fullH = (fabricRef as any).__canvasFullH ?? fc.getHeight()
     // Margem maior pro objeto nao encostar nas bordas
     const PAD = 160
-    const z = Math.round(Math.min(3,
+    const z = Math.round(Math.min(16,
       Math.max(0.05, (fullW - PAD * 2) / bw),
       Math.max(0.05, (fullH - PAD * 2) / bh),
     ) * 100) / 100
@@ -8516,7 +8538,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // duplicacao no editor eliminado (user pediu 2026-05-22).
 
   return (
-    <div ref={wrapperRef} style={{ position: "fixed", inset: 0, background: "#1e1e1e", overflow: "hidden" }}>
+    <div ref={wrapperRef} style={{ position: "fixed", inset: 0, background: "#000", overflow: "hidden" }}>
       {/* CSS keyframes pra pulse de destaque do row selecionado no painel
           Layers. Usa CSS variable --zzosy-accent setada no row pra refletir
           a cor da marca atual. 3 batidas em 1.2s, depois descansa. */}
@@ -8644,26 +8666,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         {/* Resolução {canvasW} × {canvasH} removida a pedido do user (2026-05-22) —
             info ruidosa na topbar. Undo/Redo botoes tambem removidos (atalhos
             Cmd+Z / Cmd+Shift+Z continuam funcionando). */}
-        {/* Importar PSD — overlay pattern (input absolute opacity:0 sobre
-            <button>). Pattern <label><input display:none> parou de disparar
-            picker no Next 16+React 19. 2026-05-24. Style mantem look dark
-            transparente da topbar (Button secondary nao serve aqui). */}
-        {/* IMPORT PSD — refactor 2026-05-27: padrao simples ref + onClick
-            em vez de overlay input. User reportou overlay nao funcionar em
-            alguns casos. Hidden input + button.onClick.click() eh o padrao
-            React canonico que sempre funciona. */}
-        <button
-          type="button"
-          title="Import PSD for this campaign (replaces current Key Vision)"
-          disabled={psdImporterRef.current?.isLoading() || false}
-          style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer", color: "#aaa", userSelect: "none" }}
-          onClick={() => {
-            if (psdImporterRef.current?.isLoading()) return
-            psdImportInputRef.current?.click()
-          }}
-        >
-          {psdImporterRef.current?.isLoading() ? "Importing…" : "Import PSD"}
-        </button>
+        {/* Botao Importar PSD movido pra coluna esquerda (abaixo de ASSETS)
+            2026-05-28. Topbar fica reservada SO pra navegacao (regra 1.2.0).
+            O <input> off-screen continua aqui pq psdImportInputRef.current
+            .click() funciona independente de onde o input mora no DOM. */}
         <input
           ref={psdImportInputRef}
           type="file"
@@ -8929,13 +8935,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <button onClick={centerView} style={bS} title="Fit the piece in the viewport (Shift+1)">Fit</button>
         <button onClick={zoomToSelection} style={bS} title="Focus on the selected object (Shift+2)">Focus selection</button>
         {/* Zoom: −/input/+ agrupados pra reduzir gap visual e tornar % editavel.
-            Input numerico (5–300), commit em Enter/blur. User pedido 2026-05-24. */}
+            Input numerico (5–1600), commit em Enter/blur. */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
           <button onClick={() => changeZoom(-0.1)} style={bS} title="Zoom out">−</button>
           <input
             type="number"
             min={5}
-            max={300}
+            max={1600}
             step={5}
             value={Math.round(zoom * 100)}
             onFocus={(e) => { numericInputFocusedRef.current = true; e.currentTarget.select() }}
@@ -8943,14 +8949,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             onChange={(e) => {
               const n = Number(e.target.value)
               if (!Number.isFinite(n)) return
-              const z = Math.min(3, Math.max(0.05, n / 100))
+              const z = Math.min(16, Math.max(0.05, n / 100))
               const fc = fabricRef.current
               if (fc) applyZoom(fc, z)
             }}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }}
-            title="Zoom (5–300%)"
+            title="Zoom (5–1600%)"
             style={{
-              width: 42, height: 24,
+              width: 56, height: 24,
               background: "transparent", border: "1px solid #2a2a2a",
               borderRadius: 4, padding: "0 4px",
               fontSize: 11, color: "#aaa", textAlign: "center",
@@ -9018,7 +9024,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             Entao vamos dar super destaque para ele". Movido pro topo da
             coluna esquerda 2026-05-28 (assets/paginas/layers à esquerda,
             properties/ferramentas à direita). */}
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid #2a2a2a", display: "flex", gap: 6, alignItems: "stretch", position: "relative" }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid #2a2a2a", display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
           <button onClick={() => {
             const go = () => router.push(`/campaigns/${campaignId}/assets`)
             if (isDirtyRef.current) setConfirmExit(() => go)
@@ -9058,6 +9065,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               lineHeight: 1,
               transition: "background 0.15s ease, color 0.15s ease",
             }}>+</button>
+        </div>
           {showAddAsset && (
             <div
               onMouseEnter={clearAddAssetDismissTimer}
@@ -9147,6 +9155,34 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               )}
             </div>
           )}
+          {/* Importar PSD: vive abaixo de Assets pq logicamente popula a
+              matriz/peca a partir de um PSD — pertence ao grupo "assets/dados
+              que entram", mesma coluna esquerda. Antes ficava na topbar mas
+              violava a regra 1.2.0 (Linha 2 da pagina = SO navegacao). */}
+          <button
+            type="button"
+            title="Import PSD for this campaign (replaces current Key Vision)"
+            disabled={psdImporterRef.current?.isLoading() || false}
+            style={{
+              width: "100%",
+              background: "transparent",
+              border: "1px solid #333",
+              borderRadius: 6,
+              padding: "8px 12px",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: psdImporterRef.current?.isLoading() ? "wait" : "pointer",
+              color: "#888",
+              textTransform: "uppercase",
+              letterSpacing: "1px",
+            }}
+            onClick={() => {
+              if (psdImporterRef.current?.isLoading()) return
+              psdImportInputRef.current?.click()
+            }}
+          >
+            {psdImporterRef.current?.isLoading() ? "Importando…" : "Importar PSD"}
+          </button>
         </div>
         <div style={{ padding: "10px 14px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0, display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ flex: 1 }}>Layers</span>

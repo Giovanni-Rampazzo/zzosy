@@ -94,7 +94,7 @@ export async function composeRasterMaskIntoImage(
  * Filtros em refreshLayers, save, undo, etc usam essa flag pra ignorar.
  */
 export function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: number, fullH: number, z: number) {
-  const BLEED_FILL = "#1e1e1e"
+  const BLEED_FILL = "#000"
   const worldW = fullW / z
   const worldH = fullH / z
   const offsetX = (fullW - cw * z) / 2
