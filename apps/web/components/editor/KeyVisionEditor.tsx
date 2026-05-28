@@ -8606,59 +8606,31 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const isText = obj.type === "textbox" || obj.type === "i-text"
     if (!isText) return
     const fullText: string = obj.text ?? ""
-    const objStyles = obj.styles ?? {}
+    // CRITICO 2026-05-27 (root cause de "overrides perdidos"): asset.content
+    // armazena apenas TEXTO + DEFAULT STYLE. Per-char styles NAO sao embutidos
+    // — eles vivem APENAS em layer.overrides.styles (cada peca/matriz tem o
+    // seu) e em asset.lastOverride.styles (template pra novas pecas).
+    //
+    // Antes: embutiamos per-char nas spans agrupadas. Isso fazia o PRIMEIRO
+    // span virar o "default" do layer no proximo load. Char sem per-char
+    // herdava a cor do PRIMEIRO span (e.g., usuario pinta 'G' verde em
+    // matriz → asset.content vira [G_verde, IO_preto] → ao reload, default
+    // do layer vira verde, chars 'IO' sem override aparecem verdes em vez
+    // de pretos).
+    //
+    // User reportou: 'alterei um caracter no assets... voltei... ja deu
+    // merda nos overrides... se perderam todos... fonte mundo... cor'.
     const defaultStyle = {
       color: obj.fill ?? "#111111",
       fontSize: obj.fontSize ?? 80,
       fontWeight: obj.fontWeight ?? "normal",
       fontFamily: obj.fontFamily ?? "Arial",
     }
-    const lines = fullText.split("\n")
-    const chars: Array<{ ch: string; style: any }> = []
-    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
-      const line = lines[lineNum]
-      const lineStyles = objStyles[lineNum] ?? {}
-      for (let col = 0; col < line.length; col++) {
-        const cs = lineStyles[col] ?? {}
-        chars.push({
-          ch: line[col],
-          style: {
-            color: cs.fill ?? defaultStyle.color,
-            fontSize: cs.fontSize ?? defaultStyle.fontSize,
-            fontWeight: cs.fontWeight ?? defaultStyle.fontWeight,
-            fontFamily: cs.fontFamily ?? defaultStyle.fontFamily,
-          },
-        })
-      }
-      // PRESERVA "\n" entre logical lines do raw text. Antes esse joiner
-      // INSERIA UM " " — perdendo a quebra explicita e desalinhando per-char
-      // styles no proximo load (chars indexados por linha visual nao batiam
-      // com obj.styles indexado por linha logica). Resultado: cores per-char
-      // sumiam no PSD export. Como agora usamos obj.text (raw) split por "\n"
-      // como fonte de lines, todo "\n" original eh explicito.
-      if (lineNum < lines.length - 1) {
-        const lastStyle = chars.length > 0 ? chars[chars.length - 1].style : defaultStyle
-        chars.push({ ch: "\n", style: lastStyle })
-      }
-    }
-    // Agrupa chars consecutivos com mesmo style em spans
-    const spans: TextSpan[] = []
-    let buf = ""
-    let bufStyle: any = null
-    for (const { ch, style } of chars) {
-      if (bufStyle === null) {
-        buf = ch
-        bufStyle = style
-      } else if (JSON.stringify(bufStyle) === JSON.stringify(style)) {
-        buf += ch
-      } else {
-        spans.push({ text: buf, style: bufStyle })
-        buf = ch
-        bufStyle = style
-      }
-    }
-    if (buf) spans.push({ text: buf, style: bufStyle ?? defaultStyle })
-    const finalSpans: TextSpan[] = spans.length > 0 ? spans : [{ text: "", style: defaultStyle }]
+    // Spans super simples: o texto cru com defaultStyle aplicado uniformemente.
+    // Preserva \n explicito (split + join). Sem per-char.
+    const finalSpans: TextSpan[] = fullText.length > 0
+      ? [{ text: fullText, style: defaultStyle }]
+      : [{ text: "", style: defaultStyle }]
     // Atualiza cache local pra que swaps/reloads na mesma sessao usem o texto novo
     const c = campaignRef.current
     if (c?.assets) {
