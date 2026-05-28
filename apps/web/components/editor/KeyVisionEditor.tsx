@@ -9,6 +9,7 @@ import { MaskPanel } from "./MaskPanel"
 import { ColorSwatchPicker } from "./ColorSwatchPicker"
 import { MaskThumb } from "./MaskThumb"
 import { migrateStyles } from "@/lib/migrateStyles"
+import { buildSpansFromPerChar, spansToText, spansToFullPerChar, spansDefaultStyle } from "@/lib/assetSpans"
 import { normalizeName } from "@/lib/normalize"
 import { getClipboard, setClipboard } from "@/lib/editorClipboard"
 import { applyMaskToFabricObject } from "@/lib/applyMaskToFabric"
@@ -8651,31 +8652,42 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const isText = obj.type === "textbox" || obj.type === "i-text"
     if (!isText) return
     const fullText: string = obj.text ?? ""
-    // CRITICO 2026-05-27 (root cause de "overrides perdidos"): asset.content
-    // armazena apenas TEXTO + DEFAULT STYLE. Per-char styles NAO sao embutidos
-    // — eles vivem APENAS em layer.overrides.styles (cada peca/matriz tem o
-    // seu) e em asset.lastOverride.styles (template pra novas pecas).
+    // CORE 1 (2026-05-28): asset.content e FONTE CANONICA de per-char styles.
+    // Antes strippavamos per-char aqui (deixava 1 span uniforme). Isso quebrava
+    // o caminho de edit via /assets: rebuildSpans la so via 1 span e produzia
+    // newSpans uniformes; migrateStyles entao precisava do per-char vir de
+    // lastOverride.styles que so era populado em casos especificos (timing
+    // de debounce). Resultado: peca gerada antes do save de lastOverride
+    // ficava com todas letras mesma cor pos edit do asset.
     //
-    // Antes: embutiamos per-char nas spans agrupadas. Isso fazia o PRIMEIRO
-    // span virar o "default" do layer no proximo load. Char sem per-char
-    // herdava a cor do PRIMEIRO span (e.g., usuario pinta 'G' verde em
-    // matriz → asset.content vira [G_verde, IO_preto] → ao reload, default
-    // do layer vira verde, chars 'IO' sem override aparecem verdes em vez
-    // de pretos).
-    //
-    // User reportou: 'alterei um caracter no assets... voltei... ja deu
-    // merda nos overrides... se perderam todos... fonte mundo... cor'.
+    // Agora: spans codificam per-char COMPLETO. defaultStyle = obj.fill. Per-char
+    // styles do textbox (obj.styles) entram nos spans via buildSpansFromPerChar.
+    // Spans consecutivos com mesmo style sao agrupados (otimiza serializacao).
     const defaultStyle = {
       color: obj.fill ?? "#111111",
       fontSize: obj.fontSize ?? 80,
       fontWeight: obj.fontWeight ?? "normal",
       fontFamily: obj.fontFamily ?? "Arial",
     }
-    // Spans super simples: o texto cru com defaultStyle aplicado uniformemente.
-    // Preserva \n explicito (split + join). Sem per-char.
-    const finalSpans: TextSpan[] = fullText.length > 0
-      ? [{ text: fullText, style: defaultStyle }]
-      : [{ text: "", style: defaultStyle }]
+    // obj.styles do Fabric: {lineIdx:{colIdx:{fill, fontSize, ...}}}. Normaliza
+    // fill -> color (asset.content usa style.color, Fabric usa fill).
+    const perChar: any = {}
+    if (obj.styles && typeof obj.styles === "object") {
+      for (const lineKey of Object.keys(obj.styles)) {
+        const line = obj.styles[lineKey]
+        if (!line || typeof line !== "object") continue
+        const newLine: any = {}
+        for (const colKey of Object.keys(line)) {
+          const cs = line[colKey]
+          if (!cs || typeof cs !== "object") continue
+          const norm: any = { ...cs }
+          if (norm.fill && !norm.color) { norm.color = norm.fill; delete norm.fill }
+          newLine[colKey] = norm
+        }
+        if (Object.keys(newLine).length > 0) perChar[lineKey] = newLine
+      }
+    }
+    const finalSpans: TextSpan[] = buildSpansFromPerChar(fullText, defaultStyle, perChar)
     // Atualiza cache local pra que swaps/reloads na mesma sessao usem o texto novo
     const c = campaignRef.current
     if (c?.assets) {

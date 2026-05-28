@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { migrateStyles } from "@/lib/migrateStyles"
 import { apiErrors } from "@/lib/apiError"
 import { stripPerCharFillWhenLayerSet } from "@/lib/stripPerCharFill"
+import { spansToFullPerChar, buildSpansFromPerChar, spansDefaultStyle } from "@/lib/assetSpans"
 
 export const dynamic = "force-dynamic"
 
@@ -129,6 +130,24 @@ export async function PUT(req: Request, ctx: Ctx) {
   const newSpansParsed = parseContent(newContent)
   const newText = spansToText(newSpansParsed)
   const textChanged = oldText !== newText
+
+  // CORE 1 (2026-05-28): SEMPRE reescreve content em forma canonica quando
+  // text muda. Garante:
+  //  - sentinela span[0] = defaultStyle (proteção contra "primeiro char vira default")
+  //  - per-char migrado via Myers LCS quando old tinha
+  //  - spans agrupados eficientemente
+  //
+  // Antes o client (pagina /assets) chamava rebuildSpans LOCAL que so via 1
+  // span uniforme (updateAssetContent strippava per-char). Server agora eh
+  // a autoridade — qualquer caller pode mandar content cru, server canonifica.
+  if (textChanged && oldAsset?.type === "TEXT") {
+    const oldSpansParsed = parseContent(oldAsset.content)
+    const oldPerChar = spansToFullPerChar(oldSpansParsed)
+    const migratedPerChar = migrateStyles(oldText, newText, oldPerChar)
+    const newDefault = spansDefaultStyle(newSpansParsed)
+    const canonicalSpans = buildSpansFromPerChar(newText, newDefault, migratedPerChar)
+    data.content = JSON.stringify(canonicalSpans)
+  }
   // Edge: newText vazio (user apagou tudo pra re-escrever). NÃO migrar
   // overrides.text/styles agora — preservar quebras de linha que o user
   // criou nas peças. Próximo save (quando ele digitar de novo) faz o

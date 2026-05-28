@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { regeneratePieceThumbsForAsset, regenerateKVThumb } from "@/lib/regenerateThumbs"
+import { putAsset } from "@/lib/assetWriter"
 import TopNav from "@/components/TopNav"
 import { CampaignSubnav } from "@/components/campaign/CampaignSubnav"
 import { useSetActiveClient } from "@/lib/activeClientContext"
@@ -531,11 +532,12 @@ export default function CampaignAssetsPage() {
     setSavingMap(m => ({ ...m, [assetId]: true }))
     ;(async () => {
       try {
-        await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: newSpans, value: newText, label: newLabel })
-        })
+        // CORE 2 (2026-05-28): putAsset canonico. Server canonifica content
+        // (sentinela + per-char preservado via Myers LCS), migra
+        // lastOverride/kv/pieces transacional, e broadcasta.
+        await putAsset(id, assetId, { content: newSpans, value: newText, label: newLabel })
+      } catch (e) {
+        console.warn("[putAsset] failed:", e)
       } finally {
         setSavingMap(m => ({ ...m, [assetId]: false }))
       }
