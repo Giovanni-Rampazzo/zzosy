@@ -802,73 +802,26 @@ function applyShapePathInPlace(obj: any, newPathD: string): void {
  * setShapeProp("strokeWidth", ...) possa ajustar corretamente sem dobrar
  * indefinidamente em re-aplicacoes.
  */
-function applyStrokePositionVisual(p: any, position: "inside" | "center" | "outside", PathCtor: any): void {
+function applyStrokePositionVisual(p: any, _position: "inside" | "center" | "outside", _PathCtor: any): void {
+  // SIMPLIFICADO 2026-05-27: hack visual de inside/outside via clipPath +
+  // strokeWidth dobrado causava bugs em cascata (shape invisivel em paths
+  // com coords absolutas, strokeWidth dobrando a cada save/reload). User
+  // reportou: "esse erro no editor e por causa de mascara".
+  //
+  // Position eh PRESERVADO como metadata em p.__strokePosition pra round-
+  // trip PSD (export grava em vectorStroke.lineAlignment). No editor, sempre
+  // renderiza com Fabric center-stroke nativo. Trade-off aceito: editor nao
+  // mostra preview visual exato de inside/outside, mas o PSD ROUND-TRIP esta
+  // correto e o editor nunca quebra.
+  //
+  // __naturalStrokeWidth fica == strokeWidth (nao tem mais doubling).
   const naturalW = typeof p.__naturalStrokeWidth === "number"
     ? p.__naturalStrokeWidth
     : (p.strokeWidth ?? 0)
   p.__naturalStrokeWidth = naturalW
-
-  // Reset state de aplicacao anterior
   if (p.clipPath && p.clipPath.__zzosyStrokePosClip) p.clipPath = null
-  // paintFirst default Fabric eh "fill" — restaurar
   p.set("paintFirst", "fill")
-
-  if (position === "center" || naturalW === 0) {
-    p.set("strokeWidth", naturalW)
-    return
-  }
-
-  // Helper: converte p.path (array de comandos) → SVG d-string.
-  // Fabric arma `path` como array tipo [['M', x, y], ['L', x, y], ...].
-  // Pra criar clipPath via new Path(d, ...), precisamos do d-string.
-  function pathArrayToDString(arr: any[]): string {
-    if (!Array.isArray(arr)) return ""
-    return arr.map(cmd => {
-      if (!Array.isArray(cmd) || cmd.length === 0) return ""
-      // cmd[0] = letter, resto = numbers
-      return cmd[0] + (cmd.length > 1 ? " " + cmd.slice(1).join(" ") : "")
-    }).join(" ")
-  }
-
-  if (position === "inside") {
-    // Stroke 2*W + clipPath = silhueta do path (absolutePositioned).
-    // Resultado: 2*W desenhado, mas clip mantem so o que CAI DENTRO do path
-    // → visual = W pra dentro (1 lado do stroke 2*W).
-    p.set("strokeWidth", naturalW * 2)
-    try {
-      const arr = (p as any).path
-      const dString = typeof arr === "string" ? arr : pathArrayToDString(arr)
-      if (!dString) return
-      // Fabric clipPath: por convencao usa originX/Y = "center" pra alinhar
-      // com o CENTRO do objeto-pai (independente do origin do pai). NAO usar
-      // absolutePositioned + left/top — gera offset porque Fabric.Path tem
-      // pathOffset interno que move o conteudo relativo a left/top do obj.
-      // Path com mesmas coords + originX:'center' + originY:'center' fica
-      // EXATAMENTE sobreposto ao path-pai (em local space do pai).
-      const clip = new PathCtor(dString, {
-        originX: "center",
-        originY: "center",
-        fill: "black", // qualquer cor — clipPath usa SO a silhueta
-        stroke: undefined,
-        strokeWidth: 0,
-        // CRITICO: nao exporta nem aparece em snapshots. clipPath eh runtime
-        // visual hack, NUNCA persiste. Sem isso, JSON do canvas inclui clipPath
-        // duplicada e undo/save criam state inconsistente.
-        excludeFromExport: true,
-      })
-      ;(clip as any).__zzosyStrokePosClip = true
-      p.clipPath = clip
-    } catch (e) {
-      console.warn("[strokePos] inside clip falhou:", e)
-    }
-    return
-  }
-
-  // outside: stroke 2*W com paintFirst='stroke'. Fabric paintFirst='stroke'
-  // desenha stroke ANTES de fill. Fill cobre a metade INTERNA do stroke 2*W
-  // → resultado visual: so a metade EXTERNA (1*W pra fora do path).
-  p.set("strokeWidth", naturalW * 2)
-  p.set("paintFirst", "stroke")
+  p.set("strokeWidth", naturalW)
 }
 
 /**
@@ -11918,7 +11871,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             const currentFillAlpha = fillParsed.alpha
             const currentStrokeHex = strokeParsed.hex || ""
             const currentStrokeAlpha = strokeParsed.alpha
-            const currentStrokeWidth = (selected as any).strokeWidth ?? 0
+            // UI mostra o valor NATURAL (que o user setou), nao o dobrado pelo
+            // hack visual de inside/outside. Sem isso, user via 20px quando
+            // setou 10 + position=inside — confunde + slider re-aplica em
+            // cima do dobrado virando 40px no proximo change.
+            const currentStrokeWidth = typeof (selected as any).__naturalStrokeWidth === "number"
+              ? (selected as any).__naturalStrokeWidth
+              : ((selected as any).strokeWidth ?? 0)
             const shapeKind = (selected as any).__shapeKind as ("rectangle"|"roundedRect"|"ellipse"|undefined)
             const currentCornerRadius = (selected as any).__cornerRadius ?? 20
             // Dimensoes do shape: PRIORIDADE pro path interno (__pathBbox).
