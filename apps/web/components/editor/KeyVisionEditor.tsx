@@ -9164,6 +9164,40 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
    *
    * Suporta ActiveSelection: move todo o grupo preservando spacing relativo.
    */
+  /**
+   * Encaixa o objeto selecionado no canvas — escala pra que ele ocupe o
+   * canvas inteiro preservando aspect ratio + posiciona no centro.
+   * User pediu 2026-05-27: 'botoes de fit e center no properties'.
+   */
+  function fitSelectedToCanvas() {
+    const fc = fabricRef.current; if (!fc) return
+    const active = fc.getActiveObject() as any
+    if (!active) return
+    if (active.__isBg || active.__isBleedOverlay) return
+    const cw = canvasWRef.current
+    const ch = canvasHRef.current
+    // dims intrinsecos do obj (sem scale)
+    const ow = active.width ?? 100
+    const oh = active.height ?? 100
+    if (ow <= 0 || oh <= 0) return
+    const scale = Math.min(cw / ow, ch / oh)
+    active.set({ scaleX: scale, scaleY: scale })
+    active.setCoords()
+    // Recentra apos scale
+    const newW = ow * scale
+    const newH = oh * scale
+    active.set({ left: (cw - newW) / 2, top: (ch - newH) / 2 })
+    active.setCoords()
+    fc.fire("object:modified", { target: active })
+    fc.requestRenderAll?.()
+  }
+
+  // Wrapper pro botao 'Centralizar' do properties — mesma logica do
+  // shortcut Cmd+Shift+C que ja existia (centerObjectInCanvas).
+  function centerSelectedOnCanvas() {
+    centerObjectInCanvas()
+  }
+
   function centerObjectInCanvas() {
     const fc = fabricRef.current; if (!fc) return
     const active = fc.getActiveObject() as any
@@ -12083,48 +12117,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       <span style={numFieldUnit}>px</span>
                     </div>
                   </div>
-                  {/* POSITION 2026-05-27: Photoshop lineAlignment.
-                      Roundtrip completo: reader extrai → asset.shape.stroke.position
-                      → editor visual (clipPath trick) → save (ov.strokePosition)
-                      → writer PSD (vectorStroke.lineAlignment). */}
-                  {(() => {
-                    const currentPos = (selected as any)?.__strokePosition ?? "center"
-                    const opts: Array<"inside" | "center" | "outside"> = ["inside", "center", "outside"]
-                    return (
-                      <div style={{ marginTop: 10 }}>
-                        <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
-                          Posição
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
-                          {opts.map(p => (
-                            <button
-                              key={p}
-                              type="button"
-                              onClick={() => setShapeProp("strokePosition", p)}
-                              style={{
-                                padding: "6px 4px",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                background: currentPos === p ? "#F5C400" : "transparent",
-                                color: currentPos === p ? "#111" : "#aaa",
-                                border: `1px solid ${currentPos === p ? "#F5C400" : "#333"}`,
-                                borderRadius: 4,
-                                cursor: "pointer",
-                                textTransform: "capitalize",
-                              }}
-                              title={
-                                p === "inside" ? "Stroke todo dentro do path" :
-                                p === "center" ? "Stroke metade dentro / metade fora (Photoshop default)" :
-                                "Stroke todo fora do path"
-                              }
-                            >
-                              {p === "inside" ? "Dentro" : p === "center" ? "Centro" : "Fora"}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })()}
                 </div>
 
                 {/* RAIO DO CANTO — SEMPRE renderiza pra qualquer shape selecionado
@@ -12169,6 +12161,68 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     </div>
                   )
                 })()}
+                {/* POSITION 2026-05-27: Photoshop lineAlignment, abaixo do
+                    corner radius (user pediu reorder). Save em ov.strokePosition
+                    + writer PSD (vectorStroke.lineAlignment). No editor sempre
+                    renderiza center-stroke; metadata so pra round-trip. */}
+                {(() => {
+                  const currentPos = (selected as any)?.__strokePosition ?? "center"
+                  const opts: Array<"inside" | "center" | "outside"> = ["inside", "center", "outside"]
+                  return (
+                    <div>
+                      <div style={secS}>Posição do stroke</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+                        {opts.map(p => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setShapeProp("strokePosition", p)}
+                            style={{
+                              padding: "6px 4px",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              background: currentPos === p ? "#F5C400" : "transparent",
+                              color: currentPos === p ? "#111" : "#aaa",
+                              border: `1px solid ${currentPos === p ? "#F5C400" : "#333"}`,
+                              borderRadius: 4,
+                              cursor: "pointer",
+                            }}
+                            title={
+                              p === "inside" ? "Stroke todo dentro do path (PSD: lineAlignment inside)" :
+                              p === "center" ? "Metade dentro / metade fora (PSD default)" :
+                              "Stroke todo fora do path (PSD: lineAlignment outside)"
+                            }
+                          >
+                            {p === "inside" ? "Dentro" : p === "center" ? "Centro" : "Fora"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+                {/* FIT TO CANVAS + CENTER NO CANVAS — user pediu 2026-05-27:
+                    'quero os botoes de fit e center'. Aplica ao shape selecionado:
+                    - Fit: ajusta scale pra ocupar 100% do canvas (mantem aspect)
+                    - Center: posiciona shape no centro do canvas (mantem dims) */}
+                <div>
+                  <div style={secS}>Posicionar no canvas</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                    <button type="button"
+                      onClick={() => fitSelectedToCanvas()}
+                      style={{ padding: "6px 4px", fontSize: 11, fontWeight: 600,
+                        background: "transparent", color: "#aaa",
+                        border: "1px solid #333", borderRadius: 4, cursor: "pointer" }}
+                      title="Ajusta o layer pra ocupar o canvas inteiro (preserva aspect ratio)"
+                    >Encaixar</button>
+                    <button type="button"
+                      onClick={() => centerSelectedOnCanvas()}
+                      style={{ padding: "6px 4px", fontSize: 11, fontWeight: 600,
+                        background: "transparent", color: "#aaa",
+                        border: "1px solid #333", borderRadius: 4, cursor: "pointer" }}
+                      title="Centraliza o layer no canvas (mantem dimensoes)"
+                    >Centralizar</button>
+                  </div>
+                </div>
               </div>
             )
           })()
