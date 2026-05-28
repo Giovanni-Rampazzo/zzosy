@@ -665,7 +665,8 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
                 ...(pieceClickProps.style ?? {}),
               }}
             >
-              {renderPieceVisual({ withShadow: true })}
+              {/* User pediu 2026-05-27: sem dropshadow nas pecas da apresentacao */}
+              {renderPieceVisual()}
             </div>
           </div>
           {/* Botão '+ Legenda' relativo ao SLIDE inteiro (não ao container
