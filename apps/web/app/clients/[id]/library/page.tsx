@@ -219,7 +219,7 @@ export default function ClientLibraryPage() {
                   : "Nenhum asset com este filtro."}
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
                 {filtered.map(a => (
                   <div key={a.id} style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", display: "flex", flexDirection: "column", position: "relative" }}>
                     <div style={{ position: "absolute", top: 8, left: 8, zIndex: 2, background: TYPE_COLORS[a.type] ?? "#888", color: "white", fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, letterSpacing: 0.3 }}>
@@ -262,18 +262,18 @@ export default function ClientLibraryPage() {
                           ))}
                         </div>
                       )}
-                      <div style={{ display: "flex", gap: 4, marginTop: 4, justifyContent: "center", flexWrap: "nowrap" }}>
-                        {/* Padrao compacto do system (mesmo de /campaigns/[id] pecas):
-                            padding 2x7, font 10, outline. */}
+                      <div style={{ display: "flex", gap: 6, marginTop: 4, justifyContent: "center", flexWrap: "nowrap" }}>
+                        {/* Padrao compacto sweep 2026-05-28: padding 4x10,
+                            font 11, gap 6 (alinhado com /campaigns/[id] grid). */}
                         {confirmDelete === a.id ? (
                           <>
-                            <Button variant="danger" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => deleteAsset(a.id)}>Sim</Button>
-                            <Button variant="secondary" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => setConfirmDelete(null)}>Não</Button>
+                            <Button variant="danger" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => deleteAsset(a.id)}>Sim</Button>
+                            <Button variant="secondary" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => setConfirmDelete(null)}>Não</Button>
                           </>
                         ) : (
                           <>
-                            <Button variant="danger" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
-                            <Button variant="secondary" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Editar</Button>
+                            <Button variant="danger" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
+                            <Button variant="secondary" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Editar</Button>
                           </>
                         )}
                       </div>

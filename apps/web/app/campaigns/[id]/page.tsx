@@ -1071,13 +1071,13 @@ export default function CampaignOverviewPage() {
                         />
                       </td>
                       <td style={{ padding: "10px 12px", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", gap: 4 }}>
-                          {/* Botoes ~40% do size sm (60% menores): user pediu economia
-                              de espaco na row de 4 acoes equipotentes. */}
-                          <Button variant="danger" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
-                          <Button variant="info" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
-                          <Button variant="secondary" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
-                          <Button variant="view" size="sm" style={{ padding: "2px 7px", fontSize: 10, lineHeight: 1.2 }} onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
+                        <div style={{ display: "inline-flex", gap: 6 }}>
+                          {/* Sweep 2026-05-28: padding 4x10 + font 11 + gap 6,
+                              alinhado com grid view. Labels legiveis. */}
+                          <Button variant="danger" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
+                          <Button variant="info" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>
+                          <Button variant="secondary" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => router.push(`/pieces/${p.id}`)} title="Pagina detalhada (legenda, copy, detalhes, export)">Editar</Button>
+                          <Button variant="view" size="sm" style={{ padding: "4px 10px", fontSize: 11, lineHeight: 1.2 }} onClick={() => router.push(`/editor?campaignId=${id}&pieceId=${p.id}`)} title="Abrir no editor de canvas">Entrar</Button>
                         </div>
                       </td>
                     </tr>
