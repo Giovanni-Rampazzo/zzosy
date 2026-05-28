@@ -484,11 +484,23 @@ export default function CampaignAssetsPage() {
         prevText[prevText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
       ) suffixLen++
       // Style char-by-char pro newText
-      // SUBSTITUICAO detected: chars antigos foram trocados entre prefix/suffix?
-      // Se sim, novo texto herda do PRIMEIRO char SUBSTITUIDO (igual Adobe/Figma).
-      // Se nao (insercao pura), herda do vizinho da esquerda.
-      const hadReplacement = prevText.length > prefixLen + suffixLen
-      const replacedStyle = hadReplacement ? prevStyles[prefixLen] : undefined
+      // REGRA POSICIONAL (Adobe/Figma + server migrateStyles bate aqui):
+      //  - prefix: mantem style char-a-char do prev
+      //  - suffix: mantem style char-a-char do prev (alinhado pelo fim)
+      //  - meio: para CADA char, casa POSICIONAL contra os chars antigos
+      //    substituidos. Block 1:1 — char i do meio novo herda do char i
+      //    do meio antigo. Sobras (insert puro) herdam do vizinho esquerdo.
+      //
+      // Bug 2026-05-28 reportado pelo user: rebuildSpans usava UM replacedStyle
+      // fixo (prevStyles[prefixLen]) pra TODOS os chars do meio. Resultado:
+      // ABC -> DEF onde A=amarelo/B=azul/C=verde produzia D=E=F=amarelo (todos
+      // herdando do primeiro substituido). Server depois canonificava mas o
+      // optimistic update no cliente mostrava o errado primeiro.
+      const oldMiddleStart = prefixLen
+      const oldMiddleEnd = prevText.length - suffixLen
+      const newMiddleStart = prefixLen
+      const newMiddleEnd = newText.length - suffixLen
+      const oldMiddleLen = Math.max(0, oldMiddleEnd - oldMiddleStart)
       const newStyles: any[] = []
       for (let i = 0; i < newText.length; i++) {
         if (i < prefixLen) newStyles.push(prevStyles[i] ?? defaultStyle)
@@ -496,8 +508,16 @@ export default function CampaignAssetsPage() {
           const prevIdx = prevText.length - (newText.length - i)
           newStyles.push(prevStyles[prevIdx] ?? defaultStyle)
         } else {
-          const inheritedStyle = replacedStyle ?? (i > 0 ? newStyles[i - 1] : undefined)
-          newStyles.push(inheritedStyle ?? prevStyles[0] ?? defaultStyle)
+          // pos no meio: i - newMiddleStart. Casa contra oldMiddleStart + offset.
+          const middleOffset = i - newMiddleStart
+          if (middleOffset < oldMiddleLen) {
+            // Replace 1:1 posicional
+            newStyles.push(prevStyles[oldMiddleStart + middleOffset] ?? defaultStyle)
+          } else {
+            // Insert puro (sobra): herda do vizinho esquerdo
+            const inherited = i > 0 ? newStyles[i - 1] : (prevStyles[0] ?? defaultStyle)
+            newStyles.push(inherited)
+          }
         }
       }
       // Agrupa chars consecutivos com mesmo style em spans
