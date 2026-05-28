@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "build:analyze": "ANALYZE=true prisma generate && ANALYZE=true next build",
     "start": "prisma migrate deploy && next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
@@ -31,7 +32,6 @@
     "fabric": "^6.0.0",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
-    "lucide-react": "^0.383.0",
     "mysql2": "^3.9.0",
     "next": "^16.1.6",
     "next-auth": "^4.24.0",
@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",
+    "@next/bundle-analyzer": "^16.1.6",
     "@playwright/test": "^1.60.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
