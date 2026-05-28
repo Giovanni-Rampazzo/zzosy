@@ -208,44 +208,12 @@ export function ColorSwatchPicker({
         )}
       </div>
 
-      {/* Popup — lista de cores estilo Figma */}
+      {/* Popup — lista de cores estilo Figma. User pediu 2026-05-27:
+          remover header (native color picker + hex repeat) — cor atual
+          ja eh editavel pelo hex input do TRIGGER (inline acima). Popup
+          serve so pra escolher cores ja prontas (brand + default). */}
       {open && (
         <div ref={popupRef} style={popupS} onMouseDown={e => e.stopPropagation()}>
-          {/* Header: native color + hex + ∅ */}
-          <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #2a2a2a" }}>
-            <label style={{
-              width: 28, height: 28, borderRadius: 4,
-              background: /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : "#000000",
-              border: "1px solid #2a2a2a", cursor: "pointer",
-              position: "relative", overflow: "hidden", flexShrink: 0,
-            }}>
-              <input type="color"
-                value={/^#[0-9a-fA-F]{6}$/.test(hex) ? hex : "#000000"}
-                onChange={e => { setHex(e.target.value); onChange(e.target.value, undefined) }}
-                style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", border: 0 }} />
-            </label>
-            <input type="text" value={hex} placeholder="#RRGGBB"
-              onChange={e => {
-                const v = e.target.value
-                setHex(v)
-                if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(v, undefined)
-              }}
-              style={{
-                flex: 1, background: "#111", border: "1px solid #2a2a2a", color: "white",
-                fontSize: 12, padding: "5px 8px", borderRadius: 4, fontFamily: "monospace",
-                outline: "none", textTransform: "uppercase",
-              }} />
-            {allowEmpty && (
-              <button type="button" title="No color"
-                onClick={() => { setHex(""); onChange("", undefined); setOpen(false) }}
-                style={{
-                  width: 28, height: 28, padding: 0, cursor: "pointer",
-                  background: "#111", border: "1px solid #2a2a2a", color: "#aaa",
-                  borderRadius: 4, fontSize: 14, lineHeight: 1, fontFamily: "inherit",
-                }}>∅</button>
-            )}
-          </div>
-
           {/* List scrollavel */}
           {/* Filtra a cor ATUAL (value) das listas — ela ja eh mostrada no
               header com hex input. Mostrar de novo na lista eh duplicacao.
@@ -265,6 +233,19 @@ export function ColorSwatchPicker({
               const filteredDefaults = defaultSwatches.filter(c => c.toLowerCase() !== curLow)
               return (
                 <>
+                  {allowEmpty && value && (
+                    <button type="button"
+                      onClick={() => { setHex(""); onChange("", undefined); setOpen(false) }}
+                      style={{ ...itemS, background: "transparent" }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#1f1f1f" }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                    >
+                      <div style={{ width: 20, height: 20, borderRadius: 3, border: "1px solid #2a2a2a", flexShrink: 0,
+                        background: "linear-gradient(135deg, #fff 25%, #d0d0d0 25%, #d0d0d0 50%, #fff 50%, #fff 75%, #d0d0d0 75%)",
+                        backgroundSize: "8px 8px" }} />
+                      <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#aaa" }}>Nenhuma cor</div>
+                    </button>
+                  )}
                   {filteredBrand.length > 0 && (
                     <>
                       <div style={groupLabelS}>Brand colors</div>
