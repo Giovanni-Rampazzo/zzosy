@@ -18,269 +18,21 @@ import { inpS, numInpS, secS, numFieldGrid, numFieldRight, numFieldUnit } from "
 import { leadingPtToFabricLineHeight, applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
 import { loadGoogleFont, loadCustomFontFamily, ensurePsdFontsReady, forceLoadFontFaces, GOOGLE_FONTS } from "@/lib/google-fonts"
 import { useSetActiveClient } from "@/lib/activeClientContext"
+import { editorLog, clampTinyFontSize } from "@/lib/editor/editorLogger"
+import type {
+  TextSpan, Asset, Layer, BrandColor, CustomFontFile, Campaign,
+  BgGradientStop, BgBlendMode, BgLayerCommon, BgImageFit, BgLayerData,
+} from "@/lib/editor/types"
 // Monkey-patch Fabric pra suportar charSpacing per-char (Adobe-style letter
 // spacing por trecho). Side-effect import — roda no module init UMA VEZ.
 import "@/lib/fabricCharSpacingPatch"
 
-// Em produção, warnings de saude do editor (objetos orfaos, race conditions, etc)
-// poluem o console sem valor pro user final. Em dev, sao essenciais pra diagnostico.
-// editorLog encapsula isso — silenciamos em prod mas mantemos warnings reais
-// (falhas de upload, erros de PATCH) via console.warn direto.
-const isDev = process.env.NODE_ENV !== "production"
-function editorLog(...args: any[]) {
-  if (isDev) console.warn(...args)
-}
-
-/**
- * Edge case PSD: overrides.fontSize box-level pode chegar quase-zero
- * (~0.158) quando o PSD tem leading mixed e o per-char styles carrega o
- * fontSize real. Sem clamping, Fabric Textbox cria com fontSize ~= 0,
- * shrink-to-content calcula expectedLines = altura / (fontSize * 1.2) =
- * milhares de linhas, condicao "lineCount === expectedLines" falha, e a
- * largura fica em 99999 (point-text default). Sintoma visivel: textbox
- * atravessa o canvas inteiro horizontalmente.
- *
- * Quando ov.fontSize < 1 e styles tem fontSizes per-char, retorna o MAX
- * dos per-char fontSizes. Senao retorna o valor original.
- */
-function clampTinyFontSize(fontSize: number | undefined, styles: any): number {
-  if (typeof fontSize !== "number") return fontSize ?? 80
-  if (fontSize >= 1) return fontSize
-  if (!styles || typeof styles !== "object") return fontSize
-  let maxFs = 0
-  for (const lineKey of Object.keys(styles)) {
-    const line = styles[lineKey]
-    if (!line || typeof line !== "object") continue
-    for (const colKey of Object.keys(line)) {
-      const fs = line[colKey]?.fontSize
-      if (typeof fs === "number" && fs > maxFs) maxFs = fs
-    }
-  }
-  return maxFs > 0 ? maxFs : fontSize
-}
-
-interface TextSpan {
-  text: string
-  style: { color?: string; fontSize?: number; fontWeight?: string; fontFamily?: string }
-}
-interface Asset {
-  id: string; type: string; label: string; value: string | null
-  imageUrl: string | null; content: any
-  lastOverride?: any
-  // Smart Object preservado do PSD original (round-trip ZZOSY ↔ Photoshop).
-  // null/undefined = asset eh IMAGE comum (PNG/JPG/SVG).
-  smartObject?: {
-    id: string
-    guid: string
-    filePath: string
-    mime: string
-    originalName: string
-    width: number | null
-    height: number | null
-  } | null
-}
-interface Layer {
-  assetId: string; posX: number; posY: number
-  scaleX: number; scaleY: number; rotation: number; zIndex: number; width: number; height?: number
-  overrides?: any
-}
-interface BrandColor {
-  hex: string
-  name?: string | null
-  role?: "principal" | "secundaria" | "apoio" | "neutra" | "primary" | "secondary"
-}
-interface CustomFontFile { url: string; weight: number; style: "normal" | "italic"; fileName: string }
-interface Campaign {
-  id: string; name: string
-  client: {
-    id: string; name: string
-    brandFont?: string | null
-    brandColors?: BrandColor[] | null
-    customFontFiles?: CustomFontFile[] | null
-  }
-  assets: Asset[]
-  keyVision: { bgColor: string; layers: Layer[] | null; width?: number; height?: number; data?: any } | null
-}
-
-// BG vira layer real (igual Photoshop). Pode ter varias empilhadas; ordem
-// no array = ordem visual (idx 0 = fundo, ultimo = mais em cima dos BGs,
-// mas TODOS abaixo de qualquer asset).
-type BgGradientStop = { offset: number; color: string }
-// BlendMode usa nomes Canvas API (= valores aceitos em globalCompositeOperation).
-// "source-over" eh o default ("Normal" no Photoshop).
-type BgBlendMode =
-  | "source-over" | "multiply" | "screen" | "overlay"
-  | "darken" | "lighten" | "color-dodge" | "color-burn"
-  | "hard-light" | "soft-light" | "difference" | "exclusion"
-  | "hue" | "saturation" | "color" | "luminosity"
-type BgLayerCommon = {
-  opacity: number
-  hidden?: boolean
-  locked?: boolean
-  blendMode?: BgBlendMode
-  mask?: any // reusa schema do __maskData dos asset layers
-  // Brand ref: indice em Client.brandColors. Quando setado, a cor solid
-  // (kind="solid") eh ressincronizada automaticamente com brandColors[idx].hex
-  // no load do canvas. Outros kinds ignoram esse campo.
-  colorBrandIdx?: number
-}
-type BgImageFit = "cover" | "contain" | "fill" | "tile"
-type BgLayerData =
-  | (BgLayerCommon & { kind: "solid"; color: string })
-  | (BgLayerCommon & { kind: "gradient"; gradientType: "linear" | "radial"; angle: number; stops: BgGradientStop[] })
-  | (BgLayerCommon & { kind: "image"; imageDataUrl: string; fit: BgImageFit })
-
 // Cor representativa do BG (usado pra alimentar espelhos legacy bgColor*Ref).
 // Solid: cor direta. Gradient: 1o stop. Image: branco (sem cor representavel).
-function bgLayerLegacyColor(l: BgLayerData | undefined): string {
-  if (!l) return "#ffffff"
-  if (l.kind === "solid") return l.color
-  if (l.kind === "gradient") return l.stops[0]?.color ?? "#ffffff"
-  return "#ffffff"
-}
-
-// Migra um item bruto de JSON pra BgLayerData tipado. Preserva o `kind` se
-// presente (back-compat: pieces salvas com bgLayers gradient/image precisam
-// re-hidratar com o tipo certo, nao forcar tudo pra solid).
-function migrateBgLayerJson(l: any): BgLayerData {
-  const opacity = typeof l?.opacity === "number" ? l.opacity : 1
-  const hidden = l?.hidden === true ? true : undefined
-  const locked = l?.locked === true ? true : undefined
-  const colorBrandIdx = typeof l?.colorBrandIdx === "number" ? l.colorBrandIdx : undefined
-  if (l?.kind === "gradient" && Array.isArray(l.stops) && l.stops.length >= 2) {
-    return {
-      kind: "gradient",
-      gradientType: l.gradientType === "radial" ? "radial" : "linear",
-      angle: typeof l.angle === "number" ? l.angle : 90,
-      stops: l.stops.map((s: any) => ({ offset: Math.max(0, Math.min(1, s?.offset ?? 0)), color: typeof s?.color === "string" ? s.color : "#ffffff" })),
-      opacity, hidden, locked,
-    }
-  }
-  if (l?.kind === "image" && typeof l.imageDataUrl === "string" && l.imageDataUrl) {
-    const fit: BgImageFit = (l.fit === "contain" || l.fit === "fill" || l.fit === "tile") ? l.fit : "cover"
-    return { kind: "image", imageDataUrl: l.imageDataUrl, fit, opacity, hidden, locked }
-  }
-  // Solid (default + fallback de items sem kind)
-  return { kind: "solid", color: typeof l?.color === "string" ? l.color : "#ffffff", opacity, hidden, locked, colorBrandIdx }
-}
-
-// Constroi o `fill` pro Fabric a partir dos dados do BG. Pra gradient,
-// gera fabric.Gradient com coords calculadas pelo angulo + dimensoes do
-// canvas (raio = max(w,h)/2 garante cobertura total em qualquer angulo).
-// Convencao do angulo: 0deg = horizontal esquerda→direita; 90deg =
-// vertical cima→baixo. Mesma convencao de editores graficos modernos.
-// Robustez: stop.color pode chegar como objeto serializado ({r,g,b} ou
-// similar) em pecas/matrizes legadas. Canvas addColorStop crasha com
-// "could not be parsed as a color" — normaliza pra string CSS antes.
-function safeColorString(v: any): string {
-  if (typeof v === "string" && v) return v
-  if (v && typeof v === "object") {
-    const r = typeof v.r === "number" ? v.r : null
-    const g = typeof v.g === "number" ? v.g : null
-    const b = typeof v.b === "number" ? v.b : null
-    if (r !== null && g !== null && b !== null) {
-      const a = typeof v.a === "number" ? v.a : 1
-      return `rgba(${r},${g},${b},${a})`
-    }
-  }
-  return "#ffffff"
-}
-
-function buildBgFill(layer: BgLayerData, w: number, h: number, Gradient: any): any {
-  if (layer.kind === "solid") return safeColorString(layer.color)
-  if (layer.kind === "gradient") {
-    const rad = (layer.angle * Math.PI) / 180
-    const cx = w / 2, cy = h / 2
-    if (layer.gradientType === "radial") {
-      const r = Math.hypot(w, h) / 2
-      return new Gradient({
-        type: "radial",
-        coords: { x1: cx, y1: cy, x2: cx, y2: cy, r1: 0, r2: r },
-        colorStops: layer.stops.map(s => ({ offset: s.offset, color: safeColorString(s.color) })),
-      })
-    }
-    const r = Math.max(w, h) / 2
-    const dx = Math.cos(rad) * r
-    const dy = Math.sin(rad) * r
-    return new Gradient({
-      type: "linear",
-      coords: { x1: cx - dx, y1: cy - dy, x2: cx + dx, y2: cy + dy },
-      colorStops: layer.stops.map(s => ({ offset: s.offset, color: safeColorString(s.color) })),
-    })
-  }
-  return "#ffffff"
-}
-
-// Sincroniza TODAS as props do BG layer no Rect Fabric: fill, opacity,
-// visible, blendMode (globalCompositeOperation), mask (clipPath via
-// applyMaskToFabricObject). Async pq fill pode envolver carregar imagem.
-async function syncBgLayerToRect(rect: any, layer: BgLayerData, w: number, h: number, fabricMod: any): Promise<void> {
-  await applyBgFillAsync(rect, layer, w, h, fabricMod)
-  rect.set("opacity", layer.opacity)
-  rect.set("visible", layer.hidden !== true)
-  rect.set("globalCompositeOperation", layer.blendMode ?? "source-over")
-  if (layer.mask) {
-    const { Image: FabImage, Path } = fabricMod
-    ;(rect as any).__maskData = layer.mask
-    ;(rect as any).clipPath = null
-    try { await applyMaskToFabricObject({ Image: FabImage, Path }, rect, layer.mask) }
-    catch (e) { console.warn("[bg-mask] falha:", e) }
-  } else {
-    delete (rect as any).__maskData
-    ;(rect as any).clipPath = null
-  }
-}
-
-// Carrega um <img> a partir dum data URL ou URL publica. Usado pra preparar
-// o source do Pattern (BG kind="image").
-function loadImageElement(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image()
-    img.crossOrigin = "anonymous"
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error("Falha ao carregar imagem"))
-    img.src = src
-  })
-}
-
-// Aplica o fill correto no Rect BG. Async porque image precisa carregar a
-// imagem + pre-renderizar (cover/contain/fill) ou montar Pattern (tile).
-async function applyBgFillAsync(rect: any, layer: BgLayerData, w: number, h: number, fabricMod: any): Promise<void> {
-  if (layer.kind !== "image") {
-    rect.set("fill", buildBgFill(layer, w, h, fabricMod.Gradient))
-    return
-  }
-  const { Pattern } = fabricMod
-  try {
-    const img = await loadImageElement(layer.imageDataUrl)
-    if (layer.fit === "tile") {
-      rect.set("fill", new Pattern({ source: img, repeat: "repeat" }))
-      return
-    }
-    // cover/contain/fill: pre-renderiza num canvas W×H com no-repeat
-    const aux = document.createElement("canvas")
-    aux.width = Math.max(1, Math.round(w))
-    aux.height = Math.max(1, Math.round(h))
-    const ctx = aux.getContext("2d")!
-    ctx.clearRect(0, 0, aux.width, aux.height)
-    if (layer.fit === "fill") {
-      ctx.drawImage(img, 0, 0, aux.width, aux.height)
-    } else {
-      const iw = img.naturalWidth || img.width || 1
-      const ih = img.naturalHeight || img.height || 1
-      const s = layer.fit === "cover"
-        ? Math.max(aux.width / iw, aux.height / ih)
-        : Math.min(aux.width / iw, aux.height / ih)
-      const dw = iw * s, dh = ih * s
-      const dx = (aux.width - dw) / 2, dy = (aux.height - dh) / 2
-      ctx.drawImage(img, dx, dy, dw, dh)
-    }
-    rect.set("fill", new Pattern({ source: aux, repeat: "no-repeat" }))
-  } catch (e) {
-    console.warn("[bg-image] falha ao aplicar imagem:", e)
-    rect.set("fill", "#ffffff")
-  }
-}
+import {
+  bgLayerLegacyColor, migrateBgLayerJson, safeColorString,
+  buildBgFill, loadImageElement, applyBgFillAsync, syncBgLayerToRect,
+} from "@/lib/editor/bgLayerHelpers"
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 // LW = LARGURA DEFAULT do painel de Layers (esquerda). Pode ser redimensionada
@@ -295,811 +47,22 @@ const PW_STORAGE_KEY = "zzosy.editor.propsPanelWidth"
 const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
 
-function parseContent(raw: any): TextSpan[] {
-  if (!raw) return []
-  if (typeof raw === "string") { try { return JSON.parse(raw) } catch { return [] } }
-  if (Array.isArray(raw)) return raw
-  return []
-}
+import {
+  parseContent, getSpans, textboxToSpans, migrateFlatStylesToLineIndexed,
+  spansToTextboxData, serializeTextboxOverrides,
+} from "@/lib/editor/textSpans"
+import {
+  parseSimpleSvgPathToFabric, applyShapePathInPlace, applyStrokePositionVisual,
+  serializeShapeOverrides,
+} from "@/lib/editor/shapeOverrides"
+import {
+  psdColorToHex, sampleHexAt, isCanvasUniform, extractPsdBgLayer,
+  psdTextLayerToOverride, applyPsdLayerMetadata,
+} from "@/lib/editor/psdImport"
+import {
+  HISTORY_PROPS_TO_INCLUDE, composeRasterMaskIntoImage, createBleedOverlays,
+} from "@/lib/editor/canvasOverlays"
 
-function getSpans(asset: Asset): TextSpan[] {
-  const c = parseContent(asset.content)
-  if (c.length) return c
-  const text = (asset.value?.trim()) || asset.label
-  return [{ text, style: { color: "#111111", fontSize: 80, fontWeight: "normal", fontFamily: "Arial" } }]
-}
-
-// Cor ag-psd → hex. ag-psd ora retorna 0..255, ora 0..1; normalizamos pelos
-// dois.
-function psdColorToHex(color: any): string {
-  if (!color) return "#000000"
-  const rr = color.r > 1 ? Math.round(color.r) : Math.round(color.r * 255)
-  const gg = color.g > 1 ? Math.round(color.g) : Math.round(color.g * 255)
-  const bb = color.b > 1 ? Math.round(color.b) : Math.round(color.b * 255)
-  return "#" + [rr, gg, bb].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("")
-}
-
-// Amostra pixel central dum canvas raster; retorna null se transparente.
-function sampleHexAt(c: HTMLCanvasElement, x: number, y: number): string | null {
-  try {
-    const ctx = c.getContext("2d")
-    if (!ctx) return null
-    const cx = Math.max(0, Math.min(c.width - 1, Math.floor(x)))
-    const cy = Math.max(0, Math.min(c.height - 1, Math.floor(y)))
-    const px = ctx.getImageData(cx, cy, 1, 1).data
-    if (px[3] === 0) return null
-    const h = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")
-    return `#${h(px[0])}${h(px[1])}${h(px[2])}`
-  } catch { return null }
-}
-
-// Detecta se um canvas raster eh uma cor solida uniforme. Amostra 9 pontos
-// (cantos, meio dos lados, centro) — se todos batem com tolerancia 2 em
-// cada canal, considera solido. Caso contrario tem desenho/textura/gradient
-// rasterizado e deve virar BG kind="image" pra preservar.
-function isCanvasUniform(c: HTMLCanvasElement): boolean {
-  const ctx = c.getContext("2d")
-  if (!ctx) return true
-  const w = c.width, h = c.height
-  if (w === 0 || h === 0) return true
-  const xs = [0, Math.floor(w / 2), w - 1]
-  const ys = [0, Math.floor(h / 2), h - 1]
-  let ref: Uint8ClampedArray | null = null
-  for (const y of ys) {
-    for (const x of xs) {
-      try {
-        const px = ctx.getImageData(x, y, 1, 1).data
-        if (!ref) { ref = px; continue }
-        if (
-          Math.abs(px[0] - ref[0]) > 2 ||
-          Math.abs(px[1] - ref[1]) > 2 ||
-          Math.abs(px[2] - ref[2]) > 2 ||
-          Math.abs(px[3] - ref[3]) > 2
-        ) return false
-      } catch { return false }
-    }
-  }
-  return true
-}
-
-// Tenta extrair um BG layer (BgLayerData) a partir dum layer PSD top-level.
-// Suporta:
-//  - Solid Color fill layer (vectorFill.type === 'color') → BG solid exato
-//  - Gradient fill layer (vectorFill.type === 'solid' + colorStops) → BG gradient
-//  - Layer raster cobrindo canvas → BG solid amostrado (pixel central)
-// Retorna null se nao for um BG candidato.
-function extractPsdBgLayer(layer: any, psdW: number, psdH: number): BgLayerData | null {
-  if (!layer) return null
-  const vf = layer.vectorFill
-  if (vf?.type === "color" && vf.color) {
-    return { kind: "solid", color: psdColorToHex(vf.color), opacity: 1 }
-  }
-  if (vf?.type === "solid" && Array.isArray(vf.colorStops) && vf.colorStops.length >= 2) {
-    // ag-psd normaliza location pra 0..1 (apos divisao por interpolation)
-    const stops: BgGradientStop[] = vf.colorStops.map((s: any) => ({
-      offset: Math.max(0, Math.min(1, s.location ?? 0)),
-      color: psdColorToHex(s.color),
-    }))
-    // ExtraGradientInfo: style + angle. Convencao PS: angle em graus, 0=cima.
-    // Nossa convencao: 0=L→R, 90=cima→baixo. Conversao: nosso = (psd - 180) % 360
-    const psStyle = vf.style ?? "linear"
-    const gradientType: "linear" | "radial" = psStyle === "radial" ? "radial" : "linear"
-    const psAngle = typeof vf.angle === "number" ? vf.angle : 0
-    const angle = ((psAngle - 180) % 360 + 360) % 360
-    return { kind: "gradient", gradientType, angle, stops, opacity: 1 }
-  }
-  if (layer.canvas) {
-    const c = layer.canvas as HTMLCanvasElement
-    // Se o raster eh uma cor solida uniforme, retorna como solid (mais leve
-    // que image base64 inline). Se tem desenho/textura/etc, preserva como
-    // BG kind="image" com dataURL — fit="cover" pra cobrir o canvas da peca
-    // qualquer que seja a proporcao do PSD.
-    if (isCanvasUniform(c)) {
-      const color = sampleHexAt(c, c.width / 2, c.height / 2)
-      if (color) return { kind: "solid", color, opacity: 1 }
-    } else {
-      try {
-        const dataUrl = c.toDataURL("image/png")
-        return { kind: "image", imageDataUrl: dataUrl, fit: "cover", opacity: 1 }
-      } catch (e) {
-        console.warn("[bg-import] toDataURL falhou, fallback solid:", e)
-        const color = sampleHexAt(c, c.width / 2, c.height / 2)
-        if (color) return { kind: "solid", color, opacity: 1 }
-      }
-    }
-  }
-  return null
-}
-
-// Extrai estilo de texto dum layer PSD pra um override do layer da peca.
-//
-// Cores/fontes/pesos: ag-psd guarda o estilo em DOIS lugares:
-//  - td.style: "default" do layer (frequentemente VAZIO ou so com campos
-//    parciais quando o designer usou Character panel pra estilizar)
-//  - td.styleRuns[]: lista de runs (segmentos contiguos) com style proprio
-//    cada. Quando o texto tem 1 cor so, ha 1 run cobrindo tudo. Quando tem
-//    cores diferentes (ex: "Robo" rosa + "jento" verde), ha varios runs.
-// Logica: pegamos defaults do 1o styleRun (fallback td.style). Se ha >1 run,
-// distribuimos as cores per-char no texto do ASSET proporcionalmente ao texto
-// do PSD (porque o texto do asset pode ter length diferente do PSD).
-//
-// `pieceScale` = scale do espaco do PSD pro espaco da peca. `pieceW/pieceH` ja
-// vem escalados. `assetText` = texto que vai renderizar (do asset.content) —
-// usado pra mapear styles per-char quando ha multiplos runs.
-function psdTextLayerToOverride(
-  layer: any, pieceScale: number, pieceW: number, pieceH: number, assetText: string,
-): any | null {
-  const td = layer?.text
-  if (!td) return null
-  const fallbackStyle = td.style ?? {}
-  const runs: any[] = td.styleRuns ?? []
-  const primary = runs[0]?.style ?? fallbackStyle
-
-  const pickFontName = (s: any) => s?.font?.name ?? fallbackStyle?.font?.name ?? "Arial"
-  const pickFontSize = (s: any) => s?.fontSize ?? fallbackStyle?.fontSize ?? 48
-  const pickColor = (s: any) => {
-    if (s?.fillColor) return psdColorToHex(s.fillColor)
-    if (fallbackStyle?.fillColor) return psdColorToHex(fallbackStyle.fillColor)
-    return "#000000"
-  }
-  const pickWeight = (s: any, fontName: string) =>
-    (s?.fauxBold || fontName.toLowerCase().includes("bold")) ? "bold" : "normal"
-
-  const defFontName = pickFontName(primary)
-  const defFontSize = pickFontSize(primary)
-  const defColor = pickColor(primary)
-  const defWeight = pickWeight(primary, defFontName)
-
-  // ag-psd retorna fontSize NO ESPACO DO TEXTO (antes da transform). A
-  // transform 6-elem [a,b,c,d,e,f] aplica scale/rot/translate; pra fontSize
-  // visual real, multiplica pela magnitude de [a,b] (~= [c,d]). Sem isso,
-  // textos grandes saem com fontSize gigante (ex: 788 cru vs 189 visual).
-  const tform: number[] | undefined = td.transform
-  let textScale = 1
-  if (tform && tform.length >= 4) {
-    const sx = Math.hypot(tform[0] ?? 1, tform[1] ?? 0)
-    const sy = Math.hypot(tform[2] ?? 0, tform[3] ?? 1)
-    const avg = (sx + sy) / 2
-    if (Number.isFinite(avg) && avg > 0) textScale = avg
-  }
-  // Compoem: textScale (PSD interno → PSD visual) * pieceScale (PSD visual → peca).
-  const finalScale = textScale * pieceScale
-  const sizeOf = (s: any) => Math.max(1, Math.round(pickFontSize(s) * finalScale))
-
-  const ov: any = {
-    width: pieceW,
-    height: pieceH,
-    fontFamily: defFontName,
-    fontSize: sizeOf(primary),
-    fontWeight: defWeight,
-    fill: defColor,
-    charSpacing: 0,
-    lineHeight: 1.0, // Adobe-style auto leading, mesmo default de addAssetToCanvas
-    textAlign: "left",
-  }
-
-  // Multi-run: mapeia proporcionalmente ao texto do asset. Texto do asset pode
-  // ter qualquer length (≠ do PSD); convertemos a posicao de cada run em %
-  // do texto do PSD e aplicamos no range correspondente no texto do asset.
-  // Mantemos a estrutura linha-por-linha do Fabric (styles[lineIdx][colIdx]),
-  // pulando \n na contagem de chars estilizaveis (newlines nao tem style).
-  if (runs.length > 1 && assetText.length > 0) {
-    const psdTextLen = runs.reduce((acc, r) => acc + (r.length ?? 0), 0)
-    if (psdTextLen > 0) {
-      // Lista chars do asset com posicao (line,col) pra cada char nao-\n.
-      const cells: Array<{ line: number; col: number }> = []
-      let line = 0, col = 0
-      for (const ch of assetText) {
-        if (ch === "\n") { line++; col = 0; continue }
-        cells.push({ line, col })
-        col++
-      }
-      const assetCharLen = cells.length
-      if (assetCharLen > 0) {
-        const styles: Record<number, Record<number, any>> = {}
-        let psdCursor = 0
-        for (const run of runs) {
-          const rLen = run.length ?? 0
-          if (rLen <= 0) continue
-          const rStyle = run.style ?? {}
-          const fontName = pickFontName(rStyle)
-          const charStyle = {
-            fill: pickColor(rStyle),
-            fontSize: sizeOf(rStyle),
-            fontFamily: fontName,
-            fontWeight: pickWeight(rStyle, fontName),
-          }
-          // Range no asset proporcional ao range desse run no PSD
-          const startIdx = Math.floor((psdCursor / psdTextLen) * assetCharLen)
-          const endIdx = Math.floor(((psdCursor + rLen) / psdTextLen) * assetCharLen)
-          for (let i = startIdx; i < endIdx && i < assetCharLen; i++) {
-            const { line: ln, col: cl } = cells[i]
-            if (!styles[ln]) styles[ln] = {}
-            styles[ln][cl] = charStyle
-          }
-          psdCursor += rLen
-        }
-        if (Object.keys(styles).length > 0) ov.styles = styles
-      }
-    }
-  }
-
-  return ov
-}
-
-
-// Le os styles per-caractere de um Textbox e gera TextSpan[] fragmentado
-function textboxToSpans(obj: any): TextSpan[] {
-  const fullText: string = obj.text ?? ""
-  const styles = obj.styles ?? {}
-  const defaultStyle = {
-    color: obj.fill ?? "#111111",
-    fontSize: obj.fontSize ?? 80,
-    fontWeight: obj.fontWeight ?? "normal",
-    fontFamily: obj.fontFamily ?? "Arial",
-  }
-
-  if (!fullText) return [{ text: "", style: defaultStyle }]
-
-  const lines = fullText.split("\n")
-  const spans: TextSpan[] = []
-  let buf = ""
-  let bufStyle: any = null
-
-  for (let lineNum = 0; lineNum < lines.length; lineNum++) {
-    const line = lines[lineNum]
-    const lineStyles = styles[lineNum] ?? {}
-    for (let col = 0; col < line.length; col++) {
-      const cs = lineStyles[col] ?? {}
-      const charStyle = {
-        color: cs.fill ?? defaultStyle.color,
-        fontSize: cs.fontSize ?? defaultStyle.fontSize,
-        fontWeight: cs.fontWeight ?? defaultStyle.fontWeight,
-        fontFamily: cs.fontFamily ?? defaultStyle.fontFamily,
-      }
-      const key = JSON.stringify(charStyle)
-      if (bufStyle === null || JSON.stringify(bufStyle) === key) {
-        buf += line[col]
-        if (bufStyle === null) bufStyle = charStyle
-      } else {
-        spans.push({ text: buf, style: bufStyle })
-        buf = line[col]
-        bufStyle = charStyle
-      }
-    }
-    if (lineNum < lines.length - 1) {
-      buf += "\n"
-    }
-  }
-  if (buf) spans.push({ text: buf, style: bufStyle ?? defaultStyle })
-  return spans
-}
-
-// Migra pieces antigas salvas com styles "flat" — { 0: { globalCharIdx: ... } } —
-// pro novo schema indexado por LINHA — { lineIdx: { charInLine: ... } }.
-// Bug corrigido em 25839ad: Fabric Textbox usa estrutura por linha; antes
-// empilhavamos todos os chars em styles[0], entao Textbox dropava silenciosamente
-// chars de linha 1+ (audit H10). Pieces salvas antes do commit ficaram com flat
-// no banco e abriram quebradas. Esta funcao detecta + converte na hora do load.
-function migrateFlatStylesToLineIndexed(
-  text: string | undefined | null,
-  styles: any
-): any {
-  if (!styles || typeof styles !== "object") return styles
-  const keys = Object.keys(styles)
-  // Heuristica: so 1 key "0" + texto tem \n + algum charIdx > tamanho da 1a linha.
-  if (keys.length !== 1 || keys[0] !== "0") return styles
-  if (!text || !text.includes("\n")) return styles
-  const flat = styles["0"]
-  if (!flat || typeof flat !== "object") return styles
-  const lines = String(text).split("\n")
-  const firstLineLen = lines[0].length
-  const charKeys = Object.keys(flat).map(k => Number(k)).filter(Number.isFinite)
-  const hasBeyondFirstLine = charKeys.some(k => k >= firstLineLen)
-  if (!hasBeyondFirstLine) return styles // de fato so linha 0 — ja correto
-  const result: Record<number, Record<number, any>> = {}
-  for (const k of charKeys) {
-    let acc = 0
-    for (let i = 0; i < lines.length; i++) {
-      const lineLen = lines[i].length
-      if (k < acc + lineLen) {
-        if (!result[i]) result[i] = {}
-        result[i][k - acc] = flat[k]
-        break
-      }
-      acc += lineLen + 1 // +1 pro \n
-      if (i === lines.length - 1) {
-        // overflow — joga no fim da ultima linha
-        if (!result[i]) result[i] = {}
-        result[i][Math.max(0, k - (acc - 1))] = flat[k]
-      }
-    }
-  }
-  return result
-}
-
-// Inverso: converte TextSpan[] em props para criar Textbox + styles per-char
-function spansToTextboxData(spans: TextSpan[]) {
-  if (!spans.length) return { text: "", styles: {}, defaultStyle: {} }
-  const fullText = spans.map(s => s.text).join("")
-  const defaultStyle = spans[0].style ?? {}
-  const styles: Record<number, Record<number, any>> = {}
-
-  let charIdx = 0
-  let lineNum = 0
-  let col = 0
-  for (const span of spans) {
-    const sStyle = span.style ?? {}
-    for (const ch of span.text) {
-      if (ch === "\n") {
-        lineNum++
-        col = 0
-        charIdx++
-        continue
-      }
-      const styleKey = JSON.stringify(sStyle)
-      const defaultKey = JSON.stringify(defaultStyle)
-      if (styleKey !== defaultKey) {
-        if (!styles[lineNum]) styles[lineNum] = {}
-        styles[lineNum][col] = {
-          fill: sStyle.color,
-          fontSize: sStyle.fontSize,
-          fontWeight: sStyle.fontWeight,
-          fontFamily: sStyle.fontFamily,
-        }
-      }
-      col++
-      charIdx++
-    }
-  }
-  return { text: fullText, styles, defaultStyle }
-}
-
-/**
- * FONTE UNICA DE VERDADE pra serializar overrides de TEXT layer.
- *
- * Antes esta logica vivia DUPLICADA em 6 sites diferentes (saveNow PECA,
- * saveNow MATRIZ, doSaveNow PECA, doSaveNow MATRIZ, step serialize, KV export).
- * Cada vez que adicionavamos uma prop nova (per-char styles, fillBrandIdx,
- * charSpacing, etc) atualizavamos 1-2 sites e esqueciamos o resto — drift
- * por copy-paste. User reportou multiplas vezes "cores per-char somem no
- * export", "tamanho errado", "tracking perdido" — todos os sintomas do
- * mesmo bug estrutural.
- *
- * Esta helper centraliza. Todos os save/export paths agora chamam aqui.
- * Adicionar prop nova = 1 lugar, propaga automaticamente.
- *
- * @param o objeto Fabric textbox/i-text
- * @param opts.preserveExplicitNewlinesOnly  Se true, so seta overrides.text
- *        quando o texto tem \n explicito (PECA save: caracteres vem do asset,
- *        apenas quebras locais via Enter persistem). Se false, sempre seta
- *        overrides.text (MATRIZ/KV export: texto live e fonte da verdade).
- */
-function serializeTextboxOverrides(
-  o: any,
-  opts: { preserveExplicitNewlinesOnly?: boolean } = {},
-): Record<string, any> {
-  const ov: Record<string, any> = {}
-  const text = typeof o.text === "string" ? o.text : ""
-  if (opts.preserveExplicitNewlinesOnly) {
-    if (text.includes("\n")) ov.text = text
-  } else {
-    ov.text = text
-    ov.content = text  // alias usado em alguns paths antigos do export
-  }
-  if (o.fill !== undefined) ov.fill = o.fill
-  if (typeof o.__fillBrandIdx === "number") ov.fillBrandIdx = o.__fillBrandIdx
-  if (o.fontSize !== undefined) ov.fontSize = o.fontSize
-  if (o.fontFamily !== undefined) ov.fontFamily = o.fontFamily
-  if (o.fontWeight !== undefined) ov.fontWeight = o.fontWeight
-  if (o.fontStyle && o.fontStyle !== "normal") ov.fontStyle = o.fontStyle
-  if (o.charSpacing !== undefined) ov.charSpacing = o.charSpacing
-  if (o.lineHeight !== undefined) ov.lineHeight = o.lineHeight
-  if (o.textAlign !== undefined) ov.textAlign = o.textAlign
-  if (o.leadingPt !== undefined && o.leadingPt !== null) ov.leadingPt = o.leadingPt
-  if (o.styles && Object.keys(o.styles).length > 0) ov.styles = o.styles
-  if (o.__dsLinked === false) ov.dsLinked = false
-  // Width fixa: persiste flag indicando que o user (ou PSD box text) escolheu
-  // uma largura especifica. Sem isso, ao re-abrir a peca, addAssetToCanvas
-  // trata como point text e o auto-fit shrink colapsa o width pra natural
-  // content width — perdendo o wrap escolhido. Bug grave reportado 2026-05-25.
-  if (o.__userResizedWidth) ov.userResizedWidth = true
-  if (typeof o.width === "number") ov.width = o.width
-  return ov
-}
-
-/**
- * Parser minimo de path SVG → formato interno do Fabric.Path
- *   `[ ["M", x, y], ["L", x, y], ["C", x1, y1, x2, y2, x, y], ["Z"] ]`
- *
- * Suporta apenas os comandos usados em lib/shapePaths.ts: M, L, C, Z (uppercase
- * absolutos). Pra geradores parametricos isso eh suficiente — paths importados
- * de PSD podem ter outros comandos mas esses NAO sao recomputados aqui (o
- * recompute so roda em shapes com __shapeKind setado, i.e., adicionadas via
- * "+ Forma" ou Live Shapes PSD).
- */
-function parseSimpleSvgPathToFabric(d: string): any[] {
-  const tokens = d.match(/[MLCZmlczMLCZ]|-?\d*\.?\d+(?:[eE][-+]?\d+)?/g) ?? []
-  const out: any[] = []
-  let i = 0
-  while (i < tokens.length) {
-    const cmd = tokens[i]
-    if (cmd === "M" || cmd === "L") {
-      out.push([cmd, Number(tokens[i + 1]), Number(tokens[i + 2])])
-      i += 3
-    } else if (cmd === "C") {
-      out.push([
-        cmd,
-        Number(tokens[i + 1]), Number(tokens[i + 2]),
-        Number(tokens[i + 3]), Number(tokens[i + 4]),
-        Number(tokens[i + 5]), Number(tokens[i + 6]),
-      ])
-      i += 7
-    } else if (cmd === "Z" || cmd === "z") {
-      out.push(["Z"])
-      i += 1
-    } else {
-      // Token nao reconhecido — pula pra evitar loop infinito
-      i += 1
-    }
-  }
-  return out
-}
-
-/**
- * Substitui o `d` (path SVG) de um Fabric.Path EXISTENTE in-place.
- * Reusa o objeto sem destrui-lo (preserva listeners, __assetId, selecao
- * ativa). Fabric v7: obj.path eh array de comandos; precisa parsear o
- * d string e atribuir. Depois marca dirty, recalcula bbox via
- * _calcDimensions e setCoords pra handles atualizarem.
- *
- * Usado por: setCornerRadius (slider de raio) e scaling hook (parametric
- * resize). Centralizado pra eliminar duplicacao + tratamento de erro.
- */
-function applyShapePathInPlace(obj: any, newPathD: string): void {
-  try {
-    const parsed = parseSimpleSvgPathToFabric(newPathD)
-    if (!parsed || !parsed.length) return
-    // _setPath eh a API CERTA do Fabric: atribui path E recalcula pathOffset
-    // a partir do novo bbox. Atribuir obj.path direto + _calcDimensions NAO
-    // atualiza pathOffset → o path fica desenhado fora da posicao visual
-    // esperada e o shape "some". Sintoma 2026-05-23: "mudei cornerRadius
-    // e shape desapareceu". Fabric draw faz translate(-pathOffset) entao
-    // se pathOffset acompanha bbox center, posicao visual (left, top) se
-    // mantem mesmo com mudanca de coords absolutas → relativas.
-    if (typeof obj._setPath === "function") {
-      // adjustPosition=FALSE: passar true faz Fabric chamar setPositionByOrigin
-      // que MOVE o objeto pra pathOffset coords. Queremos manter left/top como
-      // estavam (posicao visual constante) — _setPath atualiza pathOffset
-      // sozinho e isso ja eh suficiente pra render correto.
-      obj._setPath(parsed, false)
-    } else {
-      obj.path = parsed
-      if (typeof obj._calcDimensions === "function") obj._calcDimensions()
-    }
-    obj.dirty = true
-    if (obj.setCoords) obj.setCoords()
-  } catch (e) {
-    console.warn("[applyShapePathInPlace] falha:", e)
-  }
-}
-
-/**
- * Aplica stroke position (Photoshop lineAlignment) visualmente no Fabric.Path.
- * Fabric.js so renderiza stroke CENTERED no path. Pra inside/outside usamos
- * o trick "dobra strokeWidth + clipPath = silhueta do path":
- *
- *   - center:  Fabric default. strokeWidth = W, sem clip. Stroke metade
- *              dentro/fora do path.
- *   - inside:  strokeWidth = 2*W, clipPath = path proprio (absolutePositioned).
- *              Stroke desenhado 2*W dobrado, mas clip mantem so o que esta
- *              DENTRO do path. Resultado visual: W de stroke pra dentro.
- *   - outside: strokeWidth = 2*W, clipPath = path INVERTIDO (paintFirst trick).
- *              Stroke 2*W mas so a metade EXTERNA aparece. Implementado via
- *              dois objetos: ghost (stroke 2*W) + main (fill + stroke 0).
- *              Ghost atras + main na frente cobre a metade interna.
- *
- * Cada call salva o "natural strokeWidth" em __naturalStrokeWidth pra que
- * setShapeProp("strokeWidth", ...) possa ajustar corretamente sem dobrar
- * indefinidamente em re-aplicacoes.
- */
-function applyStrokePositionVisual(p: any, _position: "inside" | "center" | "outside", _PathCtor: any): void {
-  // SIMPLIFICADO 2026-05-27: hack visual de inside/outside via clipPath +
-  // strokeWidth dobrado causava bugs em cascata (shape invisivel em paths
-  // com coords absolutas, strokeWidth dobrando a cada save/reload). User
-  // reportou: "esse erro no editor e por causa de mascara".
-  //
-  // Position eh PRESERVADO como metadata em p.__strokePosition pra round-
-  // trip PSD (export grava em vectorStroke.lineAlignment). No editor, sempre
-  // renderiza com Fabric center-stroke nativo. Trade-off aceito: editor nao
-  // mostra preview visual exato de inside/outside, mas o PSD ROUND-TRIP esta
-  // correto e o editor nunca quebra.
-  //
-  // __naturalStrokeWidth fica == strokeWidth (nao tem mais doubling).
-  const naturalW = typeof p.__naturalStrokeWidth === "number"
-    ? p.__naturalStrokeWidth
-    : (p.strokeWidth ?? 0)
-  p.__naturalStrokeWidth = naturalW
-  if (p.clipPath && p.clipPath.__zzosyStrokePosClip) p.clipPath = null
-  p.set("paintFirst", "fill")
-  p.set("strokeWidth", naturalW)
-}
-
-/**
- * FONTE UNICA DE VERDADE pra serializar overrides de SHAPE (Fabric.Path).
- * Mesmo pattern do serializeTextboxOverrides — evita drift.
- */
-function serializeShapeOverrides(o: any): Record<string, any> {
-  const ov: Record<string, any> = {}
-  if (typeof o.fill === "string") ov.fill = o.fill
-  if (typeof o.stroke === "string") ov.stroke = o.stroke
-  // strokeWidth: quando strokePosition inside/outside, o hack visual DOBROU
-  // o.strokeWidth (p.set("strokeWidth", naturalW * 2)). Salvar o valor cru
-  // (o.strokeWidth) faria toda save DOBRAR — proximo reload aplicaria o hack
-  // de novo sobre o valor ja dobrado, criando blow-up infinito do stroke.
-  // Fonte de verdade: __naturalStrokeWidth (valor que o USER setou).
-  if (typeof o.strokeWidth === "number") {
-    const natural = typeof o.__naturalStrokeWidth === "number"
-      ? o.__naturalStrokeWidth
-      : o.strokeWidth
-    ov.strokeWidth = natural
-  }
-  // strokePosition: inside | center | outside. PSD lineAlignment.
-  // Mantido como custom prop __strokePosition no Fabric obj — Fabric nativo
-  // so renderiza centered, position visual eh aplicado via clipPath trick.
-  if (o.__strokePosition === "inside" || o.__strokePosition === "center" || o.__strokePosition === "outside") {
-    ov.strokePosition = o.__strokePosition
-  }
-  // cornerRadius: usado pelo Properties Panel pra slider de raio (roundedRect).
-  if (typeof o.__cornerRadius === "number") ov.cornerRadius = o.__cornerRadius
-  // bboxW/bboxH: dimensoes EFFECTIVE (path internal * scale). Multiplicar pelo
-  // scale eh CRITICO — sem isso o save captura bbox cru e o user perdia o
-  // resize que fez na canvas (user reportou export 3x menor que editor).
-  if (o.__shapeKind && o.__pathBbox) {
-    const bb = o.__pathBbox
-    const W = (bb.right ?? 0) - (bb.left ?? 0)
-    const H = (bb.bottom ?? 0) - (bb.top ?? 0)
-    const sX = typeof o.scaleX === "number" ? o.scaleX : 1
-    const sY = typeof o.scaleY === "number" ? o.scaleY : 1
-    if (W > 0 && H > 0) {
-      ov.bboxW = W * sX
-      ov.bboxH = H * sY
-    }
-  }
-  return ov
-}
-
-/**
- * FONTE UNICA DE VERDADE pra propagar metadados PSD do Fabric obj pro
- * objeto `layer` JSON serializado. Era duplicado em 4 sites do save
- * (PIECE/MATRIX/2x step) — cada vez que um novo metadado PSD entrava
- * (effects → nameSource → ...), tinha que tocar os 4 ou criava drift.
- *
- * Mutates `layer` setando os fields se o Fabric obj tem o equivalente
- * __psdXxx. Convencao: defaults (opacity=1, blendMode=source-over) sao
- * OMITIDOS pra nao inflar o JSON do DB.
- *
- * NOTA: srvLog de "mask ausente" fica FORA do helper (so o site MATRIX
- * quer esse warning — outros saves convivem com mask ausente sem alarme).
- */
-function applyPsdLayerMetadata(o: any, layer: any): void {
-  // Visibilidade + lock (eye/cadeado do PS). Antes era propagado so em 2 dos
-  // 4 sites — sweep agora garante consistencia em todos os saves.
-  if (o.__hidden === true) layer.hidden = true
-  if (o.__locked === true) layer.locked = true
-  // Mask (raster/vector/clipping). Sem srvLog aqui — caller decide se loga.
-  if ((o as any).__maskData) layer.mask = (o as any).__maskData
-  // Opacity (0..1) + blendMode (canvas globalCompositeOperation). Defaults
-  // (1 e "source-over") omitidos.
-  if (typeof o.opacity === "number" && o.opacity < 1) layer.opacity = o.opacity
-  if (typeof o.globalCompositeOperation === "string" && o.globalCompositeOperation && o.globalCompositeOperation !== "source-over") {
-    layer.blendMode = o.globalCompositeOperation
-  }
-  // Layer effects (drop shadow / stroke / outer glow) — round-trip PSD.
-  if ((o as any).__psdEffects && typeof (o as any).__psdEffects === "object") {
-    layer.effects = (o as any).__psdEffects
-  }
-  // 'lnsr' (Layer Name Source) — controla se PS auto-renomeia text layer.
-  if (typeof (o as any).__psdNameSource === "string") {
-    layer.nameSource = (o as any).__psdNameSource
-  }
-  // groupPath: hierarquia de folders do PSD (raiz → pai). Round-trip.
-  if (Array.isArray((o as any).__groupPath) && (o as any).__groupPath.length > 0) {
-    layer.groupPath = (o as any).__groupPath
-  }
-  // Smart Object preservation: marca que este layer eh um SO originario do PSD.
-  // No re-export, exportPiece detecta via asset.smartObject — mas a flag aqui
-  // serve como fallback se a relacao asset→smartObject for perdida no DB.
-  if ((o as any).__isSmartObject === true) {
-    layer.isSmartObject = true
-    if (typeof (o as any).__smartObjectGuid === "string") layer.smartObjectGuid = (o as any).__smartObjectGuid
-  }
-}
-
-/**
- * Pre-compoe uma raster mask DENTRO de uma imagem fonte. Fabric v6 renderiza
- * Image clipPath como silhueta solida (fill=black) — ignora alpha do PNG da
- * mask. A unica forma de obter alpha-mask real eh aplicar a mascara no
- * BITMAP antes de criar a FabricImage.
- *
- * @param sourceImg HTMLImageElement com a imagem do asset (ja carregada)
- * @param maskRaster { dataUrl, posX, posY, width, height } — em canvas coords
- * @param assetPosX/Y posicao do asset no canvas (pra calcular offset relativo)
- * @param assetW/H dimensoes naturais do asset
- * @param inverted se true, inverte o alpha (mascara mostra o oposto)
- * @returns HTMLCanvasElement com o asset mascarado, ou null em caso de erro
- */
-async function composeRasterMaskIntoImage(
-  sourceImg: HTMLImageElement,
-  maskRaster: { dataUrl: string; posX: number; posY: number; width: number; height: number },
-  assetPosX: number,
-  assetPosY: number,
-  assetW: number,
-  assetH: number,
-  inverted: boolean,
-  // Scale do layer no canvas (peca/matriz). Necessario pra converter coords:
-  // - maskRaster.posX/Y/W/H estao em CANVAS-SPACE (escala da peca)
-  // - assetPosX/Y estao em CANVAS-SPACE
-  // - sourceImg (assetW x assetH) esta em IMAGE-NATURAL-SPACE (sem escala)
-  // Pra desenhar a mask corretamente sobre a imagem natural, multiplicamos as
-  // coords da mask por (1/scaleX, 1/scaleY) — converte canvas→natural.
-  // Antes a mask era desenhada com coords da peca dentro de um canvas natural,
-  // ficando minuscula no quadrante 0,0 (sintoma: alpha aparecia num pedaco do
-  // layer e o resto sumia, peca importada de matriz quadrada pra Google wide
-  // mostrava so 25% do conteudo).
-  scaleX: number = 1,
-  scaleY: number = 1,
-): Promise<HTMLCanvasElement | null> {
-  if (typeof document === "undefined") return null
-  // Carrega a imagem da mask
-  const maskImg = await new Promise<HTMLImageElement | null>((resolve) => {
-    const im = new Image()
-    im.crossOrigin = "anonymous"
-    im.onload = () => resolve(im)
-    im.onerror = () => resolve(null)
-    im.src = maskRaster.dataUrl
-  })
-  if (!maskImg) return null
-
-  // Cria canvas do tamanho da imagem do asset (IMAGE-NATURAL-SPACE).
-  const canvas = document.createElement("canvas")
-  canvas.width = assetW
-  canvas.height = assetH
-  const ctx = canvas.getContext("2d")
-  if (!ctx) return null
-
-  // Etapa 1: desenha a imagem do asset normal.
-  ctx.drawImage(sourceImg, 0, 0, assetW, assetH)
-
-  // Etapa 2: aplica a mascara usando globalCompositeOperation.
-  // 'destination-in': keeps destination (asset) where mask is opaque, removes where mask is transparent.
-  // 'destination-out' (inverted): removes destination where mask is opaque.
-  ctx.globalCompositeOperation = inverted ? "destination-out" : "destination-in"
-  // CONVERSAO canvas-space → image-natural-space:
-  // ratio = 1/scale. Se scale==1 (matriz), ratio==1 e nada muda.
-  // Se scale<1 (peca menor que matriz), ratio>1 e mask se expande pra cobrir
-  // a area inteira da imagem natural — alinhada com o que renderiza no canvas.
-  const ratioX = scaleX !== 0 ? 1 / scaleX : 1
-  const ratioY = scaleY !== 0 ? 1 / scaleY : 1
-  const maskOffsetX = (maskRaster.posX - assetPosX) * ratioX
-  const maskOffsetY = (maskRaster.posY - assetPosY) * ratioY
-  const maskW = maskRaster.width * ratioX
-  const maskH = maskRaster.height * ratioY
-  ctx.drawImage(maskImg, maskOffsetX, maskOffsetY, maskW, maskH)
-  // Reset pra default (canvas pode ser reutilizado, mas geralmente nao — defensivo).
-  ctx.globalCompositeOperation = "source-over"
-  return canvas
-}
-
-/**
- * Cria 4 retangulos overlay que mascaram TUDO fora da peca dentro do
- * canvas visivel. A peca (cw x ch) renderiza centralizada no canvas;
- * os overlays cobrem a area cinza/escura ao redor.
- *
- * Em coords do mundo Fabric (zoom-independente):
- *   peca: (0,0) -> (cw, ch)
- *   canvas DOM em mundo: (-offsetX/z, -offsetY/z) -> ((fullW - offsetX)/z, (fullH - offsetY)/z)
- *
- * Os 4 overlays cobrem o complemento da peca dentro do canvas.
- *
- * Marca cada overlay com __isBleedOverlay = true e excludeFromExport=true.
- * Filtros em refreshLayers, save, undo, etc usam essa flag pra ignorar.
- *
- * Reutilizado em: init do canvas, applySnapshot (loadFromJSON limpa o
- * canvas), e applyZoom/resize (overlays redimensionam com zoom).
- */
-function createBleedOverlays(fc: any, Rect: any, cw: number, ch: number, fullW: number, fullH: number, z: number) {
-  const BLEED_FILL = "#1e1e1e" // mesmo background do wrapper do editor
-  // Em coords do mundo Fabric. Canvas DOM tem largura fullW em px DOM,
-  // mas com zoom z aplicado, o canvas "ve" fullW/z unidades de mundo.
-  // Como a peca esta centralizada via viewportTransform offset, o "0,0" do
-  // mundo esta em (offsetX, offsetY) no DOM. Em mundo, isso significa que
-  // o canvas mostra de (-offsetX/z) a ((fullW - offsetX)/z) em X.
-  const worldW = fullW / z
-  const worldH = fullH / z
-  const offsetX = (fullW - cw * z) / 2
-  const offsetY = (fullH - ch * z) / 2
-  const worldLeft = -offsetX / z   // ex.: -100 unidades de mundo se offset for 100 e zoom 1
-  const worldTop = -offsetY / z
-  const worldRight = worldLeft + worldW   // ex.: + worldW pra direita
-  const worldBottom = worldTop + worldH
-
-  // CRITICO: em zoom > 100% com peca > canvas DOM, offsetX vira negativo
-  // → worldLeft vira positivo (peca extrapola o canvas DOM). Os overlays
-  // "left/right/top/bottom" passariam a ter width/height NEGATIVO, o que
-  // Fabric renderiza com artefatos (gaps de mascara reportados em zoom >
-  // 170%). Quando o overlay nao se aplica (peca cobre toda visivel area
-  // naquela direcao), apenas pula a criacao dele.
-  const overlaysConfig: Array<{ left: number; top: number; width: number; height: number }> = []
-  // Top: do top do canvas ate o top da peca — so existe se worldTop < 0
-  if (worldTop < 0) {
-    overlaysConfig.push({ left: worldLeft, top: worldTop, width: worldW, height: -worldTop })
-  }
-  // Bottom: do bottom da peca ate o bottom do canvas — so existe se worldBottom > ch
-  if (worldBottom > ch) {
-    overlaysConfig.push({ left: worldLeft, top: ch, width: worldW, height: worldBottom - ch })
-  }
-  // Left: do left do canvas ate o left da peca — so existe se worldLeft < 0
-  if (worldLeft < 0) {
-    overlaysConfig.push({ left: worldLeft, top: 0, width: -worldLeft, height: ch })
-  }
-  // Right: do right da peca ate o right do canvas — so existe se worldRight > cw
-  if (worldRight > cw) {
-    overlaysConfig.push({ left: cw, top: 0, width: worldRight - cw, height: ch })
-  }
-  const overlays: any[] = []
-  for (const cfg of overlaysConfig) {
-    // Sanity: garante dimensoes positivas (clamp ultimo recurso pra evitar
-    // Fabric quebrar em arredondamentos extremos)
-    if (cfg.width <= 0 || cfg.height <= 0) continue
-    const o = new Rect(cfg)
-    o.set({
-      fill: BLEED_FILL,
-      selectable: false, evented: false, excludeFromExport: true,
-      hoverCursor: "default",
-    })
-    ;(o as any).__isBleedOverlay = true
-    fc.add(o)
-    overlays.push(o)
-  }
-  // Garante z-stack: overlays no topo (acima de objetos de conteudo).
-  for (const o of overlays) {
-    try { (fc as any).bringObjectToFront ? (fc as any).bringObjectToFront(o) : fc.bringToFront(o) } catch {}
-  }
-  ;(fc as any).__bleedOverlays = overlays
-  return overlays
-}
-
-/**
- * Props customizadas (alem das nativas do Fabric) que precisam entrar em
- * TODO snapshot do undo stack. Centralizado pra evitar drift entre os 3
- * sites que chamam toObject(...) (pushHistory, brand-sync re-snap, save
- * pre-undo) — adicionar prop nova = 1 linha aqui, propaga pra todos.
- *
- * Sem isso, undo "perdia" props sutilmente: novo override adicionado em
- * applyStyle (ex: cornerRadius, __shapeKind) so vai pro snap se estiver
- * nessa lista. User reportava como "undo perde X" — sintoma estrutural.
- */
-const HISTORY_PROPS_TO_INCLUDE = [
-  "__assetId", "__assetLabel", "__isBg", "__isImage", "__maskData",
-  "__clippingMask", "__embedded", "imageDataUrl", "__hidden", "__locked",
-  "__fillBrandIdx", "__psdEffects", "__psdNameSource", "__groupPath",
-  "__isSmartObject", "__smartObjectGuid", "__smartObjectMime",
-  "__smartObjectFilePath", "__smartObjectOriginalName",
-  // text — incluindo PSD shape type (point/box) pra round-trip + comportamento
-  // de wrap correto apos reload (sem isso, save → load perdia point text e
-  // textbox voltava a wrappar em width=bbox).
-  "styles", "leadingPt", "lineHeight", "charSpacing",
-  "__psdShapeType", "__psdBoxBounds",
-  "__paragraphSpaceAfter", "__psdParagraphSpaceAfter",
-  // shape
-  "__isShape", "__shapeKind", "__cornerRadius", "__pathBbox",
-  // stroke position visual hack: __strokePosition = inside|center|outside
-  // (user pref) + __naturalStrokeWidth = valor cru antes do hack dobrar.
-  // CRITICO: sem isso, undo restaura state com strokeWidth dobrado mas
-  // sem applicar o hack visual, ficando inconsistente.
-  "__strokePosition", "__naturalStrokeWidth",
-]
 
 export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, openGenerator }: { campaignId: string; pieceId?: string; from?: string; initialStepIndex?: number; openGenerator?: boolean }) {
   const router = useRouter()
@@ -1131,7 +94,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const assetContentPutTimer = useRef<any>(null)
   const assetContentPendingPayload = useRef<{ aid: string; payload: any } | null>(null)
   const [campaign, setCampaign] = useState<Campaign | null>(null)
-  // Hookea cliente da campaign no TopNav (logo da empresa substitui ZZOSY)
+  // Hookea cliente da campaign no TopNav (logo do cliente substitui ZZOSY)
   useSetActiveClient((campaign?.client as any) ? {
     id: (campaign!.client as any).id,
     name: (campaign!.client as any).name ?? "",
@@ -1185,7 +148,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     setActiveStepIndex(value)
   }
   const [selected, setSelected] = useState<any>(null)
-  // Toggle do popover "+ Add asset" ao lado do botao ASSETS no Properties.
+  // Toggle do popover "+ Add asset" ao lado do botao ASSETS (topo do Layers panel).
   const [showAddAsset, setShowAddAsset] = useState(false)
   // Auto-dismiss do popover de assets apos 3s sem interacao (user pedido
   // 2026-05-27: 'quando eu clicar em + quero que os assets desaparecam em
@@ -7331,7 +6294,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     try {
       // Sanitiza nomes pra filesystem (remove chars proibidos em paths)
       const safe = (s: string | undefined | null) =>
-        (s ?? "").replace(/[\\/:*?"<>| -]+/g, "_").trim() || "Unnamed"
+        (s ?? "").replace(/[\\/:*?"<>|]/g, "-").trim() || "untitled"
       // Busca info de MediaFormat (vehicle/media) — não vem direto no piece
       let vehicle = "No vehicle"
       let media = "No media"
@@ -9863,8 +8826,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
 
       {/* MONITOR TOOLBAR — so botoes relacionados ao canvas/zoom (user pedido
           2026-05-23: "central, so botoes relacionados ao monitor"). O Asset
-          picker + "+ Add to canvas" foi movido pra dentro de Properties, ao
-          lado do botao ASSETS. */}
+          picker + "+ Add to canvas" vive no topo do painel Layers (esquerda)
+          ao lado do botao ASSETS. */}
       <div style={{ position: "fixed", top: TH, left: effLayersPanelWidth, right: effPropsPanelWidth, minHeight: BH, background: "rgba(26,26,26,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "6px 16px", gap: 8, zIndex: 200 }}>
         {/* STEPS NAVIGATION movido pra ca (user pedido 2026-05-23) — eh
             relacionado ao monitor/canvas, nao navegacao principal. */}
@@ -10043,6 +9006,143 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = accentRgba(0.18) }}
           onMouseLeave={e => { if (!layersResizeRef.current) (e.currentTarget as HTMLElement).style.background = "transparent" }}
         />
+        {/* Atalho Assets — botao DIFERENCIAL do ZZOSY (sem analogo direto em
+            outros softwares de design). Stroke roxo + fill transparente +
+            UPPERCASE pra destaque visual maximo. User pediu 2026-05-22:
+            "Ele e um botao diferencial se relacionado aos outros softwares..
+            Entao vamos dar super destaque para ele". Movido pro topo da
+            coluna esquerda 2026-05-28 (assets/paginas/layers à esquerda,
+            properties/ferramentas à direita). */}
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid #2a2a2a", display: "flex", gap: 6, alignItems: "stretch", position: "relative" }}>
+          <button onClick={() => {
+            const go = () => router.push(`/campaigns/${campaignId}/assets`)
+            if (isDirtyRef.current) setConfirmExit(() => go)
+            else go()
+          }}
+            onMouseEnter={(e) => { (e.currentTarget.style.background = "rgba(168,85,247,0.12)") }}
+            onMouseLeave={(e) => { (e.currentTarget.style.background = "transparent") }}
+            style={{
+              flex: 1,
+              background: "transparent",
+              border: "1px solid #a855f7",
+              borderRadius: 6,
+              padding: "10px 14px",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              color: "#aaa",
+              textTransform: "uppercase",
+              letterSpacing: "1.5px",
+              textAlign: "center",
+              transition: "background 0.15s ease",
+            }}
+            title="Go to this campaign's assets page">
+            Assets
+          </button>
+          <button onClick={() => setShowAddAsset(v => !v)}
+            title="Add an asset to canvas"
+            style={{
+              background: showAddAsset ? "#a855f7" : "transparent",
+              border: "1px solid #a855f7",
+              borderRadius: 6,
+              padding: "0 14px",
+              fontSize: 18,
+              fontWeight: 700,
+              cursor: "pointer",
+              color: showAddAsset ? "#fff" : "#a855f7",
+              lineHeight: 1,
+              transition: "background 0.15s ease, color 0.15s ease",
+            }}>+</button>
+          {showAddAsset && (
+            <div
+              onMouseEnter={clearAddAssetDismissTimer}
+              onMouseLeave={startAddAssetDismissTimer}
+              style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 14, right: 14,
+                background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.4)", padding: 4, zIndex: 300,
+                display: "flex", flexDirection: "column", maxHeight: 360, overflowY: "auto",
+              }}>
+              {(campaign.assets ?? []).length === 0 ? (
+                <div style={{ padding: 12, fontSize: 12, color: "#666", textAlign: "center" }}>Nenhum asset</div>
+              ) : (
+                (campaign.assets ?? []).map((a: Asset) => {
+                  const fc = fabricRef.current
+                  const alreadyOnCanvas = a.type === "TEXT" && fc
+                    ? fc.getObjects().some((o: any) => o.__assetId === a.id)
+                    : false
+                  const typeColor = a.type === "TEXT" ? "#F5C400" : a.type === "SHAPE" ? "#86efac" : "#a855f7"
+                  let thumbContent: React.ReactNode
+                  if ((a.type === "IMAGE" || a.type === "SMART_OBJECT") && a.imageUrl) {
+                    // eslint-disable-next-line @next/next/no-img-element
+                    thumbContent = <img src={a.imageUrl} alt={a.label} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+                  } else if (a.type === "SHAPE") {
+                    const shape: any = typeof a.content === "string" ? (() => { try { return JSON.parse(a.content as any) } catch { return null } })() : (a.content as any)
+                    const path: string | null = shape?.path ?? null
+                    const fill: string = shape?.fill?.color ?? "#888"
+                    const bbox = shape?.pathBbox ?? null
+                    const vw = bbox ? Math.max(1, bbox.right - bbox.left) : 100
+                    const vh = bbox ? Math.max(1, bbox.bottom - bbox.top) : 100
+                    thumbContent = path ? (
+                      <svg viewBox={`${bbox?.left ?? 0} ${bbox?.top ?? 0} ${vw} ${vh}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%", display: "block" }}>
+                        <path d={path} fill={fill} />
+                      </svg>
+                    ) : <span style={{ fontSize: 14, color: typeColor, fontWeight: 700 }}>◇</span>
+                  } else {
+                    thumbContent = <span style={{ fontSize: 16, color: typeColor, fontWeight: 800, fontFamily: "Georgia, serif" }}>T</span>
+                  }
+                  return (
+                    <button
+                      key={a.id}
+                      disabled={alreadyOnCanvas}
+                      onClick={() => {
+                        if (alreadyOnCanvas) return
+                        setAssetId(a.id); assetIdRef.current = a.id
+                        void selectedTick
+                        addLayer()
+                        setShowAddAsset(false)
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        padding: "6px 8px",
+                        borderRadius: 4,
+                        fontSize: 12,
+                        color: alreadyOnCanvas ? "#555" : "#ddd",
+                        cursor: alreadyOnCanvas ? "not-allowed" : "pointer",
+                        textAlign: "left",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        opacity: alreadyOnCanvas ? 0.5 : 1,
+                        transition: "background 0.12s",
+                      }}
+                      onMouseEnter={e => { if (!alreadyOnCanvas) e.currentTarget.style.background = "#2a2a2a" }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "transparent" }}
+                    >
+                      <div style={{
+                        width: 28, height: 28, flexShrink: 0, borderRadius: 4,
+                        border: `1px solid ${typeColor}40`,
+                        background: "#1f1f1f",
+                        backgroundImage: "linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%)",
+                        backgroundSize: "8px 8px",
+                        backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        overflow: "hidden", padding: 2,
+                      }}>
+                        {thumbContent}
+                      </div>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {a.label}
+                      </span>
+                      {alreadyOnCanvas && <span style={{ fontSize: 10, color: "#666" }}>no canvas</span>}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          )}
+        </div>
         <div style={{ padding: "10px 14px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0, display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ flex: 1 }}>Layers</span>
           {/* Botao + Folder: cria folder novo movendo a selecao pra dentro.
@@ -10979,151 +10079,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           }}
         />
         <div style={{ padding: "12px 16px", ...secS, borderBottom: "1px solid #2a2a2a", marginBottom: 0 }}>Properties</div>
-        {/* Atalho Assets — botao DIFERENCIAL do ZZOSY (sem analogo direto em
-            outros softwares de design). Stroke roxo + fill transparente +
-            UPPERCASE pra destaque visual maximo no topo do Properties Panel.
-            User pediu 2026-05-22: "Ele e um botao diferencial se relacionado
-            aos outros softwares.. Entao vamos dar super destaque para ele". */}
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a2a2a", display: "flex", gap: 6, alignItems: "stretch", position: "relative" }}>
-          <button onClick={() => {
-            const go = () => router.push(`/campaigns/${campaignId}/assets`)
-            if (isDirtyRef.current) setConfirmExit(() => go)
-            else go()
-          }}
-            onMouseEnter={(e) => { (e.currentTarget.style.background = "rgba(168,85,247,0.12)") }}
-            onMouseLeave={(e) => { (e.currentTarget.style.background = "transparent") }}
-            style={{
-              flex: 1,
-              background: "transparent",
-              border: "1px solid #a855f7",
-              borderRadius: 6,
-              padding: "10px 14px",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-              color: "#aaa",
-              textTransform: "uppercase",
-              letterSpacing: "1.5px",
-              textAlign: "center",
-              transition: "background 0.15s ease",
-            }}
-            title="Go to this campaign's assets page">
-            Assets
-          </button>
-          {/* + ADD: abre popover com asset picker + add (user pedido 2026-05-23).
-              Substitui a toolbar central. */}
-          <button onClick={() => setShowAddAsset(v => !v)}
-            title="Add an asset to canvas"
-            style={{
-              background: showAddAsset ? "#a855f7" : "transparent",
-              border: "1px solid #a855f7",
-              borderRadius: 6,
-              padding: "0 14px",
-              fontSize: 18,
-              fontWeight: 700,
-              cursor: "pointer",
-              color: showAddAsset ? "#fff" : "#a855f7",
-              lineHeight: 1,
-              transition: "background 0.15s ease, color 0.15s ease",
-            }}>+</button>
-          {/* Lista direta 2026-05-24 (user pedido "mais agilidade"): click
-              no + mostra lista de assets imediato. Click em asset = adiciona +
-              fecha. Sem popover "Selecione um asset" intermediario. */}
-          {showAddAsset && (
-            <div
-              onMouseEnter={clearAddAssetDismissTimer}
-              onMouseLeave={startAddAssetDismissTimer}
-              style={{
-                position: "absolute", top: "calc(100% + 4px)", left: 16, right: 16,
-                background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
-                boxShadow: "0 8px 24px rgba(0,0,0,0.4)", padding: 4, zIndex: 300,
-                display: "flex", flexDirection: "column", maxHeight: 360, overflowY: "auto",
-              }}>
-              {(campaign.assets ?? []).length === 0 ? (
-                <div style={{ padding: 12, fontSize: 12, color: "#666", textAlign: "center" }}>Nenhum asset</div>
-              ) : (
-                (campaign.assets ?? []).map((a: Asset) => {
-                  const fc = fabricRef.current
-                  const alreadyOnCanvas = a.type === "TEXT" && fc
-                    ? fc.getObjects().some((o: any) => o.__assetId === a.id)
-                    : false
-                  const typeColor = a.type === "TEXT" ? "#F5C400" : a.type === "SHAPE" ? "#86efac" : "#a855f7"
-                  // Mini preview por linha (28x28 checker bg pra ver transparencia):
-                  //  IMAGE/SO  -> <img> com imageUrl
-                  //  TEXT      -> "T" no typeColor
-                  //  SHAPE     -> mini SVG do path com fill da shape
-                  let thumbContent: React.ReactNode
-                  if ((a.type === "IMAGE" || a.type === "SMART_OBJECT") && a.imageUrl) {
-                    // eslint-disable-next-line @next/next/no-img-element
-                    thumbContent = <img src={a.imageUrl} alt={a.label} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
-                  } else if (a.type === "SHAPE") {
-                    const shape: any = typeof a.content === "string" ? (() => { try { return JSON.parse(a.content as any) } catch { return null } })() : (a.content as any)
-                    const path: string | null = shape?.path ?? null
-                    const fill: string = shape?.fill?.color ?? "#888"
-                    const bbox = shape?.pathBbox ?? null
-                    const vw = bbox ? Math.max(1, bbox.right - bbox.left) : 100
-                    const vh = bbox ? Math.max(1, bbox.bottom - bbox.top) : 100
-                    thumbContent = path ? (
-                      <svg viewBox={`${bbox?.left ?? 0} ${bbox?.top ?? 0} ${vw} ${vh}`} preserveAspectRatio="xMidYMid meet" style={{ width: "100%", height: "100%", display: "block" }}>
-                        <path d={path} fill={fill} />
-                      </svg>
-                    ) : <span style={{ fontSize: 14, color: typeColor, fontWeight: 700 }}>◇</span>
-                  } else {
-                    thumbContent = <span style={{ fontSize: 16, color: typeColor, fontWeight: 800, fontFamily: "Georgia, serif" }}>T</span>
-                  }
-                  return (
-                    <button
-                      key={a.id}
-                      disabled={alreadyOnCanvas}
-                      onClick={() => {
-                        if (alreadyOnCanvas) return
-                        setAssetId(a.id); assetIdRef.current = a.id
-                        void selectedTick
-                        addLayer()
-                        setShowAddAsset(false)
-                      }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: "6px 8px",
-                        borderRadius: 4,
-                        fontSize: 12,
-                        color: alreadyOnCanvas ? "#555" : "#ddd",
-                        cursor: alreadyOnCanvas ? "not-allowed" : "pointer",
-                        textAlign: "left",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        opacity: alreadyOnCanvas ? 0.5 : 1,
-                        transition: "background 0.12s",
-                      }}
-                      onMouseEnter={e => { if (!alreadyOnCanvas) e.currentTarget.style.background = "#2a2a2a" }}
-                      onMouseLeave={e => { e.currentTarget.style.background = "transparent" }}
-                    >
-                      {/* Thumb 28x28 com checker bg pra ver transparencia + border tipo color */}
-                      <div style={{
-                        width: 28, height: 28, flexShrink: 0, borderRadius: 4,
-                        border: `1px solid ${typeColor}40`,
-                        background: "#1f1f1f",
-                        backgroundImage: "linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%)",
-                        backgroundSize: "8px 8px",
-                        backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        overflow: "hidden", padding: 2,
-                      }}>
-                        {thumbContent}
-                      </div>
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {a.label}
-                      </span>
-                      {alreadyOnCanvas && <span style={{ fontSize: 10, color: "#666" }}>no canvas</span>}
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          )}
-        </div>
         {(!selected || (selected as any).__isBg) ? (
           <div style={{ padding: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
