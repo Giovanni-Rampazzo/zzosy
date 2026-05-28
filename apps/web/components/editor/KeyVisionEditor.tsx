@@ -1842,29 +1842,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         pieceRef.current = p
         canvasWRef.current = pw
         canvasHRef.current = ph
-        // Robustez: bgColor SEMPRE string. DB legado pode ter objeto.
+        // CORE 3 (2026-05-28): bgLayers eh fonte canonica. bgColor/bgOpacity
+        // legacy DERIVADOS de bgLayers[0] — sem janela de inconsistencia.
+        // Migra legacy bgColor pra bgLayers solid se bgLayers ausente.
         const rawBg = pdata?.bgColor ?? camp.keyVision?.bgColor
-        const bg = typeof rawBg === "string" ? rawBg : "#ffffff"
-        bgColorRef.current = bg
-        const bop = typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1
-        bgOpacityRef.current = bop
-        // setBgOpacity sera re-chamado abaixo com o valor real de bgLayers[0]
-        // (caso divirja do legacy pdata.bgOpacity).
-        // Migra legacy → bgLayers[]: se pdata.bgLayers existe usa, senao cria
-        // um BG solid com bgColor/bgOpacity (compat com pieces antigas).
+        const bgLegacy = typeof rawBg === "string" ? rawBg : "#ffffff"
+        const bopLegacy = typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1
         bgLayersRef.current = Array.isArray(pdata?.bgLayers) && pdata.bgLayers.length > 0
-          ? pdata.bgLayers.map((l: any) => ({
-              kind: "solid",
-              color: typeof l.color === "string" ? l.color : "#ffffff",
-              opacity: typeof l.opacity === "number" ? l.opacity : 1,
-              hidden: l.hidden === true ? true : undefined,
-              locked: l.locked === true ? true : undefined,
-            }))
-          : [{ kind: "solid", color: bg, opacity: bop }]
-        // Re-sync bgColorRef/bgOpacityRef com bgLayers[0]. Sem isso, peca
-        // salva com bgColor legacy != bgLayers[0].color mostra cor divergente
-        // entre canvas (le bgLayersRef) e Properties panel (le bgColor state).
-        // 2026-05-28 bug reportado: panel rosa, canvas verde.
+          ? pdata.bgLayers.map(migrateBgLayerJson)
+          : [{ kind: "solid", color: bgLegacy, opacity: bopLegacy }]
         bgColorRef.current = bgLayerLegacyColor(bgLayersRef.current[0])
         bgOpacityRef.current = bgLayersRef.current[0].opacity ?? 1
         // STEPS: inicializa buffer dos steps inativos + indice ativo.
@@ -1884,7 +1870,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           : savedActive
         if (savedAllSteps.length >= 2) {
           // Peca multi-step: separa ativo dos inativos.
-          inactiveStepsRef.current = savedAllSteps.filter((_, i) => i !== requestedStep)
+          // DEEP-CLONE forcado: sem isso, os steps inativos compartilhavam
+          // refs com pdata parsed. Mutate em bgLayers/layers do step ativo
+          // (via canvas init) vazava pros inativos via shared ref. Bug
+          // sweep 2026-05-28.
+          inactiveStepsRef.current = savedAllSteps
+            .filter((_, i) => i !== requestedStep)
+            .map(s => JSON.parse(JSON.stringify(s)))
           setStepCountSync(savedAllSteps.length)
           setActiveStepIndexSync(requestedStep)
         } else {
@@ -4581,13 +4573,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // "rename salva no DB mas preview do editor nao muda — precisa entrar e sair".
     setSelectedTick(t => t + 1)
     setLayerVersion(v => v + 1)
-    // Persiste no banco
+    // Persiste no banco via canonical writer (CORE 2)
     try {
-      await fetch(`/api/campaigns/${campaignId}/assets/${assetId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: trimmed }),
-      })
+      const { putAsset } = await import("@/lib/assetWriter")
+      await putAsset(campaignId, assetId, { label: trimmed })
       // Atualiza state da campanha em memoria
       setCampaign(prev => prev ? {
         ...prev,

@@ -435,13 +435,15 @@ export default function CampaignAssetsPage() {
     if (!trimmed) return
     setCampaign({ ...campaign, assets: campaign.assets.map(a => a.id === assetId ? { ...a, label: trimmed } : a) })
     setSavingMap(m => ({ ...m, [assetId]: true }))
-    const res = await fetch(`/api/campaigns/${id}/assets/${assetId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: trimmed })
-    })
-    setSavingMap(m => ({ ...m, [assetId]: false }))
-    if (!res.ok) throw new Error("Falha ao salvar nome")
+    try {
+      // CORE 2: passa pelo canonical writer (centraliza broadcast, error
+      // handling, e gates futuros de migration).
+      await putAsset(id, assetId, { label: trimmed })
+    } catch (e) {
+      throw new Error("Falha ao salvar nome")
+    } finally {
+      setSavingMap(m => ({ ...m, [assetId]: false }))
+    }
   }
 
   function updateAssetText(assetId: string, newText: string) {
@@ -1135,19 +1137,8 @@ function ShapeColorEdit({ asset, campaignId }: { asset: any; campaignId: string 
     try {
       const s = typeof asset.content === "string" ? JSON.parse(asset.content) : (asset.content ?? {})
       const newContent = { ...s, fill: { ...(s?.fill ?? { kind: "solid" }), kind: "solid", color: hex } }
-      await fetch(`/api/campaigns/${campaignId}/assets/${asset.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: newContent }),
-      })
-      // Broadcast pro KV/pecas refrescarem
-      try {
-        if (typeof BroadcastChannel !== "undefined") {
-          const bc = new BroadcastChannel("zzosy:campaigns")
-          bc.postMessage({ type: "campaign-updated", campaignId, ts: Date.now() })
-          bc.close()
-        }
-      } catch {}
+      // CORE 2: canonical writer (centraliza broadcast + error handling)
+      await putAsset(campaignId, asset.id, { content: newContent })
     } finally { setSaving(false) }
   }, [asset.content, asset.id, campaignId])
   return (
