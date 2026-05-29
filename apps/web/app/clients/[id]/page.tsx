@@ -101,9 +101,10 @@ export default function ClientPage() {
                 swatches de cor, font name, Design System + Editar cliente
                 buttons removidos. Acesso a essas areas via /clients/[id]/edit
                 e /clients/[id]/design-system direto pelas URLs ou via outros
-                lugares do app (Configuracoes na edit page). */}
-            <ClientLogoBadge client={{id, name: client.name, brandLogoUrl: client.brandLogoUrl}} size={48} radius={8} />
-            <div style={{fontSize:22,fontWeight:700,color:"#111",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{client.name}</div>
+                lugares do app (Configuracoes na edit page).
+                Logo: 48→64 + texto "{client.name}" removido (CLAUDE 1.9 —
+                logo ja identifica, URL ja diz a pagina; texto era ruido). */}
+            <ClientLogoBadge client={{id, name: client.name, brandLogoUrl: client.brandLogoUrl}} size={64} radius={10} />
           </div>
           <Button variant="secondary" size="md" onClick={() => router.push(`/clients/${id}/library`)}>Library</Button>
         </div>
