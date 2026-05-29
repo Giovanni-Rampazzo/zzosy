@@ -6,12 +6,13 @@ import { useBrand } from "@/lib/useBrand"
 
 // Mídias = catalogo GLOBAL de formatos (dimensoes/veiculos) do tenant.
 // Tambem acessivel via /clients/[id]/edit > card "Formatos de midia".
+// Aprovação escondido temporariamente 2026-05-28 — pagina continua acessivel
+// via URL direta, so saiu da nav.
 const navLinks = [
   { href: "/dashboard", label: "Clientes" },
   { href: "/campaigns", label: "Campanhas" },
   { href: "/pieces", label: "Peças" },
   { href: "/medias", label: "Formatos" },
-  { href: "/approvals", label: "Aprovação" },
   { href: "/deliveries", label: "Entregas" },
 ]
 

@@ -6,13 +6,14 @@ import { useActiveClient } from "@/lib/activeClientContext"
 
 // Formatos = catalogo GLOBAL de formatos de midia (dimensoes/veiculos) do
 // tenant. Tambem acessivel via /clients/[id]/edit > card "Formatos de midia".
-// Fluxo: Clientes → Campanhas → Peças → Formatos → Aprovação → Entregas.
+// Fluxo: Clientes → Campanhas → Peças → Formatos → Entregas.
+// Aprovação escondido temporariamente 2026-05-28 — pagina /approvals continua
+// existindo, so saiu da nav.
 const links = [
   { href: "/dashboard", label: "Clientes" },
   { href: "/campaigns", label: "Campanhas" },
   { href: "/pieces", label: "Peças" },
   { href: "/medias", label: "Formatos" },
-  { href: "/approvals", label: "Aprovação" },
   { href: "/deliveries", label: "Entregas" },
 ]
 
