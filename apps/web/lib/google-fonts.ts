@@ -224,6 +224,25 @@ export function ensurePsdFontsReady(fontNames: string[]): number {
 // fazendo o browser puxar do CDN imediatamente. Promise resolve quando todas
 // loadStatus = "loaded" ou rejeitam (timeout). Best-effort: se Google demorar,
 // timeout libera o init pra continuar.
+// Espera o <link rel=stylesheet> de uma Google Font ter `.sheet` carregado
+// (CSS efetivamente parseado pelo browser) antes de continuar. Sem isso,
+// fonts.load() abaixo da falso positivo: browser PROMETE carregar mas o
+// @font-face ainda nao esta no CSSOM, e canvas mede fallback (serif/Arial).
+// Sintoma: peca abre no editor com fonte default em vez da fonte do PSD.
+async function awaitLinkSheet(family: string, timeoutMs: number): Promise<void> {
+  const linkId = `gfont-${family.replace(/\s+/g, "-")}`
+  const linkEl = document.getElementById(linkId) as HTMLLinkElement | null
+  if (!linkEl || linkEl.sheet) return
+  await Promise.race([
+    new Promise<void>((res) => {
+      const done = () => res()
+      linkEl.addEventListener("load", done, { once: true })
+      linkEl.addEventListener("error", done, { once: true })
+    }),
+    new Promise<void>((res) => setTimeout(res, timeoutMs)),
+  ])
+}
+
 export async function forceLoadFontFaces(
   familyNames: string[],
   timeoutMs: number = 3000,
@@ -236,6 +255,25 @@ export async function forceLoadFontFaces(
   // styleRuns mistos (Light + Bold) ter ambos prontos juntos.
   const weights = [100, 200, 300, 400, 500, 600, 700, 800, 900]
   const styles: ("normal" | "italic")[] = ["normal", "italic"]
+  // 1. Espera o <link rel=stylesheet> de CADA family carregar primeiro
+  // (paralelo). Sem este passo, fonts.load() abaixo da falso positivo —
+  // sintoma reportado: peca abre com fonte fallback default mesmo apos
+  // forceLoadFontFaces "resolver". feedback_font_detection_sheet aplicado
+  // aqui ao inves de so no detection do KV — antes era duplicado e nao
+  // cobria o modo PECA.
+  const linkWaits: Promise<void>[] = []
+  for (const fn of familyNames) {
+    const family = normalizePsdFontToGoogle(fn)
+    if (!family || SYSTEM_FONTS.has(family)) continue
+    linkWaits.push(awaitLinkSheet(family, timeoutMs))
+  }
+  if (linkWaits.length > 0) {
+    await Promise.race([
+      Promise.all(linkWaits),
+      new Promise<void>((r) => setTimeout(r, timeoutMs)),
+    ])
+  }
+  // 2. Agora sim: pede pro browser baixar cada @font-face efetivo
   const promises: Promise<any>[] = []
   for (const fn of familyNames) {
     const family = normalizePsdFontToGoogle(fn)
@@ -258,6 +296,11 @@ export async function forceLoadFontFaces(
     Promise.allSettled(promises),
     new Promise((r) => setTimeout(r, timeoutMs)),
   ])
+  // 3. Aguarda document.fonts.ready — garante que TODAS as fontes em flight
+  // (incluindo as carregadas via document.fonts) finalizem antes do Fabric
+  // medir textboxes. Sem isso ainda existia race entre fonts.load(spec)
+  // retornar e o canvas conseguir usar a fonte no proximo measure.
+  try { await Promise.race([(document as any).fonts?.ready, new Promise((r) => setTimeout(r, 1500))]) } catch {}
 }
 
 /**
