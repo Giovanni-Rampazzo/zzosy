@@ -12,6 +12,18 @@ interface Client {
   _count: { campaigns: number; pieces: number }; createdAt: string
 }
 
+// Container centralizado — padrao ZZOSY que comeca aqui (2026-05-28) pra todas
+// as paginas abaixo dos menus. "Conversando com o usuario no centro": conteudo
+// nao se espalha 100% da viewport, fica num eixo central confortavel de leitura.
+const CONTAINER_MAX_W = 1280
+
+// Padding compacto pros 4 botoes de acao (tokens em globals.css).
+const compactBtnStyle: React.CSSProperties = {
+  padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)",
+  fontSize: "var(--zz-btn-compact-fs)",
+  lineHeight: 1.2,
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [clients, setClients] = useState<Client[]>([])
@@ -22,6 +34,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("")
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
 
   useEffect(() => { fetchClients() }, [])
 
@@ -60,7 +73,6 @@ export default function DashboardPage() {
     setConfirmDelete(null)
   }
 
-  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
   async function duplicateClient(clientId: string) {
     setDuplicatingId(clientId)
     try {
@@ -78,57 +90,129 @@ export default function DashboardPage() {
 
   return (
     <PageShell>
-      <div className="p-8">
+      <div style={{ maxWidth: CONTAINER_MAX_W, margin: "0 auto", padding: "32px 24px 64px" }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: "#111", margin: "0 0 20px" }}>Clientes</h1>
 
-        {/* Padrao ZZOSY: botao de acao primaria dentro da box da lista, nao
-            em header separado acima. Header da tabela: titulos das colunas
-            + botao + Novo Cliente alinhado a direita. */}
-        <div style={{background:"white",borderRadius:10,border:"1px solid #E0E0E0",overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead>
-              <tr style={{borderBottom:"1px solid #E0E0E0"}}>
-                <th style={{padding:"8px 8px",width:72}}></th>
-                {["Cliente","Campanhas","Peças"].map(h => (
-                  <th key={h} style={{textAlign:"left",fontSize:11,fontWeight:600,color:"#888",textTransform:"uppercase",letterSpacing:"0.5px",padding:"8px 16px"}}>{h}</th>
-                ))}
-                <th style={{textAlign:"right",padding:"6px 16px"}}>
-                  <Button size="sm" onClick={() => setShowModal(true)}>+ Novo Cliente</Button>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && <tr><td colSpan={6} style={{textAlign:"center",padding:48,color:"#888",fontSize:13}}>Carregando...</td></tr>}
-              {!loading && clients.length === 0 && <tr><td colSpan={6} style={{textAlign:"center",padding:48,color:"#888",fontSize:13}}>Nenhum cliente ainda. Crie o primeiro!</td></tr>}
-              {clients.map(c => (
-                <tr key={c.id} style={{borderBottom:"1px solid #f0f0f0"}}>
-                  <td style={{padding:"8px 8px",cursor:"pointer"}} onClick={() => router.push(`/clients/${c.id}`)}>
-                    <RowThumb src={c.brandLogoUrl} alt={c.name} fallbackText={c.name} fallbackBg={colorFromString(c.name)} />
-                  </td>
-                  <td style={{padding:"12px 16px",fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={() => router.push(`/clients/${c.id}`)}>{c.name}</td>
-                  <td style={{padding:"12px 16px",fontSize:13}}>{c._count.campaigns}</td>
-                  <td style={{padding:"12px 16px",fontSize:13}}>{c._count.pieces}</td>
-                  <td style={{padding:"12px 16px",textAlign:"right"}}>
-                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      {confirmDelete === c.id ? (
-                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                          <span style={{fontSize:11,color:"#666"}}>Confirmar?</span>
-                          <Button variant="danger" size="sm" onClick={() => deleteClient(c.id)}>Sim</Button>
-                          <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(null)}>Não</Button>
-                        </div>
-                      ) : (
-                        <>
-                          <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
-                          <Button variant="info" size="sm" loading={duplicatingId === c.id} onClick={() => duplicateClient(c.id)}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</Button>
-                          <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${c.id}/edit`)}>Editar</Button>
-                          <Button variant="view" size="sm" onClick={() => router.push(`/clients/${c.id}`)}>Entrar</Button>
-                        </>
-                      )}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+          gap: 16,
+        }}>
+          {loading && Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+
+          {!loading && clients.map(c => {
+            const isConfirming = confirmDelete === c.id
+            const accent = colorFromString(c.name)
+            return (
+              <div
+                key={c.id}
+                style={{
+                  background: "white",
+                  borderRadius: 12,
+                  border: "1px solid #E0E0E0",
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                  transition: "box-shadow 0.15s, transform 0.15s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.06)"; e.currentTarget.style.transform = "translateY(-2px)" }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "translateY(0)" }}
+              >
+                {/* Thumb area: logo centralizada com fallback de inicial colorida.
+                    Cursor pointer pq clicar aqui = Entrar (atalho do botao Entrar). */}
+                <div
+                  onClick={() => router.push(`/clients/${c.id}`)}
+                  style={{
+                    height: 140,
+                    background: c.brandLogoUrl ? "#F5F5F0" : accent,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 20,
+                    position: "relative",
+                  }}
+                >
+                  {c.brandLogoUrl ? (
+                    <RowThumb src={c.brandLogoUrl} alt={c.name} size={100} rounded={8} fit="contain" />
+                  ) : (
+                    <div style={{
+                      color: "white",
+                      fontSize: 44,
+                      fontWeight: 700,
+                      letterSpacing: "-2px",
+                    }}>
+                      {c.name.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? "").join("")}
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  )}
+                </div>
+
+                {/* Nome + stats */}
+                <div
+                  onClick={() => router.push(`/clients/${c.id}`)}
+                  style={{ padding: "14px 16px 8px", cursor: "pointer", flex: 1 }}
+                >
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#111", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {c.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#666", display: "flex", gap: 8 }}>
+                    <span><strong style={{ color: "#111" }}>{c._count.campaigns}</strong> {c._count.campaigns === 1 ? "campanha" : "campanhas"}</span>
+                    <span>·</span>
+                    <span><strong style={{ color: "#111" }}>{c._count.pieces}</strong> {c._count.pieces === 1 ? "peça" : "peças"}</span>
+                  </div>
+                </div>
+
+                {/* Action row: 4 botoes outline (CLAUDE 1.1.B). Compact tokens
+                    pra caber em card de 280px. */}
+                <div style={{ padding: "10px 12px 12px", borderTop: "1px solid #f0f0f0", display: "flex", gap: "var(--zz-btn-compact-gap)" }}>
+                  {isConfirming ? (
+                    <>
+                      <span style={{ fontSize: 11, color: "#666", alignSelf: "center", marginRight: 4 }}>Confirmar?</span>
+                      <Button variant="danger" size="sm" style={compactBtnStyle} onClick={() => deleteClient(c.id)}>Sim</Button>
+                      <Button variant="secondary" size="sm" style={compactBtnStyle} onClick={() => setConfirmDelete(null)}>Não</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="danger" size="sm" style={{ ...compactBtnStyle, flex: 1 }} onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
+                      <Button variant="info" size="sm" style={{ ...compactBtnStyle, flex: 1 }} loading={duplicatingId === c.id} onClick={() => duplicateClient(c.id)}>{duplicatingId === c.id ? "..." : "Duplicar"}</Button>
+                      <Button variant="secondary" size="sm" style={{ ...compactBtnStyle, flex: 1 }} onClick={() => router.push(`/clients/${c.id}/edit`)}>Editar</Button>
+                      <Button variant="view" size="sm" style={{ ...compactBtnStyle, flex: 1 }} onClick={() => router.push(`/clients/${c.id}`)}>Entrar</Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Tile "+ Novo Cliente" dentro da grid — regra ZZOSY 2.5:
+              "+ Adicionar X" vive dentro da lista, nunca em header separado. */}
+          {!loading && (
+            <button
+              onClick={() => setShowModal(true)}
+              style={{
+                background: "transparent",
+                border: "2px dashed #C0C0B8",
+                borderRadius: 12,
+                cursor: "pointer",
+                minHeight: 280,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                color: "#888",
+                fontFamily: "inherit",
+                transition: "border-color 0.15s, color 0.15s, background 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#555"; e.currentTarget.style.color = "#111"; e.currentTarget.style.background = "rgba(255,255,255,0.5)" }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#C0C0B8"; e.currentTarget.style.color = "#888"; e.currentTarget.style.background = "transparent" }}
+            >
+              <div style={{ fontSize: 36, fontWeight: 300, lineHeight: 1 }}>+</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Novo Cliente</div>
+            </button>
+          )}
         </div>
       </div>
 
@@ -169,5 +253,23 @@ export default function DashboardPage() {
         />
       )}
     </PageShell>
+  )
+}
+
+function SkeletonCard() {
+  return (
+    <div style={{
+      background: "white",
+      borderRadius: 12,
+      border: "1px solid #E0E0E0",
+      overflow: "hidden",
+      minHeight: 280,
+    }}>
+      <div style={{ height: 140, background: "linear-gradient(90deg, #EDEDED 0%, #F5F5F5 50%, #EDEDED 100%)", backgroundSize: "200% 100%", animation: "rowthumb-pulse 1.2s ease-in-out infinite" }} />
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ height: 16, width: "60%", background: "#EDEDED", borderRadius: 4, marginBottom: 8 }} />
+        <div style={{ height: 12, width: "40%", background: "#EDEDED", borderRadius: 4 }} />
+      </div>
+    </div>
   )
 }
