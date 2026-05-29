@@ -631,11 +631,12 @@ export default function CampaignOverviewPage() {
           {campaign.keyVision?.thumbnailUrl ? (
             // KV scale ~60% (user pedido 2026-05-29): preview tomava espaco
             // demais e empurrava a lista de pecas pra fora do fold. maxHeight
-            // 320→190 (0.6x) + container minHeight 220→130 mantem o preview
-            // proporcional mas libera viewport pra lista de pecas geradas.
+            // 320→190 (0.6x) controla o tamanho dominante; width segue aspect
+            // ratio naturalmente. NAO usar maxWidth %: cria whitespace lateral
+            // estranho em coluna larga (~786px) com KV 16:9.
             <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
               loading="lazy" decoding="async"
-              style={{ maxWidth: "60%", maxHeight: 190, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+              style={{ maxWidth: "100%", maxHeight: 190, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
           ) : (
             <div
               onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
