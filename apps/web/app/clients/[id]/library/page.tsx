@@ -144,39 +144,14 @@ export default function ClientLibraryPage() {
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <TopNav />
       <div style={{ flex: 1, overflowY: "auto", padding: 32, background: "var(--zz-bg-page, #F5F5F0)" }}>
-        {/* Header igual padrao de outras paginas do cliente */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, gap: 16, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, flex: 1, minWidth: 0 }}>
-            <Button variant="view" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
-            {client && <ClientLogoBadge client={{ id, name: client.name, brandLogoUrl: client.brandLogoUrl }} size={48} radius={8} />}
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-              {client?.name} · Library
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button variant="secondary" size="md" onClick={() => setExportOpen(true)} disabled={assets.length === 0}>
-              Export cartridge
-            </Button>
-            <label style={{ cursor: importBusy ? "wait" : "pointer" }}>
-              <input
-                type="file"
-                accept=".zzosy,.zip"
-                style={{ display: "none" }}
-                onChange={e => {
-                  const f = e.target.files?.[0]
-                  if (f) importCartridge(f)
-                  e.target.value = ""
-                }}
-                disabled={importBusy}
-              />
-              <span style={{
-                display: "inline-block", padding: "8px 16px", border: "2px solid #555",
-                background: "white", color: "#111", fontWeight: 700, fontSize: 13,
-                borderRadius: 6, cursor: importBusy ? "wait" : "pointer", opacity: importBusy ? 0.5 : 1,
-              }}>
-                {importBusy ? "Importando..." : "Import cartridge"}
-              </span>
-            </label>
+        {/* Linha de navegacao (CLAUDE 1.2.1): SO Voltar + logo + titulo.
+            Actions Export/Import cartridge migram pro toolbar interno do
+            card de Assets — mesma regra das outras paginas. */}
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 24, gap: 16, flexWrap: "wrap" }}>
+          <Button variant="view" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
+          {client && <ClientLogoBadge client={{ id, name: client.name, brandLogoUrl: client.brandLogoUrl }} size={48} radius={8} />}
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+            {client?.name} · Library
           </div>
         </div>
 
@@ -208,6 +183,33 @@ export default function ClientLibraryPage() {
                 placeholder="Buscar nome / tag / slot..."
                 style={{ padding: "6px 10px", fontSize: 12, border: "1px solid #E0E0E0", borderRadius: 6, outline: "none", width: 200 }}
               />
+              {/* Export/Import cartridge: actions migradas da header pra ca
+                  (CLAUDE 1.2.1 — nav e action nao dividem linha). Toolbar
+                  do card eh o lugar canonico pra bulk-actions da lista. */}
+              <div style={{ width: 1, height: 24, background: "#E0E0E0", margin: "0 4px" }} />
+              <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)} disabled={assets.length === 0}>
+                Export cartridge
+              </Button>
+              <label style={{ cursor: importBusy ? "wait" : "pointer" }}>
+                <input
+                  type="file"
+                  accept=".zzosy,.zip"
+                  style={{ display: "none" }}
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) importCartridge(f)
+                    e.target.value = ""
+                  }}
+                  disabled={importBusy}
+                />
+                <span style={{
+                  display: "inline-block", padding: "5px 12px", border: "2px solid #555",
+                  background: "white", color: "#111", fontWeight: 600, fontSize: 12,
+                  borderRadius: 6, cursor: importBusy ? "wait" : "pointer", opacity: importBusy ? 0.5 : 1,
+                }}>
+                  {importBusy ? "Importando..." : "Import cartridge"}
+                </span>
+              </label>
             </div>
           </div>
 

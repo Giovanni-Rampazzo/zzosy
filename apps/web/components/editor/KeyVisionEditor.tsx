@@ -1508,8 +1508,17 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         absolutePositioned: true,
       })
 
-      fc.on("selection:created", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
-      fc.on("selection:updated", (e: any) => { if (alive) setSelected(e.selected?.[0] ?? null) })
+      // pushHistory({markDirty:false}) em selection events: user pediu undo
+      // "passo a passo" incluindo selecao/deselecao. markDirty=false pq isso
+      // eh UI state, nao mudanca de dado — nao trigger save prompt.
+      fc.on("selection:created", (e: any) => {
+        if (alive) setSelected(e.selected?.[0] ?? null)
+        if (isInitialized.current && !isApplyingHistory.current) pushHistory({ markDirty: false })
+      })
+      fc.on("selection:updated", (e: any) => {
+        if (alive) setSelected(e.selected?.[0] ?? null)
+        if (isInitialized.current && !isApplyingHistory.current) pushHistory({ markDirty: false })
+      })
       // Salva seleção de texto via mouse:up e keyup no canvas (text:selection:changed
       // nao dispara no Fabric v7). Intervalo de polling enquanto objeto esta em edicao.
       let selPollTimer: any = null
@@ -1527,7 +1536,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       // Limpa interval pendente no cleanup pro caso de unmount durante edicao.
       cleanupFns.push(() => { if (selPollTimer) clearInterval(selPollTimer) })
-      fc.on("selection:cleared", () => { if (alive) setSelected(null) })
+      fc.on("selection:cleared", () => {
+        if (alive) setSelected(null)
+        if (isInitialized.current && !isApplyingHistory.current) pushHistory({ markDirty: false })
+      })
       // Photoshop-style chain mask: a raster mask anda junto com o layer
       // quando o user move/redimensiona. Sem isso, mover o layer no editor
       // deixava a mask "presa" no canvas — visualmente o layer movia com a
@@ -2860,10 +2872,59 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
   }
 
-  function pushHistory() {
+  // SELECTION TRACKING NO UNDO (2026-05-28): user pediu que undo capture
+  // "passo a passo" incluindo selecao/deselecao de layer. Cada snap embute
+  // _selection = lista de identificadores estaveis dos objetos ativos. Apos
+  // applySnapshot reativa via match por __assetId / __assetLabel.
+  function identifyObj(o: any): string | null {
+    if (!o || o.__isBleedOverlay || o.__isBg) return null
+    if (o.__assetId) return `aid:${o.__assetId}`
+    if (o.__assetLabel) return `lbl:${o.__assetLabel}`
+    if (o.__embedded) return `emb:${Math.round(o.left ?? 0)},${Math.round(o.top ?? 0)}`
+    return null
+  }
+  function getCurrentSelectionIds(fc: any): string[] {
+    const active = fc?.getActiveObject?.()
+    if (!active) return []
+    const objs = active.type === "activeSelection"
+      ? (typeof active.getObjects === "function" ? active.getObjects() : [])
+      : [active]
+    return objs.map((o: any) => identifyObj(o)).filter(Boolean) as string[]
+  }
+  async function restoreSelectionByIds(fc: any, ids: string[]) {
+    if (!ids || ids.length === 0) {
+      fc.discardActiveObject()
+      fc.requestRenderAll()
+      return
+    }
+    const objs = fc.getObjects().filter((o: any) => !o.__isBleedOverlay && !o.__isBg)
+    const claimed = new Set<any>()
+    const matched: any[] = []
+    for (const id of ids) {
+      const m = objs.find((o: any) => !claimed.has(o) && identifyObj(o) === id)
+      if (m) { matched.push(m); claimed.add(m) }
+    }
+    if (matched.length === 0) {
+      fc.discardActiveObject()
+    } else if (matched.length === 1) {
+      fc.setActiveObject(matched[0])
+    } else {
+      try {
+        const { ActiveSelection } = await import("fabric")
+        const sel = new ActiveSelection(matched, { canvas: fc })
+        fc.setActiveObject(sel)
+      } catch {
+        fc.setActiveObject(matched[0])
+      }
+    }
+    fc.requestRenderAll()
+  }
+
+  function pushHistory(opts?: { markDirty?: boolean }) {
     if (isApplyingHistory.current) return
     const fc = fabricRef.current
     if (!fc) return
+    const markDirty = opts?.markDirty !== false
     try {
       // ORPHAN HANDLING: antes este pushHistory pulava completamente se detectava
       // orfaos (objetos sem __assetId/__embedded). Resultado: edicoes do usuario
@@ -2879,7 +2940,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (orphans.length > 0) {
         console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
       }
-      const snap = JSON.stringify((fc as any).toObject(HISTORY_PROPS_TO_INCLUDE))
+      const canvasObj = (fc as any).toObject(HISTORY_PROPS_TO_INCLUDE)
+      // _selection: array de identificadores dos objs ativos. Restaurado em
+      // applySnapshot. Estavel via __assetId / __assetLabel.
+      canvasObj._selection = getCurrentSelectionIds(fc)
+      const snap = JSON.stringify(canvasObj)
       // Evita push duplicado quando snap eh igual ao topo
       const top = undoStack.current[undoStack.current.length - 1]
       if (top === snap) return
@@ -2927,12 +2992,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         }
       } catch {}
       undoStack.current.push(snap)
-      // Mantém 31 entradas: 30 undos + estado atual.
-      if (undoStack.current.length > 31) undoStack.current.shift()
+      // Mantem 100 entradas. Aumentado de 31 → 100 em 2026-05-28 quando selecao
+      // passou a entrar no undo stack (user pediu "passo a passo, step por step").
+      // ~50KB por snap × 100 = ~5MB de memoria, aceitavel.
+      if (undoStack.current.length > 101) undoStack.current.shift()
       redoStack.current = []
       setHistoryTick(t => t + 1)
-      isDirtyRef.current = true
-      setIsDirty(true)
+      // markDirty=false em pushes que sao SO de selecao (UI state, nao mudanca
+      // de dado). Sem isso, abrir o editor + clicar num layer ja marcava dirty
+      // e disparava prompt "salvar?" ao sair, mesmo sem ter editado nada.
+      if (markDirty) {
+        isDirtyRef.current = true
+        setIsDirty(true)
+      }
     } catch (e) { /* ignora */ }
   }
 
@@ -3373,6 +3445,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         syncBrandRefsInTextObjects(fc)
         fc.renderAll()
       } catch {}
+      // RESTAURA SELECAO do snap. Dentro do guard isApplyingHistory pra que
+      // setActiveObject/discard NAO disparem pushHistory em loop. 2026-05-28.
+      try {
+        const savedSel: string[] = Array.isArray(snapData?._selection) ? snapData._selection : []
+        await restoreSelectionByIds(fc, savedSel)
+      } catch (e) { console.warn("[applySnapshot] restore selection:", e) }
     } catch (e) {
       console.warn("applySnapshot fail:", e)
       clearTimeout(saveTimer.current)
@@ -9219,6 +9297,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               const headers: Array<{ key: string; name: string; depth: number; collapsed: boolean }> = []
               for (let d = commonDepth; d < path.length; d++) {
                 const key = path.slice(0, d + 1).join("›")
+                // Pula header se algum ancestral esta collapsed — Photoshop hide
+                // sub-folders inteiros quando o pai recolhe. Bug 2026-05-28:
+                // antes os headers de descendente apareciam mesmo com pai
+                // collapsed, dando sensacao "a seta recolhe mas continua aparecendo".
+                let ancestorCollapsed = false
+                for (let a = 0; a < d; a++) {
+                  if (collapsedFolders.has(path.slice(0, a + 1).join("›"))) { ancestorCollapsed = true; break }
+                }
+                if (ancestorCollapsed) continue
                 headers.push({ key, name: path[d], depth: d, collapsed: collapsedFolders.has(key) })
               }
               const hidden = path.some((_, idx) => collapsedFolders.has(path.slice(0, idx + 1).join("›")))

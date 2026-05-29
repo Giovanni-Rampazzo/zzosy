@@ -95,7 +95,11 @@ export default function DashboardPage() {
 
         <div style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+          // auto-fit + minmax(280, 320) + justifyContent:center: cards tem largura
+          // limitada (nao esticam o vw inteiro), colunas vazias colapsam e as
+          // existentes ficam centralizadas no container.
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 320px))",
+          justifyContent: "center",
           gap: 16,
         }}>
           {loading && Array.from({ length: 4 }).map((_, i) => (
