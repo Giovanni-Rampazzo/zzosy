@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { spawn } from "child_process"
 import { promises as fs } from "fs"
 import path from "path"
+import crypto from "crypto"
 import mysql from "mysql2/promise"
 
 export const runtime = "nodejs"
@@ -16,11 +17,35 @@ export const dynamic = "force-dynamic"
 
 const UPLOADS_DIR = "/app/apps/web/public/uploads"
 
+// Token min 32 chars. Sem isso, falha aberta (vide checkToken). Forca o ops
+// a escolher token forte mesmo em dev.
+const MIN_TOKEN_LEN = 32
+
+function checkToken(sent: string | null): boolean {
+  const expected = process.env.ADMIN_SYNC_TOKEN
+  if (!expected || expected.length < MIN_TOKEN_LEN) return false
+  if (!sent || sent.length !== expected.length) return false
+  // Comparacao timing-safe pra prevenir token brute via measure de latencia.
+  return crypto.timingSafeEqual(Buffer.from(sent), Buffer.from(expected))
+}
+
 async function extractTar(tarPath: string, dest: string): Promise<{ ok: boolean; stderr: string }> {
   return new Promise((resolve) => {
-    // 'xf' autodetecta compressao (gzip ou raw tar). Suporta ambos formatos
-    // pra retrocompatibilidade com clientes que ainda mandam .tar.gz.
-    const child = spawn("tar", ["xf", tarPath, "-C", dest], { stdio: ["ignore", "pipe", "pipe"] })
+    // 'xf' autodetecta compressao (gzip ou raw tar).
+    // Flags de seguranca CRITICAS:
+    //   --no-absolute-paths : remove leading / dos paths no tar — sem isso
+    //                         tar absoluto pode escrever em /etc/, /root/, etc.
+    //   --no-same-owner     : nao tenta restaurar uid/gid do tar (dest container)
+    //   --no-same-permissions: idem pra perms (evita setuid/sticky bits)
+    //   -P NAO PASSADO      : tar segue por default link/path safety
+    // Combinado com `-C dest`, garante que escrita fica dentro de dest.
+    const child = spawn("tar", [
+      "--no-absolute-paths",
+      "--no-same-owner",
+      "--no-same-permissions",
+      "-xf", tarPath,
+      "-C", dest,
+    ], { stdio: ["ignore", "pipe", "pipe"] })
     let stderr = ""
     child.stderr.on("data", (d) => { stderr += d.toString() })
     child.on("close", (code) => resolve({ ok: code === 0, stderr }))
@@ -43,9 +68,22 @@ async function countFiles(dir: string): Promise<number> {
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get("x-sync-token")
-  if (!token || !process.env.ADMIN_SYNC_TOKEN || token !== process.env.ADMIN_SYNC_TOKEN) {
+  if (!checkToken(token)) {
+    // Log SEM o token recebido (security).
+    console.warn("[admin/sync] unauthorized attempt", {
+      ip: req.headers.get("x-forwarded-for") ?? "?",
+      ua: req.headers.get("user-agent")?.slice(0, 100) ?? "?",
+      ts: new Date().toISOString(),
+    })
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
+
+  // Log de toda chamada autorizada (audit trail). Token NUNCA logado.
+  console.warn("[admin/sync] AUTHORIZED call", {
+    ip: req.headers.get("x-forwarded-for") ?? "?",
+    ua: req.headers.get("user-agent")?.slice(0, 100) ?? "?",
+    ts: new Date().toISOString(),
+  })
 
   const result: any = { ok: true }
 
