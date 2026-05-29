@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { statusMeta } from "@/lib/pieceStatus"
 import { StatusBadge } from "@/components/pieces/StatusBadge"
@@ -22,6 +22,11 @@ interface Campaign {
 
 export default function CampaignsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Query ?clientId=X filtra a lista pra so as campanhas desse cliente.
+  // Vindo do botao "← Campanhas" da /campaigns/[id] OU da TopNav quando ha
+  // activeClient. Sem o param, lista todos os clientes (visao global).
+  const filterClientId = searchParams?.get("clientId") ?? null
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<"grid" | "list">("list")
@@ -46,8 +51,13 @@ export default function CampaignsPage() {
         const d = await r.json()
         const list = Array.isArray(d) ? d : []
         setClients(list)
-        if (list.length > 0 && !newForm.clientId) {
-          setNewForm(f => ({ ...f, clientId: list[0].id }))
+        // Se a lista esta filtrada por cliente, pre-seleciona ele no form.
+        // Senao, primeiro cliente do tenant.
+        const preset = filterClientId && list.some(c => c.id === filterClientId)
+          ? filterClientId
+          : list[0]?.id
+        if (preset && !newForm.clientId) {
+          setNewForm(f => ({ ...f, clientId: preset }))
         }
       } catch (e) {
         setCreateError("Falha ao carregar clientes")
@@ -120,18 +130,6 @@ export default function CampaignsPage() {
     }
   }
 
-  async function renameCampaign(id: string, currentName: string) {
-    const next = prompt("Novo nome da campanha:", currentName)?.trim()
-    if (!next || next === currentName) return
-    const res = await fetch(`/api/campaigns/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: next }),
-    })
-    if (!res.ok) { alert("Falha ao renomear"); return }
-    setCampaigns(prev => prev.map(c => c.id === id ? { ...c, name: next } : c))
-  }
-
   useEffect(() => {
     fetch("/api/campaigns", { cache: "no-store" }).then(r => r.json()).then(d => {
       setCampaigns(Array.isArray(d) ? d : [])
@@ -140,12 +138,18 @@ export default function CampaignsPage() {
   }, [])
 
   const filtered = campaigns.filter(c => {
+    if (filterClientId && c.client.id !== filterClientId) return false
     if (q.trim()) {
       const needle = q.trim().toLowerCase()
       if (!c.name.toLowerCase().includes(needle) && !c.client.name.toLowerCase().includes(needle)) return false
     }
     return true
   })
+  const filterClientName = filterClientId
+    ? campaigns.find(c => c.client.id === filterClientId)?.client.name
+      ?? clients.find(cl => cl.id === filterClientId)?.name
+      ?? null
+    : null
 
   return (
     <PageShell>
@@ -169,6 +173,21 @@ export default function CampaignsPage() {
             </>
           }
         />
+
+        {filterClientId && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontSize: 13 }}>
+            <span style={{ color: "#666" }}>Filtrando por cliente:</span>
+            <span style={{ background: "#F5C400", color: "#111", padding: "3px 10px", borderRadius: 999, fontWeight: 600 }}>
+              {filterClientName ?? filterClientId}
+            </span>
+            <button
+              onClick={() => router.push("/campaigns")}
+              style={{ background: "transparent", border: "1px solid #E0E0E0", color: "#666", padding: "3px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12 }}
+            >
+              Ver todas
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-16 text-[#888888]">Carregando...</div>
@@ -276,7 +295,7 @@ export default function CampaignsPage() {
                               <Button variant="info" size="sm" loading={duplicatingId === c.id} onClick={() => duplicateCampaign(c.id)}>
                                 {duplicatingId === c.id ? "Duplicando..." : "Duplicar"}
                               </Button>
-                              <Button variant="secondary" size="sm" onClick={() => renameCampaign(c.id, c.name)}>Editar</Button>
+                              <Button variant="secondary" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)} title="Abrir campanha pra editar">Editar</Button>
                               <Button variant="view" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)}>Entrar</Button>
                             </>
                           )}

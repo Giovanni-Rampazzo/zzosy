@@ -158,25 +158,6 @@ export default function CartridgesBrowsePage() {
     }
   }
 
-  async function renameAsset(assetId: string, currentName: string) {
-    if (!clientId) return
-    const next = prompt("Novo nome:", currentName)
-    if (!next || next.trim() === currentName) return
-    setActionBusy(assetId)
-    try {
-      const res = await fetch(`/api/clients/${clientId}/library/assets/${assetId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: next.trim() }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setAssets(prev => prev.map(a => a.id === assetId ? { ...a, name: updated.name } : a))
-      } else alert("Falha ao renomear")
-    } finally {
-      setActionBusy(null)
-    }
-  }
 
   async function addSelected() {
     if (selected.size === 0) return
@@ -391,7 +372,8 @@ export default function CartridgesBrowsePage() {
                           onClick={() => duplicateAsset(a.id)}>Duplicar</Button>
                         <Button variant="secondary" size="sm"
                           style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
-                          onClick={() => renameAsset(a.id, a.name)}>Editar</Button>
+                          onClick={() => clientId && router.push(`/clients/${clientId}/library/${a.id}`)}
+                          title="Abrir asset pra editar (conteudo + metadata)">Editar</Button>
                         <Button variant="view" size="sm"
                           style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
                           onClick={() => clientId && router.push(`/clients/${clientId}/library/${a.id}`)}>Entrar</Button>

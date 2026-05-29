@@ -62,18 +62,6 @@ export default function ClientPage() {
     setConfirmDelete(null)
   }
 
-  async function renameCampaign(campaignId: string, currentName: string) {
-    const next = prompt("Novo nome da campanha:", currentName)?.trim()
-    if (!next || next === currentName) return
-    const res = await fetch(`/api/campaigns/${campaignId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: next }),
-    })
-    if (!res.ok) { alert("Falha ao renomear"); return }
-    setClient(prev => prev ? { ...prev, campaigns: prev.campaigns.map(c => c.id === campaignId ? { ...c, name: next } : c) } : prev)
-  }
-
   async function duplicateCampaign(campaignId: string) {
     setDuplicatingId(campaignId)
     try {
@@ -170,7 +158,7 @@ export default function ClientPage() {
                           <>
                             <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c.id)}>Apagar</Button>
                             <Button variant="info" size="sm" onClick={() => duplicateCampaign(c.id)} loading={duplicatingId === c.id}>{duplicatingId === c.id ? "Duplicando..." : "Duplicar"}</Button>
-                            <Button variant="secondary" size="sm" onClick={() => renameCampaign(c.id, c.name)}>Editar</Button>
+                            <Button variant="secondary" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)} title="Abrir campanha pra editar">Editar</Button>
                             <Button variant="view" size="sm" onClick={() => router.push(`/campaigns/${c.id}`)}>Entrar</Button>
                           </>
                         )}
