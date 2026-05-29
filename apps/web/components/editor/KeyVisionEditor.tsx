@@ -169,10 +169,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     startAddAssetDismissTimer()
     return clearAddAssetDismissTimer
   }, [showAddAsset, startAddAssetDismissTimer, clearAddAssetDismissTimer])
-  // Font section collapsada por DEFAULT no Properties panel pra reduzir scroll
-  // (user pedido 2026-05-26 — bloco grande Font/Size/Weight/LineHeight/etc).
-  // Padrao Mask: chevron pra expandir/recolher.
-  const [fontSectionOpen, setFontSectionOpen] = useState(false)
+  // Font section ABERTA por DEFAULT (user pedido 2026-05-29: "porque fontes,
+  // que e tao importante, esta tao escondida? resolva isso"). Reverte decisao
+  // de 2026-05-26 — texto sem ver font/size/weight ao abrir quebra workflow
+  // do redator. Eh a propriedade #1 do textbox. MASK fica collapsed (uso menos
+  // frequente). Chevron continua pra quem quiser recolher.
+  const [fontSectionOpen, setFontSectionOpen] = useState(true)
   // Seletor SOLID/LINEAR/RADIAL no Background panel — SEMPRE visivel
   // (user pedido 2026-05-27 revogou a decisao anterior de 2026-05-23: 'ja
   // pode aparecer tudo de uma vez'). State mantido como const true pra
