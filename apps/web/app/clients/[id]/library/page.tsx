@@ -97,6 +97,28 @@ export default function ClientLibraryPage() {
     setConfirmDelete(null)
   }
 
+  async function duplicateAsset(assetId: string) {
+    const res = await fetch(`/api/clients/${id}/library/assets/${assetId}/duplicate`, { method: "POST" })
+    if (res.ok) {
+      const clone = await res.json()
+      setAssets(prev => [clone, ...prev])
+    } else alert("Falha ao duplicar asset")
+  }
+
+  async function renameAsset(assetId: string, currentName: string) {
+    const next = prompt("Novo nome:", currentName)
+    if (!next || next.trim() === currentName) return
+    const res = await fetch(`/api/clients/${id}/library/assets/${assetId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: next.trim() }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setAssets(prev => prev.map(a => a.id === assetId ? { ...a, name: updated.name } : a))
+    } else alert("Falha ao renomear")
+  }
+
   async function importCartridge(file: File) {
     setImportBusy(true)
     try {
@@ -274,7 +296,9 @@ export default function ClientLibraryPage() {
                         ) : (
                           <>
                             <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
-                            <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Editar</Button>
+                            <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => duplicateAsset(a.id)}>Duplicar</Button>
+                            <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => renameAsset(a.id, a.name)}>Editar</Button>
+                            <Button variant="view" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Entrar</Button>
                           </>
                         )}
                       </div>

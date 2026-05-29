@@ -125,6 +125,59 @@ export default function CartridgesBrowsePage() {
     }
   }
 
+  // Actions CRUD do asset na library (CLAUDE 1.1.B — 4 botoes padrao).
+  // clientId vem de campaign.client?.id (asset pertence ao cliente da campanha).
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [actionBusy, setActionBusy] = useState<string | null>(null)
+  const clientId = campaign?.client?.id ?? null
+
+  async function deleteAsset(assetId: string) {
+    if (!clientId) return
+    setActionBusy(assetId)
+    try {
+      const res = await fetch(`/api/clients/${clientId}/library/assets/${assetId}`, { method: "DELETE" })
+      if (res.ok) setAssets(prev => prev.filter(a => a.id !== assetId))
+      else alert("Falha ao apagar asset")
+    } finally {
+      setActionBusy(null)
+      setConfirmDelete(null)
+    }
+  }
+
+  async function duplicateAsset(assetId: string) {
+    if (!clientId) return
+    setActionBusy(assetId)
+    try {
+      const res = await fetch(`/api/clients/${clientId}/library/assets/${assetId}/duplicate`, { method: "POST" })
+      if (res.ok) {
+        const clone = await res.json()
+        setAssets(prev => [clone, ...prev])
+      } else alert("Falha ao duplicar asset")
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  async function renameAsset(assetId: string, currentName: string) {
+    if (!clientId) return
+    const next = prompt("Novo nome:", currentName)
+    if (!next || next.trim() === currentName) return
+    setActionBusy(assetId)
+    try {
+      const res = await fetch(`/api/clients/${clientId}/library/assets/${assetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: next.trim() }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setAssets(prev => prev.map(a => a.id === assetId ? { ...a, name: updated.name } : a))
+      } else alert("Falha ao renomear")
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
   async function addSelected() {
     if (selected.size === 0) return
     setBulkAdding(true)
@@ -269,7 +322,7 @@ export default function CartridgesBrowsePage() {
               {filtered.map((a, idx) => (
                 <div key={a.id} style={{
                   display: "grid",
-                  gridTemplateColumns: "32px 40px 1fr 80px 80px 90px",
+                  gridTemplateColumns: "32px 40px 1fr 70px 80px 360px",
                   gap: 8,
                   padding: "6px 14px",
                   alignItems: "center",
@@ -315,15 +368,38 @@ export default function CartridgesBrowsePage() {
                   <div style={{ fontSize: 11, color: "#aaa", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {a.slotKey ?? "—"}
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => addOne(a.id)}
-                      loading={adding.has(a.id)}
-                    >
-                      {adding.has(a.id) ? "..." : "+ Add"}
-                    </Button>
+                  {/* Row de acoes — CLAUDE 1.1.B: 4 botoes padrao Apagar/Duplicar/Editar/Entrar
+                      + Add (action-especifica desta pagina). Tokens compactos pra caber 5 botoes. */}
+                  <div style={{ display: "flex", gap: "var(--zz-btn-compact-gap)", justifyContent: "flex-end" }}>
+                    {confirmDelete === a.id ? (
+                      <>
+                        <span style={{ fontSize: 11, color: "#666", alignSelf: "center", marginRight: 4 }}>Apagar?</span>
+                        <Button variant="danger" size="sm" loading={actionBusy === a.id}
+                          style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
+                          onClick={() => deleteAsset(a.id)}>Sim</Button>
+                        <Button variant="secondary" size="sm"
+                          style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
+                          onClick={() => setConfirmDelete(null)}>Não</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="danger" size="sm"
+                          style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
+                          onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
+                        <Button variant="info" size="sm" loading={actionBusy === a.id}
+                          style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
+                          onClick={() => duplicateAsset(a.id)}>Duplicar</Button>
+                        <Button variant="secondary" size="sm"
+                          style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
+                          onClick={() => renameAsset(a.id, a.name)}>Editar</Button>
+                        <Button variant="view" size="sm"
+                          style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
+                          onClick={() => clientId && router.push(`/clients/${clientId}/library/${a.id}`)}>Entrar</Button>
+                        <Button variant="secondary" size="sm" loading={adding.has(a.id)}
+                          style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)" }}
+                          onClick={() => addOne(a.id)}>{adding.has(a.id) ? "..." : "+ Add"}</Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
