@@ -33,17 +33,13 @@ import {
   bgLayerLegacyColor, migrateBgLayerJson, safeColorString,
   buildBgFill, loadImageElement, applyBgFillAsync, syncBgLayerToRect,
 } from "@/lib/editor/bgLayerHelpers"
+import { usePanelResize } from "@/lib/editor/usePanelResize"
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
-// LW = LARGURA DEFAULT do painel de Layers (esquerda). Pode ser redimensionada
-// pelo user via drag handle na borda direita do painel — state layersPanelWidth.
-// PW = LARGURA DEFAULT do painel Properties (direita). Tambem resizable — state
-// propsPanelWidth, drag handle na borda esquerda. TH/BH = top/bottom bar.
-const LW = 220, PW = 260, TH = 48, BH = 44
-const LW_MIN = 180, LW_MAX = 500
-const PW_MIN = 220, PW_MAX = 560
-const LW_STORAGE_KEY = "zzosy.editor.layersPanelWidth"
-const PW_STORAGE_KEY = "zzosy.editor.propsPanelWidth"
+// TH = top bar height. BH = bottom toolbar (sub-controls). Larguras dos
+// paineis Layers (esquerda) e Properties (direita) sao geridas em hook
+// dedicado — vide @/lib/editor/usePanelResize.
+const TH = 48, BH = 44
 const _FONTS_LEGACY: string[] = [] // mantido como placeholder - lista de fontes agora vem de @/lib/fonts via FontPicker
 const SWATCHES = ["#111111","#ffffff","#F5C400","#e63946","#457b9d","#2a9d8f","#264653","#f4a261","#8338ec","#ff006e","#06d6a0","#118ab2"]
 
@@ -186,10 +182,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // pode aparecer tudo de uma vez'). State mantido como const true pra
   // nao precisar editar todos os usos.
   const showBgTypeSelector = true
-  // Tab key toggle: esconde Layers + Properties pra preview limpo (Photoshop-style).
-  // User pedido 2026-05-23. effLayersPanelWidth/effPropsPanelWidth computados
-  // mais abaixo (depois que layersPanelWidth/propsPanelWidth foram declarados).
-  const [panelsHidden, setPanelsHidden] = useState(false)
+  // Panels (Layers/Properties): largura + persistencia + drag + Tab toggle
+  // encapsulados em hook dedicado (audit #5 extracao 2026-05-29). Refs lidas
+  // por closures capturadas em useEffect [campaign] do canvas onResize.
+  const panels = usePanelResize()
+  const {
+    layersPanelWidth, propsPanelWidth,
+    layersPanelWidthRef, propsPanelWidthRef,
+    effLayersPanelWidth, effPropsPanelWidth,
+    effLayersRef, effPropsRef,
+    panelsHidden, setPanelsHidden,
+    onLayersDragStart, onPropsDragStart,
+    resetLayersWidth, resetPropsWidth,
+  } = panels
+  void layersPanelWidth; void propsPanelWidth // silencia warning quando consumido apenas via JSX/refs
+  void layersPanelWidthRef; void propsPanelWidthRef
   // Force-rerender counter pra LayerPanel quando rename precisa atualizar
   // labels alem do refreshLayers normal (defensivo — sintoma 2026-05-23).
   const [layerVersion, setLayerVersion] = useState(0)
@@ -229,56 +236,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // ajuda o user a localizar o layer correspondente apos clicar no canvas.
   // Trocar o `key` da div forca o React a remontar com a animation no inicio.
   const [layerPulseKey, setLayerPulseKey] = useState(0)
-  // Largura do painel Layers (esquerda) — resizable pelo user. Persiste em
-  // localStorage pra preservar a preferencia entre sessoes.
-  const [layersPanelWidth, setLayersPanelWidth] = useState<number>(() => {
-    if (typeof window === "undefined") return LW
-    try {
-      const saved = window.localStorage?.getItem(LW_STORAGE_KEY)
-      const n = saved ? parseInt(saved, 10) : NaN
-      return Number.isFinite(n) ? Math.max(LW_MIN, Math.min(LW_MAX, n)) : LW
-    } catch { return LW }
-  })
-  // Ref sincronizado pra closure do onResize do canvas (que foi criado dentro
-  // de useEffect [campaign] e nao re-monta quando layersPanelWidth muda).
-  const layersPanelWidthRef = useRef(layersPanelWidth)
+  // Quando largura efetiva dos paineis muda, re-dimensiona o Fabric canvas pra
+  // preencher a nova area visivel. Sem isso, o canvas DOM mantem o tamanho
+  // calculado antes do toggle/resize e nao expande. (usePanelResize ja sincroniza
+  // effLayersRef/effPropsRef e ja dispara window.resize event tambem.)
   useEffect(() => {
-    layersPanelWidthRef.current = layersPanelWidth
-    try { window.localStorage?.setItem(LW_STORAGE_KEY, String(layersPanelWidth)) } catch {}
-    // Dispara resize do canvas pra recentralizar com nova largura disponivel.
-    if (typeof window !== "undefined") window.dispatchEvent(new Event("resize"))
-  }, [layersPanelWidth])
-  // Drag em curso pra resize do painel — guarda mouseX inicial + width inicial.
-  const layersResizeRef = useRef<{ startX: number; startW: number } | null>(null)
-  // Largura do painel Properties (direita) — resizable pelo user, mesmo padrao
-  // do layersPanelWidth. Persiste em localStorage.
-  const [propsPanelWidth, setPropsPanelWidth] = useState<number>(() => {
-    if (typeof window === "undefined") return PW
-    try {
-      const saved = window.localStorage?.getItem(PW_STORAGE_KEY)
-      const n = saved ? parseInt(saved, 10) : NaN
-      return Number.isFinite(n) ? Math.max(PW_MIN, Math.min(PW_MAX, n)) : PW
-    } catch { return PW }
-  })
-  const propsPanelWidthRef = useRef(propsPanelWidth)
-  useEffect(() => {
-    propsPanelWidthRef.current = propsPanelWidth
-    try { window.localStorage?.setItem(PW_STORAGE_KEY, String(propsPanelWidth)) } catch {}
-    if (typeof window !== "undefined") window.dispatchEvent(new Event("resize"))
-  }, [propsPanelWidth])
-  const propsResizeRef = useRef<{ startX: number; startW: number } | null>(null)
-  // Largura EFFECTIVE dos paineis (0 quando hidden via Tab). User pedido
-  // 2026-05-23: shortcut Tab esconde Layers + Properties (Photoshop-style).
-  const effLayersPanelWidth = panelsHidden ? 0 : layersPanelWidth
-  const effPropsPanelWidth = panelsHidden ? 0 : propsPanelWidth
-  // Quando panelsHidden muda, re-dimensiona o Fabric canvas pra preencher a nova
-  // area visivel (fullscreen quando hidden). Sem isso, o canvas DOM mantem o
-  // tamanho calculado antes do toggle e nao expande. User pedido 2026-05-23.
-  const effLayersRef = useRef(effLayersPanelWidth)
-  const effPropsRef = useRef(effPropsPanelWidth)
-  useEffect(() => {
-    effLayersRef.current = effLayersPanelWidth
-    effPropsRef.current = effPropsPanelWidth
     const fc = fabricRef.current
     if (!fc) return
     const newAvailW = window.innerWidth - effLayersPanelWidth - effPropsPanelWidth
@@ -9102,29 +9064,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             largura; mouse-up libera. localStorage persiste. Clamped [180,500]
             pra nao ficar minusculo nem esmagar o canvas. */}
         <div
-          onMouseDown={e => {
-            e.preventDefault()
-            layersResizeRef.current = { startX: e.clientX, startW: layersPanelWidth }
-            const onMove = (ev: MouseEvent) => {
-              const st = layersResizeRef.current
-              if (!st) return
-              const dx = ev.clientX - st.startX
-              const next = Math.max(LW_MIN, Math.min(LW_MAX, st.startW + dx))
-              setLayersPanelWidth(next)
-            }
-            const onUp = () => {
-              layersResizeRef.current = null
-              window.removeEventListener("mousemove", onMove)
-              window.removeEventListener("mouseup", onUp)
-              document.body.style.cursor = ""
-              document.body.style.userSelect = ""
-            }
-            window.addEventListener("mousemove", onMove)
-            window.addEventListener("mouseup", onUp)
-            document.body.style.cursor = "ew-resize"
-            document.body.style.userSelect = "none"
-          }}
-          onDoubleClick={() => setLayersPanelWidth(LW_MIN)}
+          onMouseDown={onLayersDragStart}
+          onDoubleClick={resetLayersWidth}
           title="Drag to resize · double-click to reset"
           style={{
             position: "absolute",
@@ -9135,7 +9076,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             background: "transparent",
           }}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = accentRgba(0.18) }}
-          onMouseLeave={e => { if (!layersResizeRef.current) (e.currentTarget as HTMLElement).style.background = "transparent" }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent" }}
         />
         {/* Atalho Assets — botao DIFERENCIAL do ZZOSY (sem analogo direto em
             outros softwares de design). Stroke roxo + fill transparente +
@@ -10215,30 +10156,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         {/* Drag handle de resize do painel Properties — borda ESQUERDA. Mesmo
             padrao do layersPanelWidth (mirrored). */}
         <div
-          onMouseDown={e => {
-            e.preventDefault()
-            propsResizeRef.current = { startX: e.clientX, startW: propsPanelWidth }
-            const onMove = (ev: MouseEvent) => {
-              const st = propsResizeRef.current
-              if (!st) return
-              const dx = ev.clientX - st.startX
-              // INVERSE: arrastando pra ESQUERDA aumenta a largura (borda esquerda)
-              const next = Math.max(PW_MIN, Math.min(PW_MAX, st.startW - dx))
-              setPropsPanelWidth(next)
-            }
-            const onUp = () => {
-              propsResizeRef.current = null
-              window.removeEventListener("mousemove", onMove)
-              window.removeEventListener("mouseup", onUp)
-              document.body.style.cursor = ""
-              document.body.style.userSelect = ""
-            }
-            window.addEventListener("mousemove", onMove)
-            window.addEventListener("mouseup", onUp)
-            document.body.style.cursor = "ew-resize"
-            document.body.style.userSelect = "none"
-          }}
-          onDoubleClick={() => setPropsPanelWidth(PW_MIN)}
+          onMouseDown={onPropsDragStart}
+          onDoubleClick={resetPropsWidth}
           title="Drag to resize · double-click to reset"
           style={{
             position: "absolute",
