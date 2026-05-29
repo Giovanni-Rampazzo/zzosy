@@ -30,12 +30,12 @@ import { randomUUID } from "crypto"
 import { apiErrors } from "@/lib/apiError"
 import { rateLimit, identifierFromRequest } from "@/lib/rateLimit"
 
-// pdfjs-dist + @napi-rs/canvas lazy (Turbopack dev nao bundla nativos).
-async function loadPdfjs() {
-  // legacy build = compatible com Node sem worker thread.
+// pdfjs-dist v3.11 + @napi-rs/canvas lazy. v3 ao inves de v4 pq mantem
+// SVGGraphics — necessario pra fase 2 (sub-editor com paths editaveis).
+// v4 removeu SVGGraphics; alternativas server-side (mupdf) sao AGPL.
+function loadPdfjs() {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
-  return pdfjs
+  return require("pdfjs-dist/legacy/build/pdf.js") as typeof import("pdfjs-dist/legacy/build/pdf")
 }
 
 // DPI alvo do render do composite. 144 = 2x retina (boa fidelidade pro
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     // .ai modernos sao PDF wrapped. Bytes raw do PDF comecam em "%PDF-"
     // — em .ai isso pode estar offset alguns bytes (header proprio do AI
     // antes), pdfjs aceita normal porque procura signature internamente.
-    const pdfjs = await loadPdfjs()
+    const pdfjs = loadPdfjs()
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createCanvas } = require("@napi-rs/canvas") as typeof import("@napi-rs/canvas")

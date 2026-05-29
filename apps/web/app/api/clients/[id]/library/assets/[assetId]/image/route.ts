@@ -39,9 +39,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       select: { id: true, type: true },
     })
     if (!asset) return apiErrors.notFound()
-    if (asset.type !== "IMAGE") {
+    // SMART_OBJECT tambem aceita troca de imageUrl: eh o composite PNG render
+    // do .ai/.psd. Sub-editor vector salva composite atualizado por esse
+    // caminho (preserva original .ai/.psd intacto em smartObject.filePath).
+    if (asset.type !== "IMAGE" && asset.type !== "SMART_OBJECT") {
       return NextResponse.json(
-        { error: `Troca de arquivo so suportada pra IMAGE. Asset eh ${asset.type}.` },
+        { error: `Troca de arquivo so suportada pra IMAGE/SMART_OBJECT. Asset eh ${asset.type}.` },
         { status: 400 },
       )
     }

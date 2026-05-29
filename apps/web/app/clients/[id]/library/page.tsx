@@ -22,6 +22,9 @@ interface LibraryAsset {
   version: number
   instanceCount: number
   updatedAt: string
+  // smartObject vem do include na rota GET /assets — usado pra detectar
+  // se SO eh vetorial (AI/PDF) e expor botao "Editar" no card.
+  smartObject?: { mime: string } | null
 }
 
 interface ClientLite {
@@ -372,6 +375,11 @@ export default function ClientLibraryPage() {
                           <>
                             <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
                             <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => duplicateAsset(a.id)}>Duplicar</Button>
+                            {/* "Editar vetor" so aparece em SMART_OBJECT importado de .ai/.pdf — abre sub-editor
+                                Fabric com paths editaveis (CLAUDE 2.4: destinos diferentes mantem o botao). */}
+                            {a.type === "SMART_OBJECT" && (a.smartObject?.mime === "application/postscript" || a.smartObject?.mime === "application/pdf") && (
+                              <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}/edit-vector`)} title="Editar paths e cores do vetor">Editar</Button>
+                            )}
                             <Button variant="view" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Entrar</Button>
                           </>
                         )}

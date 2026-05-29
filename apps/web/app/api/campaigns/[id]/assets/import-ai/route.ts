@@ -18,9 +18,11 @@ import { randomUUID } from "crypto"
 import { apiErrors } from "@/lib/apiError"
 import { rateLimit, identifierFromRequest } from "@/lib/rateLimit"
 
-async function loadPdfjs() {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
-  return pdfjs
+// pdfjs-dist v3.11 (CommonJS legacy build) — v4 removeu SVGGraphics
+// que precisamos pra fase 2. v3 mantem API compativel pro raster.
+function loadPdfjs() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("pdfjs-dist/legacy/build/pdf.js") as typeof import("pdfjs-dist/legacy/build/pdf")
 }
 
 const TARGET_DPI = 144
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Apenas .ai ou .pdf" }, { status: 415 })
     }
 
-    const pdfjs = await loadPdfjs()
+    const pdfjs = loadPdfjs()
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createCanvas } = require("@napi-rs/canvas") as typeof import("@napi-rs/canvas")
 
