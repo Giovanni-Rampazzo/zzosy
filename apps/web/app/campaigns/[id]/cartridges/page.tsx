@@ -316,7 +316,7 @@ export default function CartridgesBrowsePage() {
                 <div>Nome</div>
                 <div>Tipo</div>
                 <div>Slot</div>
-                <div style={{ textAlign: "right" }}>Ação</div>
+                <div></div>
               </div>
               {/* Rows */}
               {filtered.map((a, idx) => (
