@@ -22,6 +22,32 @@ import * as fabric from "fabric"
 import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
 
+// pdfjs v3.11.174 carregado via CDN no client. Razao: o pacote NPM so tem
+// build UMD (sem .mjs), e Next 16 + Turbopack tem atrito empacotando UMD
+// pro client bundle. CDN com script tag bypassa o bundler — pdfjsLib fica
+// disponivel no window. cdnjs.cloudflare hosta a mesma versao 3.11.174.
+const PDFJS_VERSION = "3.11.174"
+const PDFJS_BASE = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}`
+let _pdfjsPromise: Promise<any> | null = null
+function loadPdfjsFromCDN(): Promise<any> {
+  if (typeof window === "undefined") return Promise.reject(new Error("client-only"))
+  if ((window as any).pdfjsLib) return Promise.resolve((window as any).pdfjsLib)
+  if (_pdfjsPromise) return _pdfjsPromise
+  _pdfjsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script")
+    script.src = `${PDFJS_BASE}/pdf.min.js`
+    script.onload = () => {
+      const lib = (window as any).pdfjsLib
+      if (!lib) { reject(new Error("pdfjsLib nao foi exposto no window")); return }
+      lib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.js`
+      resolve(lib)
+    }
+    script.onerror = () => reject(new Error("Falha ao carregar pdf.js do CDN"))
+    document.head.appendChild(script)
+  })
+  return _pdfjsPromise
+}
+
 type Asset = {
   id: string
   name: string
@@ -74,11 +100,12 @@ export default function EditVectorPage() {
         const buf = await fileRes.arrayBuffer()
         if (cancelled) return
 
-        // 3. Load pdfjs v3 dinamicamente
+        // 3. Load pdfjs v3 via CDN (UMD direto no window — evita atrito
+        // UMD-em-ESM do bundle client do Next 16/Turbopack quando importa
+        // pdfjs-dist em await import()). Workersrc real (nao string vazia)
+        // + disableWorker como cinto-suspensorio.
         setPhaseMsg("Convertendo pra SVG...")
-        const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.js")
-        // Worker desligado (browser): mais simples, sem dep externa de bundle worker
-        pdfjs.GlobalWorkerOptions.workerSrc = ""
+        const pdfjs = await loadPdfjsFromCDN()
         const doc = await pdfjs.getDocument({
           data: new Uint8Array(buf),
           disableWorker: true,

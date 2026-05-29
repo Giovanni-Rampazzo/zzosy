@@ -508,6 +508,8 @@ export default function EditClientPage() {
     if (file) await uploadLogoFile(file)
   }
 
+  // Status do save manual do header (in-place — nao redireciona).
+  const [savedAt, setSavedAt] = useState<number | null>(null)
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) { setError("Nome obrigatório"); return }
@@ -522,7 +524,11 @@ export default function EditClientPage() {
     })
     setSaving(false)
     if (ok) {
-      router.push(`/clients/${id}`)
+      // Save IN-PLACE (2026-05-29): user precisa continuar editando cores/
+      // fonts. router.push antigo deslogava da page no primeiro Salvar — UX
+      // ruim pra uma settings page. Status ✓ salvo discreto + auto-clear 3s.
+      setSavedAt(Date.now())
+      setTimeout(() => setSavedAt(s => (s && Date.now() - s >= 3000 ? null : s)), 3100)
     } else {
       setError("Erro ao salvar. Tente novamente.")
     }
@@ -579,9 +585,14 @@ export default function EditClientPage() {
             <Button variant="primary" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
             <ClientLogoBadge client={{id,name:client.name,brandLogoUrl:client.brandLogoUrl}} size={64} radius={10} />
           </div>
-          <Button variant="primary" size="md" onClick={() => handleSave({preventDefault:()=>{}} as React.FormEvent)} loading={saving}>
-            Salvar
-          </Button>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {savedAt && (
+              <span style={{fontSize:11,color:"#15803d",fontWeight:600}}>✓ salvo</span>
+            )}
+            <Button variant="primary" size="md" onClick={() => handleSave({preventDefault:()=>{}} as React.FormEvent)} loading={saving}>
+              Salvar
+            </Button>
+          </div>
         </div>
 
         <div style={{maxWidth:640,marginBottom:18}}>

@@ -1,6 +1,21 @@
 "use client"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { listFontFamilies, FontFamily, findFamilyAndVariant, ensureFontLoaded } from "@/lib/fonts"
+import { GOOGLE_FONTS, loadGoogleFont } from "@/lib/google-fonts"
+
+// Injeta UM <link> Google Fonts CSS com TODAS as Google Fonts curated em
+// batch (idempotente). Garante que cada item do dropdown possa renderizar
+// no proprio fontFamily ja na abertura do picker — preview estilo Figma/PS.
+// Loop sobre loadGoogleFont (que ja eh idempotente) injeta 1 <link> por
+// family — Google Fonts CSS2 API faz 1 round-trip rapido por familia, e
+// o display=swap garante fallback enquanto baixa.
+let _gfontsPreviewLoaded = false
+function preloadGoogleFontsForPreview() {
+  if (_gfontsPreviewLoaded) return
+  if (typeof document === "undefined") return
+  for (const gf of GOOGLE_FONTS) loadGoogleFont(gf.name)
+  _gfontsPreviewLoaded = true
+}
 
 // Cache + promise compartilhada entre todos os Pickers (FontPicker e WeightPicker).
 // Garante que ambos vejam exatamente a mesma lista de familias/variantes.
@@ -64,6 +79,10 @@ export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerPr
     if (!open) return
     // Pede permissao na primeira abertura (gesto do usuario)
     loadFamilies(true).then(setFamilies)
+    // Injeta TODAS as Google Fonts da curated list de uma vez — necessario
+    // pra cada item do dropdown renderizar com a propria fonte (preview
+    // estilo Figma/Photoshop). Idempotente — so injeta 1x por sessao.
+    preloadGoogleFontsForPreview()
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [open])
 
@@ -73,6 +92,26 @@ export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerPr
     ? families.filter(f => f.family.toLowerCase().includes(query.toLowerCase().trim()))
     : families
 
+  // Google Fonts em seções separadas (sans / serif / display / mono /
+  // handwriting) — header categoria igual Figma. Filtra pela query.
+  const googleFiltered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return GOOGLE_FONTS.filter(gf => !q || gf.name.toLowerCase().includes(q))
+  }, [query])
+  const googleByCategory = useMemo(() => {
+    const groups: Record<string, typeof GOOGLE_FONTS> = {}
+    for (const gf of googleFiltered) {
+      if (!groups[gf.category]) groups[gf.category] = []
+      groups[gf.category].push(gf)
+    }
+    return groups
+  }, [googleFiltered])
+  const CATEGORY_LABELS: Record<string, string> = {
+    sans: "Google · Sans-serif", serif: "Google · Serif", display: "Google · Display",
+    mono: "Google · Monospace", handwriting: "Google · Handwriting",
+  }
+  const CATEGORY_ORDER = ["sans", "serif", "display", "mono", "handwriting"]
+
   async function pickFamily(fam: FontFamily) {
     const variantNames = Object.keys(fam.variants)
     const targetVariant = fam.variants[currentVariant]
@@ -81,6 +120,16 @@ export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerPr
     const newValue = fam.variants[targetVariant] ?? fam.family
     await ensureFontLoaded(newValue)
     onChange(newValue)
+    setOpen(false); setQuery("")
+  }
+
+  // Pick de Google Font direto: family vira o fontFamily aplicado, e o
+  // loadGoogleFont jah foi disparado no preload. ensureFontLoaded espera
+  // o @font-face ficar pronto antes do onChange aplicar.
+  async function pickGoogleFont(name: string) {
+    loadGoogleFont(name)
+    try { await ensureFontLoaded(name) } catch {}
+    onChange(name)
     setOpen(false); setQuery("")
   }
 
@@ -107,8 +156,11 @@ export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerPr
         <div style={{
           position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4,
           background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, zIndex: 50,
-          maxHeight: 320, display: "flex", flexDirection: "column",
+          maxHeight: 480, display: "flex", flexDirection: "column",
           boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
+          // Largura minima 280px pra acomodar preview de fontes longas
+          // ("Plus Jakarta Sans", "Cormorant Garamond" etc) sem ellipsis.
+          minWidth: 280,
         }}>
           <input
             ref={inputRef}
@@ -125,7 +177,7 @@ export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerPr
               outline: "none", borderRadius: "6px 6px 0 0",
             }}
           />
-          <div style={{ overflowY: "auto", maxHeight: 270 }}>
+          <div style={{ overflowY: "auto", maxHeight: 430 }}>
             {/* Fontes da marca — destaque no topo se cliente tiver brandFont */}
             {brandFont && brandFont.trim() && (!query.trim() || brandFont.toLowerCase().includes(query.toLowerCase().trim())) && (
               <div>
@@ -153,8 +205,49 @@ export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerPr
                 <div style={{ padding: "0 12px 4px", fontSize: 9, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>System</div>
               </div>
             )}
-            {filtered.length === 0 ? (
-              <div style={{ padding: "10px 12px", color: "#888", fontSize: 11 }}>No font found</div>
+            {/* Google Fonts em secoes por categoria — preview estilo Figma/PS.
+                Cada item usa fontFamily proprio; preload em batch garante que
+                o CSS esteja registrado quando o item renderiza. */}
+            {CATEGORY_ORDER.map(cat => {
+              const items = googleByCategory[cat]
+              if (!items || items.length === 0) return null
+              return (
+                <div key={cat}>
+                  <div style={{ padding: "10px 12px 4px", fontSize: 9, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    {CATEGORY_LABELS[cat] ?? cat}
+                  </div>
+                  {items.map(gf => (
+                    <button
+                      key={`g-${gf.name}`} type="button"
+                      onClick={() => pickGoogleFont(gf.name)}
+                      style={{
+                        display: "block", width: "100%", textAlign: "left",
+                        padding: "8px 12px", border: "none",
+                        background: gf.name === currentFamily ? "#333" : "transparent",
+                        color: "white", fontSize: 15, fontFamily: `"${gf.name}", sans-serif`,
+                        cursor: "pointer", lineHeight: 1.2,
+                      }}
+                      onMouseEnter={e => { if (gf.name !== currentFamily) (e.currentTarget as HTMLButtonElement).style.background = "#222" }}
+                      onMouseLeave={e => { if (gf.name !== currentFamily) (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
+                    >
+                      {gf.name}
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+            {/* Separador entre Google e Sistema (so se Google teve resultado) */}
+            {Object.keys(googleByCategory).length > 0 && filtered.length > 0 && (
+              <div style={{ height: 1, background: "#333", margin: "8px 0" }} />
+            )}
+            {/* Fontes do sistema (Local Font Access ou fallback) */}
+            {filtered.length > 0 && (
+              <div style={{ padding: "10px 12px 4px", fontSize: 9, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Sistema
+              </div>
+            )}
+            {filtered.length === 0 && Object.keys(googleByCategory).length === 0 ? (
+              <div style={{ padding: "10px 12px", color: "#888", fontSize: 11 }}>Nenhuma fonte encontrada</div>
             ) : (
               filtered.map(f => (
                 <button
@@ -162,9 +255,10 @@ export function FontPicker({ value, onChange, buttonStyle, brandFont }: PickerPr
                   onClick={() => pickFamily(f)}
                   style={{
                     display: "block", width: "100%", textAlign: "left",
-                    padding: "6px 12px", border: "none",
+                    padding: "8px 12px", border: "none",
                     background: f.family === currentFamily ? "#333" : "transparent",
-                    color: "white", fontSize: 13, fontFamily: f.family, cursor: "pointer",
+                    color: "white", fontSize: 15, fontFamily: f.family, cursor: "pointer",
+                    lineHeight: 1.2,
                   }}
                   onMouseEnter={e => { if (f.family !== currentFamily) (e.currentTarget as HTMLButtonElement).style.background = "#222" }}
                   onMouseLeave={e => { if (f.family !== currentFamily) (e.currentTarget as HTMLButtonElement).style.background = "transparent" }}
