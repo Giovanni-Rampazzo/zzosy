@@ -5,7 +5,7 @@
  * que use `var(--zz-xxx)` reage imediatamente.
  */
 
-export type TokenGroup = "Cor" | "Borda" | "Traço" | "Raio" | "Fundo" | "Semantica" | "Tipografia" | "Linhas" | "Botões" | "Cards"
+export type TokenGroup = "Cor" | "Borda" | "Traço" | "Raio" | "Fundo" | "Semantica" | "Tipografia" | "Linhas" | "Botões" | "Cards" | "Páginas"
 
 export interface TokenDef {
   key: string
@@ -66,10 +66,22 @@ export const TOKENS: TokenDef[] = [
   { key: "--zz-btn-compact-fs", label: "Font size (botão compacto)", type: "size", default: "11px", group: "Botões" },
   { key: "--zz-btn-compact-gap", label: "Gap entre botões", type: "size", default: "6px", group: "Botões" },
   // Card grid
-  { key: "--zz-card-grid-min", label: "Largura mín do card", type: "size", default: "260px", group: "Cards", hint: "minmax do grid auto-fill" },
+  { key: "--zz-card-grid-min", label: "Largura mín do card", type: "size", default: "280px", group: "Cards", hint: "minmax do grid auto-fit" },
+  { key: "--zz-card-grid-max", label: "Largura máx do card", type: "size", default: "320px", group: "Cards", hint: "Teto do minmax — evita esticar em viewports wide" },
   { key: "--zz-card-grid-gap", label: "Gap entre cards", type: "size", default: "16px", group: "Cards" },
   { key: "--zz-card-pad", label: "Padding interno do card", type: "size", default: "16px", group: "Cards" },
   { key: "--zz-card-pad-sm", label: "Padding interno (card sm)", type: "size", default: "12px", group: "Cards" },
+  // Card de entidade (cliente, campanha, peca) — visual com thumb em cima + nome + 4 botoes
+  { key: "--zz-card-radius-lg", label: "Raio do card entidade", type: "size", default: "12px", group: "Cards", hint: "Cards de cliente/campanha (mais redondo que --zz-radius-lg)" },
+  { key: "--zz-card-thumb-h", label: "Altura do thumb header", type: "size", default: "140px", group: "Cards", hint: "Area colorida em cima do card de cliente" },
+  { key: "--zz-card-thumb-pad", label: "Padding do thumb header", type: "size", default: "20px", group: "Cards" },
+  // Container centralizado (regra 1.2.2)
+  { key: "--zz-page-max-w", label: "Largura máxima do container", type: "size", default: "1280px", group: "Páginas", hint: "Container centralizado abaixo dos menus (regra CLAUDE 1.2.2)" },
+  { key: "--zz-page-pad-y", label: "Padding top da pagina", type: "size", default: "32px", group: "Páginas" },
+  { key: "--zz-page-pad-x", label: "Padding horizontal da pagina", type: "size", default: "24px", group: "Páginas" },
+  { key: "--zz-page-pad-bottom", label: "Padding bottom da pagina", type: "size", default: "64px", group: "Páginas" },
+  { key: "--zz-page-h1-mb", label: "Margem abaixo do h1", type: "size", default: "20px", group: "Páginas" },
+  { key: "--zz-page-h1-size", label: "Tamanho do h1", type: "size", default: "28px", group: "Páginas" },
 ]
 
 const STORAGE_KEY = "zzosy.designTokens.v1"

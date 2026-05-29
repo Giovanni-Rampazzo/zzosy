@@ -46,12 +46,24 @@
   --zz-btn-compact-py: 4px;
   --zz-btn-compact-fs: 11px;
   --zz-btn-compact-gap: 6px;
-  /* Card grid (auto-fill minmax) */
-  --zz-card-grid-min: 260px;
+  /* Card grid (auto-fit minmax) */
+  --zz-card-grid-min: 280px;
+  --zz-card-grid-max: 320px;
   --zz-card-grid-gap: 16px;
   /* Card content padding */
   --zz-card-pad: 16px;
   --zz-card-pad-sm: 12px;
+  /* Card de entidade (cliente/campanha/peca) */
+  --zz-card-radius-lg: 12px;
+  --zz-card-thumb-h: 140px;
+  --zz-card-thumb-pad: 20px;
+  /* Container centralizado (regra CLAUDE 1.2.2) */
+  --zz-page-max-w: 1280px;
+  --zz-page-pad-y: 32px;
+  --zz-page-pad-x: 24px;
+  --zz-page-pad-bottom: 64px;
+  --zz-page-h1-mb: 20px;
+  --zz-page-h1-size: 28px;
 }
 
 *, *::before, *::after { box-sizing: border-box; }

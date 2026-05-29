@@ -12,12 +12,9 @@ interface Client {
   _count: { campaigns: number; pieces: number }; createdAt: string
 }
 
-// Container centralizado — padrao ZZOSY que comeca aqui (2026-05-28) pra todas
-// as paginas abaixo dos menus. "Conversando com o usuario no centro": conteudo
-// nao se espalha 100% da viewport, fica num eixo central confortavel de leitura.
-const CONTAINER_MAX_W = 1280
-
-// Padding compacto pros 4 botoes de acao (tokens em globals.css).
+// Estilos vem de CSS vars (var(--zz-...)) — editaveis em
+// /admin/settings/design-tokens. Container centralizado, grid de cards e
+// thumb area sao todos tweakaveis sem rebuild. 2026-05-28.
 const compactBtnStyle: React.CSSProperties = {
   padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)",
   fontSize: "var(--zz-btn-compact-fs)",
@@ -90,17 +87,26 @@ export default function DashboardPage() {
 
   return (
     <PageShell>
-      <div style={{ maxWidth: CONTAINER_MAX_W, margin: "0 auto", padding: "32px 24px 64px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: "#111", margin: "0 0 20px" }}>Clientes</h1>
+      <div style={{
+        maxWidth: "var(--zz-page-max-w)",
+        margin: "0 auto",
+        padding: "var(--zz-page-pad-y) var(--zz-page-pad-x) var(--zz-page-pad-bottom)",
+      }}>
+        <h1 style={{
+          fontSize: "var(--zz-page-h1-size)",
+          fontWeight: 700,
+          color: "var(--zz-text-primary)",
+          margin: "0 0 var(--zz-page-h1-mb)",
+        }}>Clientes</h1>
 
         <div style={{
           display: "grid",
-          // auto-fit + minmax(280, 320) + justifyContent:center: cards tem largura
+          // auto-fit + minmax centralizado pelos tokens: cards tem largura
           // limitada (nao esticam o vw inteiro), colunas vazias colapsam e as
           // existentes ficam centralizadas no container.
-          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 320px))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(var(--zz-card-grid-min), var(--zz-card-grid-max)))",
           justifyContent: "center",
-          gap: 16,
+          gap: "var(--zz-card-grid-gap)",
         }}>
           {loading && Array.from({ length: 4 }).map((_, i) => (
             <SkeletonCard key={i} />
@@ -113,9 +119,9 @@ export default function DashboardPage() {
               <div
                 key={c.id}
                 style={{
-                  background: "white",
-                  borderRadius: 12,
-                  border: "1px solid #E0E0E0",
+                  background: "var(--zz-bg-card)",
+                  borderRadius: "var(--zz-card-radius-lg)",
+                  border: "var(--zz-stroke-fino) solid var(--zz-border-default)",
                   overflow: "hidden",
                   display: "flex",
                   flexDirection: "column",
@@ -129,13 +135,13 @@ export default function DashboardPage() {
                 <div
                   onClick={() => router.push(`/clients/${c.id}`)}
                   style={{
-                    height: 140,
-                    background: c.brandLogoUrl ? "#F5F5F0" : accent,
+                    height: "var(--zz-card-thumb-h)",
+                    background: c.brandLogoUrl ? "var(--zz-bg-page)" : accent,
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    padding: 20,
+                    padding: "var(--zz-card-thumb-pad)",
                     position: "relative",
                   }}
                 >
@@ -198,7 +204,7 @@ export default function DashboardPage() {
               style={{
                 background: "transparent",
                 border: "2px dashed #C0C0B8",
-                borderRadius: 12,
+                borderRadius: "var(--zz-card-radius-lg)",
                 cursor: "pointer",
                 minHeight: 280,
                 display: "flex",
@@ -206,12 +212,12 @@ export default function DashboardPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 8,
-                color: "#888",
+                color: "var(--zz-text-muted)",
                 fontFamily: "inherit",
                 transition: "border-color 0.15s, color 0.15s, background 0.15s",
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "#555"; e.currentTarget.style.color = "#111"; e.currentTarget.style.background = "rgba(255,255,255,0.5)" }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "#C0C0B8"; e.currentTarget.style.color = "#888"; e.currentTarget.style.background = "transparent" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--zz-border-strong)"; e.currentTarget.style.color = "var(--zz-text-primary)"; e.currentTarget.style.background = "rgba(255,255,255,0.5)" }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#C0C0B8"; e.currentTarget.style.color = "var(--zz-text-muted)"; e.currentTarget.style.background = "transparent" }}
             >
               <div style={{ fontSize: 36, fontWeight: 300, lineHeight: 1 }}>+</div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>Novo Cliente</div>
@@ -263,13 +269,13 @@ export default function DashboardPage() {
 function SkeletonCard() {
   return (
     <div style={{
-      background: "white",
-      borderRadius: 12,
-      border: "1px solid #E0E0E0",
+      background: "var(--zz-bg-card)",
+      borderRadius: "var(--zz-card-radius-lg)",
+      border: "var(--zz-stroke-fino) solid var(--zz-border-default)",
       overflow: "hidden",
       minHeight: 280,
     }}>
-      <div style={{ height: 140, background: "linear-gradient(90deg, #EDEDED 0%, #F5F5F5 50%, #EDEDED 100%)", backgroundSize: "200% 100%", animation: "rowthumb-pulse 1.2s ease-in-out infinite" }} />
+      <div style={{ height: "var(--zz-card-thumb-h)", background: "linear-gradient(90deg, #EDEDED 0%, #F5F5F5 50%, #EDEDED 100%)", backgroundSize: "200% 100%", animation: "rowthumb-pulse 1.2s ease-in-out infinite" }} />
       <div style={{ padding: "14px 16px" }}>
         <div style={{ height: 16, width: "60%", background: "#EDEDED", borderRadius: 4, marginBottom: 8 }} />
         <div style={{ height: 12, width: "40%", background: "#EDEDED", borderRadius: 4 }} />
