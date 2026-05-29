@@ -178,7 +178,7 @@ export default function DesignTokensPage() {
 
             {/* Botoes compactos — replica row de Apagar/Duplicar/Editar/Entrar */}
             <div style={{ fontSize: 11, color: "var(--zz-text-muted)", marginBottom: 12 }}>Row de ações compacta (4 botões padrão ZZOSY)</div>
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "var(--zz-btn-compact-gap)", flexWrap: "nowrap", marginBottom: 16, padding: 8, background: "var(--zz-bg-subtle)", borderRadius: "var(--zz-radius-md)" }}>
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "var(--zz-btn-compact-gap)", flexWrap: "wrap", marginBottom: 16, padding: 8, background: "var(--zz-bg-subtle)", borderRadius: "var(--zz-radius-md)" }}>
               <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Apagar</Button>
               <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Duplicar</Button>
               <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Editar</Button>
@@ -196,7 +196,7 @@ export default function DesignTokensPage() {
                   <div style={{ padding: "var(--zz-card-pad-sm)", display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ fontSize: "var(--zz-text-md)", fontWeight: 600 }}>Peça {i}</div>
                     <div style={{ fontSize: "var(--zz-text-sm)", color: "var(--zz-text-muted)" }}>1080 × 1440 px</div>
-                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "var(--zz-btn-compact-gap)", flexWrap: "nowrap", marginTop: "auto" }}>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "var(--zz-btn-compact-gap)", flexWrap: "wrap", marginTop: "auto" }}>
                       <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Apagar</Button>
                       <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Duplicar</Button>
                       <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }}>Editar</Button>

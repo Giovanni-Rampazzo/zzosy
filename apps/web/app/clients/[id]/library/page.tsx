@@ -272,7 +272,7 @@ export default function ClientLibraryPage() {
                           ))}
                         </div>
                       )}
-                      <div style={{ display: "flex", gap: "var(--zz-btn-compact-gap)", marginTop: 4, justifyContent: "center", flexWrap: "nowrap" }}>
+                      <div style={{ display: "flex", gap: "var(--zz-btn-compact-gap)", marginTop: 4, justifyContent: "center", flexWrap: "wrap" }}>
                         {/* Botoes compactos via design tokens */}
                         {confirmDelete === a.id ? (
                           <>

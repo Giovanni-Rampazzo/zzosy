@@ -41,11 +41,14 @@
   --zz-row-pad-y: 10px;
   --zz-row-pad-x: 12px;
   --zz-row-gap: 8px;
-  /* Botoes compactos (action row em cards/tabelas) */
-  --zz-btn-compact-px: 10px;
+  /* Botoes compactos (action row em cards/tabelas).
+     Encolhido 2026-05-29: 10/6 → 6/4 pra 4 botoes (Apagar/Duplicar/Editar/
+     Entrar) caberem na largura padrao de card (220px). Combinado com
+     flexWrap:wrap nos call sites como rede de seguranca em viewport estreito. */
+  --zz-btn-compact-px: 6px;
   --zz-btn-compact-py: 4px;
   --zz-btn-compact-fs: 11px;
-  --zz-btn-compact-gap: 6px;
+  --zz-btn-compact-gap: 4px;
   /* Card grid (auto-fit minmax) */
   --zz-card-grid-min: 220px;
   --zz-card-grid-max: 260px;

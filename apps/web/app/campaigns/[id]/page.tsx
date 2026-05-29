@@ -877,7 +877,7 @@ export default function CampaignOverviewPage() {
                         }
                       }}
                     />
-                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: "auto", gap: "var(--zz-btn-compact-gap)", flexWrap: "nowrap" }}>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: "auto", gap: "var(--zz-btn-compact-gap)", flexWrap: "wrap" }}>
                       {/* Botoes compactos via design tokens — editor em /admin/settings/design-tokens */}
                       <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={(e) => deletePiece(p.id, e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar</Button>
                       <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => duplicateOne(p.id)} title="Duplicar peça (cópia entra em Standby)">Duplicar</Button>

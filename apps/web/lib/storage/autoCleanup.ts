@@ -5,9 +5,23 @@
  *   - /api/admin/cleanup-uploads (cleanup manual via UI)
  *   - scripts/cleanup-uploads.ts (cleanup manual via CLI)
  *
- * Politica: apaga so o que NAO tem referencia em nenhum campo de DB
- * (Campaign.psdUrl, Piece.imageUrl/thumbnailUrl/data.steps, Delivery.zipUrl,
- *  SmartObjectFile.filePath, KeyVision.thumbnailUrl).
+ * Politica: apaga so o que NAO tem referencia em nenhum campo de DB.
+ *
+ * IMPORTANTE — toda nova coluna de URL no schema precisa entrar em
+ * collectDbUrls(). Esquecer = cleanup APAGA arquivos referenciados por
+ * essas colunas como "orfaos". Bug grave de perda de dados.
+ *
+ * Cobertura atual (toda coluna *Url/*Path de @db.LongText/Text):
+ *   - Tenant.brandLogoUrl, Tenant.brandSecondaryLogoUrl
+ *   - Client.brandLogoUrl, Client.customFontUrl
+ *   - Campaign.psdUrl
+ *   - CampaignAsset.imageUrl
+ *   - ClientLibraryAsset.imageUrl/thumbnailUrl
+ *   - ClientLibrarySmartObjectFile.filePath
+ *   - SmartObjectFile.filePath
+ *   - KeyVision.thumbnailUrl
+ *   - Piece.imageUrl/thumbnailUrl + data.steps[].imageUrl/thumbnailUrl
+ *   - Delivery.zipUrl
  */
 import fs from "fs/promises"
 import path from "path"
@@ -47,14 +61,41 @@ async function fileSize(p: string): Promise<number> {
 
 async function collectDbUrls(): Promise<Set<string>> {
   const dbUrls = new Set<string>()
-  const [campaigns, pieces, deliveries, sos, kvs] = await Promise.all([
+  // Coleta TODA coluna de URL/Path do schema. Esquecer 1 tabela = cleanup
+  // apaga arquivos referenciados so por ela como "orfaos" (bug 2026-05-29
+  // descoberto via screenshot: 4 IMAGE assets do library com broken images
+  // — ClientLibraryAsset.imageUrl ficou de fora ate aqui).
+  const [
+    tenants, clients, campaigns, campaignAssets,
+    libraryAssets, librarySmartObjects,
+    pieces, deliveries, sos, kvs,
+  ] = await Promise.all([
+    prisma.tenant.findMany({ select: { brandLogoUrl: true, brandSecondaryLogoUrl: true } }),
+    prisma.client.findMany({ select: { brandLogoUrl: true, customFontUrl: true } }),
     prisma.campaign.findMany({ select: { psdUrl: true } }),
+    prisma.campaignAsset.findMany({ select: { imageUrl: true } }),
+    prisma.clientLibraryAsset.findMany({ select: { imageUrl: true, thumbnailUrl: true } }),
+    prisma.clientLibrarySmartObjectFile.findMany({ select: { filePath: true } }),
     prisma.piece.findMany({ select: { imageUrl: true, thumbnailUrl: true, data: true } }),
     prisma.delivery.findMany({ select: { zipUrl: true } }),
     prisma.smartObjectFile.findMany({ select: { filePath: true } }),
     prisma.keyVision.findMany({ select: { thumbnailUrl: true } }),
   ])
+  for (const t of tenants) {
+    if (t.brandLogoUrl) dbUrls.add(t.brandLogoUrl)
+    if (t.brandSecondaryLogoUrl) dbUrls.add(t.brandSecondaryLogoUrl)
+  }
+  for (const c of clients) {
+    if (c.brandLogoUrl) dbUrls.add(c.brandLogoUrl)
+    if (c.customFontUrl) dbUrls.add(c.customFontUrl)
+  }
   for (const c of campaigns) if (c.psdUrl) dbUrls.add(c.psdUrl)
+  for (const ca of campaignAssets) if (ca.imageUrl) dbUrls.add(ca.imageUrl)
+  for (const la of libraryAssets) {
+    if (la.imageUrl) dbUrls.add(la.imageUrl)
+    if (la.thumbnailUrl) dbUrls.add(la.thumbnailUrl)
+  }
+  for (const lso of librarySmartObjects) if (lso.filePath) dbUrls.add(lso.filePath)
   for (const p of pieces) {
     if (p.imageUrl) dbUrls.add(p.imageUrl)
     if (p.thumbnailUrl) dbUrls.add(p.thumbnailUrl)
