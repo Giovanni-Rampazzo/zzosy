@@ -521,57 +521,9 @@ export default function CampaignOverviewPage() {
             pra seu contexto correto na sidebar: Assets+KV em MATRIZ, Pecas
             removido (ja tem PECAS GERADAS embaixo), Apresentacao em ENTREGA. */}
 
-        {/* KV preview grande no topo — full width, padding generoso. User
-            pediu 2026-05-28: "fica em cima das pecas, grande, fill horizontal,
-            padding razoavel pra ficar perfeito de visualizar". */}
-        <div
-          onClick={() => { if (campaign.keyVision?.thumbnailUrl) router.push(`/editor?campaignId=${id}`) }}
-          title={campaign.keyVision?.thumbnailUrl ? "Abrir editor da matriz (ou arraste um .psd pra importar)" : "Arraste um .psd aqui ou clique em Importar PSD"}
-          onDragOver={e => { e.preventDefault(); if (!kvDragOver) setKvDragOver(true) }}
-          onDragLeave={e => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) setKvDragOver(false)
-          }}
-          onDrop={async e => {
-            e.preventDefault()
-            setKvDragOver(false)
-            const file = Array.from(e.dataTransfer.files).find(f => /\.psd$/i.test(f.name))
-            if (!file) { alert("Arraste um arquivo .psd"); return }
-            await psdMatrixImporterRef.current?.importFile(file)
-          }}
-          style={{
-            background: "white", borderRadius: 10, border: "1px solid #E0E0E0",
-            padding: 32, marginBottom: 14,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            minHeight: 280,
-            cursor: campaign.keyVision?.thumbnailUrl ? "pointer" : "default",
-            outline: kvDragOver ? "2px dashed #F09300" : "2px dashed transparent",
-            outlineOffset: -2,
-            transition: "outline 0.15s ease",
-          }}
-        >
-          {campaign.keyVision?.thumbnailUrl ? (
-            <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
-              loading="lazy" decoding="async"
-              style={{ maxWidth: "100%", maxHeight: 420, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
-          ) : (
-            <div
-              onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
-              style={{
-                width: "100%", minHeight: 220,
-                background: "#FAFAFA", borderRadius: 6, border: "1px dashed #C0C0C0",
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                gap: 12, padding: 32, cursor: "pointer",
-              }}>
-              <Button variant="primary" size="md"
-                onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
-                Import PSD
-              </Button>
-              <span style={{ fontSize: 12, color: "#888" }}>or drop a .psd file here</span>
-            </div>
-          )}
-        </div>
         {/* PsdImporter + hidden input — refs sao consumidos pelo dropzone
-            acima e pelo botao "Import PSD" da coluna de acoes. */}
+            do KV (agora dentro da coluna do meio) e pelo botao "Import PSD"
+            da coluna de acoes. */}
         <div style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, overflow: "hidden" }}>
           <PsdImporter ref={psdMatrixImporterRef} campaignId={id} onImported={loadAll} />
         </div>
@@ -593,8 +545,12 @@ export default function CampaignOverviewPage() {
             EXPORT (Apresentação, Entrega). KV preview movido pro topo full-width
             2026-05-28 — coluna esquerda agora so acoes. */}
         <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 240px) 1fr minmax(200px, 240px)", gap: 14, alignItems: "start" }}>
-        {/* Coluna de AÇÕES — KV preview movido pro topo full-width 2026-05-28 */}
+        {/* Coluna ENTRADAS (1a coluna): regra global ZZOSY (CLAUDE 1.10) —
+            tudo que ALIMENTA a campanha (cartucho/PSD/assets). KV botao
+            removido (preview central ja eh clickable). +Gerar peca movido
+            pra direita (SAIDAS). */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 1, marginBottom: 10 }}>ENTRADAS</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Coluna de AÇÕES da campanha (modificam dados — nao sao
               navegacao). Navegacao (Assets/KV/Pecas/Apresentacao) fica no
@@ -605,10 +561,11 @@ export default function CampaignOverviewPage() {
                 - com pecas          → Entrega (primary)
               Outros ficam secondary. Reduz ruido visual e guia o user. */}
           {(() => {
-            const hasAssets = !!campaign.assets && campaign.assets.length > 0
-            // Layout 2026-05-28: lista da esquerda agora so botoes de INPUT.
-            // Cartucho subiu pro topo da sidebar, Apresentacao + Entrega
-            // foram pra 3a coluna (EXPORT).
+            // Regra ZZOSY global (CLAUDE 1.10): ENTRADAS na esquerda, SAIDAS na direita.
+            // Esquerda = o que ALIMENTA a campanha (cartucho importado, PSD importado,
+            // gestao de assets de origem). KV removido daqui — preview central ja eh
+            // clicavel e abre o editor (deduplicado).
+            // "+ Gerar peca" foi pra direita (gera output = peca nova).
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Button variant="secondary" size="sm"
@@ -626,24 +583,66 @@ export default function CampaignOverviewPage() {
                   title="Lista de assets desta campanha">
                   Assets
                 </Button>
-                <Button variant="secondary" size="sm"
-                  onClick={() => router.push(`/editor?campaignId=${id}`)}
-                  disabled={!hasAssets}
-                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Editor da Matriz (Key Vision)"}>
-                  KV
-                </Button>
-                <Button variant="secondary" size="sm"
-                  onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
-                  disabled={!hasAssets}
-                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}>
-                  + Gerar peça
-                </Button>
               </div>
             )
           })()}
           </div>
         </div>
 
+        {/* Coluna do meio: KV preview EM CIMA + Lista de pecas EMBAIXO,
+            wrappados em flex column. KV antes era full-width acima da grid
+            (escondia as sidebars on-load); user pediu 2026-05-29 pra mover
+            pra dentro da coluna central pra ver as 3 cols de cara. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* KV preview — mesma logica (drop, click pra editor, dropzone vazia)
+            mas agora confinado na coluna 1fr. maxHeight reduzido (420→320)
+            pra deixar espaco pra lista logo abaixo. */}
+        <div
+          onClick={() => { if (campaign.keyVision?.thumbnailUrl) router.push(`/editor?campaignId=${id}`) }}
+          title={campaign.keyVision?.thumbnailUrl ? "Abrir editor da matriz (ou arraste um .psd pra importar)" : "Arraste um .psd aqui ou clique em Importar PSD"}
+          onDragOver={e => { e.preventDefault(); if (!kvDragOver) setKvDragOver(true) }}
+          onDragLeave={e => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setKvDragOver(false)
+          }}
+          onDrop={async e => {
+            e.preventDefault()
+            setKvDragOver(false)
+            const file = Array.from(e.dataTransfer.files).find(f => /\.psd$/i.test(f.name))
+            if (!file) { alert("Arraste um arquivo .psd"); return }
+            await psdMatrixImporterRef.current?.importFile(file)
+          }}
+          style={{
+            background: "white", borderRadius: 10, border: "1px solid #E0E0E0",
+            padding: 16,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            minHeight: 220,
+            cursor: campaign.keyVision?.thumbnailUrl ? "pointer" : "default",
+            outline: kvDragOver ? "2px dashed #F09300" : "2px dashed transparent",
+            outlineOffset: -2,
+            transition: "outline 0.15s ease",
+          }}
+        >
+          {campaign.keyVision?.thumbnailUrl ? (
+            <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
+              loading="lazy" decoding="async"
+              style={{ maxWidth: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+          ) : (
+            <div
+              onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
+              style={{
+                width: "100%", minHeight: 180,
+                background: "#FAFAFA", borderRadius: 6, border: "1px dashed #C0C0C0",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                gap: 12, padding: 24, cursor: "pointer",
+              }}>
+              <Button variant="primary" size="md"
+                onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
+                Import PSD
+              </Button>
+              <span style={{ fontSize: 12, color: "#888" }}>or drop a .psd file here</span>
+            </div>
+          )}
+        </div>
         {/* Lista de peças */}
         {(() => {
           const filteredPieces = statusFilter === "ALL" ? pieces : pieces.filter(p => p.status === statusFilter)
@@ -1015,16 +1014,24 @@ export default function CampaignOverviewPage() {
         </div>
           )
         })()}
+        </div>
 
-        {/* Sidebar EXPORT (3a coluna 2026-05-28): logica "esquerda=input,
-            centro=dados, direita=export". Apresentacao eh o CTA principal
-            depois das pecas geradas — variant primary (fill amarelo). */}
+        {/* Sidebar SAIDAS (3a coluna): regra global ZZOSY (CLAUDE 1.10) —
+            tudo que PRODUZ a partir da campanha fica aqui. Ordem por etapa
+            do fluxo: gerar pecas → ver apresentacao → entregar pacote. */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 1, marginBottom: 10 }}>EXPORTAR</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#888", letterSpacing: 1, marginBottom: 10 }}>SAIDAS</div>
           {(() => {
+            const hasAssets = !!campaign.assets && campaign.assets.length > 0
             const hasPieces = pieces.length > 0
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Button variant="secondary" size="sm"
+                  onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
+                  disabled={!hasAssets}
+                  title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}>
+                  + Gerar peça
+                </Button>
                 <Button variant="primary" size="md"
                   onClick={() => router.push(`/campaigns/${id}/presentation`)}
                   disabled={!hasPieces}

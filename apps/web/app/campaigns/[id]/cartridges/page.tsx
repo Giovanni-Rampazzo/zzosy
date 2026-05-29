@@ -204,7 +204,11 @@ export default function CartridgesBrowsePage() {
         margin: "0 auto",
         padding: "var(--zz-page-pad-y) var(--zz-page-pad-x) var(--zz-page-pad-bottom)",
       }}>
+        {/* Linha NAVEGACAO (CLAUDE 1.2 + 1.2.1): "← Voltar" pra page da
+            campanha mae. Action "Aplicar cartucho" vai pra toolbar interna
+            do card abaixo — nav e action NUNCA dividem linha. */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16, flexWrap: "wrap" }}>
+          <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${id}`)}>← Campanha</Button>
           <CampaignSubnav
             campaignId={id}
             clientId={campaign.client?.id}
@@ -212,10 +216,8 @@ export default function CartridgesBrowsePage() {
             activeTab={null}
             hasAssets={campaign.assets.length > 0}
             hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
+            actions={<ApplyCartridgeButton campaignId={id} clientId={campaign.client?.id} onApplied={() => router.refresh()} />}
           />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <ApplyCartridgeButton campaignId={id} clientId={campaign.client?.id} onApplied={() => router.refresh()} />
-          </div>
         </div>
 
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", overflow: "hidden" }}>

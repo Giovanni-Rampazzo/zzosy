@@ -123,6 +123,24 @@ Toda barra de filtro/categoria usa o componente `FilterPill` (`components/ui/Fil
 - Size padrao `sm` em toolbar de cards. `md` em barras isoladas (page-level filters).
 - Tamanho/altura ALINHADO com `<Button size="sm">` na mesma row — toolbar so respira se todos os children medem o mesmo.
 
+## 1.10 ENTRADAS na esquerda, SAÍDAS na direita
+
+Regra de fluxo visual de TODA pagina ZZOSY que tem **acoes em colunas/sidebars**:
+
+- **Coluna esquerda (ENTRADAS):** tudo que **alimenta** a entidade — importar, puxar do library, adicionar source, gerir assets de origem, aplicar cartucho.
+- **Coluna direita (SAIDAS):** tudo que a entidade **produz** — gerar peca, exportar apresentacao, gerar entrega, baixar artefatos.
+- **Coluna central (DADOS / PREVIEW):** o conteudo principal — KV preview, lista de pecas, tabela, grid de cards.
+
+Razao: user processa a pagina como **pipeline visual**. Esquerda eh "o que entra", direita eh "o que sai", centro eh "o que esta acontecendo". Misturar (ex: `+ Gerar peca` na esquerda junto com `Importar PSD`) quebra esse mapping e o user nao sabe onde clicar pra cada etapa do fluxo.
+
+Aplicacoes:
+- `/campaigns/[id]` (overview): ENTRADAS = Cartucho/Import PSD/Assets. SAIDAS = +Gerar peca/Apresentacao/Entrega.
+- Labels de coluna: `ENTRADAS` e `SAIDAS` em uppercase 10px com letter-spacing, color #888, no topo de cada sidebar.
+- Quando uma acao "navega" mas tambem produz (ex: abrir editor pra criar peca), classifica pelo **resultado** — produz peca = SAIDAS.
+- KV: NUNCA botao lateral redundante se ja tem preview central clickable. Click no preview = abrir editor.
+
+Anti-padrao: 1 sidebar so com mix de tudo. Sweep: qualquer page nova com >3 acoes precisa decidir input vs output antes de listar.
+
 ## 1.9 Logos de marca/cliente: identificam sozinhos
 
 Quando logo do cliente esta no header de uma pagina dele (ex: Library, Detalhe do Cliente, etc), NAO duplicar com texto "{Cliente} · {Pagina}" do lado.
