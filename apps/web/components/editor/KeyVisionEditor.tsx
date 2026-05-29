@@ -34,6 +34,10 @@ import {
   buildBgFill, loadImageElement, applyBgFillAsync, syncBgLayerToRect,
 } from "@/lib/editor/bgLayerHelpers"
 import { usePanelResize } from "@/lib/editor/usePanelResize"
+import {
+  syncBrandRefsInTextObjects as syncBrandTextHelper,
+  syncBrandRefsInBgLayers as syncBrandBgHelper,
+} from "@/lib/editor/brandSyncHelpers"
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 // TH = top bar height. BH = bottom toolbar (sub-controls). Larguras dos
@@ -415,40 +419,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandColors])
 
-  // Re-sincroniza fill dos Textboxes com __fillBrandIdx contra brandColors
-  // atual. Retorna true se algum fill mudou.
+  // Wrappers que adapta os helpers puros (lib/editor/brandSyncHelpers.ts) com
+  // as refs locais. Mantem mesma assinatura pra nao quebrar callers.
+  // syncBgLayers muta a ref do bgLayers + side-effects de dirty.
   function syncBrandRefsInTextObjects(fc: any): boolean {
-    if (!fc) return false
-    let changed = false
-    for (const o of fc.getObjects()) {
-      const bIdx = (o as any).__fillBrandIdx
-      if (typeof bIdx !== "number") continue
-      const live = brandColorsRef.current[bIdx]
-      if (!live || typeof live.hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(live.hex)) continue
-      if (typeof o.fill === "string" && live.hex.toLowerCase() !== o.fill.toLowerCase()) {
-        o.set("fill", live.hex)
-        changed = true
-      }
-    }
-    return changed
+    return syncBrandTextHelper(fc, brandColorsRef.current)
   }
-
-  // Re-sincroniza as cores SOLID dos bgLayers com brandColors atual. Se algum
-  // BG referencia (colorBrandIdx) um brand color cuja cor mudou desde o ultimo
-  // save, atualiza color + marca dirty pra proximo auto-save persistir. Retorna
-  // true se alguma layer foi modificada.
   function syncBrandRefsInBgLayers(): boolean {
-    let changed = false
-    for (let i = 0; i < bgLayersRef.current.length; i++) {
-      const l = bgLayersRef.current[i]
-      if (l.kind !== "solid" || typeof l.colorBrandIdx !== "number") continue
-      const live = brandColorsRef.current[l.colorBrandIdx]
-      if (!live || typeof live.hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(live.hex)) continue
-      if (live.hex.toLowerCase() !== l.color.toLowerCase()) {
-        bgLayersRef.current[i] = { ...l, color: live.hex }
-        changed = true
-      }
-    }
+    const changed = syncBrandBgHelper(bgLayersRef.current, brandColorsRef.current)
     if (changed) {
       isDirtyRef.current = true
       setIsDirty(true)
