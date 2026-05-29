@@ -1365,16 +1365,43 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
   }, [])
 
-  // beforeunload: avisa se ha mudancas nao salvas
+  // beforeunload: avisa se ha mudancas nao salvas + best-effort flush.
+  // Audit #6 (HIGH): exit paths nao chamavam flushPendingAssetPuts. Browser
+  // beforeunload nao pode await async (handler eh sync), entao o flush eh
+  // fire-and-forget — fetch usado dentro de flushPendingAssetPuts ja eh
+  // keepalive-safe por padrao do Next (route handlers Node).
+  //
+  // Tambem listener em visibilitychange (tab vai pra background) e pagehide
+  // (mobile Safari nao dispara beforeunload). Sao os 3 sinais reais de exit
+  // que o browser nos da.
   useEffect(() => {
     function onBefore(e: BeforeUnloadEvent) {
       if (isDirtyRef.current) {
         e.preventDefault()
         e.returnValue = ""
+        // Fire-and-forget flush — best effort. Promise pode nao completar
+        // antes do browser fechar mas eh melhor que nao tentar.
+        try { void flushPendingAssetPuts() } catch {}
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden" && isDirtyRef.current) {
+        try { void flushPendingAssetPuts() } catch {}
+      }
+    }
+    function onPageHide() {
+      if (isDirtyRef.current) {
+        try { void flushPendingAssetPuts() } catch {}
       }
     }
     window.addEventListener("beforeunload", onBefore)
-    return () => window.removeEventListener("beforeunload", onBefore)
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    window.addEventListener("pagehide", onPageHide)
+    return () => {
+      window.removeEventListener("beforeunload", onBefore)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+      window.removeEventListener("pagehide", onPageHide)
+    }
   }, [])
 
   // Inicializar Fabric
