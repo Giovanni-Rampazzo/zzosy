@@ -569,6 +569,12 @@ export default function CampaignOverviewPage() {
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Button variant="secondary" size="sm"
+                  onClick={() => campaign.client && router.push(`/clients/${campaign.client.id}/design-system`)}
+                  disabled={!campaign.client}
+                  title="Cores, fontes e tokens do design system do cliente (fonte da identidade visual)">
+                  Design System
+                </Button>
+                <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/cartridges`)}
                   title="Browse cartucho — assets do library do cliente com filtros + add em lote">
                   Cartucho
