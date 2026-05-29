@@ -75,6 +75,14 @@ Toda página ZZOSY tem 2 linhas de topo fixas, nessa ordem:
 - Padrão: navegação isolada à direita do título. Actions ficam em OUTRA linha (toolbar interna da lista) ou em sidebar.
 - Sweep: qualquer página que tiver "← Voltar" + outro botão de action na mesma linha precisa separar.
 
+### 1.2.2 Conteúdo centralizado abaixo dos menus (max-width 1280)
+
+- Toda página ZZOSY embaixo dos menus tem o conteúdo centralizado num eixo confortável de leitura, NÃO espalhado border-to-border.
+- Wrapper padrão: `maxWidth: 1280, margin: "0 auto", padding: "32px 24px 64px"`.
+- Razão: "conversando com o user no centro" — em monitores wide (1600px+), texto/cards/forms esticados até a borda ficam difíceis de escanear. Centralizar mantém o foco e dá sensação de produto polido.
+- Exceções (fullscreen intencional): editor (Fabric canvas + sidebars), preview/apresentação.
+- Sweep: qualquer página nova ou refactor adota esse wrapper. Pages antigas migram quando tocadas.
+
 ## 1.3 Espaçamento
 
 - Padding container: 16-32px máximo
