@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
+import { FilterPill } from "@/components/ui/FilterPill"
 import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { useSetActiveClient } from "@/lib/activeClientContext"
 import { ExportCartridgeModal } from "@/components/library/ExportCartridgeModal"
@@ -125,6 +126,82 @@ export default function ClientLibraryPage() {
     }
   }
 
+  /**
+   * Smart import: detecta tipo do arquivo e dispatch pro fluxo certo.
+   *  - .zzosy/.zip → cartucho (importCartridge)
+   *  - image/* → upload pro storage + cria ClientLibraryAsset type=IMAGE
+   *  - text/plain ou .txt/.md → le como texto + cria type=TEXT
+   * Outros tipos: erro amigavel.
+   *
+   * Adicionado 2026-05-29 (user pedido pra importar text/image direto sem
+   * precisar passar por uma campanha).
+   */
+  async function importSmart(file: File) {
+    const name = file.name
+    const lower = name.toLowerCase()
+    const isCartridge = lower.endsWith(".zzosy") || lower.endsWith(".zip")
+    const isImage = file.type.startsWith("image/")
+    const isText = file.type.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".md")
+    if (isCartridge) {
+      await importCartridge(file)
+      return
+    }
+    setImportBusy(true)
+    try {
+      if (isImage) {
+        // Upload pro storage primeiro (rota generica /api/upload).
+        const fd = new FormData()
+        fd.append("file", file)
+        const upRes = await fetch("/api/upload", { method: "POST", body: fd })
+        if (!upRes.ok) {
+          const err = await upRes.json().catch(() => ({}))
+          alert("Falha no upload: " + (err.error ?? upRes.status))
+          return
+        }
+        const { url } = await upRes.json()
+        // Cria asset apontando pra URL.
+        const assetName = name.replace(/\.[^.]+$/, "")
+        const createRes = await fetch(`/api/clients/${id}/library/assets`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: assetName, type: "IMAGE", imageUrl: url }),
+        })
+        if (!createRes.ok) {
+          const err = await createRes.json().catch(() => ({}))
+          alert("Falha ao criar asset: " + (err.error ?? createRes.status))
+          return
+        }
+        const created = await createRes.json()
+        setAssets(prev => [created, ...prev])
+        broadcastLibrary({ kind: "asset-created" as any, clientId: id, assetId: created.id })
+        return
+      }
+      if (isText) {
+        const text = await file.text()
+        const assetName = name.replace(/\.[^.]+$/, "")
+        // Content shape: array de spans (compatible com playground/overrides).
+        const content = [{ text, style: {} }]
+        const createRes = await fetch(`/api/clients/${id}/library/assets`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: assetName, type: "TEXT", content }),
+        })
+        if (!createRes.ok) {
+          const err = await createRes.json().catch(() => ({}))
+          alert("Falha ao criar asset: " + (err.error ?? createRes.status))
+          return
+        }
+        const created = await createRes.json()
+        setAssets(prev => [created, ...prev])
+        broadcastLibrary({ kind: "asset-created" as any, clientId: id, assetId: created.id })
+        return
+      }
+      alert(`Tipo nao suportado: ${file.type || lower}. Use imagem, texto ou cartucho .zzosy.`)
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   async function doExportCartridge(name: string, scope: "filtered" | "all") {
     const ids = scope === "all" ? assets.map(a => a.id) : filtered.map(a => a.id)
     if (ids.length === 0) { alert("Nenhum asset pra exportar"); return }
@@ -157,10 +234,9 @@ export default function ClientLibraryPage() {
             card de Assets — mesma regra das outras paginas. */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: 24, gap: 16, flexWrap: "wrap" }}>
           <Button variant="view" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
-          {client && <ClientLogoBadge client={{ id, name: client.name, brandLogoUrl: client.brandLogoUrl }} size={48} radius={8} />}
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-            {client?.name} · Library
-          </div>
+          {/* Logo aumentado (48→64) e label "SICREDI · Library" removida — logo
+              ja identifica a marca, /library a pagina (CLAUDE 1.2, 2.6). */}
+          {client && <ClientLogoBadge client={{ id, name: client.name, brandLogoUrl: client.brandLogoUrl }} size={64} radius={10} />}
         </div>
 
         {/* Card box com header de filtros + grid */}
@@ -170,19 +246,18 @@ export default function ClientLibraryPage() {
               Assets ({filtered.length})
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {["ALL", "TEXT", "IMAGE", "SHAPE", "SMART_OBJECT"].map(t => (
-                <button
+              {/* Filtros via FilterPill (canonical ZZOSY). Antes era <button>
+                  inline com case mixto ("Todos" vs "TEXT/IMAGE/SHAPE/SO") —
+                  padronizado em UPPERCASE pra consistencia visual. */}
+              {(["ALL", "TEXT", "IMAGE", "SHAPE", "SMART_OBJECT"] as const).map(t => (
+                <FilterPill
                   key={t}
+                  active={filterType === t}
                   onClick={() => setFilterType(t)}
-                  style={{
-                    padding: "5px 10px", fontSize: 11, fontWeight: 600,
-                    background: filterType === t ? "#F5C400" : "white",
-                    color: filterType === t ? "#111" : "#555",
-                    border: "2px solid #555", borderRadius: 6, cursor: "pointer",
-                  }}
+                  size="sm"
                 >
-                  {t === "ALL" ? "Todos" : t === "SMART_OBJECT" ? "SO" : t}
-                </button>
+                  {t === "ALL" ? "TODOS" : t === "SMART_OBJECT" ? "SO" : t}
+                </FilterPill>
               ))}
               <input
                 type="text"
@@ -191,33 +266,22 @@ export default function ClientLibraryPage() {
                 placeholder="Buscar nome / tag / slot..."
                 style={{ padding: "6px 10px", fontSize: 12, border: "1px solid #E0E0E0", borderRadius: 6, outline: "none", width: 200 }}
               />
-              {/* Export/Import cartridge: actions migradas da header pra ca
-                  (CLAUDE 1.2.1 — nav e action nao dividem linha). Toolbar
-                  do card eh o lugar canonico pra bulk-actions da lista. */}
+              {/* Toolbar de actions (CLAUDE 1.2.1 — nav e action nao dividem linha).
+                  Padronizado via <Button size="sm"> em todas: Import (smart
+                  dispatch por MIME), Export cartridge, Import cartridge. */}
               <div style={{ width: 1, height: 24, background: "#E0E0E0", margin: "0 4px" }} />
+              <Button
+                variant="primary"
+                size="sm"
+                onFileSelect={(f) => importSmart(f)}
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif,.txt,.md,.zzosy,.zip"
+                loading={importBusy}
+              >
+                + Importar
+              </Button>
               <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)} disabled={assets.length === 0}>
                 Export cartridge
               </Button>
-              <label style={{ cursor: importBusy ? "wait" : "pointer" }}>
-                <input
-                  type="file"
-                  accept=".zzosy,.zip"
-                  style={{ display: "none" }}
-                  onChange={e => {
-                    const f = e.target.files?.[0]
-                    if (f) importCartridge(f)
-                    e.target.value = ""
-                  }}
-                  disabled={importBusy}
-                />
-                <span style={{
-                  display: "inline-block", padding: "5px 12px", border: "2px solid #555",
-                  background: "white", color: "#111", fontWeight: 600, fontSize: 12,
-                  borderRadius: 6, cursor: importBusy ? "wait" : "pointer", opacity: importBusy ? 0.5 : 1,
-                }}>
-                  {importBusy ? "Importando..." : "Import cartridge"}
-                </span>
-              </label>
             </div>
           </div>
 
@@ -273,7 +337,11 @@ export default function ClientLibraryPage() {
                         </div>
                       )}
                       <div style={{ display: "flex", gap: "var(--zz-btn-compact-gap)", marginTop: 4, justifyContent: "center", flexWrap: "wrap" }}>
-                        {/* Botoes compactos via design tokens */}
+                        {/* Library tem APENAS 3 botoes: Editar foi removido porque
+                            ia pro MESMO destino que Entrar (/clients/[id]/library/
+                            [assetId]). CLAUDE 2.4: nao duplicar navegacao pra
+                            mesmo destino. Demais paginas com Editar destino
+                            diferente (campaigns, pieces) mantem os 4. */}
                         {confirmDelete === a.id ? (
                           <>
                             <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => deleteAsset(a.id)}>Sim</Button>
@@ -283,7 +351,6 @@ export default function ClientLibraryPage() {
                           <>
                             <Button variant="danger" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => setConfirmDelete(a.id)}>Apagar</Button>
                             <Button variant="info" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => duplicateAsset(a.id)}>Duplicar</Button>
-                            <Button variant="secondary" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)} title="Abrir asset pra editar (conteudo + metadata)">Editar</Button>
                             <Button variant="view" size="sm" style={{ padding: "var(--zz-btn-compact-py) var(--zz-btn-compact-px)", fontSize: "var(--zz-btn-compact-fs)", lineHeight: 1.2 }} onClick={() => router.push(`/clients/${id}/library/${a.id}`)}>Entrar</Button>
                           </>
                         )}

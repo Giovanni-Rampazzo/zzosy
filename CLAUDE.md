@@ -115,6 +115,24 @@ Toda página ZZOSY tem 2 linhas de topo fixas, nessa ordem:
 - Trade-off: em multi-line, botões flutuam no meio vertical. Aceito.
 - Regra global em todo ZZOSY (lists, modais, toolbars)
 
+## 1.8 Filter pills (filtros de categoria/tipo/status)
+
+Toda barra de filtro/categoria usa o componente `FilterPill` (`components/ui/FilterPill.tsx`). NUNCA `<button>` inline com estilos hardcoded.
+
+- Labels em UPPERCASE pra alinhar com constantes do dominio (TEXT, IMAGE, SHAPE, SO, TODOS). Misturar "Todos" Title Case com "TEXT" UPPERCASE no mesmo grupo = drift que o user pegou 2x.
+- Size padrao `sm` em toolbar de cards. `md` em barras isoladas (page-level filters).
+- Tamanho/altura ALINHADO com `<Button size="sm">` na mesma row — toolbar so respira se todos os children medem o mesmo.
+
+## 1.9 Logos de marca/cliente: identificam sozinhos
+
+Quando logo do cliente esta no header de uma pagina dele (ex: Library, Detalhe do Cliente, etc), NAO duplicar com texto "{Cliente} · {Pagina}" do lado.
+
+- O logo ja identifica o cliente.
+- A URL ja identifica a pagina.
+- Label redundante eh ruido visual — remover.
+- Tamanho logo no header: 64px com radius 10 (antes 48 ficava timido).
+- Caso o cliente nao tenha logo (`brandLogoUrl=null`), o `ClientLogoBadge` ja renderiza fallback com iniciais.
+
 ---
 
 # PARTE 2 — LÓGICA / NAVEGAÇÃO
@@ -143,6 +161,7 @@ Toda página ZZOSY tem 2 linhas de topo fixas, nessa ordem:
 
 - Se um botão de navegação aparece em 2 lugares (ex: subnav + sidebar), escolher UM lugar só
 - NUNCA repetir o mesmo destino visualmente
+- **Aplicacao em row de 4 botoes (1.1.B)**: se `Editar` e `Entrar` apontam pro MESMO URL, REMOVER `Editar`. Padrao 4-botoes vira 3 (Apagar/Duplicar/Entrar). Manter os 4 SOMENTE quando Editar (metadata/rename) e Entrar (entidade aberta) sao destinos DIFERENTES (caso de Peca: Editar→/pieces/[id] details, Entrar→/editor canvas).
 
 ## 2.5 `+ Adicionar X` dentro da lista
 

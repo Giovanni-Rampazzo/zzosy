@@ -9,6 +9,7 @@ import { useSetActiveClient } from "@/lib/activeClientContext"
 import { PsdImporter, type PsdImporterHandle } from "@/components/campaign/PsdImporter"
 import { EditableText } from "@/components/EditableText"
 import { Button } from "@/components/ui/Button"
+import { FilterPill } from "@/components/ui/FilterPill"
 import { ImgWithLoader } from "@/components/ui/ImgWithLoader"
 import { loadGoogleFont, loadCustomFontFamily } from "@/lib/google-fonts"
 import { SaveToLibraryModal } from "@/components/library/SaveToLibraryModal"
@@ -802,14 +803,10 @@ function LibraryPickerModal({ clientId, onClose, onPick, busy }: {
           <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 20, color: "#888", cursor: "pointer" }}>✕</button>
         </div>
         <div style={{ padding: "12px 24px", borderBottom: "1px solid #f0f0f0", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {["ALL", "TEXT", "IMAGE", "SHAPE", "SMART_OBJECT"].map(t => (
-            <button key={t} onClick={() => setFilterType(t)}
-              style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600,
-                background: filterType === t ? "#F5C400" : "white",
-                color: filterType === t ? "#111" : "#555",
-                border: "2px solid #555", borderRadius: 6, cursor: "pointer" }}>
-              {t === "ALL" ? "Todos" : t === "SMART_OBJECT" ? "SO" : t}
-            </button>
+          {(["ALL", "TEXT", "IMAGE", "SHAPE", "SMART_OBJECT"] as const).map(t => (
+            <FilterPill key={t} active={filterType === t} onClick={() => setFilterType(t)} size="sm">
+              {t === "ALL" ? "TODOS" : t === "SMART_OBJECT" ? "SO" : t}
+            </FilterPill>
           ))}
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Buscar nome / slot / tag..."
