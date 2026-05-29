@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { statusMeta } from "@/lib/pieceStatus"
@@ -20,7 +20,17 @@ interface Campaign {
   keyVision?: { thumbnailUrl?: string | null; width?: number; height?: number; bgColor?: string } | null
 }
 
+// Suspense wrapper exigido pelo Next.js 16 quando usa useSearchParams() em
+// pagina estatica (CSR bailout). Sem isso, SSG falha com prerender-error.
 export default function CampaignsPage() {
+  return (
+    <Suspense fallback={null}>
+      <CampaignsPageInner />
+    </Suspense>
+  )
+}
+
+function CampaignsPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Query ?clientId=X filtra a lista pra so as campanhas desse cliente.
