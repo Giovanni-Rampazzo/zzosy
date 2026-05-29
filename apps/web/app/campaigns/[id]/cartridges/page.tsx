@@ -163,9 +163,13 @@ export default function CartridgesBrowsePage() {
   )
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--zz-bg-page, #F5F5F0)" }}>
+    <div style={{ minHeight: "100vh", background: "var(--zz-bg-page)" }}>
       <TopNav />
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 24px" }}>
+      <div style={{
+        maxWidth: "var(--zz-page-max-w)",
+        margin: "0 auto",
+        padding: "var(--zz-page-pad-y) var(--zz-page-pad-x) var(--zz-page-pad-bottom)",
+      }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16, flexWrap: "wrap" }}>
           <CampaignSubnav
             campaignId={id}

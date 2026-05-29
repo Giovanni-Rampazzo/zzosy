@@ -153,9 +153,13 @@ export default function PiecePage() {
   )
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
+    <div style={{ minHeight: "100vh", background: "var(--zz-bg-page)" }}>
       <TopNav />
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
+      <div style={{
+        maxWidth: "var(--zz-page-max-w)",
+        margin: "0 auto",
+        padding: "var(--zz-page-pad-y) var(--zz-page-pad-x) var(--zz-page-pad-bottom)",
+      }}>
 
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>

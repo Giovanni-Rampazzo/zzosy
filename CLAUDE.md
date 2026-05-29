@@ -265,7 +265,8 @@ NUNCA usar `defaultStyle` (= primeiro char do asset) pra novos chars — quebra 
 
 - ❌ NÃO inventar UI que o user não pediu (ex: "+ adicionar código" como compensação por remover placeholder)
 - ❌ NÃO criar arquivo .md docs/README sem ser pedido
-- ❌ NÃO usar emoji em código
+- ❌ NÃO usar emoji em código (comentários, strings internas)
+- ❌ NÃO usar emoji/ícone visual na UI do ZZOSY (📂 📖 🎨 ✏️ etc). User explicitou 2026-05-28: "zzosy sem icones". Empty states, headers de seção, botões — tudo só com texto. Exceção: ícones SVG (Eye/Lock/etc) em controles funcionais do painel de Layers/Properties do editor são OK (são UI técnica). Mas botão "📖 Guidebook" → "Guidebook".
 - ❌ NÃO adicionar comments óbvios ("// busca o user", "// retorna o array")
 - ❌ NÃO usar `console.log` direto — use `editorLog` (silencia em prod)
 - ❌ NÃO confirmar destrutivo "tem certeza?" se for reversível (undo cobre)

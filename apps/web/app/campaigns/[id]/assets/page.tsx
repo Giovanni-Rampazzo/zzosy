@@ -627,9 +627,13 @@ export default function CampaignAssetsPage() {
   const sortedAssets = [...campaign.assets].sort((a, b) => a.order - b.order)
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
+    <div style={{ minHeight: "100vh", background: "var(--zz-bg-page)" }}>
       <TopNav />
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 24px" }}>
+      <div style={{
+        maxWidth: "var(--zz-page-max-w)",
+        margin: "0 auto",
+        padding: "var(--zz-page-pad-y) var(--zz-page-pad-x) var(--zz-page-pad-bottom)",
+      }}>
 
         {/* Linha de navegacao (CLAUDE 1.2.1): subnav sozinho. */}
         <div style={{ marginBottom: 12 }}>
@@ -670,7 +674,6 @@ export default function CampaignAssetsPage() {
 
         {campaign.assets.length === 0 ? (
           <div style={{ textAlign: "center", padding: "80px 0", color: "#888" }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📂</div>
             <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: "#444" }}>Nenhum asset ainda</div>
             <div style={{ fontSize: 14 }}>Importe um PSD para extrair os layers automaticamente</div>
           </div>
