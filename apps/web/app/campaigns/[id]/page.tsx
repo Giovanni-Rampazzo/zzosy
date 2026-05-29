@@ -544,7 +544,12 @@ export default function CampaignOverviewPage() {
             Assets, KV, +Gerar peça), centro=DADOS (tabela de peças), direita=
             EXPORT (Apresentação, Entrega). KV preview movido pro topo full-width
             2026-05-28 — coluna esquerda agora so acoes. */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 240px) 1fr minmax(200px, 240px)", gap: 14, alignItems: "start" }}>
+        {/* minmax(0, 1fr) na coluna do meio: sem o min:0, CSS Grid usa min-content
+            como minimo — toolbar bulk com 8 botoes + Grid/Lista (item largo,
+            no-wrap interno) empurrava 1fr alem do espaco disponivel, cortando
+            a 3a coluna no viewport. minmax(0, 1fr) deixa o 1fr SHRINKAR e a
+            toolbar quebra normalmente. */}
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 240px) minmax(0, 1fr) minmax(200px, 240px)", gap: 14, alignItems: "start" }}>
         {/* Coluna ENTRADAS (1a coluna): regra global ZZOSY (CLAUDE 1.10) —
             tudo que ALIMENTA a campanha (cartucho/PSD/assets). KV botao
             removido (preview central ja eh clickable). +Gerar peca movido
@@ -598,8 +603,11 @@ export default function CampaignOverviewPage() {
         {/* Coluna do meio: KV preview EM CIMA + Lista de pecas EMBAIXO,
             wrappados em flex column. KV antes era full-width acima da grid
             (escondia as sidebars on-load); user pediu 2026-05-29 pra mover
-            pra dentro da coluna central pra ver as 3 cols de cara. */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            pra dentro da coluna central pra ver as 3 cols de cara.
+            minWidth: 0 (sweep + cinto-suspensorio): garante que children
+            largos (toolbar bulk) nao forcem o wrapper a expandir alem do
+            grid cell — junto com minmax(0,1fr) acima. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
         {/* KV preview — mesma logica (drop, click pra editor, dropzone vazia)
             mas agora confinado na coluna 1fr. maxHeight reduzido (420→320)
             pra deixar espaco pra lista logo abaixo. */}
