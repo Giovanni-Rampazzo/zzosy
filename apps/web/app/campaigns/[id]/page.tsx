@@ -74,24 +74,7 @@ export default function CampaignOverviewPage() {
   const [loadTs, setLoadTs] = useState(Date.now())
   const [deliveryOpen, setDeliveryOpen] = useState(false)
   const [view, setView] = useState<"grid" | "list">("list")
-  const [selected, setSelectedRaw] = useState<string[]>([])
-  // Wrapper de debug temporario pra rastrear quem zera selected
-  const setSelected = (next: string[] | ((prev: string[]) => string[])) => {
-    if (typeof next === "function") {
-      setSelectedRaw(prev => {
-        const result = next(prev)
-        if (Array.isArray(result) && result.length === 0 && prev.length > 0) {
-          console.log("[SEL-CLEAR] (function form)", { prev, stack: new Error().stack?.split("\n").slice(1, 5).join("\n") })
-        }
-        return result
-      })
-    } else {
-      if (Array.isArray(next) && next.length === 0) {
-        console.log("[SEL-CLEAR] (direct)", { stack: new Error().stack?.split("\n").slice(1, 5).join("\n") })
-      }
-      setSelectedRaw(next)
-    }
-  }
+  const [selected, setSelected] = useState<string[]>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
