@@ -620,12 +620,13 @@ export default function EditClientPage() {
                     }}>
                       <img src={logoUrl} alt="Logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",gap:6,paddingTop:4}}>
-                      <Button type="button" variant="secondary" size="sm" onClick={triggerFilePicker} disabled={uploadingLogo || savingLogo}>
-                        {uploadingLogo ? "Enviando..." : "Trocar"}
-                      </Button>
+                    {/* Row de actions: Apagar SEMPRE primeiro (CLAUDE 1.1.B). */}
+                    <div style={{display:"flex",gap:8,paddingTop:4}}>
                       <Button type="button" variant="danger" size="sm" onClick={handleDeleteLogo} disabled={uploadingLogo || savingLogo}>
                         Apagar
+                      </Button>
+                      <Button type="button" variant="secondary" size="sm" onClick={triggerFilePicker} disabled={uploadingLogo || savingLogo}>
+                        {uploadingLogo ? "Enviando..." : "Trocar"}
                       </Button>
                     </div>
                   </>
