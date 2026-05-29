@@ -110,6 +110,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const widthPx = Math.round(viewportBase.width)
     const heightPx = Math.round(viewportBase.height)
 
+    // V2 prep (consistency com library route): extrai text items pra sub-editor
+    // Fabric.Textbox overlay no futuro. CampaignAsset.meta nao existe — vai
+    // anexado via SmartObjectFile nao tem campo meta; entao guardamos como
+    // JSON-stringified em campos genericos do CampaignAsset.lastOverride ou
+    // ignoramos por enquanto e re-extraimos no client se necessario. Por agora,
+    // log + ignore — campaign-level edit do .ai nao tem UX ainda.
+    try {
+      const tc = await page.getTextContent()
+      if (tc && Array.isArray(tc.items)) {
+        console.log(`[campaigns/import-ai] text items extraidos: ${tc.items.length} (uso futuro V2)`)
+      }
+    } catch (e) { console.warn("[campaigns/import-ai] getTextContent falhou:", e) }
+
     try { await pdfDoc.cleanup() } catch {}
     try { await pdfDoc.destroy() } catch {}
 

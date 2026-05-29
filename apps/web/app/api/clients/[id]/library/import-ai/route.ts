@@ -134,6 +134,28 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const widthPx = Math.round(viewportBase.width)
     const heightPx = Math.round(viewportBase.height)
 
+    // V2 prep: extrai text items pra prox fase do sub-editor (overlay
+    // Fabric.Textbox char-level). Items: posicao via transform matrix,
+    // string, fontName interno, width/height. Falha silenciosa — V1 nao
+    // precisa, so V2 vai consumir. Persistido em asset.meta.textItems.
+    let textItems: Array<{ str: string; transform: number[]; width: number; height: number; fontName: string }> = []
+    try {
+      const tc = await page.getTextContent()
+      if (tc && Array.isArray(tc.items)) {
+        textItems = tc.items
+          .filter((it: any) => typeof it.str === "string" && it.str.length > 0)
+          .map((it: any) => ({
+            str: it.str,
+            transform: Array.isArray(it.transform) ? it.transform : [],
+            width: typeof it.width === "number" ? it.width : 0,
+            height: typeof it.height === "number" ? it.height : 0,
+            fontName: typeof it.fontName === "string" ? it.fontName : "",
+          }))
+      }
+    } catch (e) {
+      console.warn("[import-ai] getTextContent falhou (V1 segue normal):", e)
+    }
+
     // Cleanup pdf.js doc handles.
     try { await pdfDoc.cleanup() } catch {}
     try { await pdfDoc.destroy() } catch {}
@@ -172,7 +194,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           imageUrl: compositeUrl,
           smartObjectId: so.id,
           tags: [],
-          meta: {},
+          // V2 prep: textItems consumido pelo sub-editor pra Fabric.Textbox
+          // overlay (char-level edit). vectorViewport guarda dims base do PDF
+          // pra mapear coords PDF→Canvas no client.
+          meta: {
+            textItems,
+            vectorViewport: { width: widthPx, height: heightPx },
+          },
           version: 1,
           createdBy: userId,
         },
