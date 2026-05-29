@@ -209,9 +209,8 @@ export default function PresentationPage() {
         bcPieces = new BroadcastChannel("zzosy:pieces")
         bcPieces.onmessage = (ev) => {
           if (ev.data?.type === "piece-updated" && ev.data?.campaignId === id) {
-            // Limpa seen pra forcar re-regen do thumb apos edit do user
-            // (BC vem do editor.save — content mudou de verdade).
-            if (typeof ev.data?.pieceId === "string") regenSeenRef.current.delete(ev.data.pieceId)
+            // seen.Map detecta automaticamente: refetch traz updatedAt novo
+            // != entry da Map -> useEffect re-roda -> regen. Sem manual delete.
             refetch()
           }
         }
@@ -243,20 +242,20 @@ export default function PresentationPage() {
     }
   }, [id])
 
-  // REGEN INTELIGENTE 2026-05-29: Set<id> session-level + delete on edit.
+  // REGEN INTELIGENTE 2026-05-29 (audit #4): Map<id, updatedAt> unificado
+  // com /pieces e /campaigns/[id]. Evita loop sem precisar de BC.delete manual.
   //
-  // Loop antigo (Map<id, updatedAt>): regen POSTa thumb -> server bumpa
-  // updatedAt -> refetch -> diff vs cache -> re-regen -> LOOP.
-  // Set<id> evita loop mas bloqueia re-regen pos-edit -> thumb stale.
-  //
-  // Fix: BC piece-updated DELETA o id de seen antes de refetch. Sem
-  // localStorage (antes persistia seen entre reloads -> thumb nunca
-  // regenerava entre sessoes, bug agravado).
-  const regenSeenRef = useRef<Set<string>>(new Set())
+  // Filter detecta mudanca natural: seen.get(p.id) != p.updatedAt -> regen.
+  // Apos regen, refetch + seen.set(p.id, fresh.updatedAt) — pos-regen — antes
+  // do setPieces. useEffect re-roda mas filter retorna vazio -> sem loop.
+  const regenSeenRef = useRef<Map<string, string>>(new Map())
   useEffect(() => {
     if (pieces.length === 0) return
     const seen = regenSeenRef.current
-    const toRegen = pieces.filter((p: any) => !seen.has(p.id))
+    const toRegen = pieces.filter((p: any) => {
+      const key = String(p.updatedAt ?? "")
+      return seen.get(p.id) !== key
+    })
     if (toRegen.length === 0) return
     let cancelled = false
     ;(async () => {
@@ -269,24 +268,30 @@ export default function PresentationPage() {
         await Promise.allSettled(chunk.map(async (p: any) => {
           try {
             await regeneratePieceThumb(p.id)
-            seen.add(p.id)
+            // PRE-regen updatedAt como placeholder; sera substituido apos refetch.
+            seen.set(p.id, String(p.updatedAt ?? ""))
             regened++
           } catch (e) {
             console.warn("[smart-regen]", p.id, e)
-            seen.add(p.id)
+            seen.set(p.id, String(p.updatedAt ?? ""))
           }
         }))
       }
       // Refetch UMA vez apos regen pra pegar piece.updatedAt novo (cache-bust
-      // do <img src=?v=updatedAt>). Sem isso, thumb regen ficava no server
-      // mas user via URL com updatedAt antigo (browser cache). Set<id> ja tem
-      // todos os ids -> useEffect re-roda mas toRegen vai vazio -> sem loop.
+      // do <img src=?v=updatedAt>). Atualiza seen.Map com o updatedAt POS-regen
+      // ANTES de setPieces — sem isso, useEffect re-roda com state novo + Map
+      // pre-regen -> diff -> loop.
       if (!cancelled && regened > 0) {
         try {
           const r = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" })
           if (r.ok && !cancelled) {
             const fresh = await r.json()
-            if (Array.isArray(fresh)) setPieces(fresh)
+            if (Array.isArray(fresh)) {
+              for (const fp of fresh) {
+                if (seen.has(fp.id)) seen.set(fp.id, String(fp.updatedAt ?? ""))
+              }
+              setPieces(fresh)
+            }
           }
         } catch { /* nao critico */ }
       }

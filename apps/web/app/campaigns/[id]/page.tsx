@@ -140,22 +140,30 @@ export default function CampaignOverviewPage() {
 
   // REGEN INTELIGENTE 2026-05-29: Set<id> session-level + delete on edit.
   //
-  // Loop antigo (que motivou Set vs Map): regen POSTa thumbnail, server bumpa
-  // updatedAt, loadAll refetcha, useEffect re-roda. Map<id, updatedAt> via
-  // diff -> re-regen -> loop. Set<id> com seen.has(p.id) === true bloqueia.
+  // REGEN INTELIGENTE 2026-05-29 (audit #4): Map<id, updatedAt> unificado
+  // com /pieces e /presentation. Evita loop sem precisar de BC.delete manual.
   //
-  // BUG NOVO 2026-05-28: Set bloqueava DEMAIS — user edita peca no editor,
-  // BC dispara refetch, mas seen ainda tem id -> regen pulado -> thumb stale.
+  // Como evita loop:
+  //   1. regen POSTa thumb -> server bumpa updatedAt
+  //   2. apos regen, refetch direto de /api/pieces (nao loadAll)
+  //   3. seen.set(p.id, fresh.updatedAt) — com o updatedAt POS-regen
+  //   4. setPieces(fresh) -> useEffect re-roda
+  //   5. filter: seen.get(p.id) === fresh.updatedAt -> toRegen vazio -> NO RE-RUN
   //
-  // Fix: BC piece-updated DELETA o id de seen antes de refetch. Refetch atualiza
-  // pieces -> useEffect re-roda -> seen sem o id -> regen -> POSTa thumb ->
-  // loadAll() refetcha -> useEffect re-roda -> seen.has === true (re-added) ->
-  // no more re-regen. Sem loop.
-  const regenSeenRef = useRef<Set<string>>(new Set())
+  // Como detecta edits do user:
+  //   1. user edita peca no editor -> editor.save broadcasta BC piece-updated
+  //   2. BC handler chama refetch (loadAll) -> setPieces com novo updatedAt
+  //   3. useEffect re-roda -> seen.get(p.id) != novo updatedAt -> re-regen
+  //
+  // BC.delete(pieceId) removido — Map detecta a mudanca naturalmente.
+  const regenSeenRef = useRef<Map<string, string>>(new Map())
   useEffect(() => {
     if (pieces.length === 0) return
     const seen = regenSeenRef.current
-    const toRegen = pieces.filter(p => !seen.has(p.id))
+    const toRegen = pieces.filter(p => {
+      const key = String((p as any).updatedAt ?? "")
+      return seen.get(p.id) !== key
+    })
     if (toRegen.length === 0) return
     // Sort: pieces sem imageUrl primeiro (urgente). Resto depois.
     toRegen.sort((a, b) => {
@@ -203,20 +211,38 @@ export default function CampaignOverviewPage() {
                 setTimeout(() => reject(new Error(`piece timeout ${PIECE_TIMEOUT_MS/1000}s`)), PIECE_TIMEOUT_MS)
               ),
             ])
-            seen.add(p.id)
+            // Marca preliminarmente com updatedAt PRE-regen. Sera atualizado
+            // pra updatedAt POS-regen logo apos o refetch abaixo (evita loop).
+            seen.set(p.id, String((p as any).updatedAt ?? ""))
           } catch (e) {
             console.warn("[smart-regen]", p.id, e)
-            seen.add(p.id)
+            seen.set(p.id, String((p as any).updatedAt ?? ""))
           } finally {
             doneCount++
             if (!cancelled) setRegenProgress({ done: doneCount, total: toRegen.length })
           }
         }))
       }
-      // Quando termina, limpa progress + refetch pra mostrar thumbs novos
+      // Quando termina, limpa progress + refetch pra mostrar thumbs novos.
+      // CRITICAL: refetch de pieces direto + atualiza seen.Map com updatedAt
+      // POS-regen. Sem isso, o useEffect dispara de novo com novo updatedAt
+      // (state) vs antigo (Map) -> diff -> regen infinito.
       if (!cancelled) {
         setRegenProgress(null)
-        await loadAll()
+        try {
+          const r = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" })
+          if (r.ok) {
+            const fresh: any[] = await r.json()
+            if (Array.isArray(fresh)) {
+              // Atualiza seen com updatedAt POS-regen ANTES de setPieces (evita
+              // window onde useEffect roda com seen.Map antigo + state novo).
+              for (const fp of fresh) {
+                if (seen.has(fp.id)) seen.set(fp.id, String(fp.updatedAt ?? ""))
+              }
+              setPieces(fresh)
+            }
+          }
+        } catch { /* refetch nao critico; loadAll dispara de qualquer jeito em focus */ }
       }
     })()
     return () => { cancelled = true }
@@ -259,9 +285,8 @@ export default function CampaignOverviewPage() {
           const m = ev.data
           if (!m || m.type !== "piece-updated") return
           if (m.campaignId === id) {
-            // Limpa seen pra forcar re-regen do thumb apos edit do user
-            // (BC vem do editor.save — content mudou de verdade).
-            if (typeof m.pieceId === "string") regenSeenRef.current.delete(m.pieceId)
+            // seen.Map detecta automaticamente: refetch traz updatedAt novo
+            // != entry da Map -> useEffect re-roda -> regen. Sem manual delete.
             refetch()
           }
         }
