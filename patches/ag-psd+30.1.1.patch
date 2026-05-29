@@ -1,0 +1,78 @@
+diff --git a/node_modules/ag-psd/dist-es/effectsHelpers.js b/node_modules/ag-psd/dist-es/effectsHelpers.js
+index 6ed2338..d2af97d 100644
+--- a/node_modules/ag-psd/dist-es/effectsHelpers.js
++++ b/node_modules/ag-psd/dist-es/effectsHelpers.js
+@@ -25,6 +25,7 @@ export function readEffects(reader) {
+     var effectsCount = readUint16(reader);
+     var effects = {};
+     for (var i = 0; i < effectsCount; i++) {
++        try {
+         checkSignature(reader, '8BIM');
+         var type = readSignature(reader);
+         switch (type) {
+@@ -33,8 +34,9 @@ export function readEffects(reader) {
+                 var version_1 = readUint32(reader);
+                 var visible = !!readUint8(reader);
+                 skipBytes(reader, 2);
+-                if (size !== 7 || version_1 !== 0 || !visible)
++                if (size !== 7 || version_1 !== 0)
+                     throw new Error("Invalid effects common state");
++                if (!visible) effects.disabled = true;
+                 break;
+             }
+             case 'dsdw': // drop shadow (see See Effects layer, drop shadow and inner shadow info)
+@@ -180,9 +182,13 @@ export function readEffects(reader) {
+                 effects.solidFill = [{ blendMode: blendMode, color: color, opacity: opacity, enabled: enabled }];
+                 break;
+             }
+-            default:
+-                throw new Error("Invalid effect type: '".concat(type, "'"));
++            default: {
++                var unknownBlockSize = readUint32(reader);
++                skipBytes(reader, unknownBlockSize);
++                break;
++            }
+         }
++        } catch (e) { break; }
+     }
+     return effects;
+ }
+diff --git a/node_modules/ag-psd/dist/effectsHelpers.js b/node_modules/ag-psd/dist/effectsHelpers.js
+index 202a80a..12f7de1 100644
+--- a/node_modules/ag-psd/dist/effectsHelpers.js
++++ b/node_modules/ag-psd/dist/effectsHelpers.js
+@@ -28,6 +28,7 @@ function readEffects(reader) {
+     var effectsCount = (0, psdReader_1.readUint16)(reader);
+     var effects = {};
+     for (var i = 0; i < effectsCount; i++) {
++        try {
+         (0, psdReader_1.checkSignature)(reader, '8BIM');
+         var type = (0, psdReader_1.readSignature)(reader);
+         switch (type) {
+@@ -36,8 +37,9 @@ function readEffects(reader) {
+                 var version_1 = (0, psdReader_1.readUint32)(reader);
+                 var visible = !!(0, psdReader_1.readUint8)(reader);
+                 (0, psdReader_1.skipBytes)(reader, 2);
+-                if (size !== 7 || version_1 !== 0 || !visible)
++                if (size !== 7 || version_1 !== 0)
+                     throw new Error("Invalid effects common state");
++                if (!visible) effects.disabled = true;
+                 break;
+             }
+             case 'dsdw': // drop shadow (see See Effects layer, drop shadow and inner shadow info)
+@@ -183,9 +185,13 @@ function readEffects(reader) {
+                 effects.solidFill = [{ blendMode: blendMode, color: color, opacity: opacity, enabled: enabled }];
+                 break;
+             }
+-            default:
+-                throw new Error("Invalid effect type: '".concat(type, "'"));
++            default: {
++                var unknownBlockSize = (0, psdReader_1.readUint32)(reader);
++                (0, psdReader_1.skipBytes)(reader, unknownBlockSize);
++                break;
++            }
+         }
++        } catch (e) { break; }
+     }
+     return effects;
+ }
