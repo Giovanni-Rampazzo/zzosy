@@ -200,39 +200,14 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
-  const { searchParams } = new URL(req.url)
-  if (searchParams.get("confirm") !== "1") {
-    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Repatch masks</title></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
+  // SEC: GET so renderiza confirmacao. Execucao via POST (form submit).
+  return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Repatch masks</title></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
 <h2>🎭 Re-aplicar máscaras do PSD original</h2>
 <p>Lê o PSD da campanha e re-aplica as <strong>máscaras (clipping/raster/vector)</strong> nas layers da matriz e das peças geradas. Match por zIndex.</p>
 <p>NÃO recria assets nem perde dados — só adiciona o campo <code>mask</code> de volta nas layers.</p>
-<p><a href="?confirm=1" style="display:inline-block;background:#F5C400;color:#111;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:700">✓ Re-aplicar Máscaras</a></p>
-<p><a href="/campaigns/${id}">← Voltar</a></p>
+<form method="POST" action="">
+  <button type="submit" style="background:#F5C400;color:#111;padding:14px 28px;border-radius:6px;border:0;font-weight:700;cursor:pointer">✓ Re-aplicar Máscaras</button>
+</form>
+<p style="margin-top:16px"><a href="/campaigns/${id}">← Voltar</a></p>
 </body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
-  }
-  const tenantId = (session.user as any)?.tenantId
-  try {
-    if (!tenantId) return apiErrors.unauthorized()
-    const result = await execute(id, tenantId)
-    if ("error" in result) {
-      return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ ${result.error}</h2><p><a href="/campaigns/${id}">← Voltar</a></p></body></html>`, { status: result.status, headers: { "Content-Type": "text/html; charset=utf-8" } })
-    }
-    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>OK</title><meta http-equiv="refresh" content="3;url=/campaigns/${id}"></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
-<h2>✅ Máscaras re-aplicadas!</h2>
-<ul>
-  <li><strong>${result.masksReapplied}</strong> máscaras reaplicadas</li>
-  <li><strong>${result.kvLayersUpdated}</strong> layers da matriz atualizados</li>
-  <li><strong>${result.piecesUpdated}</strong> peças atualizadas</li>
-</ul>
-<p>Redirecionando…</p>
-<p><a href="/campaigns/${id}">→ Ir agora</a></p>
-</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
-  } catch (e: any) {
-    const stack = e?.stack?.split("\n").slice(0, 8).join("\n") ?? "no stack"
-    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:800px;margin:0 auto">
-<h2>❌ Falha</h2><p>${e?.message ?? String(e)}</p>
-<pre style="background:#f4f4f4;padding:12px;font-size:11px">${stack}</pre>
-<p><a href="/campaigns/${id}">← Voltar</a></p>
-</body></html>`, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } })
-  }
 }

@@ -173,16 +173,34 @@ async function executeFullRecover(id: string, tenantId: string): Promise<Recover
   }
 }
 
-export async function POST(_req: NextRequest, ctx: Ctx) {
+export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any)?.tenantId
     if (!tenantId) return apiErrors.unauthorized()
     const { id } = await ctx.params
+    // Detecta form submission (browser) vs API call (Accept JSON).
+    const wantsHtml = (req.headers.get("accept") ?? "").includes("text/html")
     const result = await executeFullRecover(id, tenantId)
     if ("error" in result) {
+      if (wantsHtml) {
+        return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ ${result.error}</h2><p><a href="/campaigns/${id}">← Voltar</a></p></body></html>`, { status: result.status, headers: { "Content-Type": "text/html; charset=utf-8" } })
+      }
       return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+    if (wantsHtml) {
+      return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/campaigns/${id}"></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
+<h2>✅ Matriz recuperada!</h2>
+<ul>
+  <li><strong>${result.assetsCreated}</strong> assets recriados</li>
+  <li><strong>${result.kvLayersCreated}</strong> layers da matriz</li>
+  <li><strong>${result.imageBlobsUploaded}</strong> imagens upload</li>
+  <li><strong>${result.smartObjectsCreated}</strong> smart objects</li>
+</ul>
+<p style="background:#FFF3CD;border:1px solid #FFE69C;padding:12px;border-radius:6px"><strong>Próximo:</strong> ${result.message}</p>
+<p>Redirecionando…</p>
+</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
     }
     return NextResponse.json(result)
   } catch (e: any) {
@@ -200,9 +218,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   if (!session) {
     return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
   }
-  const { searchParams } = new URL(req.url)
-  if (searchParams.get("confirm") !== "1") {
-    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Confirmar recovery completa</title></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
+  // SEC: GET so renderiza a confirmacao. Execucao soh via POST (form submit)
+  // pra impedir CSRF por <img src="?confirm=1"> em pagina same-site.
+  return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Confirmar recovery completa</title></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
 <h2>⚠️ Recovery COMPLETA da matriz</h2>
 <p>Esta ação vai:</p>
 <ul>
@@ -211,50 +229,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   <li>Recriar todos os assets + matriz (KV)</li>
   <li>Peças <strong>não</strong> são re-vinculadas — você re-gera depois via "+ Gerar peça"</li>
 </ul>
-<p><a href="?confirm=1" style="display:inline-block;background:#F5C400;color:#111;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px">✓ Executar Recovery</a></p>
-<p><a href="/campaigns/${id}">← Voltar sem fazer nada</a></p>
+<form method="POST" action="">
+  <button type="submit" style="background:#F5C400;color:#111;padding:14px 28px;border-radius:6px;border:0;font-weight:700;font-size:14px;cursor:pointer">✓ Executar Recovery</button>
+</form>
+<p style="margin-top:16px"><a href="/campaigns/${id}">← Voltar sem fazer nada</a></p>
 </body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
-  }
-
-  // Chama executeFullRecover DIRETO — sem self-fetch que estava falhando.
-  const tenantId = (session.user as any)?.tenantId
-  if (!tenantId) {
-    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
-  }
-  try {
-    const result = await executeFullRecover(id, tenantId)
-    if ("error" in result) {
-      return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:800px;margin:0 auto">
-<h2>❌ Erro na recovery</h2>
-<p><strong>${result.error}</strong></p>
-<p>HTTP ${result.status}</p>
-<p><a href="/campaigns/${id}">← Voltar</a></p>
-</body></html>`, { status: result.status, headers: { "Content-Type": "text/html; charset=utf-8" } })
-    }
-    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recovery OK</title><meta http-equiv="refresh" content="3;url=/campaigns/${id}"></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
-<h2>✅ Matriz recuperada!</h2>
-<ul>
-  <li><strong>${result.assetsCreated}</strong> assets recriados</li>
-  <li><strong>${result.kvLayersCreated}</strong> layers da matriz</li>
-  <li><strong>${result.imageBlobsUploaded}</strong> imagens upload</li>
-  <li><strong>${result.smartObjectsCreated}</strong> smart objects</li>
-</ul>
-<p style="background:#FFF3CD;border:1px solid #FFE69C;padding:12px;border-radius:6px">
-<strong>Próximo passo:</strong> ${result.message}
-</p>
-<p>Redirecionando pra campanha em 3 segundos…</p>
-<p><a href="/campaigns/${id}">→ Ir agora</a></p>
-</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
-  } catch (e: any) {
-    console.error("[full-recover GET]", e)
-    const stack = e?.stack?.split("\n").slice(0, 8).join("\n") ?? "no stack"
-    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:800px;margin:0 auto">
-<h2>❌ Falha interna</h2>
-<p><strong>${e?.name ?? "Error"}:</strong> ${e?.message ?? String(e)}</p>
-<details open><summary>Stack trace</summary>
-<pre style="background:#f4f4f4;padding:12px;font-size:11px;overflow:auto">${stack}</pre>
-</details>
-<p><a href="/campaigns/${id}">← Voltar</a></p>
-</body></html>`, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } })
-  }
 }
+

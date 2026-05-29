@@ -146,46 +146,17 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
-  const { searchParams } = new URL(req.url)
-  if (searchParams.get("confirm") !== "1") {
-    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relink pieces</title></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
+  // SEC: GET so renderiza confirmacao. Execucao via POST (form submit) pra
+  // impedir CSRF por <img src="?confirm=1">.
+  return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relink pieces</title></head><body style="font-family:system-ui;padding:32px;max-width:640px;margin:0 auto">
 <h2>🔗 Re-vincular peças aos novos assets</h2>
 <p>Esta ação tenta restaurar as <strong>peças geradas</strong> da campanha, vinculando-as aos novos assetIds da matriz (que você recuperou via full-recover-from-psd).</p>
 <p>Match feito por <strong>posição zIndex</strong> — layers no mesmo slot da matriz e da peça batem.</p>
 <p>Layers extras (que não tinham equivalente na matriz) podem ficar órfãs.</p>
 <p>Backup automático preservado.</p>
-<p><a href="?confirm=1" style="display:inline-block;background:#F5C400;color:#111;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px">✓ Executar Relink</a></p>
-<p><a href="/campaigns/${id}">← Voltar sem fazer nada</a></p>
+<form method="POST" action="">
+  <button type="submit" style="background:#F5C400;color:#111;padding:14px 28px;border-radius:6px;border:0;font-weight:700;font-size:14px;cursor:pointer">✓ Executar Relink</button>
+</form>
+<p style="margin-top:16px"><a href="/campaigns/${id}">← Voltar sem fazer nada</a></p>
 </body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
-  }
-
-  const tenantId = (session.user as any)?.tenantId
-  if (!tenantId) return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
-  try {
-    const result = await executeRelink(id, tenantId)
-    if ("error" in result) {
-      return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:800px;margin:0 auto">
-<h2>❌ Erro</h2><p>${result.error}</p>
-<p><a href="/campaigns/${id}">← Voltar</a></p>
-</body></html>`, { status: result.status, headers: { "Content-Type": "text/html; charset=utf-8" } })
-    }
-    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relink OK</title><meta http-equiv="refresh" content="4;url=/campaigns/${id}"></head><body style="font-family:system-ui;padding:32px;max-width:720px;margin:0 auto">
-<h2>✅ Re-link concluído!</h2>
-<ul>
-  <li><strong>${result.piecesUpdated}</strong> peças atualizadas (de ${result.piecesScanned} scaneadas)</li>
-  <li><strong>${result.totalOrphanLayersFixed}</strong> layers órfãos re-vinculados</li>
-  ${result.totalOrphanLayersUnfixable > 0 ? `<li><strong style="color:#a00">${result.totalOrphanLayersUnfixable}</strong> layers ainda órfãos (sem equivalente na matriz nova)</li>` : ""}
-</ul>
-<p>Redirecionando pra campanha em 4 segundos…</p>
-<p><a href="/campaigns/${id}">→ Ir agora</a></p>
-</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
-  } catch (e: any) {
-    const stack = e?.stack?.split("\n").slice(0, 8).join("\n") ?? "no stack"
-    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:800px;margin:0 auto">
-<h2>❌ Falha</h2>
-<p><strong>${e?.message ?? String(e)}</strong></p>
-<pre style="background:#f4f4f4;padding:12px;font-size:11px;overflow:auto">${stack}</pre>
-<p><a href="/campaigns/${id}">← Voltar</a></p>
-</body></html>`, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } })
-  }
 }

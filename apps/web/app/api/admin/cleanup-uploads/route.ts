@@ -1,15 +1,13 @@
-// GET/POST /api/admin/cleanup-uploads
-//
-// Limpa arquivos orfaos do /public/uploads/ no servidor.
-// User-friendly: SO precisa estar logado, abre URL no browser.
+// GET  /api/admin/cleanup-uploads          → pagina HTML com botao POST de confirmacao
+// GET  /api/admin/cleanup-uploads?dry=1    → JSON dry-run (read-only, seguro como GET)
+// POST /api/admin/cleanup-uploads          → executa cleanup
 //
 // User reportou 2026-05-27: ENOSPC no Railway. Sem acesso CLI, este
 // endpoint resolve via HTTP autenticado.
 //
-// Uso:
-//   GET /api/admin/cleanup-uploads          → pagina HTML com botao
-//   GET /api/admin/cleanup-uploads?dry=1    → JSON dry-run (só reporta)
-//   GET /api/admin/cleanup-uploads?confirm=1 → executa cleanup
+// SEC: GET nao executa cleanup (CSRF mitigation — antes era GET com
+// ?confirm=1, vulneravel a <img src> em pagina same-site). Execucao via
+// POST exclusivamente. SUPER_ADMIN required em ambos verbos.
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
@@ -20,10 +18,7 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 export const maxDuration = 300
 
-// SEC FIX 2026-05-27: endpoint era acessivel por qualquer user logado
-// (incluido CSRF via <img>) e poderia apagar arquivos cross-tenant.
-// Agora requer SUPER_ADMIN.
-async function requireSuperAdmin(req: NextRequest): Promise<{ ok: true } | { ok: false; status: number; msg: string }> {
+async function requireSuperAdmin(): Promise<{ ok: true } | { ok: false; status: number; msg: string }> {
   const session = await getServerSession(authOptions)
   if (!session?.user?.email) return { ok: false, status: 401, msg: "Nao autenticado" }
   const me = await prisma.user.findUnique({ where: { email: session.user.email } })
@@ -36,20 +31,24 @@ async function runCleanup(dryRun: boolean) {
   return { ok: true as const, dryRun, ...result }
 }
 
+function htmlError(status: number, msg: string): NextResponse {
+  return new NextResponse(
+    `<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ ${msg}</h2></body></html>`,
+    { status, headers: { "Content-Type": "text/html; charset=utf-8" } }
+  )
+}
+
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) {
     return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
   }
-  // SEC: SUPER_ADMIN required (era acessivel por qualquer user logado)
-  const adminCheck = await requireSuperAdmin(req)
-  if (!adminCheck.ok) {
-    return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ ${adminCheck.msg}</h2></body></html>`, { status: adminCheck.status, headers: { "Content-Type": "text/html" } })
-  }
+  const adminCheck = await requireSuperAdmin()
+  if (!adminCheck.ok) return htmlError(adminCheck.status, adminCheck.msg)
 
   const { searchParams } = new URL(req.url)
 
-  // Dry-run JSON
+  // Dry-run JSON — read-only, seguro como GET (nao destrutivo).
   if (searchParams.get("dry") === "1") {
     try {
       const result = await runCleanup(true)
@@ -62,30 +61,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // SEC: confirm via POST CSRF token would be ideal. Por ora, browser navigation
-  // direto + admin role + visual confirm na pagina HTML eh ok pra hobby.
-  // Execute real
-  if (searchParams.get("confirm") === "1") {
-    try {
-      const result = await runCleanup(false)
-      const fmt = (b: number) => (b / 1024 / 1024).toFixed(1) + "MB"
-      return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cleanup OK</title></head><body style="font-family:system-ui;padding:32px;max-width:720px;margin:0 auto">
-<h2>✅ Cleanup completo</h2>
-<table style="font-size:14px;line-height:1.6">
-<tr><td>Total no disco</td><td><strong>${fmt(result.totalBytes)}</strong></td></tr>
-<tr><td>Orfaos encontrados</td><td>${result.orphanFiles} arquivos (${fmt(result.orphanBytes)})</td></tr>
-<tr><td>Apagados</td><td><strong>${result.deletedFiles} arquivos (${fmt(result.deletedBytes)})</strong></td></tr>
-${result.failedDeletes > 0 ? `<tr><td>Falhas</td><td style="color:#c00">${result.failedDeletes}</td></tr>` : ""}
-<tr><td>Espaco apos cleanup</td><td><strong>${fmt(result.totalBytes - result.deletedBytes)}</strong></td></tr>
-</table>
-<p style="margin-top:24px">Volte pra <a href="/campaigns">/campaigns</a> e tente importar PSD agora.</p>
-</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
-    } catch (e: any) {
-      return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ Falha</h2><pre>${e?.message}\n${e?.stack?.substring(0, 500)}</pre></body></html>`, { status: 500 })
-    }
-  }
-
-  // Página HTML padrão (form de confirmação)
+  // Pagina HTML padrao: dry-run preview + form POST pra executar.
   let dryReport = ""
   try {
     const dry = await runCleanup(true)
@@ -109,7 +85,45 @@ ${dry.top10.map(t => `<li>${t.sizeMB}MB &nbsp; ${t.path}</li>`).join("")}
 <p>Apaga arquivos em <code>/public/uploads/</code> que NAO tem referencia no DB (Campaign.psdUrl, Piece.imageUrl/thumbnailUrl, Delivery.zipUrl, SmartObjectFile.filePath, KeyVision.thumbnailUrl).</p>
 <p>Disco do Railway esta lotado (erro <code>ENOSPC</code>) impedindo imports. Este cleanup libera espaco sem perder nada referenciado.</p>
 ${dryReport}
-<p style="margin-top:24px"><a href="?confirm=1" style="display:inline-block;background:#d33;color:white;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:700">⚠️ Apagar orfaos</a></p>
-<p><a href="?dry=1">Ver dry-run JSON</a> · <a href="/campaigns">← Voltar</a></p>
+<form method="POST" action="" style="margin-top:24px">
+  <button type="submit" style="background:#d33;color:white;padding:14px 28px;border-radius:6px;border:0;font-weight:700;cursor:pointer">⚠️ Apagar orfaos</button>
+</form>
+<p style="margin-top:16px"><a href="?dry=1">Ver dry-run JSON</a> · <a href="/campaigns">← Voltar</a></p>
 </body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: "Nao autenticado" }, { status: 401 })
+  const adminCheck = await requireSuperAdmin()
+  if (!adminCheck.ok) {
+    return new NextResponse(
+      `<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ ${adminCheck.msg}</h2></body></html>`,
+      { status: adminCheck.status, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    )
+  }
+
+  const wantsHtml = (req.headers.get("accept") ?? "").includes("text/html")
+  try {
+    const result = await runCleanup(false)
+    if (!wantsHtml) return NextResponse.json(result)
+    const fmt = (b: number) => (b / 1024 / 1024).toFixed(1) + "MB"
+    return new NextResponse(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cleanup OK</title></head><body style="font-family:system-ui;padding:32px;max-width:720px;margin:0 auto">
+<h2>✅ Cleanup completo</h2>
+<table style="font-size:14px;line-height:1.6">
+<tr><td>Total no disco</td><td><strong>${fmt(result.totalBytes)}</strong></td></tr>
+<tr><td>Orfaos encontrados</td><td>${result.orphanFiles} arquivos (${fmt(result.orphanBytes)})</td></tr>
+<tr><td>Apagados</td><td><strong>${result.deletedFiles} arquivos (${fmt(result.deletedBytes)})</strong></td></tr>
+${result.failedDeletes > 0 ? `<tr><td>Falhas</td><td style="color:#c00">${result.failedDeletes}</td></tr>` : ""}
+<tr><td>Espaco apos cleanup</td><td><strong>${fmt(result.totalBytes - result.deletedBytes)}</strong></td></tr>
+</table>
+<p style="margin-top:24px">Volte pra <a href="/campaigns">/campaigns</a> e tente importar PSD agora.</p>
+</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } })
+  } catch (e: any) {
+    if (!wantsHtml) return NextResponse.json({ error: e?.message ?? "Erro" }, { status: 500 })
+    return new NextResponse(
+      `<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ Falha</h2><pre>${e?.message}\n${e?.stack?.substring(0, 500)}</pre></body></html>`,
+      { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    )
+  }
 }
