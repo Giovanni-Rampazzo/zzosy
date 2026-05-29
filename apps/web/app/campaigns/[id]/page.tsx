@@ -619,9 +619,9 @@ export default function CampaignOverviewPage() {
           }}
           style={{
             background: "white", borderRadius: 10, border: "1px solid #E0E0E0",
-            padding: 16,
+            padding: 10,
             display: "flex", alignItems: "center", justifyContent: "center",
-            minHeight: 220,
+            minHeight: 130,
             cursor: campaign.keyVision?.thumbnailUrl ? "pointer" : "default",
             outline: kvDragOver ? "2px dashed #F09300" : "2px dashed transparent",
             outlineOffset: -2,
@@ -629,17 +629,21 @@ export default function CampaignOverviewPage() {
           }}
         >
           {campaign.keyVision?.thumbnailUrl ? (
+            // KV scale ~60% (user pedido 2026-05-29): preview tomava espaco
+            // demais e empurrava a lista de pecas pra fora do fold. maxHeight
+            // 320→190 (0.6x) + container minHeight 220→130 mantem o preview
+            // proporcional mas libera viewport pra lista de pecas geradas.
             <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
               loading="lazy" decoding="async"
-              style={{ maxWidth: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+              style={{ maxWidth: "60%", maxHeight: 190, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
           ) : (
             <div
               onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
               style={{
-                width: "100%", minHeight: 180,
+                width: "100%", minHeight: 110,
                 background: "#FAFAFA", borderRadius: 6, border: "1px dashed #C0C0C0",
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                gap: 12, padding: 24, cursor: "pointer",
+                gap: 10, padding: 16, cursor: "pointer",
               }}>
               <Button variant="primary" size="md"
                 onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
