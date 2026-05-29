@@ -17,9 +17,10 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions)
   if (!session) return apiErrors.unauthorized()
   const tenantId = (session.user as any).tenantId
+  if (!tenantId) return apiErrors.unauthorized()
   const { id } = await ctx.params
   const campaign = await prisma.campaign.findFirst({
-    where: { id, ...(tenantId ? { client: { tenantId } } : {}) },
+    where: { id, client: { tenantId } },
     include: {
       assets: { select: { id: true, label: true, type: true } },
       keyVision: true,

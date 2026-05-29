@@ -42,8 +42,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
   // Auth tenant: valida que a campanha pertence ao tenant do user.
   const tenantId = (session.user as any)?.tenantId
+  if (!tenantId) {
+    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
+  }
   const campaign = await prisma.campaign.findFirst({
-    where: { id, ...(tenantId ? { client: { tenantId } } : {}) },
+    where: { id, client: { tenantId } },
     select: { id: true },
   })
   if (!campaign) {

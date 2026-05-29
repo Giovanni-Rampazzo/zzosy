@@ -30,10 +30,11 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     const session = await getServerSession(authOptions)
     if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any)?.tenantId
+    if (!tenantId) return apiErrors.unauthorized()
     const { id } = await ctx.params
     // Tenant filter
     const campaign = await prisma.campaign.findFirst({
-      where: { id, ...(tenantId ? { client: { tenantId } } : {}) },
+      where: { id, client: { tenantId } },
       select: { id: true },
     })
     if (!campaign) return apiErrors.notFound()
@@ -63,8 +64,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   }
   // Verifica tenant
   const tenantId = (session.user as any)?.tenantId
+  if (!tenantId) return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
   const campaign = await prisma.campaign.findFirst({
-    where: { id, ...(tenantId ? { client: { tenantId } } : {}) },
+    where: { id, client: { tenantId } },
     select: { id: true },
   })
   if (!campaign) {

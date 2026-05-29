@@ -38,9 +38,11 @@ interface RecoverResult {
   message: string
 }
 
-async function executeFullRecover(id: string, tenantId: string | null): Promise<RecoverResult | { error: string; status: number }> {
+async function executeFullRecover(id: string, tenantId: string): Promise<RecoverResult | { error: string; status: number }> {
+  // CRITICAL: tenant guard obrigatorio. Se removido, qualquer user autenticado
+  // sobrescrevia campanha de outro tenant via /api/campaigns/[id]/full-recover-from-psd.
   const campaign = await prisma.campaign.findFirst({
-    where: { id, ...(tenantId ? { client: { tenantId } } : {}) },
+    where: { id, client: { tenantId } },
   })
   if (!campaign) return { error: "Campaign not found", status: 404 }
   if (!campaign.psdUrl) return { error: "Campanha sem psdUrl — nada pra restaurar.", status: 400 }
@@ -176,8 +178,9 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     const session = await getServerSession(authOptions)
     if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any)?.tenantId
+    if (!tenantId) return apiErrors.unauthorized()
     const { id } = await ctx.params
-    const result = await executeFullRecover(id, tenantId ?? null)
+    const result = await executeFullRecover(id, tenantId)
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -215,8 +218,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
   // Chama executeFullRecover DIRETO — sem self-fetch que estava falhando.
   const tenantId = (session.user as any)?.tenantId
+  if (!tenantId) {
+    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(req.url)}`, req.url))
+  }
   try {
-    const result = await executeFullRecover(id, tenantId ?? null)
+    const result = await executeFullRecover(id, tenantId)
     if ("error" in result) {
       return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px;max-width:800px;margin:0 auto">
 <h2>❌ Erro na recovery</h2>

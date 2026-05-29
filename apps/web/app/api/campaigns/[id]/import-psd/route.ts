@@ -20,10 +20,20 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const session = await getServerSession(authOptions)
     if (!session) return apiErrors.unauthorized()
     const userId = (session.user as any).id
+    const tenantId = (session.user as any).tenantId
+    if (!tenantId) return apiErrors.unauthorized()
     const rl = await rateLimit.upload.check(identifierFromRequest(req, userId))
     if (!rl.ok) return apiErrors.tooManyRequests(rl.retryAfter)
 
     const { id } = await ctx.params
+    // CRITICAL tenant guard: sem isso, user autenticado de outro tenant podia
+    // destruir CampaignAsset/SmartObjectFile, sobrescrever piece.data, gravar
+    // bytes arbitrarios no storage de qualquer campanha pelo path /campaigns/[id].
+    const campaignGuard = await prisma.campaign.findFirst({
+      where: { id, client: { tenantId } },
+      select: { id: true },
+    })
+    if (!campaignGuard) return apiErrors.notFound()
 
     const formData = await req.formData()
     const psdFile = formData.get("psd") as File

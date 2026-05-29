@@ -48,9 +48,9 @@ interface Result {
   perPiece: PerPieceDiag[]
 }
 
-async function execute(id: string, tenantId: string | null): Promise<Result | { error: string; status: number }> {
+async function execute(id: string, tenantId: string): Promise<Result | { error: string; status: number }> {
   const campaign = await prisma.campaign.findFirst({
-    where: { id, ...(tenantId ? { client: { tenantId } } : {}) },
+    where: { id, client: { tenantId } },
     include: { keyVision: true, pieces: true },
   })
   if (!campaign) return { error: "Campaign not found", status: 404 }
@@ -186,7 +186,8 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     if (!session) return apiErrors.unauthorized()
     const tenantId = (session.user as any)?.tenantId
     const { id } = await ctx.params
-    const result = await execute(id, tenantId ?? null)
+    if (!tenantId) return apiErrors.unauthorized()
+    const result = await execute(id, tenantId)
     if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status })
     return NextResponse.json(result)
   } catch (e: any) {
@@ -211,7 +212,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   }
   const tenantId = (session.user as any)?.tenantId
   try {
-    const result = await execute(id, tenantId ?? null)
+    if (!tenantId) return apiErrors.unauthorized()
+    const result = await execute(id, tenantId)
     if ("error" in result) {
       return new NextResponse(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:32px"><h2>❌ ${result.error}</h2><p><a href="/campaigns/${id}">← Voltar</a></p></body></html>`, { status: result.status, headers: { "Content-Type": "text/html; charset=utf-8" } })
     }
