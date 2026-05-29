@@ -768,13 +768,20 @@ export default function CampaignOverviewPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {visiblePieces.length > 0 && (
                 <>
+                  {/* Selecionar/Desmarcar SEMPRE visivel (mesmo com 0 selecionado)
+                      — user pediu 2026-05-29: faltava "selecionar todos" quando
+                      vazio. Toggle por estado: 0 → "Selecionar tudo", N → "X
+                      selecionada(s) · Desmarcar tudo". "Cancelar" removido —
+                      redundante com Desmarcar (ambos zeram selecao). */}
+                  <Button variant="secondary" size="sm" onClick={toggleSelectAll}>
+                    {selected.length === 0
+                      ? "Selecionar tudo"
+                      : allVisibleSelected
+                        ? `Desmarcar tudo (${selected.length})`
+                        : `Selecionar tudo (${selected.length}/${visiblePieces.length})`}
+                  </Button>
                   {selected.length > 0 && (
                     <>
-                      <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{selected.length} selecionada(s)</span>
-                      <Button variant="secondary" size="sm" onClick={toggleSelectAll}>
-                        {allVisibleSelected ? "Desmarcar tudo" : "Selecionar tudo"}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Cancelar</Button>
                       <Button variant="danger" size="sm" onClick={(e) => deleteSelected(e.altKey)} title="Option/Alt+click pra apagar sem confirmação">Apagar ({selected.length})</Button>
                       <Button variant="info" size="sm" onClick={duplicateSelected} title="Duplica as peças selecionadas (status volta para Standby)">Duplicar ({selected.length})</Button>
                       <Button variant="secondary" size="sm" onClick={regenSelectedFromMatrix} title="Regenera os layers das peças selecionadas a partir da matriz atual (substitui o conteúdo). Útil pra recuperar peças corrompidas/vazias.">↻ Da matriz ({selected.length})</Button>
