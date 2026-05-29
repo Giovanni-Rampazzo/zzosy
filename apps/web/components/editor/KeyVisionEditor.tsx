@@ -38,6 +38,7 @@ import {
   syncBrandRefsInTextObjects as syncBrandTextHelper,
   syncBrandRefsInBgLayers as syncBrandBgHelper,
 } from "@/lib/editor/brandSyncHelpers"
+import { useUndoHistory } from "@/lib/editor/useUndoHistory"
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 // TH = top bar height. BH = bottom toolbar (sub-controls). Larguras dos
@@ -268,20 +269,28 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // half). Permite distinguir "vai cair entre A e B" (gap), com os dois rows
   // vizinhos sofrendo magnify pra abrir espaco — feedback Photoshop+Dock.
   const [dropPosition, setDropPosition] = useState<"before" | "after" | null>(null)
-  const undoStack = useRef<string[]>([])
-  const redoStack = useRef<string[]>([])
-  // historyTick: força re-render dos botões undo/redo quando push/undo/redo
-  // muda o stack. Refs não disparam re-render — sem isso, botões disabled
-  // ficam stale.
-  const [historyTick, setHistoryTick] = useState(0)
   const isDirtyRef = useRef(false)
   const [isDirty, setIsDirty] = useState(false)
-  const isApplyingHistory = useRef(false)
-  // Gera um seq incrementado a cada applySnapshot — usado pelos rebakes de
-  // raster mask pra detectar undo rapido (Cmd+Z duas vezes em <100ms). Se um
-  // rebake async terminar e o seq mudou, ele aborta antes de setar _element
-  // (evita race entre 2 rebakes do mesmo objeto — audit H1).
-  const applySnapshotSeq = useRef(0)
+  // Undo/redo refs + pushHistory encapsulados em hook dedicado (audit #5 ext).
+  // applySnapshot/undo/redo permanecem inline — tightly coupled com loadFromJSON,
+  // mask rebake, brand resync, saveTimer cancel.
+  const history = useUndoHistory({
+    fabricRef,
+    onMarkDirty: () => {
+      isDirtyRef.current = true
+      setIsDirty(true)
+    },
+    getCurrentSelectionIds: (fc) => getCurrentSelectionIds(fc),
+  })
+  const undoStack = history.undoStack
+  const redoStack = history.redoStack
+  const isApplyingHistory = history.isApplyingHistory
+  const applySnapshotSeq = history.applySnapshotSeq
+  const historyTick = history.historyTick
+  const setHistoryTick = history.setHistoryTick
+  const pushHistory = history.pushHistory
+  void historyTick // consumido por JSX dos botoes Undo/Redo via re-render
+  void setHistoryTick // chamado por undo/redo abaixo
   const isInitialized = useRef(false)
   // Blob URLs criados via createObjectURL (SVG patcher e similares) precisam
   // ser revogados explicitamente — o GC do browser NAO libera blob URLs
@@ -2898,93 +2907,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     fc.requestRenderAll()
   }
 
-  function pushHistory(opts?: { markDirty?: boolean }) {
-    if (isApplyingHistory.current) return
-    const fc = fabricRef.current
-    if (!fc) return
-    const markDirty = opts?.markDirty !== false
-    try {
-      // ORPHAN HANDLING: antes este pushHistory pulava completamente se detectava
-      // orfaos (objetos sem __assetId/__embedded). Resultado: edicoes do usuario
-      // logo apos um undo ficavam ORA fora do stack, ORA dentro — undo seguinte
-      // pulava estados intermediarios e o usuario sentia "perdeu a cor".
-      // Estrategia nova: ainda detecta orfaos, mas em vez de pular o push,
-      // continua salvando. O snapshot pode incluir orfaos visualmente, mas:
-      //  1. saveNow filtra orfaos antes de gravar no banco (existing logica).
-      //  2. Undo→applySnapshot tem health-cleanup de orphans-pos-restore.
-      // Assim o undo stack mantem continuidade temporal — cada acao do user
-      // entra na pilha mesmo que o canvas tenha um orfao transitorio.
-      const orphans = fc.getObjects().filter((o: any) => !o.__isBg && !o.__isBleedOverlay && !o.__assetId && !o.__embedded && !o.__isStrokeGhost)
-      if (orphans.length > 0) {
-        console.warn("[pushHistory] aviso —", orphans.length, "objetos orfaos detectados. Snapshot ainda eh salvo (continuidade temporal preservada).")
-      }
-      const canvasObj = (fc as any).toObject(HISTORY_PROPS_TO_INCLUDE)
-      // _selection: array de identificadores dos objs ativos. Restaurado em
-      // applySnapshot. Estavel via __assetId / __assetLabel.
-      canvasObj._selection = getCurrentSelectionIds(fc)
-      const snap = JSON.stringify(canvasObj)
-      // Evita push duplicado quando snap eh igual ao topo
-      const top = undoStack.current[undoStack.current.length - 1]
-      if (top === snap) return
-      // DIAGNOSTICO: detecta modificacoes silenciosas de OVERRIDE entre snaps.
-      // Multi-select drag/scale eh normal: 2+ objs mudam left/top/scaleX/scaleY
-      // junto. So eh suspeito quando >1 obj muda props DE OVERRIDE (fill, fonte,
-      // styles, etc) — sintoma "undo reseta override de outro layer".
-      //
-      // Props de transform (left/top/scaleX/scaleY/angle/width/height) sao
-      // ESPERADAS em multi-select; nao alertam. Props de override SO mudam
-      // por acao explicita per-layer — multiplas mudando = bug.
-      try {
-        if (top) {
-          const prevObjs: any[] = JSON.parse(top)?.objects ?? []
-          const newObjs: any[] = JSON.parse(snap)?.objects ?? []
-          const keyOf = (o: any) => o?.__assetId ?? o?.__assetLabel ?? `${o?.type}@${Math.round(o?.left ?? 0)},${Math.round(o?.top ?? 0)}`
-          const prevByKey = new Map<string, any>()
-          for (const o of prevObjs) prevByKey.set(keyOf(o), o)
-          // Props que indicam OVERRIDE per-layer NUNCA disparadas por scaling
-          // de multi-select. Excluidas: transform (left/top/scale/angle —
-          // normal em multi-select); fontSize (scaling hook recalcula pra
-          // preservar tamanho visual); lineHeight (derivado de leadingPt).
-          // Restam props que so mudam por acao direta no painel/canvas em
-          // UM layer por vez. 2+ layers com diff nelas = bug real.
-          const OVERRIDE_PROPS = [
-            "fill", "fontFamily", "fontWeight", "fontStyle",
-            "charSpacing", "textAlign", "text",
-          ]
-          const overrideChanges: Array<{ label: string; diffs: string[] }> = []
-          for (const o of newObjs) {
-            const prev = prevByKey.get(keyOf(o))
-            if (!prev) continue
-            const diffs: string[] = []
-            for (const k of OVERRIDE_PROPS) {
-              if (JSON.stringify(prev[k]) !== JSON.stringify(o[k])) diffs.push(k)
-            }
-            if (JSON.stringify(prev.styles ?? {}) !== JSON.stringify(o.styles ?? {})) diffs.push("styles")
-            if (diffs.length > 0) overrideChanges.push({ label: o.__assetLabel ?? "?", diffs })
-          }
-          // So alerta quando 2+ layers tem mudancas em OVERRIDE props simultaneas.
-          // Multi-select de transform (left/top/scale) NAO entra aqui — desejado.
-          if (overrideChanges.length > 1) {
-            console.warn("[pushHistory] MULTI-OBJ OVERRIDE DIFF — provavel mod silenciosa de fill/font/text em multiplos layers:", overrideChanges)
-          }
-        }
-      } catch {}
-      undoStack.current.push(snap)
-      // Mantem 100 entradas. Aumentado de 31 → 100 em 2026-05-28 quando selecao
-      // passou a entrar no undo stack (user pediu "passo a passo, step por step").
-      // ~50KB por snap × 100 = ~5MB de memoria, aceitavel.
-      if (undoStack.current.length > 101) undoStack.current.shift()
-      redoStack.current = []
-      setHistoryTick(t => t + 1)
-      // markDirty=false em pushes que sao SO de selecao (UI state, nao mudanca
-      // de dado). Sem isso, abrir o editor + clicar num layer ja marcava dirty
-      // e disparava prompt "salvar?" ao sair, mesmo sem ter editado nada.
-      if (markDirty) {
-        isDirtyRef.current = true
-        setIsDirty(true)
-      }
-    } catch (e) { /* ignora */ }
-  }
+  // pushHistory agora vem do hook useUndoHistory (lib/editor/useUndoHistory.ts).
+  // Logica completa preservada la — incluindo ORPHAN HANDLING + DIAGNOSTICO de
+  // MULTI-OBJ OVERRIDE DIFF + dedup contra topo + cap 100 entradas + redoStack
+  // limpo + setHistoryTick + onMarkDirty callback.
 
   // Retorna true se aplicou com sucesso, false se abortou (circuit breaker).
   // Permite que undo()/redo() saibam reverter o pop quando o snap eh ruim.
