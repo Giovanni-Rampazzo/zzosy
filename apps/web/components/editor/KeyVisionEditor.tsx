@@ -8177,10 +8177,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // Wrapper pro botao 'Centralizar' do properties — mesma logica do
   // shortcut Cmd+Shift+C que ja existia (centerObjectInCanvas).
   function centerSelectedOnCanvas() {
-    centerObjectInCanvas()
+    centerObjectInCanvas("both")
   }
 
-  function centerObjectInCanvas() {
+  // axis: "x" centraliza so horizontalmente (eixo X), "y" so vertical, "both"
+  // ambos. User pediu 2026-05-29 separados ("cade o center da imagem") porque
+  // Photoshop/Illustrator alinha so um eixo de cada vez. Cmd+Shift+C continua
+  // disparando "both" pra preservar habito antigo.
+  function centerObjectInCanvas(axis: "x" | "y" | "both" = "both") {
     const fc = fabricRef.current; if (!fc) return
     const active = fc.getActiveObject() as any
     if (!active) return
@@ -8201,9 +8205,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       bw = (active.width ?? 100) * (active.scaleX ?? 1)
       bh = (active.height ?? 100) * (active.scaleY ?? 1)
     }
-    // Delta pra centralizar bbox no centro da peca
-    const dx = (cw - bw) / 2 - bx
-    const dy = (ch - bh) / 2 - by
+    // Delta pra centralizar bbox no centro da peca (so eixo pedido)
+    const dx = axis === "y" ? 0 : (cw - bw) / 2 - bx
+    const dy = axis === "x" ? 0 : (ch - bh) / 2 - by
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
     active.set({
       left: (active.left ?? 0) + dx,
@@ -10796,13 +10800,25 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                 title="Scale and center the layer inside the piece (100%)">
                 Fit to canvas
               </button>
-              <button onClick={centerObjectInCanvas} tabIndex={-1}
-                style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
-                onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
-                title="Center selected object in canvas (vertical + horizontal)">
-                Center
-              </button>
+              {/* Center H + V separados (user 2026-05-29 "cade o center da
+                  imagem") — Photoshop/Illustrator style: 2 botoes pra alinhar
+                  so um eixo. "Center" sozinho continua via Cmd+Shift+C. */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                <button onClick={() => centerObjectInCanvas("x")} tabIndex={-1}
+                  style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                  title="Centralizar horizontalmente no canvas (eixo X)">
+                  Center H
+                </button>
+                <button onClick={() => centerObjectInCanvas("y")} tabIndex={-1}
+                  style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                  title="Centralizar verticalmente no canvas (eixo Y)">
+                  Center V
+                </button>
+              </div>
             </div>
 
             {/* ===== MÁSCARA (Photoshop-style) ===== */}
@@ -11162,7 +11178,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     - Center: posiciona shape no centro do canvas (mantem dims) */}
                 <div>
                   <div style={secS}>Posicionar no canvas</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
                     <button type="button"
                       onClick={() => fitSelectedToCanvas()}
                       style={{ padding: "6px 4px", fontSize: 11, fontWeight: 600,
@@ -11170,13 +11186,21 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         border: "1px solid #333", borderRadius: 4, cursor: "pointer" }}
                       title="Ajusta o layer pra ocupar o canvas inteiro (preserva aspect ratio)"
                     >Encaixar</button>
+                    {/* Center H/V separados — sweep do mesmo padrao dos paineis TEXT/IMAGE. */}
                     <button type="button"
-                      onClick={() => centerSelectedOnCanvas()}
+                      onClick={() => centerObjectInCanvas("x")}
                       style={{ padding: "6px 4px", fontSize: 11, fontWeight: 600,
                         background: "transparent", color: "#aaa",
                         border: "1px solid #333", borderRadius: 4, cursor: "pointer" }}
-                      title="Centraliza o layer no canvas (mantem dimensoes)"
-                    >Centralizar</button>
+                      title="Centraliza horizontalmente (eixo X)"
+                    >Centro H</button>
+                    <button type="button"
+                      onClick={() => centerObjectInCanvas("y")}
+                      style={{ padding: "6px 4px", fontSize: 11, fontWeight: 600,
+                        background: "transparent", color: "#aaa",
+                        border: "1px solid #333", borderRadius: 4, cursor: "pointer" }}
+                      title="Centraliza verticalmente (eixo Y)"
+                    >Centro V</button>
                   </div>
                 </div>
               </div>
@@ -11294,13 +11318,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               title="Scale and center the layer inside the piece (100%)">
               Fit to canvas
             </button>
-            <button onClick={centerObjectInCanvas}
-              style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
-              onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
-              title="Center selected object in canvas (vertical + horizontal)">
-              Center
-            </button>
+            {/* Center H + V separados (user 2026-05-29 "cade o center da
+                imagem") — Photoshop/Illustrator style. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+              <button onClick={() => centerObjectInCanvas("x")}
+                style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                title="Centralizar horizontalmente no canvas (eixo X)">
+                Center H
+              </button>
+              <button onClick={() => centerObjectInCanvas("y")}
+                style={{ background: "#222", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", color: "#aaa" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.color = "#fff" }}
+                onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.color = "#aaa" }}
+                title="Centralizar verticalmente no canvas (eixo Y)">
+                Center V
+              </button>
+            </div>
 
             {/* ===== MÁSCARA (Photoshop-style) ===== */}
             <MaskPanel
