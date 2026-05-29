@@ -55,7 +55,12 @@ export function Button({ variant = "secondary", size = "md", loading, className,
   // Cores e radius via CSS vars editaveis em /design-tokens.
   const sw = "border-[length:var(--zz-stroke-medio)]"
   const variants = {
-    primary:   `bg-[var(--zz-brand-primary)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-brand-primary)] hover:bg-[var(--zz-brand-primary-hover)] hover:border-[var(--zz-brand-primary-hover)]`,
+    // 2026-05-29 user: "mantenha o stroke preto no botao de apresentacao".
+    // Border preta no primary fill-amarelo cria consistencia visual com
+    // os secondary/danger/info/etc — todos os botoes do ZZOSY tem stroke
+    // preto/cor visivel sobre fundo. Antes border era amarela (invisivel
+    // sobre o fill amarelo). Hover muda so o bg.
+    primary:   `bg-[var(--zz-brand-primary)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-text-primary)] hover:bg-[var(--zz-brand-primary-hover)]`,
     secondary: `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-border-strong)] hover:bg-[var(--zz-bg-page)]`,
     dark:      `bg-[var(--zz-text-primary)] text-white ${sw} border-[var(--zz-text-primary)] hover:opacity-90`,
     danger:    `bg-[var(--zz-bg-card)] text-[var(--zz-text-primary)] ${sw} border-[var(--zz-danger)] hover:bg-[#fef2f2]`,
