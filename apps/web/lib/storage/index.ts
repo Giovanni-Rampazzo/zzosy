@@ -21,6 +21,9 @@ export function getStorage(): StorageAdapter {
   const driver = env.STORAGE_DRIVER // typed + validated por env.ts
   switch (driver) {
     case "local":
+      // Railway: monta Volume em /app/apps/web/public/uploads pra persistir
+      // entre deploys (containers sao ephemeral). Sem Volume, bytes somem
+      // em rebuild.
       instance = new LocalFileStorageAdapter()
       break
     // case "s3": instance = new S3StorageAdapter({ ... }); break;
