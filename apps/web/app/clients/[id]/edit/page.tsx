@@ -22,6 +22,7 @@ import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { ClientSettingsCard } from "@/components/clients/ClientSettingsCard"
 import { Button } from "@/components/ui/Button"
+import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { CollapsibleCard } from "@/components/ui/CollapsibleCard"
 import { GOOGLE_FONTS, loadGoogleFont, loadCustomFontFamily, detectFontMetadata, CustomFontFile } from "@/lib/google-fonts"
 
@@ -577,19 +578,13 @@ export default function EditClientPage() {
     <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
       <TopNav />
       <div style={{flex:1,overflowY:"auto",padding:32,background:"#F5F5F0"}}>
-        <button
-          onClick={() => router.push(`/clients/${id}`)}
-          style={{background:"transparent",border:"none",color:"#888",fontSize:12,cursor:"pointer",padding:0,marginBottom:12}}
-        >
-          ← {client.name}
-        </button>
-
-        <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"#888",marginBottom:20}}>
-          <span style={{cursor:"pointer"}} onClick={() => router.push("/dashboard")}>Clientes</span>
-          <span style={{color:"#ccc"}}>/</span>
-          <span style={{cursor:"pointer"}} onClick={() => router.push(`/clients/${id}`)}>{client.name}</span>
-          <span style={{color:"#ccc"}}>/</span>
-          <span style={{fontWeight:600,color:"#111"}}>Editar</span>
+        {/* Header padronizado (CLAUDE 1.2 + 1.9 — sweep 2026-05-29): Voltar
+            primary + ClientLogoBadge 64px. Text-button cinza + breadcrumb
+            removidos (mesmo anti-pattern do design-system page). Salvar
+            permanece dentro do CollapsibleCard que ja tem actions. */}
+        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+          <Button variant="primary" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
+          <ClientLogoBadge client={{id,name:client.name,brandLogoUrl:client.brandLogoUrl}} size={64} radius={10} />
         </div>
 
         <form onSubmit={handleSave} style={{maxWidth:640}}>

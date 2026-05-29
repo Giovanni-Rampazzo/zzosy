@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import TopNav from "@/components/TopNav"
 import { Button } from "@/components/ui/Button"
+import { ClientLogoBadge } from "@/components/clients/ClientLogoBadge"
 import { GOOGLE_FONTS, loadGoogleFont, loadCustomFontFamily, detectFontMetadata, CustomFontFile } from "@/lib/google-fonts"
 import {
   BrandPresetKey, BrandPreset, BrandTypography,
@@ -568,25 +569,21 @@ export default function EditClientPage() {
     <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
       <TopNav />
       <div style={{flex:1,overflowY:"auto",padding:32,background:"#F5F5F0"}}>
-        <button
-          onClick={() => router.push(`/clients/${id}`)}
-          style={{background:"transparent",border:"none",color:"#888",fontSize:12,cursor:"pointer",padding:0,marginBottom:12}}
-        >
-          ← {client.name}
-        </button>
-
-        <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"#888",marginBottom:20}}>
-          <span style={{cursor:"pointer"}} onClick={() => router.push("/dashboard")}>Clientes</span>
-          <span style={{color:"#ccc"}}>/</span>
-          <span style={{cursor:"pointer"}} onClick={() => router.push(`/clients/${id}`)}>{client.name}</span>
-          <span style={{color:"#ccc"}}>/</span>
-          <span style={{fontWeight:600,color:"#111"}}>Design System</span>
+        {/* Header padronizado (CLAUDE 1.2 + 1.9 + library/page mesma estrutura):
+            Voltar primary amarelo + ClientLogoBadge 64px a ESQUERDA; acoes
+            de pagina (Salvar) a DIREITA. Breadcrumb redundante + text-button
+            cinza removidos (user pedido 2026-05-29: "cade o botao < sicredi
+            padronizado? e coloca u salvar tmb"). */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:16}}>
+            <Button variant="primary" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
+            <ClientLogoBadge client={{id,name:client.name,brandLogoUrl:client.brandLogoUrl}} size={64} radius={10} />
+          </div>
+          <Button variant="primary" size="md" onClick={() => handleSave({preventDefault:()=>{}} as React.FormEvent)} loading={saving}>
+            Salvar
+          </Button>
         </div>
 
-        {/* Header simples — sem botao Voltar inline. Ja temos 2 caminhos de
-            volta (upper "← {cliente}" + breadcrumb) e o Voltar isolado a
-            960px do titulo ficava visualmente desconectado (user reportou
-            2026-05-22 "porque o voltar esta tao longe?"). */}
         <div style={{maxWidth:640,marginBottom:18}}>
           <h1 style={{fontSize:22,fontWeight:700,margin:0,marginBottom:4}}>Design System</h1>
           <div style={{fontSize:12,color:"#888"}}>Identidade visual, cores e tipografia da {client.name}</div>
