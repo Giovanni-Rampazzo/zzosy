@@ -17,13 +17,6 @@
  * tiver bug ou limitação, é aqui que documentamos + decidimos workaround.
  */
 import { readPsd, initializeCanvas, type Psd, type Layer as AgPsdLayer } from "ag-psd"
-import { applyAgPsdEffectsPatch } from "./agPsdEffectsPatch"
-
-// Patcha ag-psd v30.x pra leitura tolerante do chunk `lrFX` (layer effects
-// legacy). Sem isso, effects de PSDs como Sicredi/Sem Parar (color overlay,
-// solid fill, etc) ficam undefined apos o import — render no editor perde
-// tint/overlay. Idempotente, safe em hot-reload.
-applyAgPsdEffectsPatch()
 
 // CRITICO (browser): sem initializeCanvas, ag-psd nao rasteriza layers —
 // l.canvas fica null em IMAGE/SmartObject/Shape, toCampaign skipa com
