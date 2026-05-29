@@ -631,11 +631,8 @@ export default function CampaignAssetsPage() {
       <TopNav />
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 24px" }}>
 
-        {/* Subnav 2026-05-24: re-adicionado depois que user perguntou "como
-            volto pro editor?" — header limpo mas precisava de navegacao entre
-            tabs. maxWidth: 1280 (era 900) — espaco pros 4 tabs + 4 actions
-            caberem numa linha sem quebrar. */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 16, flexWrap: "wrap" }}>
+        {/* Linha de navegacao (CLAUDE 1.2.1): subnav sozinho. */}
+        <div style={{ marginBottom: 12 }}>
           <CampaignSubnav
             campaignId={id}
             clientId={campaign.client?.id}
@@ -644,27 +641,28 @@ export default function CampaignAssetsPage() {
             hasAssets={campaign.assets.length > 0}
             hasPieces={((campaign as any)?._count?.pieces ?? 0) > 0}
           />
-          <div style={{ position: "relative", flexShrink: 0, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button variant="secondary" size="md" onClick={() => router.push(`/campaigns/${id}/cartridges`)} title="Browse cartucho — assets do library do cliente com filtros + add em lote">
-              Cartucho
-            </Button>
-            <Button variant="secondary" size="md" onClick={() => setLibraryModalOpen(true)} title="Importar asset salvo no library deste cliente">
-              + Do Library
-            </Button>
-            <Button variant="secondary" size="md" onClick={bulkSaveToLibrary} disabled={campaign.assets.length === 0} title="Salva TODOS os assets desta campanha no library do cliente (skip duplicates)">
-              ↑ Tudo p/ Library
-            </Button>
-            <AddMenu
-              onPickText={addTextAsset}
-              onPickShape={addShapeAsset}
-              onAddImage={addImageAsset}
-              onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
-              onPickPsdAsSO={addPsdAsSmartObject}
-            />
-            {psdSoUploading && (
-              <span style={{ marginLeft: 8, fontSize: 11, color: "#888" }}>importando PSD…</span>
-            )}
-          </div>
+        </div>
+        {/* Linha de actions: separada da nav. Right-aligned. */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20, gap: 8, flexWrap: "wrap", position: "relative" }}>
+          <Button variant="secondary" size="md" onClick={() => router.push(`/campaigns/${id}/cartridges`)} title="Browse cartucho — assets do library do cliente com filtros + add em lote">
+            Cartucho
+          </Button>
+          <Button variant="secondary" size="md" onClick={() => setLibraryModalOpen(true)} title="Importar asset salvo no library deste cliente">
+            + Do Library
+          </Button>
+          <Button variant="secondary" size="md" onClick={bulkSaveToLibrary} disabled={campaign.assets.length === 0} title="Salva TODOS os assets desta campanha no library do cliente (skip duplicates)">
+            ↑ Tudo p/ Library
+          </Button>
+          <AddMenu
+            onPickText={addTextAsset}
+            onPickShape={addShapeAsset}
+            onAddImage={addImageAsset}
+            onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
+            onPickPsdAsSO={addPsdAsSmartObject}
+          />
+          {psdSoUploading && (
+            <span style={{ alignSelf: "center", fontSize: 11, color: "#888" }}>importando PSD…</span>
+          )}
         </div>
         <div style={{ display: "none" }}>
           <PsdImporter ref={psdImporterRef} campaignId={id} onImported={load} />
