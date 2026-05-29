@@ -1,5 +1,5 @@
 diff --git a/node_modules/ag-psd/dist-es/effectsHelpers.js b/node_modules/ag-psd/dist-es/effectsHelpers.js
-index 6ed2338..d2af97d 100644
+index 6ed2338..f4f2274 100644
 --- a/node_modules/ag-psd/dist-es/effectsHelpers.js
 +++ b/node_modules/ag-psd/dist-es/effectsHelpers.js
 @@ -25,6 +25,7 @@ export function readEffects(reader) {
@@ -21,7 +21,7 @@ index 6ed2338..d2af97d 100644
                  break;
              }
              case 'dsdw': // drop shadow (see See Effects layer, drop shadow and inner shadow info)
-@@ -180,9 +182,13 @@ export function readEffects(reader) {
+@@ -180,8 +182,20 @@ export function readEffects(reader) {
                  effects.solidFill = [{ blendMode: blendMode, color: color, opacity: opacity, enabled: enabled }];
                  break;
              }
@@ -30,15 +30,22 @@ index 6ed2338..d2af97d 100644
 +            default: {
 +                var unknownBlockSize = readUint32(reader);
 +                skipBytes(reader, unknownBlockSize);
++                if (typeof console !== "undefined" && console.warn) {
++                    console.warn("[ag-psd patch] unknown lrFX effect type '" + type + "' (" + unknownBlockSize + " bytes) skipped");
++                }
 +                break;
 +            }
++        }
++        } catch (e) {
++            if (typeof console !== "undefined" && console.warn) {
++                console.warn("[ag-psd patch] lrFX effect #" + i + " parse failed: " + (e && e.message ? e.message : e) + " preserving " + Object.keys(effects).length + " already parsed");
++            }
++            break;
          }
-+        } catch (e) { break; }
      }
      return effects;
- }
 diff --git a/node_modules/ag-psd/dist/effectsHelpers.js b/node_modules/ag-psd/dist/effectsHelpers.js
-index 202a80a..12f7de1 100644
+index 202a80a..76bbfb0 100644
 --- a/node_modules/ag-psd/dist/effectsHelpers.js
 +++ b/node_modules/ag-psd/dist/effectsHelpers.js
 @@ -28,6 +28,7 @@ function readEffects(reader) {
@@ -60,7 +67,7 @@ index 202a80a..12f7de1 100644
                  break;
              }
              case 'dsdw': // drop shadow (see See Effects layer, drop shadow and inner shadow info)
-@@ -183,9 +185,13 @@ function readEffects(reader) {
+@@ -183,8 +185,20 @@ function readEffects(reader) {
                  effects.solidFill = [{ blendMode: blendMode, color: color, opacity: opacity, enabled: enabled }];
                  break;
              }
@@ -69,10 +76,17 @@ index 202a80a..12f7de1 100644
 +            default: {
 +                var unknownBlockSize = (0, psdReader_1.readUint32)(reader);
 +                (0, psdReader_1.skipBytes)(reader, unknownBlockSize);
++                if (typeof console !== "undefined" && console.warn) {
++                    console.warn("[ag-psd patch] unknown lrFX effect type '" + type + "' (" + unknownBlockSize + " bytes) skipped");
++                }
 +                break;
 +            }
++        }
++        } catch (e) {
++            if (typeof console !== "undefined" && console.warn) {
++                console.warn("[ag-psd patch] lrFX effect #" + i + " parse failed: " + (e && e.message ? e.message : e) + " preserving " + Object.keys(effects).length + " already parsed");
++            }
++            break;
          }
-+        } catch (e) { break; }
      }
      return effects;
- }
