@@ -123,6 +123,31 @@ Toda barra de filtro/categoria usa o componente `FilterPill` (`components/ui/Fil
 - Size padrao `sm` em toolbar de cards. `md` em barras isoladas (page-level filters).
 - Tamanho/altura ALINHADO com `<Button size="sm">` na mesma row — toolbar so respira se todos os children medem o mesmo.
 
+## 1.11 Icones oficiais ZZOSY (5 — set fechado)
+
+Set oficial inaugurado 2026-05-29 (user entregou os 5 SVGs com cores definidas). Componente unico: `components/ui/ZzosyIcon.tsx`.
+
+| name | cor | uso canonico |
+|---|---|---|
+| `acessar` | #ff8500 (laranja) | abrir/entrar na entidade — substitui label "Entrar" do row 1.1.B |
+| `adicionar` | #1a4 (verde) | criar novo — substitui "+ Adicionar"/"+ Gerar peça" |
+| `apagar` | #c61c2c (vermelho) | DELETE — substitui label "Apagar" do row 1.1.B |
+| `duplicar` | #5f20c4 (roxo) | clone — substitui label "Duplicar" do row 1.1.B |
+| `informacao` | #1c7fea (azul) | info/details popup |
+
+Uso:
+```tsx
+import { ZzosyIcon } from "@/components/ui/ZzosyIcon"
+<ZzosyIcon name="acessar" size={20} />
+<ZzosyIcon name="apagar" size={16} decorative /> // dentro de botao com label proprio
+```
+
+Regras:
+- Set FECHADO — 5 icones, fim. Se aparecer necessidade de outro icone, conversa com user ANTES de inventar. NUNCA adicionar Lucide/Material/Feather/etc no projeto.
+- Cor oficial eh parte da identidade — sobreescrever `fill` so em estados muito sutis (hover/disabled). Manter a cor canonica como default.
+- Padrao: substituir labels longas por icone + tooltip, OU icone + label curto. Em row de acoes (1.1.B), opcao future eh icone-only quando user pedir compactacao.
+- Memory: `feedback_zzosy_official_icons.md` documenta o contexto + cores.
+
 ## 1.10 ENTRADAS na esquerda, SAÍDAS na direita
 
 Regra de fluxo visual de TODA pagina ZZOSY que tem **acoes em colunas/sidebars**:
@@ -337,7 +362,7 @@ Resultado: CampaignAsset type=SMART_OBJECT + SmartObjectFile.
 - ❌ NÃO inventar UI que o user não pediu (ex: "+ adicionar código" como compensação por remover placeholder)
 - ❌ NÃO criar arquivo .md docs/README sem ser pedido
 - ❌ NÃO usar emoji em código (comentários, strings internas)
-- ❌ NÃO usar emoji/ícone visual na UI do ZZOSY (📂 📖 🎨 ✏️ etc). User explicitou 2026-05-28: "zzosy sem icones". Empty states, headers de seção, botões — tudo só com texto. Exceção: ícones SVG (Eye/Lock/etc) em controles funcionais do painel de Layers/Properties do editor são OK (são UI técnica). Mas botão "📖 Guidebook" → "Guidebook".
+- ❌ NÃO usar emoji (📂 📖 🎨 ✏️ etc) na UI do ZZOSY. User explicitou 2026-05-28: "zzosy sem icones [emoji]". Empty states, headers de seção, botões — sem emoji unicode. Exceção: ícones SVG (Eye/Lock/etc) em controles funcionais do painel de Layers/Properties do editor são OK (são UI técnica). ✅ Set oficial de icones ZZOSY (`ZzosyIcon`) — ver 1.11. NÃO substituir icones oficiais por emoji nem por outros sets (Lucide/Material/Feather).
 - ❌ NÃO adicionar comments óbvios ("// busca o user", "// retorna o array")
 - ❌ NÃO usar `console.log` direto — use `editorLog` (silencia em prod)
 - ❌ NÃO confirmar destrutivo "tem certeza?" se for reversível (undo cobre)
