@@ -39,6 +39,7 @@ import {
   syncBrandRefsInBgLayers as syncBrandBgHelper,
 } from "@/lib/editor/brandSyncHelpers"
 import { useUndoHistory } from "@/lib/editor/useUndoHistory"
+import { useStepsManager } from "@/lib/editor/useStepsManager"
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 // TH = top bar height. BH = bottom toolbar (sub-controls). Larguras dos
@@ -128,27 +129,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   //  - stepCount: total de steps
   //  - activeStepIndex: qual esta sendo editado (0-based)
   //  - inactiveStepsRef: array com OS OUTROS steps (length = stepCount - 1)
-  const [stepCount, setStepCount] = useState(1)
-  const [activeStepIndex, setActiveStepIndex] = useState(0)
-  // Refs espelham os states pra leitura sincrona dentro de funcoes que rodam
-  // entre renders (performSave, doSaveNow, addStep). React state \u00e9 batched,
-  // entao logo apos setStepCount/setActiveStepIndex o valor lido por funcao
-  // pode estar STALE — use sempre o ref pra logica de save/step.
-  const stepCountRef = useRef(1)
-  const activeStepIndexRef = useRef(0)
-  const inactiveStepsRef = useRef<Array<{ layers: any[]; bgColor: string; bgOpacity?: number; thumbnailUrl?: string | null; imageUrl?: string | null }>>([])
-  // Setters que mantem ref e state em sincrono. Use sempre estes pra mudar
-  // stepCount/activeStepIndex (NUNCA setStepCount diretamente — quebra o ref).
-  function setStepCountSync(next: number | ((prev: number) => number)) {
-    const value = typeof next === "function" ? (next as any)(stepCountRef.current) : next
-    stepCountRef.current = value
-    setStepCount(value)
-  }
-  function setActiveStepIndexSync(next: number | ((prev: number) => number)) {
-    const value = typeof next === "function" ? (next as any)(activeStepIndexRef.current) : next
-    activeStepIndexRef.current = value
-    setActiveStepIndex(value)
-  }
+  // Steps state/refs em hook (audit #5 extracao). loadStepIntoCanvas + switchToStep
+  // + add/removeStep ficam inline — tocam Fabric canvas demais.
+  const stepsApi = useStepsManager()
+  const stepCount = stepsApi.stepCount
+  const activeStepIndex = stepsApi.activeStepIndex
+  const stepCountRef = stepsApi.stepCountRef
+  const activeStepIndexRef = stepsApi.activeStepIndexRef
+  const inactiveStepsRef = stepsApi.inactiveStepsRef
+  const setStepCountSync = stepsApi.setStepCountSync
+  const setActiveStepIndexSync = stepsApi.setActiveStepIndexSync
   const [selected, setSelected] = useState<any>(null)
   // Toggle do popover "+ Add asset" ao lado do botao ASSETS (topo do Layers panel).
   const [showAddAsset, setShowAddAsset] = useState(false)
