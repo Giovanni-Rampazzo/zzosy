@@ -296,6 +296,30 @@ export default function CampaignAssetsPage() {
     }
   }
 
+  // Importa .ai (Illustrator) ou .pdf como SMART_OBJECT — mirror exato do
+  // addPsdAsSmartObject mas usa pdfjs-dist server-side pra rasterizar a
+  // primeira artboard. Bytes originais ficam preservados em SmartObjectFile.
+  const [aiUploading, setAiUploading] = useState(false)
+  async function addAiAsSmartObject(file: File) {
+    if (!/\.(ai|pdf)$/i.test(file.name)) { alert("Selecione um arquivo .ai ou .pdf"); return }
+    setAiUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append("ai", file)
+      const res = await fetch(`/api/campaigns/${id}/assets/import-ai`, { method: "POST", body: fd })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(`Falha ao importar AI/PDF: ${body?.error ?? res.status}`)
+        return
+      }
+      await load()
+    } catch (e: any) {
+      alert(`Erro: ${e?.message ?? e}`)
+    } finally {
+      setAiUploading(false)
+    }
+  }
+
   /**
    * Cria um SHAPE asset com path vetorial pre-definido. Suporta:
    *   rectangle      → retangulo sharp 400×300
@@ -664,9 +688,13 @@ export default function CampaignAssetsPage() {
             onAddImage={addImageAsset}
             onPickPsd={(f) => psdImporterRef.current?.importFile(f)}
             onPickPsdAsSO={addPsdAsSmartObject}
+            onPickAi={addAiAsSmartObject}
           />
           {psdSoUploading && (
             <span style={{ alignSelf: "center", fontSize: 11, color: "#888" }}>importando PSD…</span>
+          )}
+          {aiUploading && (
+            <span style={{ alignSelf: "center", fontSize: 11, color: "#888" }}>importando AI/PDF…</span>
           )}
         </div>
         <div style={{ display: "none" }}>
@@ -1208,18 +1236,21 @@ function AddMenu({
   onAddImage,
   onPickPsd,
   onPickPsdAsSO,
+  onPickAi,
 }: {
   onPickText: (preset: BrandPresetKey) => void
   onPickShape: (kind: "rectangle" | "roundedRect" | "ellipse") => void
   onAddImage: (file: File) => void
   onPickPsd: (file: File) => void
   onPickPsdAsSO: (file: File) => void
+  onPickAi: (file: File) => void
 }) {
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const psdRef = useRef<HTMLInputElement>(null)
   const psdSoRef = useRef<HTMLInputElement>(null)
+  const aiRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (!open) return
     function onClick(e: MouseEvent) {
@@ -1287,6 +1318,18 @@ function AddMenu({
           if (f) onPickPsdAsSO(f)
         }}
       />
+      <input
+        ref={aiRef}
+        type="file"
+        accept=".ai,.pdf"
+        style={{ position: "absolute", left: "-9999px", width: 0, height: 0, opacity: 0 }}
+        tabIndex={-1}
+        onChange={e => {
+          const f = e.target.files?.[0]
+          e.target.value = ""
+          if (f) onPickAi(f)
+        }}
+      />
       {open && (
         <div style={{
           // right: 0 ancora popup pela direita (menu nao sai pra fora da viewport
@@ -1324,6 +1367,12 @@ function AddMenu({
             onClick={() => { setOpen(false); psdSoRef.current?.click() }}
             title="Importa o PSD inteiro como UM unico Smart Object (preserva bytes originais; edicao interna na Fase 2)">
             + PSD como Smart Object
+          </button>
+          <button type="button" style={itemS}
+            onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}
+            onClick={() => { setOpen(false); aiRef.current?.click() }}
+            title="Importa .ai (Illustrator) ou .pdf como Smart Object — primeira artboard vira composite raster preservando o original">
+            + Illustrator / PDF como Smart Object
           </button>
           <div style={{ borderTop: "1px solid #F0F0F0", margin: "6px 0" }} />
           <div style={sectionLabel}>Forma</div>

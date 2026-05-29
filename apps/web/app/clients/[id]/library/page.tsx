@@ -129,17 +129,21 @@ export default function ClientLibraryPage() {
   /**
    * Smart import: detecta tipo do arquivo e dispatch pro fluxo certo.
    *  - .zzosy/.zip → cartucho (importCartridge)
+   *  - .psd → import-psd-as-so (SMART_OBJECT preservando bytes originais)
+   *  - .ai/.pdf → import-ai (SMART_OBJECT, raster composite via pdf.js)
    *  - image/* → upload pro storage + cria ClientLibraryAsset type=IMAGE
    *  - text/plain ou .txt/.md → le como texto + cria type=TEXT
    * Outros tipos: erro amigavel.
    *
    * Adicionado 2026-05-29 (user pedido pra importar text/image direto sem
-   * precisar passar por uma campanha).
+   * precisar passar por uma campanha). Estendido pra PSD/AI no mesmo dia.
    */
   async function importSmart(file: File) {
     const name = file.name
     const lower = name.toLowerCase()
     const isCartridge = lower.endsWith(".zzosy") || lower.endsWith(".zip")
+    const isPsd = lower.endsWith(".psd")
+    const isAi = lower.endsWith(".ai") || lower.endsWith(".pdf")
     const isImage = file.type.startsWith("image/")
     const isText = file.type.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".md")
     if (isCartridge) {
@@ -148,6 +152,23 @@ export default function ClientLibraryPage() {
     }
     setImportBusy(true)
     try {
+      if (isPsd || isAi) {
+        // PSD ou AI/PDF → SMART_OBJECT (preserva bytes originais + composite PNG).
+        const endpoint = isPsd ? "import-psd-as-so" : "import-ai"
+        const fieldName = isPsd ? "psd" : "ai"
+        const fd = new FormData()
+        fd.append(fieldName, file)
+        const res = await fetch(`/api/clients/${id}/library/${endpoint}`, { method: "POST", body: fd })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          alert(`Falha ao importar ${isPsd ? "PSD" : isAi && lower.endsWith(".ai") ? "AI" : "PDF"}: ` + (err.error ?? res.status))
+          return
+        }
+        const { asset } = await res.json()
+        setAssets(prev => [asset, ...prev])
+        broadcastLibrary({ kind: "asset-created" as any, clientId: id, assetId: asset.id })
+        return
+      }
       if (isImage) {
         // Upload pro storage primeiro (rota generica /api/upload).
         const fd = new FormData()
@@ -274,7 +295,7 @@ export default function ClientLibraryPage() {
                 variant="primary"
                 size="sm"
                 onFileSelect={(f) => importSmart(f)}
-                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif,.txt,.md,.zzosy,.zip"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif,.txt,.md,.zzosy,.zip,.psd,.ai,.pdf"
                 loading={importBusy}
               >
                 + Importar

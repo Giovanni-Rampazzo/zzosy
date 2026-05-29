@@ -259,6 +259,40 @@ NUNCA usar `defaultStyle` (= primeiro char do asset) pra novos chars — quebra 
 
 **Propagação asset → peças (mesmo padrão):** Quando asset.content muda, as peças com `overrides.styles` (per-char) precisam ter os styles MIGRADOS com a mesma regra de herança. Real ZZOSY faz isso server-side via `lib/migrateStyles.ts` (Myers LCS diff: equal/replace mantém, insert herda do vizinho esquerdo, delete some). Chamado no endpoint `/api/campaigns/[id]/assets/[assetId]:PUT` numa transação atômica (asset + KV + todas peças). Playground espelha em `migrateCharFillsForEdit` (versão simplificada com prefix/suffix diff).
 
+## 3.1.B Import de binários (PSD / AI / PDF) como Smart Object
+
+Existem 2 sabores de import binario:
+
+### Library nivel cliente (botao **Importar** em /clients/[id]/library)
+`importSmart()` dispatch por extensao:
+- `.zzosy` / `.zip` → cartucho (asset bundle)
+- `.psd` → `/api/clients/[id]/library/import-psd-as-so` (ag-psd → composite)
+- `.ai` / `.pdf` → `/api/clients/[id]/library/import-ai` (pdfjs-dist → composite)
+- `image/*` → `/api/upload` + cria `IMAGE` asset
+- `text/*` / `.txt` / `.md` → cria `TEXT` asset
+- Outros → alert amigavel
+
+Resultado: ClientLibraryAsset type=SMART_OBJECT (pra PSD/AI/PDF) com `imageUrl` apontando pro PNG composite e `smartObject` (ClientLibrarySmartObjectFile) preservando bytes originais.
+
+### Campaign nivel (dropdown **+ Adicionar** em /campaigns/[id]/assets)
+Itens discretos no dropdown — chama as routes paralelas:
+- `+ PSD como Smart Object` → `/api/campaigns/[id]/assets/import-psd-as-so`
+- `+ Illustrator / PDF como Smart Object` → `/api/campaigns/[id]/assets/import-ai`
+
+Resultado: CampaignAsset type=SMART_OBJECT + SmartObjectFile.
+
+### Stack tecnico (.ai / .pdf)
+- `.ai` modernos (Illustrator 9+, 1999+) sao **PDF-compatible no header** — Adobe encapsula o conteudo nativo PostScript dentro de um wrapper PDF quando "Create PDF Compatible File" esta marcado. Por isso o mesmo pipeline serve `.ai` e `.pdf`.
+- **pdfjs-dist `legacy/build/pdf.mjs`** parseia o PDF. Roda em Node SEM worker (`disableWorker: true`).
+- **@napi-rs/canvas** fornece `createCanvas` que pdf.js usa pra rasterizar.
+- DPI alvo: 144 (`TARGET_DPI`) = 2x retina. Tradeoff fidelidade vs tamanho do PNG.
+- `.ai` pre-CS (sem flag PDF-Compatible) NAO funcionam — mensagem amigavel pede pra re-salvar com a flag.
+
+### Limitacoes v1
+- Vetor vira raster no canvas (Fabric nao re-edita paths do AI/PDF). User pode mover/redimensionar/transformar mas nao edita layers.
+- Multi-page / multi-artboard: so renderiza pagina 1. Roadmap: opcao de importar todas artboards como N assets.
+- Edicao do SO: Fase 2 — abre mini-editor que re-roda pdf.js no original com edits.
+
 ## 3.2 Editor / Fabric
 
 ### Undo

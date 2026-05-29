@@ -3,7 +3,7 @@ const nextConfig = {
   transpilePackages: [],
   // @napi-rs/canvas tem native binding (.node) que Turbopack nao consegue
   // empacotar — marcar como external faz Node usar require() padrao.
-  serverExternalPackages: ["@napi-rs/canvas", "ag-psd"],
+  serverExternalPackages: ["@napi-rs/canvas", "ag-psd", "pdfjs-dist"],
   // Sem header X-Powered-By: Next.js (info-leak desnecessario + 1 header a menos).
   poweredByHeader: false,
   // Remove console.* (exceto error/warn) em production builds — reduz bundle
