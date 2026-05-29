@@ -76,7 +76,10 @@ export default function AdminPage() {
             Guidebook
           </button>
         </div>
-        <button onClick={()=>router.push("/dashboard")} style={{ background:"rgba(255,255,255,0.1)", border:"none", color:"#FFF", padding:"6px 14px", borderRadius:"6px", fontSize:"0.8rem", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>← Dashboard</button>
+        <div style={{ display:"flex", gap:"8px" }}>
+          <button onClick={()=>router.push("/account")} style={{ background:"rgba(255,255,255,0.1)", border:"none", color:"#FFF", padding:"6px 14px", borderRadius:"6px", fontSize:"0.8rem", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Account →</button>
+          <button onClick={()=>router.push("/dashboard")} style={{ background:"rgba(255,255,255,0.1)", border:"none", color:"#FFF", padding:"6px 14px", borderRadius:"6px", fontSize:"0.8rem", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>← Dashboard</button>
+        </div>
       </div>
 
       <div style={{ padding:"32px 40px" }}>

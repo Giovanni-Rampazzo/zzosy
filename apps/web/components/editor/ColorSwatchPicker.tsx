@@ -1,29 +1,77 @@
 "use client"
 /**
- * ColorSwatchPicker — picker estilo Figma.
+ * ColorSwatchPicker — picker estilo Figma + Adobe.
  *
  * UI inline mostra APENAS o swatch atual (1 linha enxuta). Click no swatch
- * abre popup contendo:
- *   - Native color picker + hex input (linha topo)
- *   - "Cores da marca" (brand colors) — clica vincula via brandIdx
- *   - "Padrão" (default swatches)
+ * abre popup contendo, nessa ordem:
+ *   - SV picker (gradient saturacao x valor) + hue slider — escolha visual
+ *   - Format toggle HEX | RGB | CMYK — escolha por valor numerico
+ *   - "Brand colors" — clica vincula via brandIdx
+ *   - "Default" — paleta neutra
  *
  * Popup fecha ao clicar fora ou apertar Esc. Posicao absolute relativa ao
  * swatch trigger.
- *
- * Props:
- *   value: hex atual (ex: "#ff0000"). Aceita "" pra "sem cor".
- *   onChange: callback (hex, brandIdx?) — brandIdx setado quando usuario
- *             clica em swatch da marca; undefined caso contrario.
- *   brandColors: paleta da marca (Client.brandColors).
- *   defaultSwatches: paleta default (SWATCHES const).
- *   activeBrandIdx: opcional — destaca brand color especifica como ativa
- *                   (usado pra "fill vinculado a brand color" via __fillBrandIdx).
- *   allowEmpty: mostra botao ∅ "sem cor" — pra stroke onde nada eh valido.
- *   size: tamanho do swatch trigger (default 36).
- *   title: tooltip opcional.
  */
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+
+// ── Color conversion utils ────────────────────────────────────────────
+function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)) }
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim())
+  if (!m) return { r: 0, g: 0, b: 0 }
+  const n = parseInt(m[1], 16)
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+}
+function rgbToHex(r: number, g: number, b: number): string {
+  const h = (n: number) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, "0")
+  return `#${h(r)}${h(g)}${h(b)}`
+}
+function rgbToHsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+  const rr = r / 255, gg = g / 255, bb = b / 255
+  const max = Math.max(rr, gg, bb), min = Math.min(rr, gg, bb), d = max - min
+  let h = 0
+  if (d !== 0) {
+    if (max === rr) h = ((gg - bb) / d) % 6
+    else if (max === gg) h = (bb - rr) / d + 2
+    else h = (rr - gg) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const s = max === 0 ? 0 : d / max
+  return { h, s: s * 100, v: max * 100 }
+}
+function hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
+  const ss = s / 100, vv = v / 100
+  const c = vv * ss
+  const hh = (h % 360) / 60
+  const x = c * (1 - Math.abs((hh % 2) - 1))
+  let rp = 0, gp = 0, bp = 0
+  if (hh < 1) { rp = c; gp = x }
+  else if (hh < 2) { rp = x; gp = c }
+  else if (hh < 3) { gp = c; bp = x }
+  else if (hh < 4) { gp = x; bp = c }
+  else if (hh < 5) { rp = x; bp = c }
+  else { rp = c; bp = x }
+  const m = vv - c
+  return { r: (rp + m) * 255, g: (gp + m) * 255, b: (bp + m) * 255 }
+}
+function rgbToCmyk(r: number, g: number, b: number): { c: number; m: number; y: number; k: number } {
+  const rr = r / 255, gg = g / 255, bb = b / 255
+  const k = 1 - Math.max(rr, gg, bb)
+  if (k === 1) return { c: 0, m: 0, y: 0, k: 100 }
+  const c = (1 - rr - k) / (1 - k)
+  const m = (1 - gg - k) / (1 - k)
+  const y = (1 - bb - k) / (1 - k)
+  return { c: c * 100, m: m * 100, y: y * 100, k: k * 100 }
+}
+function cmykToRgb(c: number, m: number, y: number, k: number): { r: number; g: number; b: number } {
+  const cc = c / 100, mm = m / 100, yy = y / 100, kk = k / 100
+  return {
+    r: 255 * (1 - cc) * (1 - kk),
+    g: 255 * (1 - mm) * (1 - kk),
+    b: 255 * (1 - yy) * (1 - kk),
+  }
+}
 
 interface BrandColor { hex: string; name?: string | null }
 
@@ -66,12 +114,93 @@ export function ColorSwatchPicker({
 }: Props) {
   const [open, setOpen] = useState(false)
   const [hex, setHex] = useState(value)
+  const [fmt, setFmt] = useState<"hex" | "rgb" | "cmyk">("hex")
+  // Hue local: SV picker manipula h independente do v atual. Sem state
+  // separado, mover knob para o branco puro (v=0) zera o hue e perde a
+  // posicao no slider — comportamento ruim igual Photoshop antigo.
+  const [localHue, setLocalHue] = useState<number>(() => {
+    const rgb = hexToRgb(value || "#000000")
+    return rgbToHsv(rgb.r, rgb.g, rgb.b).h
+  })
   const rootRef = useRef<HTMLDivElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
+  const svRef = useRef<HTMLDivElement>(null)
+  const hueRef = useRef<HTMLDivElement>(null)
   const showOpacity = typeof opacity === "number" && !!onOpacityChange
 
   // Sync externo (value muda fora) → atualiza hex local.
   useEffect(() => { setHex(value) }, [value])
+  // Sync hue local quando value muda externamente E o hue resultante eh
+  // valido (> 0 saturacao). Branco/preto puro preservam hue anterior.
+  useEffect(() => {
+    const rgb = hexToRgb(value || "#000000")
+    const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+    if (hsv.s > 0) setLocalHue(hsv.h)
+  }, [value])
+
+  // Componentes RGB/HSV/CMYK derivados do value atual (memoized).
+  const colorParts = useMemo(() => {
+    const rgb = hexToRgb(value || "#000000")
+    const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+    const cmyk = rgbToCmyk(rgb.r, rgb.g, rgb.b)
+    return { rgb, hsv: { ...hsv, h: hsv.s > 0 ? hsv.h : localHue }, cmyk }
+  }, [value, localHue])
+
+  // Emite nova cor a partir de RGB (clamped). Usado por todos os controles.
+  function emitRgb(r: number, g: number, b: number) {
+    const newHex = rgbToHex(r, g, b)
+    setHex(newHex)
+    onChange(newHex, undefined)
+  }
+  function emitHsv(h: number, s: number, v: number) {
+    const { r, g, b } = hsvToRgb(h, s, v)
+    setLocalHue(h)
+    emitRgb(r, g, b)
+  }
+
+  // Drag SV picker (saturacao x valor). Click+drag dentro da box.
+  function svPointerHandler(clientX: number, clientY: number) {
+    const el = svRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const x = clamp(clientX - rect.left, 0, rect.width)
+    const y = clamp(clientY - rect.top, 0, rect.height)
+    const s = (x / rect.width) * 100
+    const v = (1 - y / rect.height) * 100
+    emitHsv(localHue, s, v)
+  }
+  function onSvMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    svPointerHandler(e.clientX, e.clientY)
+    function onMove(ev: MouseEvent) { svPointerHandler(ev.clientX, ev.clientY) }
+    function onUp() {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+  }
+
+  // Drag hue slider.
+  function huePointerHandler(clientX: number) {
+    const el = hueRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const x = clamp(clientX - rect.left, 0, rect.width)
+    const h = (x / rect.width) * 360
+    emitHsv(h, colorParts.hsv.s, colorParts.hsv.v)
+  }
+  function onHueMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    huePointerHandler(e.clientX)
+    function onMove(ev: MouseEvent) { huePointerHandler(ev.clientX) }
+    function onUp() {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+  }
 
   // Fecha ao clicar fora ou Esc.
   useEffect(() => {
@@ -116,7 +245,7 @@ export function ColorSwatchPicker({
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
     zIndex: 1000,
     display: "flex", flexDirection: "column",
-    maxHeight: 360, overflow: "hidden",
+    maxHeight: "min(560px, calc(100vh - 120px))", overflow: "auto",
   }
   const groupLabelS: React.CSSProperties = {
     fontSize: 9, fontWeight: 700 as const, textTransform: "uppercase" as const,
@@ -214,6 +343,143 @@ export function ColorSwatchPicker({
           serve so pra escolher cores ja prontas (brand + default). */}
       {open && (
         <div ref={popupRef} style={popupS} onMouseDown={e => e.stopPropagation()}>
+          {/* SV picker + hue slider + format toggle. User pediu 2026-05-28:
+              "todas as cores, podendo alterar para HEX, RGB, CMYK". */}
+          <div style={{ padding: "10px 10px 8px", borderBottom: "1px solid #2a2a2a" }}>
+            {/* SV box: saturacao (X) x valor (Y). Background = hue puro;
+                overlay branco horizontal (->right) + overlay preto vertical (down). */}
+            <div
+              ref={svRef}
+              onMouseDown={onSvMouseDown}
+              style={{
+                position: "relative",
+                width: "100%", height: 120, borderRadius: 4,
+                cursor: "crosshair", userSelect: "none",
+                backgroundColor: `hsl(${Math.round(colorParts.hsv.h)}, 100%, 50%)`,
+                backgroundImage: "linear-gradient(to right, #fff, rgba(255,255,255,0)), linear-gradient(to top, #000, rgba(0,0,0,0))",
+              }}
+            >
+              <div style={{
+                position: "absolute",
+                left: `calc(${colorParts.hsv.s}% - 6px)`,
+                top: `calc(${100 - colorParts.hsv.v}% - 6px)`,
+                width: 12, height: 12, borderRadius: "50%",
+                border: "2px solid #fff",
+                boxShadow: "0 0 0 1px rgba(0,0,0,0.5)",
+                pointerEvents: "none",
+              }} />
+            </div>
+            {/* Hue slider */}
+            <div
+              ref={hueRef}
+              onMouseDown={onHueMouseDown}
+              style={{
+                position: "relative",
+                width: "100%", height: 12, borderRadius: 6, marginTop: 10,
+                cursor: "ew-resize", userSelect: "none",
+                background: "linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)",
+              }}
+            >
+              <div style={{
+                position: "absolute",
+                left: `calc(${(colorParts.hsv.h / 360) * 100}% - 6px)`,
+                top: -2,
+                width: 12, height: 16, borderRadius: 3,
+                border: "2px solid #fff",
+                background: `hsl(${Math.round(colorParts.hsv.h)}, 100%, 50%)`,
+                boxShadow: "0 0 0 1px rgba(0,0,0,0.5)",
+                pointerEvents: "none",
+              }} />
+            </div>
+            {/* Format toggle */}
+            <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
+              {(["hex", "rgb", "cmyk"] as const).map(f => (
+                <button key={f} type="button"
+                  onClick={() => setFmt(f)}
+                  style={{
+                    flex: 1, padding: "4px 0", fontSize: 10, fontWeight: 700,
+                    textTransform: "uppercase", letterSpacing: "0.6px",
+                    background: fmt === f ? "#F5C400" : "transparent",
+                    color: fmt === f ? "#111" : "#888",
+                    border: "1px solid " + (fmt === f ? "#F5C400" : "#2a2a2a"),
+                    borderRadius: 4, cursor: "pointer",
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+            {/* Inputs por formato */}
+            <div style={{ marginTop: 8 }}>
+              {fmt === "hex" && (
+                <input type="text"
+                  value={hex}
+                  onChange={e => {
+                    const v = e.target.value
+                    setHex(v)
+                    if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+                      const { r, g, b } = hexToRgb(v)
+                      emitRgb(r, g, b)
+                    }
+                  }}
+                  onBlur={() => { if (!/^#[0-9a-fA-F]{6}$/.test(hex)) setHex(value) }}
+                  style={{
+                    width: "100%", padding: "5px 8px", fontSize: 12, fontFamily: "monospace",
+                    background: "#111", border: "1px solid #2a2a2a", color: "#fff",
+                    borderRadius: 4, textTransform: "uppercase", outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              )}
+              {fmt === "rgb" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+                  {(["r", "g", "b"] as const).map(k => (
+                    <label key={k} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 9, color: "#666", fontWeight: 700, textAlign: "center", textTransform: "uppercase" }}>{k}</span>
+                      <input type="number" min={0} max={255}
+                        value={Math.round(colorParts.rgb[k])}
+                        onChange={e => {
+                          const v = clamp(Number(e.target.value) || 0, 0, 255)
+                          const next = { ...colorParts.rgb, [k]: v }
+                          emitRgb(next.r, next.g, next.b)
+                        }}
+                        style={{
+                          width: "100%", padding: "5px 4px", fontSize: 11, fontFamily: "monospace",
+                          background: "#111", border: "1px solid #2a2a2a", color: "#fff",
+                          borderRadius: 4, textAlign: "center", outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+              {fmt === "cmyk" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                  {(["c", "m", "y", "k"] as const).map(k => (
+                    <label key={k} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 9, color: "#666", fontWeight: 700, textAlign: "center", textTransform: "uppercase" }}>{k}</span>
+                      <input type="number" min={0} max={100}
+                        value={Math.round(colorParts.cmyk[k])}
+                        onChange={e => {
+                          const v = clamp(Number(e.target.value) || 0, 0, 100)
+                          const next = { ...colorParts.cmyk, [k]: v }
+                          const rgb = cmykToRgb(next.c, next.m, next.y, next.k)
+                          emitRgb(rgb.r, rgb.g, rgb.b)
+                        }}
+                        style={{
+                          width: "100%", padding: "5px 4px", fontSize: 11, fontFamily: "monospace",
+                          background: "#111", border: "1px solid #2a2a2a", color: "#fff",
+                          borderRadius: 4, textAlign: "center", outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
           {/* List scrollavel */}
           {/* Filtra a cor ATUAL (value) das listas — ela ja eh mostrada no
               header com hex input. Mostrar de novo na lista eh duplicacao.

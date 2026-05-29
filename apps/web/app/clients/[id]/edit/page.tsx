@@ -595,6 +595,7 @@ export default function EditClientPage() {
         <form onSubmit={handleSave} style={{maxWidth:640}}>
           <CollapsibleCard
             title="Dados do cliente"
+            defaultOpen={false}
             style={{marginBottom:24}}
             actions={
               <>
@@ -719,6 +720,7 @@ export default function EditClientPage() {
         <div style={{maxWidth:640,marginBottom:24}}>
           <CollapsibleCard
             title="Design System"
+            defaultOpen={false}
             actions={
               <Button variant="secondary" size="sm" onClick={() => router.push(`/clients/${id}/design-system`)}>
                 Abrir Design System →
@@ -736,6 +738,7 @@ export default function EditClientPage() {
         <div style={{maxWidth:640,marginBottom:24}}>
           <CollapsibleCard
             title="Formatos de mídia"
+            defaultOpen={false}
             actions={
               <Button variant="secondary" size="sm" onClick={() => router.push(`/medias`)}>
                 Abrir Formatos →
@@ -754,6 +757,7 @@ export default function EditClientPage() {
         <div style={{maxWidth:640,marginBottom:24}}>
           <CollapsibleCard
             title="Configurações"
+            defaultOpen={false}
             status={settingsStatus === "saving" ? "salvando…" : settingsStatus === "saved" ? "salvo" : undefined}
           >
             <ClientSettingsCard onStatusChange={setSettingsStatus} />

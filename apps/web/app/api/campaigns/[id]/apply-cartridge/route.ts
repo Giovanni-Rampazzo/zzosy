@@ -88,33 +88,44 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const body = await req.json()
     mapping = body.mapping ?? {}
     if (typeof body.createMissing === "boolean") createMissing = body.createMissing
-    if (Array.isArray(body.libraryAssetIds) && body.libraryAssetIds.length > 0) {
-      const libs = await prisma.clientLibraryAsset.findMany({
-        where: { id: { in: body.libraryAssetIds }, clientId },
-        include: { smartObject: true },
+
+    let libQuery: any = null
+    if (typeof body.sourceClientId === "string" && body.sourceClientId.length > 0) {
+      const src = await prisma.client.findFirst({
+        where: { id: body.sourceClientId, tenantId },
+        select: { id: true },
       })
-      cartridgeAssets = libs.map(l => ({
-        slotKey: l.slotKey,
-        name: l.name,
-        type: l.type,
-        content: l.content ? safeParse(l.content) : null,
-        lastOverride: l.lastOverride,
-        imageUrl: l.imageUrl,
-        libraryAssetId: l.id,
-        version: l.version,
-        smartObject: l.smartObject ? {
-          filePath: l.smartObject.filePath,
-          mime: l.smartObject.mime,
-          originalName: l.smartObject.originalName,
-          sizeBytes: l.smartObject.sizeBytes,
-          width: l.smartObject.width,
-          height: l.smartObject.height,
-          guid: l.smartObject.guid,
-        } : null,
-      }))
+      if (!src) return NextResponse.json({ error: "sourceClientId invalido" }, { status: 400 })
+      libQuery = { clientId: src.id }
+    } else if (Array.isArray(body.libraryAssetIds) && body.libraryAssetIds.length > 0) {
+      libQuery = { id: { in: body.libraryAssetIds }, clientId }
     } else {
-      return NextResponse.json({ error: "uploadCartridge ou libraryAssetIds requerido" }, { status: 400 })
+      return NextResponse.json({ error: "uploadCartridge, libraryAssetIds ou sourceClientId requerido" }, { status: 400 })
     }
+
+    const libs = await prisma.clientLibraryAsset.findMany({
+      where: libQuery,
+      include: { smartObject: true },
+    })
+    cartridgeAssets = libs.map(l => ({
+      slotKey: l.slotKey,
+      name: l.name,
+      type: l.type,
+      content: l.content ? safeParse(l.content) : null,
+      lastOverride: l.lastOverride,
+      imageUrl: l.imageUrl,
+      libraryAssetId: l.id,
+      version: l.version,
+      smartObject: l.smartObject ? {
+        filePath: l.smartObject.filePath,
+        mime: l.smartObject.mime,
+        originalName: l.smartObject.originalName,
+        sizeBytes: l.smartObject.sizeBytes,
+        width: l.smartObject.width,
+        height: l.smartObject.height,
+        guid: l.smartObject.guid,
+      } : null,
+    }))
   }
 
   // Indexa CampaignAsset por slotKey pra match O(1)

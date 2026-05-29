@@ -113,10 +113,12 @@ function PiecesContent() {
         })
       } catch {}
     }
-    const pollTimer = setInterval(silentRefetch, 5000)
+    // SEM polling: refresh so quando ha sinal real de mudanca (BroadcastChannel
+    // cross-tab, visibility, focus). User 2026-05-28 pediu pra parar de "dar
+    // refresh na imagem" sem alteracao real.
 
     // Listener BroadcastChannel: editor faz postMessage quando salva uma peca.
-    // Refetch IMEDIATO quando notificado (sem esperar o polling). Cross-tab.
+    // Refetch IMEDIATO quando notificado. Cross-tab.
     let bc: BroadcastChannel | null = null
     try {
       if (typeof BroadcastChannel !== "undefined") {
@@ -124,19 +126,17 @@ function PiecesContent() {
         bc.onmessage = (ev) => {
           const msg = ev.data
           if (!msg || msg.type !== "piece-updated") return
-          // Se a peca atualizada eh dessa campanha (ou estamos vendo todas), refetch
           if (!campaignId || msg.campaignId === campaignId) silentRefetch()
         }
       }
     } catch {}
 
-    // Tambem refetch quando a aba volta a ficar visivel (user trocou de aba e voltou)
+    // Refetch quando a aba volta a ficar visivel (user trocou de aba e voltou)
     const onVisible = () => { if (!document.hidden) silentRefetch() }
     document.addEventListener("visibilitychange", onVisible)
 
     return () => {
       cancelled = true
-      clearInterval(pollTimer)
       document.removeEventListener("visibilitychange", onVisible)
       try { bc?.close() } catch {}
     }

@@ -817,11 +817,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const rawBg = pdata?.bgColor ?? camp.keyVision?.bgColor
         const bgLegacy = typeof rawBg === "string" ? rawBg : "#ffffff"
         const bopLegacy = typeof pdata?.bgOpacity === "number" ? pdata.bgOpacity : 1
-        bgLayersRef.current = Array.isArray(pdata?.bgLayers) && pdata.bgLayers.length > 0
-          ? pdata.bgLayers.map(migrateBgLayerJson)
-          : [{ kind: "solid", color: bgLegacy, opacity: bopLegacy }]
-        bgColorRef.current = bgLayerLegacyColor(bgLayersRef.current[0])
-        bgOpacityRef.current = bgLayersRef.current[0].opacity ?? 1
         // STEPS: inicializa buffer dos steps inativos + indice ativo.
         // O save grava TODOS os steps em data.steps (incluindo o ativo). No load,
         // precisamos:
@@ -837,6 +832,22 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           && initialStepIndex < savedAllSteps.length)
           ? initialStepIndex
           : savedActive
+        // bgLayersRef precisa refletir o STEP REQUISITADO, nao o ativo salvo.
+        // Antes: lia pdata.bgLayers (= bg do step ativo no save). Quando URL
+        // pedia stepIndex diferente, Rect do canvas era criado com cor errada
+        // (o ajuste posterior so atualizava o panel, nao o Rect ja existente).
+        // Bug "background dos steps confundindo" 2026-05-28.
+        const stepBgRaw = (requestedStep !== savedActive && savedAllSteps[requestedStep])
+          ? savedAllSteps[requestedStep]
+          : pdata
+        const stepBgLayersRaw: any = stepBgRaw?.bgLayers
+        const stepBgColor: string = typeof stepBgRaw?.bgColor === "string" ? stepBgRaw.bgColor : bgLegacy
+        const stepBgOpacity: number = typeof stepBgRaw?.bgOpacity === "number" ? stepBgRaw.bgOpacity : bopLegacy
+        bgLayersRef.current = Array.isArray(stepBgLayersRaw) && stepBgLayersRaw.length > 0
+          ? stepBgLayersRaw.map(migrateBgLayerJson)
+          : [{ kind: "solid", color: stepBgColor, opacity: stepBgOpacity }]
+        bgColorRef.current = bgLayerLegacyColor(bgLayersRef.current[0])
+        bgOpacityRef.current = bgLayersRef.current[0].opacity ?? 1
         if (savedAllSteps.length >= 2) {
           // Peca multi-step: separa ativo dos inativos.
           // DEEP-CLONE forcado: sem isso, os steps inativos compartilhavam
@@ -7228,6 +7239,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
     setBgOpacity(next.opacity)
     setSelectedTick(t => t + 1)
+    // Snap pro undo stack ANTES do save. object:modified listener filtra __isBg,
+    // entao mudanca de BG via painel nao entrava no historico — Cmd+Z nao
+    // desfazia. Bug reportado 2026-05-28.
+    pushHistory()
     doSave()
   }
 

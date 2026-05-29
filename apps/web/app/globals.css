@@ -47,8 +47,8 @@
   --zz-btn-compact-fs: 11px;
   --zz-btn-compact-gap: 6px;
   /* Card grid (auto-fit minmax) */
-  --zz-card-grid-min: 280px;
-  --zz-card-grid-max: 320px;
+  --zz-card-grid-min: 220px;
+  --zz-card-grid-max: 260px;
   --zz-card-grid-gap: 16px;
   /* Card content padding */
   --zz-card-pad: 16px;

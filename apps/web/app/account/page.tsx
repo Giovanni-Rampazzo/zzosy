@@ -1,6 +1,7 @@
 "use client"
 import { useSession, signOut } from "next-auth/react"
 import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { PageShell } from "@/components/layout/PageShell"
 import { Button } from "@/components/ui/Button"
 import { plans } from "@/lib/plans-config"
@@ -28,6 +29,8 @@ const CHECKER: React.CSSProperties = {
 
 export default function AccountPage() {
   const { data: session } = useSession()
+  const router = useRouter()
+  const isAdmin = (session?.user as any)?.role === "SUPER_ADMIN"
   const [name, setName] = useState(session?.user?.name ?? "")
   const [brand, setBrand] = useState<Brand>({})
   const [savingBrand, setSavingBrand] = useState(false)
@@ -116,7 +119,14 @@ export default function AccountPage() {
   return (
     <PageShell>
       <div style={{padding:32,maxWidth:760}}>
-        <h1 style={{fontSize:22,fontWeight:700,marginBottom:32}}>Conta</h1>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:32}}>
+          <h1 style={{fontSize:22,fontWeight:700,margin:0}}>Conta</h1>
+          {isAdmin && (
+            <Button variant="secondary" size="sm" onClick={() => router.push("/admin")}>
+              Admin →
+            </Button>
+          )}
+        </div>
 
         {(() => {
           // TODO: ler plano real do user/tenant; por ora hardcoded "pro".

@@ -155,17 +155,19 @@ export default function CampaignOverviewPage() {
 
   useEffect(() => { loadAll() }, [id])
 
-  // REGEN INTELIGENTE 2026-05-27: ref-guard por piece.id (session-level).
+  // REGEN INTELIGENTE 2026-05-29: Set<id> session-level + delete on edit.
   //
-  // BUG ANTERIOR (loop infinito 2026-05-27 identificado via Playwright):
-  // regenSeenRef cacheava por id+updatedAt. Mas regeneratePieceThumb faz
-  // POST /thumbnail que ATUALIZA piece.updatedAt no DB. loadAll() refetcha,
-  // novo updatedAt ≠ cached → useEffect dispara DE NOVO → regen → loop
-  // infinito (~70 fetches/seg). Causava UI travada + server saturado.
+  // Loop antigo (que motivou Set vs Map): regen POSTa thumbnail, server bumpa
+  // updatedAt, loadAll refetcha, useEffect re-roda. Map<id, updatedAt> via
+  // diff -> re-regen -> loop. Set<id> com seen.has(p.id) === true bloqueia.
   //
-  // Fix: tracking session-level (id apenas). Cada peca eh regenerada UMA vez
-  // por session. Edits do editor disparam re-regen via BroadcastChannel
-  // (mais explicito, sem race) — ja coberto em outro useEffect.
+  // BUG NOVO 2026-05-28: Set bloqueava DEMAIS — user edita peca no editor,
+  // BC dispara refetch, mas seen ainda tem id -> regen pulado -> thumb stale.
+  //
+  // Fix: BC piece-updated DELETA o id de seen antes de refetch. Refetch atualiza
+  // pieces -> useEffect re-roda -> seen sem o id -> regen -> POSTa thumb ->
+  // loadAll() refetcha -> useEffect re-roda -> seen.has === true (re-added) ->
+  // no more re-regen. Sem loop.
   const regenSeenRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (pieces.length === 0) return
@@ -273,7 +275,12 @@ export default function CampaignOverviewPage() {
         bcPieces.onmessage = (ev) => {
           const m = ev.data
           if (!m || m.type !== "piece-updated") return
-          if (m.campaignId === id) refetch()
+          if (m.campaignId === id) {
+            // Limpa seen pra forcar re-regen do thumb apos edit do user
+            // (BC vem do editor.save — content mudou de verdade).
+            if (typeof m.pieceId === "string") regenSeenRef.current.delete(m.pieceId)
+            refetch()
+          }
         }
         bcCamps = new BroadcastChannel("zzosy:campaigns")
         bcCamps.onmessage = (ev) => {
@@ -446,7 +453,7 @@ export default function CampaignOverviewPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
       <TopNav />
-      <div style={{ maxWidth: 1600, margin: "0 auto", padding: "16px 24px" }}>
+      <div style={{ maxWidth: "var(--zz-page-max-w)", margin: "0 auto", padding: "16px 24px" }}>
 
         {/* Header: titulo a esquerda + "← Campanhas" amarelo a direita 2026-05-24 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
@@ -506,87 +513,81 @@ export default function CampaignOverviewPage() {
             pra seu contexto correto na sidebar: Assets+KV em MATRIZ, Pecas
             removido (ja tem PECAS GERADAS embaixo), Apresentacao em ENTREGA. */}
 
+        {/* KV preview grande no topo — full width, padding generoso. User
+            pediu 2026-05-28: "fica em cima das pecas, grande, fill horizontal,
+            padding razoavel pra ficar perfeito de visualizar". */}
+        <div
+          onClick={() => { if (campaign.keyVision?.thumbnailUrl) router.push(`/editor?campaignId=${id}`) }}
+          title={campaign.keyVision?.thumbnailUrl ? "Abrir editor da matriz (ou arraste um .psd pra importar)" : "Arraste um .psd aqui ou clique em Importar PSD"}
+          onDragOver={e => { e.preventDefault(); if (!kvDragOver) setKvDragOver(true) }}
+          onDragLeave={e => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setKvDragOver(false)
+          }}
+          onDrop={async e => {
+            e.preventDefault()
+            setKvDragOver(false)
+            const file = Array.from(e.dataTransfer.files).find(f => /\.psd$/i.test(f.name))
+            if (!file) { alert("Arraste um arquivo .psd"); return }
+            await psdMatrixImporterRef.current?.importFile(file)
+          }}
+          style={{
+            background: "white", borderRadius: 10, border: "1px solid #E0E0E0",
+            padding: 32, marginBottom: 14,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            minHeight: 280,
+            cursor: campaign.keyVision?.thumbnailUrl ? "pointer" : "default",
+            outline: kvDragOver ? "2px dashed #F09300" : "2px dashed transparent",
+            outlineOffset: -2,
+            transition: "outline 0.15s ease",
+          }}
+        >
+          {campaign.keyVision?.thumbnailUrl ? (
+            <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
+              loading="lazy" decoding="async"
+              style={{ maxWidth: "100%", maxHeight: 420, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
+          ) : (
+            <div
+              onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
+              style={{
+                width: "100%", minHeight: 220,
+                background: "#FAFAFA", borderRadius: 6, border: "1px dashed #C0C0C0",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                gap: 12, padding: 32, cursor: "pointer",
+              }}>
+              <Button variant="primary" size="md"
+                onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
+                Import PSD
+              </Button>
+              <span style={{ fontSize: 12, color: "#888" }}>or drop a .psd file here</span>
+            </div>
+          )}
+        </div>
+        {/* PsdImporter + hidden input — refs sao consumidos pelo dropzone
+            acima e pelo botao "Import PSD" da coluna de acoes. */}
+        <div style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, overflow: "hidden" }}>
+          <PsdImporter ref={psdMatrixImporterRef} campaignId={id} onImported={loadAll} />
+        </div>
+        <input
+          ref={psdMatrixPickerRef}
+          type="file"
+          accept=".psd"
+          style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, opacity: 0 }}
+          tabIndex={-1}
+          onChange={async e => {
+            const f = e.target.files?.[0]
+            e.target.value = ""
+            if (f) await psdMatrixImporterRef.current?.importFile(f)
+          }}
+        />
+
         {/* Layout 2026-05-28 (3 colunas): esquerda=INPUT (Cartucho, Import,
             Assets, KV, +Gerar peça), centro=DADOS (tabela de peças), direita=
-            EXPORT (Apresentação, Entrega). Lógica: informação entra à
-            esquerda → vemos no centro → exportamos à direita. Banner de
-            "Estado: máscaras/multi-step" + toolbar "Re-aplicar máscaras /
-            Render server thumbs" removidos do main — viraram comandos
-            avançados (Cmd-K ou similar futuramente). Breakpoint <900px volta
-            a stack. */}
+            EXPORT (Apresentação, Entrega). KV preview movido pro topo full-width
+            2026-05-28 — coluna esquerda agora so acoes. */}
         <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 240px) 1fr minmax(200px, 240px)", gap: 14, alignItems: "start" }}>
-        {/* Preview KV + actions sidebar — agora em coluna (preview + acoes stacked) */}
+        {/* Coluna de AÇÕES — KV preview movido pro topo full-width 2026-05-28 */}
         <div style={{ background: "white", borderRadius: 10, border: "1px solid #E0E0E0", padding: "12px 16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div
-              onClick={() => { if (campaign.keyVision?.thumbnailUrl) router.push(`/editor?campaignId=${id}`) }}
-              title={campaign.keyVision?.thumbnailUrl ? "Abrir editor da matriz (ou arraste um .psd pra importar)" : "Arraste um .psd aqui ou clique em Importar PSD"}
-              onDragOver={e => { e.preventDefault(); if (!kvDragOver) setKvDragOver(true) }}
-              onDragLeave={e => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) setKvDragOver(false)
-              }}
-              onDrop={async e => {
-                e.preventDefault()
-                setKvDragOver(false)
-                const file = Array.from(e.dataTransfer.files).find(f => /\.psd$/i.test(f.name))
-                if (!file) { alert("Arraste um arquivo .psd"); return }
-                await psdMatrixImporterRef.current?.importFile(file)
-              }}
-              style={{
-                flex: 1, display: "flex", alignItems: "stretch", justifyContent: "center",
-                color: "#aaa", fontSize: 13,
-                cursor: campaign.keyVision?.thumbnailUrl ? "pointer" : "default",
-                transition: "outline 0.15s ease",
-                outline: kvDragOver ? "2px dashed #F09300" : "2px dashed transparent",
-                outlineOffset: 4,
-                borderRadius: 8,
-              }}
-            >
-              {campaign.keyVision?.thumbnailUrl ? (
-                <img src={`${campaign.keyVision.thumbnailUrl}?v=${loadTs}`} alt="KV preview"
-                  loading="lazy" decoding="async"
-                  style={{ maxWidth: "100%", maxHeight: 130, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0", margin: "auto" }} />
-              ) : (
-                <div
-                  onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
-                  style={{
-                    flex: 1, width: "100%",
-                    background: "#FAFAFA", borderRadius: 6, border: "1px dashed #C0C0C0",
-                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    gap: 8, padding: 16, cursor: "pointer",
-                  }}>
-                  <Button variant="primary" size="md"
-                    onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
-                    Import PSD
-                  </Button>
-                  <span style={{ fontSize: 11, color: "#888" }}>or drop a .psd file here</span>
-                </div>
-              )}
-            </div>
-            {/* PsdImporter montado OFF-SCREEN (NAO display:none — Chrome
-                bloqueia click programatico em input dentro de display:none).
-                Modais (missing fonts) se renderizam via position:fixed entao
-                aparecem normalmente apesar do parent estar off-screen. */}
-            <div style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, overflow: "hidden" }}>
-              <PsdImporter ref={psdMatrixImporterRef} campaignId={id} onImported={loadAll} />
-            </div>
-            {/* Input dedicado pro botao "Import PSD" da matriz. Mais confiavel
-                que delegar pra openFilePicker do PsdImporter (que tinha bugs
-                de timing com refs encadeados). */}
-            <input
-              ref={psdMatrixPickerRef}
-              type="file"
-              accept=".psd"
-              style={{ position: "absolute", left: -9999, top: -9999, width: 0, height: 0, opacity: 0 }}
-              tabIndex={-1}
-              onChange={async e => {
-                const f = e.target.files?.[0]
-                e.target.value = ""
-                if (f) await psdMatrixImporterRef.current?.importFile(f)
-              }}
-            />
-          </div>
           {/* Coluna de AÇÕES da campanha (modificam dados — nao sao
               navegacao). Navegacao (Assets/KV/Pecas/Apresentacao) fica no
               CampaignSubnav no topo. Hierarquia visual: CTA principal eh

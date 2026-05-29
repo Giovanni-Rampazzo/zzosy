@@ -208,7 +208,12 @@ export default function PresentationPage() {
       if (typeof BroadcastChannel !== "undefined") {
         bcPieces = new BroadcastChannel("zzosy:pieces")
         bcPieces.onmessage = (ev) => {
-          if (ev.data?.type === "piece-updated" && ev.data?.campaignId === id) refetch()
+          if (ev.data?.type === "piece-updated" && ev.data?.campaignId === id) {
+            // Limpa seen pra forcar re-regen do thumb apos edit do user
+            // (BC vem do editor.save — content mudou de verdade).
+            if (typeof ev.data?.pieceId === "string") regenSeenRef.current.delete(ev.data.pieceId)
+            refetch()
+          }
         }
         bcCampaigns = new BroadcastChannel("zzosy:campaigns")
         bcCampaigns.onmessage = (ev) => {
@@ -224,48 +229,30 @@ export default function PresentationPage() {
       if (ev.key === `zzosy:lastSave:${id}` || ev.key === `zzosy:lastKvSave:${id}`) refetch()
     }
     window.addEventListener("storage", onStorage)
-    // Polling 5s — compromise entre realtime e perf. 2s (legacy) era exagero
-    // (4.5MB/min waste), 30s (commit fd2874d) era tarde demais — user reportou
-    // 2026-05-26 "preview da apresentacao esta ficando desatualizado".
-    // BroadcastChannel + storage event sao instantaneos quando funcionam, mas
-    // SPA same-tab nav nao dispara BC. 5s + payload lite (sem piece.data) +
-    // ETag/304 mantem custo baixo. Apenas quando aba visivel.
-    const poll = setInterval(() => { if (!document.hidden) refetch() }, 5000)
+    // SEM polling: refresh so quando ha sinal real de mudanca (BroadcastChannel
+    // cross-tab, storage event, focus/visibility/pageshow). User 2026-05-28
+    // pediu pra parar de "dar refresh na imagem" sem alteracao real.
 
     return () => {
       window.removeEventListener("focus", refetch)
       window.removeEventListener("pageshow", refetch)
       document.removeEventListener("visibilitychange", onVisibilityChange)
       window.removeEventListener("storage", onStorage)
-      clearInterval(poll)
       try { bcPieces?.close() } catch {}
       try { bcCampaigns?.close() } catch {}
     }
   }, [id])
 
-  // REGEN INTELIGENTE 2026-05-27 (revisado): SESSION-LEVEL Set (id apenas).
-  // Bug anterior: usava id+updatedAt Map. Cada regen disparava POST que
-  // atualiza piece.updatedAt no DB. Polling 5s buscava pieces com NOVO
-  // updatedAt → seen.get(id)!=key → re-regen → loop → flicker das imagens
-  // (URL muda quando ?v=updatedAt muda).
+  // REGEN INTELIGENTE 2026-05-29: Set<id> session-level + delete on edit.
   //
-  // Fix: regenera UMA vez por session por id. Edits explicitos vem via
-  // BroadcastChannel + manual refresh — nao via polling cycle.
-  const REGEN_STORAGE_KEY = `zzosy:regenSeen:${id}`
+  // Loop antigo (Map<id, updatedAt>): regen POSTa thumb -> server bumpa
+  // updatedAt -> refetch -> diff vs cache -> re-regen -> LOOP.
+  // Set<id> evita loop mas bloqueia re-regen pos-edit -> thumb stale.
+  //
+  // Fix: BC piece-updated DELETA o id de seen antes de refetch. Sem
+  // localStorage (antes persistia seen entre reloads -> thumb nunca
+  // regenerava entre sessoes, bug agravado).
   const regenSeenRef = useRef<Set<string>>(new Set())
-  const regenHydratedRef = useRef(false)
-  if (!regenHydratedRef.current && typeof window !== "undefined") {
-    regenHydratedRef.current = true
-    try {
-      const raw = localStorage.getItem(REGEN_STORAGE_KEY)
-      if (raw) {
-        const arr = JSON.parse(raw)
-        if (Array.isArray(arr)) for (const id of arr) {
-          if (typeof id === "string") regenSeenRef.current.add(id)
-        }
-      }
-    } catch { /* ignore */ }
-  }
   useEffect(() => {
     if (pieces.length === 0) return
     const seen = regenSeenRef.current
@@ -275,26 +262,37 @@ export default function PresentationPage() {
     ;(async () => {
       const { regeneratePieceThumb } = await import("@/lib/regenerateThumbs")
       const BATCH = 3
+      let regened = 0
       for (let i = 0; i < toRegen.length; i += BATCH) {
         if (cancelled) break
         const chunk = toRegen.slice(i, i + BATCH)
         await Promise.allSettled(chunk.map(async (p: any) => {
           try {
             await regeneratePieceThumb(p.id)
-            seen.add(p.id)  // marca como visto independente de sucesso pra evitar retry loop
+            seen.add(p.id)
+            regened++
           } catch (e) {
             console.warn("[smart-regen]", p.id, e)
             seen.add(p.id)
           }
         }))
       }
-      try {
-        const arr = Array.from(seen)
-        localStorage.setItem(REGEN_STORAGE_KEY, JSON.stringify(arr))
-      } catch { /* localStorage quota cheia ou desabilitada */ }
+      // Refetch UMA vez apos regen pra pegar piece.updatedAt novo (cache-bust
+      // do <img src=?v=updatedAt>). Sem isso, thumb regen ficava no server
+      // mas user via URL com updatedAt antigo (browser cache). Set<id> ja tem
+      // todos os ids -> useEffect re-roda mas toRegen vai vazio -> sem loop.
+      if (!cancelled && regened > 0) {
+        try {
+          const r = await fetch(`/api/pieces?campaignId=${id}`, { cache: "no-store" })
+          if (r.ok && !cancelled) {
+            const fresh = await r.json()
+            if (Array.isArray(fresh)) setPieces(fresh)
+          }
+        } catch { /* nao critico */ }
+      }
     })()
     return () => { cancelled = true }
-  }, [pieces, REGEN_STORAGE_KEY])
+  }, [pieces])
 
   // Scroll automatico pro slide indicado no hash (#piece-{id}).
   // Acontece DEPOIS de pieces serem renderizadas (loading=false), pois antes
@@ -673,18 +671,25 @@ function FullscreenPresenter({ slides, index, onIndex, onExit }: {
         }}
       >›</button>
 
-      {/* CONTADOR + LABEL no rodape */}
+      {/* CONTADOR + LABEL no rodape — bumped 2026-05-28: tamanho + contraste
+          mais evidentes (era fontSize 13 + opacity 0.6/0.85, ficava invisivel
+          em projecao). */}
       <div style={{
-        position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)",
-        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        padding: "8px 18px", borderRadius: 999,
-        display: "flex", alignItems: "center", gap: 12,
-        color: "#fff", fontSize: 13,
+        position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+        background: "rgba(0,0,0,0.78)", backdropFilter: "blur(10px)",
+        border: "1px solid rgba(255,255,255,0.22)",
+        padding: "12px 24px", borderRadius: 999,
+        display: "flex", alignItems: "center", gap: 14,
+        color: "#fff", fontSize: 16,
+        boxShadow: "0 6px 24px rgba(0,0,0,0.35)",
       }}>
-        <span style={{ fontWeight: 700 }}>{index + 1} / {slides.length}</span>
-        <span style={{ opacity: 0.6 }}>·</span>
-        <span style={{ opacity: 0.85, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{current.label}</span>
+        <span style={{ fontWeight: 800, fontSize: 17, color: "#F5C400", letterSpacing: "0.02em" }}>
+          {index + 1} / {slides.length}
+        </span>
+        <span style={{ opacity: 0.4 }}>·</span>
+        <span style={{ opacity: 1, fontWeight: 600, maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {current.label}
+        </span>
       </div>
 
       {/* BOTAO SAIR no canto superior direito */}
