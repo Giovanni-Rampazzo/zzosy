@@ -40,6 +40,7 @@ import {
 } from "@/lib/editor/brandSyncHelpers"
 import { useUndoHistory } from "@/lib/editor/useUndoHistory"
 import { useStepsManager } from "@/lib/editor/useStepsManager"
+import { useSaveQueue } from "@/lib/editor/saveQueue"
 
 const DEFAULT_W = 1920, DEFAULT_H = 1080
 // TH = top bar height. BH = bottom toolbar (sub-controls). Larguras dos
@@ -294,9 +295,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   // de qualquer await.
   const isInitInProgress = useRef(false)
   const pendingTextPropagation = useRef(false)
-  // Trava de reentrada do saveNow. Se save anterior ainda esta rodando, novo
-  // saveNow aborta. Previne PATCHes simultaneos que poderiam corromper estado.
-  const savingInFlightRef = useRef(false)
+  // Fila serializada de saves (audit #6 2026-05-29). Substitui o padrao
+  // anterior de busy-wait + flag (que tinha race: N callers paralelos saiam
+  // do loop simultaneamente e rodavam PATCH em paralelo). Hook serializa via
+  // promise chain + coalesce callers redundantes — so o ULTIMO save importa
+  // (cada save le fabricRef.current AGORA).
+  const saveQ = useSaveQueue()
+  const savingInFlightRef = saveQ.isSavingRef
   const [confirmExit, setConfirmExit] = useState<null | (() => void)>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPieces, setExportPieces] = useState<any[]>([])
@@ -5693,28 +5698,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       srvLog("saveNow-SKIPPED", "init nao terminou")
       return
     }
-    // Trava de reentrada: se outro saveNow ja esta rodando, ESPERA ele terminar
-    // antes de comecar este. Antes abortava silenciosamente, mas isso causava
-    // bug grave no fluxo "Voltar pra apresentacao":
-    //   1. User edita -> debounce 800ms agenda auto-save
-    //   2. Auto-save comeca (PATCH lento, upload thumb pendente)
-    //   3. User clica Voltar -> saveNow() chamado -> abortava
-    //   4. window.location.href acontece ANTES do auto-save terminar upload
-    //   5. Thumb nunca era subido -> preview na apresentacao nao atualizava
-    if (savingInFlightRef.current) {
-      editorLog("[saveNow] aguardando save anterior terminar...")
-      // Espera ate 5s pelo save anterior. Polling simples.
-      const startWait = Date.now()
-      while (savingInFlightRef.current && Date.now() - startWait < 5000) {
-        await new Promise(r => setTimeout(r, 50))
-      }
-      if (savingInFlightRef.current) {
-        editorLog("[saveNow] timeout esperando save anterior — abortando")
-        return
-      }
-    }
-    savingInFlightRef.current = true
+    // Serializacao via saveQ.runExclusive (audit #6 — substituiu busy-wait +
+    // flag manual que tinha race entre callers paralelos). Coalesce callers
+    // redundantes: se houver save enfileirado, novos chamadores compartilham
+    // a mesma promise — quando ela rodar, le canvas atual (que eh o que todos
+    // queriam salvar). Inflight state propaga via saveQ.isSavingRef.
+    await saveQ.runExclusive(async () => {
     setSaving(true)
+    try {
     // Flush sincrono de PUTs de asset pendentes ANTES de gravar peca/KV.
     // Sem isso, layer.overrides poderia referenciar template antigo do asset
     // (lastOverride debounceado nao subiu ainda) — proxima peca gerada herda
@@ -5726,7 +5717,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     const targetPieceId = pieceId
     const targetPiece = pieceRef.current
     const fc = fabricRef.current
-    if (!fc) { savingInFlightRef.current = false; setSaving(false); return }
+    if (!fc) return
     if (targetPieceId && targetPiece) {
       const p = targetPiece
       const oldData = typeof p.data === "string" ? JSON.parse(p.data) : (p.data ?? {})
@@ -5783,8 +5774,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (newLayers.length === 0 && (oldLayerCount > 0 || oldStepsHasLayers)) {
         console.error("[SAVE-NOW] ABORTADO: newLayers vazio mas oldData tinha", oldLayerCount, "layers. Anti-falhas — nao gravar estado fantasma.")
         srvLog("saveNow-ABORTED-EMPTY", { oldLayerCount, oldStepsHasLayers, fcObjects: fc.getObjects().length })
-        savingInFlightRef.current = false
-        setSaving(false)
         return
       }
       // bgColor/bgOpacity DERIVADOS de bgLayers[0] no save — single source of
@@ -5930,8 +5919,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           editorLog("[saveNow MATRIX] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
           isDirtyRef.current = false
           setIsDirty(false)
-          setSaving(false)
-          savingInFlightRef.current = false
           return
         }
       }
@@ -5978,8 +5965,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     }
     isDirtyRef.current = false
     setIsDirty(false)
-    setSaving(false)
-    savingInFlightRef.current = false
+    } finally {
+      // setSaving sempre cai pra false (sucesso, erro, ou early return). UI
+      // nao trava em "Salvando..." se algo lancar no meio do save.
+      setSaving(false)
+    }
+    })
   }
 
   // ============================================================
@@ -6715,28 +6706,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       saveTimer.current = setTimeout(performSave, 200)
       return
     }
-    // Mutex de save: se outro save ja esta em voo (saveNow ou performSave),
-    // ESPERA terminar antes de prosseguir. Sem isso, 2 performSave paralelos
-    // gravavam a mesma peca em PATCHes concorrentes — ultimo ganhava, podia
-    // sobrescrever dados mais recentes do primeiro.
-    if (savingInFlightRef.current) {
-      const startWait = Date.now()
-      while (savingInFlightRef.current && Date.now() - startWait < 5000) {
-        await new Promise(r => setTimeout(r, 50))
-      }
-      if (savingInFlightRef.current) {
-        editorLog("[performSave] timeout esperando save anterior — abortando")
-        return
-      }
-    }
-    savingInFlightRef.current = true
+    // Serializacao via saveQ.runExclusive (audit #6). Hook substituiu mutex
+    // busy-wait + flag que tinha race entre callers paralelos. Tambem
+    // COALESCE redundantes: se houver save enfileirado, novos chamadores
+    // compartilham a mesma promise (ja vai rodar com canvas atual).
+    await saveQ.runExclusive(async () => {
+    setSaving(true)
+    try {
     // Flush sincrono de PUTs de asset pendentes ANTES de gravar peca/KV.
     // Sem isso, layer.overrides poderia referenciar template antigo do asset
     // (lastOverride debounceado nao subiu ainda).
     try { await flushPendingAssetPuts() } catch {}
     const fc = fabricRef.current
-    if (!fc) { savingInFlightRef.current = false; return }
-    setSaving(true)
+    if (!fc) return
 
     if (pieceId && pieceRef.current) {
       // MODO PEÇA v2: salva layers[] com posicoes + overrides
@@ -6828,8 +6810,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           editorLog("[doSave PIECE] abortado — tentaria gravar layers:[] sobre piece.data que tinha", previousLayers.length, "layers. Provavel race no load.")
           isDirtyRef.current = false
           setIsDirty(false)
-          setSaving(false)
-          savingInFlightRef.current = false
           return
         }
       }
@@ -6963,8 +6943,6 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const hadLayers = Array.isArray(previousLayers) && previousLayers.length > 0
         if (hadLayers) {
           editorLog("[SAVE-MATRIX-2] abortado — tentaria gravar layers:[] sobre KV que tinha", previousLayers.length, "layers. Provavel race condition.")
-          setSaving(false)
-          savingInFlightRef.current = false
           return
         }
       }
@@ -7010,8 +6988,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       isDirtyRef.current = false
       setIsDirty(false)
     }
-    setSaving(false)
-    savingInFlightRef.current = false
+    } finally {
+      // setSaving sempre cai pra false (sucesso, erro, ou early return).
+      setSaving(false)
+    }
+    })
   }
 
   // Cria um asset TEXT novo na campanha + auto-seleciona ele no dropdown +
