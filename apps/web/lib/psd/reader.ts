@@ -34,59 +34,13 @@ if (typeof document !== "undefined" && typeof initializeCanvas === "function") {
   })
 }
 
-// BUG ag-psd v18 + v30: ENUM.decode esperam PSD CODE (ex: 'BlnM.Nrml') mas
-// Photoshop CC as vezes salva descritores com forma HUMANA ('BlnM.normal').
-// `value.split('.')[1] = 'normal'` nao existe no rev map (rev tem keys
-// 'Nrml','Dslv'...) → throw "Unrecognized value for enum".
-//
-// Bug acontece no vstk handler: BlnM.decode(desc.strokeStyleBlendMode).
-// Quando throw, ag-psd silenciosamente captura e NUNCA seta vectorStroke
-// → shape importa sem stroke.
-//
-// Fix: monkey-patcha decode dos enums problemáticos pra tentar PSD code
-// PRIMEIRO, fallback pra forma humana. Roda 1x em module load.
-//
-// Reportar upstream: https://github.com/Agamnentzar/ag-psd/issues
-;(function patchAgPsdEnumDecode() {
-  // Tenta multiplas variantes do caminho do modulo (dist em prod, dist-es em
-  // alguns bundlers, src em tsx dev). Patcha onde encontrar.
-  const candidates = ["ag-psd/dist/descriptor.js", "ag-psd/dist-es/descriptor.js"]
-  const targets = [
-    "BlnM",
-    "strokeStyleLineCapType",
-    "strokeStyleLineJoinType",
-    "strokeStyleLineAlignment",
-  ]
-  function patchModule(mod: any): boolean {
-    if (!mod || (mod as any).__zzosyEnumPatched) return false
-    let patchedAny = false
-    for (const name of targets) {
-      const e = (mod as any)[name]
-      if (!e || typeof e.decode !== "function" || (e as any).__zzosyPatched) continue
-      const orig = e.decode
-      e.decode = function (val: string) {
-        try { return orig(val) }
-        catch (err) {
-          if (typeof val === "string" && val.includes(".")) {
-            return val.split(".")[1]
-          }
-          throw err
-        }
-      }
-      ;(e as any).__zzosyPatched = true
-      patchedAny = true
-    }
-    if (patchedAny) (mod as any).__zzosyEnumPatched = true
-    return patchedAny
-  }
-  for (const c of candidates) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require(c)
-      patchModule(mod)
-    } catch { /* tenta proximo */ }
-  }
-})()
+// Runtime patches do ag-psd centralizados em modulo dedicado (vide
+// _agPsdRuntimePatches.ts pra detalhes). Idempotente — chamada subsequente
+// eh no-op. Aplicado no module-load do reader pra garantir efeito antes do
+// primeiro readPsd().
+import { applyAgPsdRuntimePatches } from "./_agPsdRuntimePatches"
+applyAgPsdRuntimePatches()
+
 import { normalizePsdFontToGoogle, extractFontWeight } from "../google-fonts"
 import type {
   PsdDocument,

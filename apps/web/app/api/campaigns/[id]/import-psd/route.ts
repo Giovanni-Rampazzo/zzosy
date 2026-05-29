@@ -325,37 +325,46 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     // Reescrever assetIds em todas as peças (layers do canvas + layers de cada step).
-    let piecesRewritten = 0
+    // PERF 2026-05-29 (audit): antes era loop sincrono `for ... await piece.update`
+    // = N round-trips serializados. Em campanha com 30 pecas, ~30 RTTs. Agora
+    // monta updates em memoria + 1 prisma.$transaction([]) — atomico + 1 RTT.
+    // Bonus: rollback automatico se algum update falhar (era inconsistencia
+    // silenciosa antes — algumas pecas ficavam remapeadas, outras nao).
+    const rewriteLayers = (layers: any[], mark: () => void): any[] => {
+      if (!Array.isArray(layers)) return layers
+      return layers.map((l) => {
+        if (l && typeof l.assetId === "string" && assetIdMap[l.assetId]) {
+          mark()
+          return { ...l, assetId: assetIdMap[l.assetId] }
+        }
+        return l
+      })
+    }
+    const updatesToBatch: Array<{ id: string; data: string }> = []
     for (const p of piecesSnapshot) {
       if (!p.data) continue
       let pdata: any
       try { pdata = JSON.parse(p.data) } catch { continue }
       let changed = false
-      const rewriteLayers = (layers: any[]): any[] => {
-        if (!Array.isArray(layers)) return layers
-        return layers.map((l) => {
-          if (l && typeof l.assetId === "string" && assetIdMap[l.assetId]) {
-            changed = true
-            return { ...l, assetId: assetIdMap[l.assetId] }
-          }
-          return l
-        })
-      }
-      if (Array.isArray(pdata.layers)) pdata.layers = rewriteLayers(pdata.layers)
+      const mark = () => { changed = true }
+      if (Array.isArray(pdata.layers)) pdata.layers = rewriteLayers(pdata.layers, mark)
       if (Array.isArray(pdata.steps)) {
         pdata.steps = pdata.steps.map((s: any) =>
-          s && Array.isArray(s.layers) ? { ...s, layers: rewriteLayers(s.layers) } : s
+          s && Array.isArray(s.layers) ? { ...s, layers: rewriteLayers(s.layers, mark) } : s
         )
       }
-      if (changed) {
-        await prisma.piece.update({
-          where: { id: p.id },
-          data: { data: JSON.stringify(pdata) },
-        })
-        piecesRewritten++
-      }
+      if (changed) updatesToBatch.push({ id: p.id, data: JSON.stringify(pdata) })
     }
-    console.log("[import-psd] peças remapeadas:", piecesRewritten, "/", piecesSnapshot.length, "(mapeamentos:", Object.keys(assetIdMap).length, ")")
+    let piecesRewritten = 0
+    if (updatesToBatch.length > 0) {
+      const ops = updatesToBatch.map(u => prisma.piece.update({
+        where: { id: u.id },
+        data: { data: u.data },
+      }))
+      await prisma.$transaction(ops)
+      piecesRewritten = updatesToBatch.length
+    }
+    console.log("[import-psd] peças remapeadas:", piecesRewritten, "/", piecesSnapshot.length, "(mapeamentos:", Object.keys(assetIdMap).length, ", transacao atomica)")
 
     // Atualizar Campaign com PSD master (se foi salvo).
     // psdName preservado mesmo sem psdUrl (pra UI mostrar o nome do arquivo
