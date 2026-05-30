@@ -24,24 +24,22 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 // Defaults + caps fora do hook pra constantes serem importaveis em tests.
-// User pedido 2026-05-30: "deixe sempre que abri o editor, e o usuario nao
-// alterar, como padrao, a largura minima que precisa para mostrar todas as
-// informacoes, assim sem considerar quebras de linha".
+// User pedido 2026-05-30 (atualizado): "voce acha que essa coluna precisa
+// ser assim tao larga?" — sim, exagerei pra 280/340. Reduzido pra um sweet
+// spot que mostra o conteudo comum (BACKGROUND/FONT/etc) sem desperdicar
+// espaco. MIN deixa user encolher mais se quiser.
 //
-// Larguras dimensionadas pra acomodar SEM WRAP:
-// - Layers: 24px de ícones (drag) + 18 (eye) + 18 (lock) + 18 (edit) + 18
-//   (trash) + label tipica "CTA_Confira e contrate"/"Logo_Catavento_Stroke"
-//   (~180px com fonte 12) + paddings = 280px
-// - Properties: row "Center H / Center V" (2 botoes 100px cada + gap) +
-//   labels uppercase "REPLACE ASSET" + paddings = 340px
+// Layers: tipica "CTA_Confira e contrate"/"Logo_Catavento_Stroke" cabe em
+// 200-240px com padding reduzido (commit 3ff309bb). Folder indent some.
 //
-// MIN aumentado pra MESMO valor do default (nao deixa user encolher abaixo
-// do que cabe) — quem quiser mais espaco pode arrastar maior. MAX intacto.
-const LW = 280
-const PW = 340
-const LW_MIN = 280
+// Properties: BACKGROUND com SOLID/LINEAR/RADIAL ja cabe em 240px. Quando
+// abre TEXT (font/size/weight/lineHeight/letterSpacing/baseline) precisa
+// mais — 280 acomoda confortavel. User arrasta pra alargar se quiser.
+const LW = 220
+const PW = 280
+const LW_MIN = 180
 const LW_MAX = 500
-const PW_MIN = 340
+const PW_MIN = 240
 const PW_MAX = 560
 const LW_STORAGE_KEY = "zzosy.editor.layersPanelWidth"
 const PW_STORAGE_KEY = "zzosy.editor.propsPanelWidth"
