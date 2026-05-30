@@ -106,7 +106,11 @@ export default function ClientPage() {
                 logo ja identifica, URL ja diz a pagina; texto era ruido). */}
             <ClientLogoBadge client={{id, name: client.name, brandLogoUrl: client.brandLogoUrl}} size={64} radius={10} />
           </div>
-          <Button variant="secondary" size="md" onClick={() => router.push(`/clients/${id}/library`)}>Library</Button>
+          {/* Botao Library removido 2026-05-30 (user: "tira botao library
+              dai.. sem sentido"). Library nao eh acessado direto da home
+              do cliente — eh consumido via campanhas (Cartucho em ENTRADAS
+              do campaign overview) e via design-system. Atalho redundante
+              gerava 1 caminho a mais sem necessidade conceitual. */}
         </div>
 
         {/* Lista de campanhas — PROTAGONISTA da pagina. Botao "+ Nova Campanha"
