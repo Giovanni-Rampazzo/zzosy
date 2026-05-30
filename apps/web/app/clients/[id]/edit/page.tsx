@@ -620,14 +620,15 @@ export default function EditClientPage() {
                     }}>
                       <img src={logoUrl} alt="Logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
                     </div>
-                    {/* Row de actions: Apagar SEMPRE primeiro (CLAUDE 1.1.B
-                        ordem fixa: Apagar | Duplicar | Editar | Entrar). */}
+                    {/* Trocar antes de Apagar — user 2026-05-30 (sweep do
+                        design-system page). Trocar = acao principal de
+                        update; Apagar = destrutivo terciario. */}
                     <div style={{display:"flex",gap:8,paddingTop:4}}>
-                      <Button type="button" variant="danger" size="sm" onClick={handleDeleteLogo} disabled={uploadingLogo || savingLogo}>
-                        Apagar
-                      </Button>
                       <Button type="button" variant="secondary" size="sm" onClick={triggerFilePicker} disabled={uploadingLogo || savingLogo}>
                         {uploadingLogo ? "Enviando..." : "Trocar"}
+                      </Button>
+                      <Button type="button" variant="danger" size="sm" onClick={handleDeleteLogo} disabled={uploadingLogo || savingLogo}>
+                        Apagar
                       </Button>
                     </div>
                   </>
