@@ -575,18 +575,20 @@ export default function CampaignOverviewPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* Ordem user pedido 2026-05-30: cartucho, asset, design system.
                     Import PSD saiu da sidebar — vive no empty-state do centro
-                    junto com + Novo KV. */}
-                <Button variant="secondary" size="sm"
+                    junto com + Novo KV. Size "md" (padrao settings page) —
+                    user pediu 2026-05-30 "deixe todos os botoes conforme
+                    padrao da pagina de settings". */}
+                <Button variant="secondary" size="md"
                   onClick={() => router.push(`/campaigns/${id}/cartridges`)}
                   title="Browse cartucho — assets do library do cliente com filtros + add em lote">
                   Cartucho
                 </Button>
-                <Button variant="secondary" size="sm"
+                <Button variant="secondary" size="md"
                   onClick={() => router.push(`/campaigns/${id}/assets`)}
                   title="Lista de assets desta campanha">
                   Assets
                 </Button>
-                <Button variant="secondary" size="sm"
+                <Button variant="secondary" size="md"
                   onClick={() => campaign.client && router.push(`/clients/${campaign.client.id}/design-system`)}
                   disabled={!campaign.client}
                   title="Cores, fontes e tokens do design system do cliente (fonte da identidade visual)">
@@ -651,15 +653,11 @@ export default function CampaignOverviewPage() {
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                 gap: 10, padding: 16,
               }}>
-              {/* Import PSD + Novo KV lado a lado (user pedido 2026-05-30 —
-                  "no painel central, na coluna 2"): 2 caminhos pra criar a
-                  matriz. Click no dropzone fora dos botoes nao dispara mais
-                  o file picker pra evitar confusao. */}
+              {/* + Novo KV (esq) e Import PSD (dir) — user pedido 2026-05-30:
+                  "coloca o botao do novo kv a esquerda do botao importar psd".
+                  Click no dropzone fora dos botoes nao dispara mais file
+                  picker pra evitar confusao com mais de 1 botao na area. */}
               <div style={{ display: "flex", gap: 10 }}>
-                <Button variant="primary" size="md"
-                  onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
-                  Import PSD
-                </Button>
                 <Button variant="secondary" size="md"
                   onClick={async e => {
                     e.stopPropagation()
@@ -672,6 +670,10 @@ export default function CampaignOverviewPage() {
                     router.push(`/editor?campaignId=${id}`)
                   }}>
                   + Novo KV
+                </Button>
+                <Button variant="primary" size="md"
+                  onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
+                  Import PSD
                 </Button>
               </div>
               <span style={{ fontSize: 12, color: "#888" }}>or drop a .psd file here</span>
@@ -1068,7 +1070,8 @@ export default function CampaignOverviewPage() {
             const hasPieces = pieces.length > 0
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <Button variant="secondary" size="sm"
+                {/* Todos size "md" (padrao settings page, user 2026-05-30). */}
+                <Button variant="secondary" size="md"
                   onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
                   disabled={!hasAssets}
                   title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}>
@@ -1080,7 +1083,7 @@ export default function CampaignOverviewPage() {
                   title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}>
                   Apresentação
                 </Button>
-                <Button variant="secondary" size="sm"
+                <Button variant="secondary" size="md"
                   onClick={() => setDeliveryOpen(true)}
                   disabled={!hasPieces}
                   title={!hasPieces ? "Gere peças primeiro" : "Empacotar e enviar peças"}>
