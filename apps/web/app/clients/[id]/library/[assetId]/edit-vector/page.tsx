@@ -203,6 +203,9 @@ export default function EditVectorPage() {
     if (!canvas) return
     setSaving(true)
     try {
+      // Guard fonts antes do toDataURL (sweep 2026-05-30).
+      const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+      await awaitFontsReadyAndRender(canvas)
       // Re-render composite at 2x pra fidelidade no preview do library.
       const dataUrl = canvas.toDataURL({ format: "png", multiplier: 2 })
       // dataUrl → Blob → multipart "image" pra rota existente.

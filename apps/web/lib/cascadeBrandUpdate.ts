@@ -127,6 +127,9 @@ async function renderPieceThumbBlob(piece: any, assets: any[], target = 960): Pr
     const W = data?.width ?? piece.width ?? 1080
     const H = data?.height ?? piece.height ?? 1080
     const sc = Math.min(target / W, target / H, 1)
+    // Guard fonts antes do toDataURL (sweep 2026-05-30).
+    const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+    await awaitFontsReadyAndRender(fc)
     // JPEG quality 0.82 (era PNG) — peca tem bg solido. 2026-05-26 perf sweep.
     const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: sc, enableRetinaScaling: false })
     fc.dispose()

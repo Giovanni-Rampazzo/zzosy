@@ -52,6 +52,9 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
     if (!fc) return null
     // PERF 2026-05-26: 1440 → 960 + JPEG 0.82. ~60% reducao bytes sem perda visual.
     const scale = Math.min(960 / W, 960 / H, 1)
+    // Guard fonts antes do toDataURL (sweep 2026-05-30).
+    const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+    await awaitFontsReadyAndRender(fc)
     const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: scale })
     try { fc.dispose() } catch {}
     const res = await fetch(dataUrl)

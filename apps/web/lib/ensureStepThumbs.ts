@@ -45,6 +45,9 @@ async function renderStepBlob(piece: any, assets: any[], stepIdx: number, target
   try {
     const fc = await buildPieceCanvas(virtualPiece, assets)
     const sc = Math.min(target / W, target / H, 1)
+    // Guard fonts antes do toDataURL (sweep 2026-05-30).
+    const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+    await awaitFontsReadyAndRender(fc)
     // JPEG quality 0.82 (era PNG) — peca tem bg solido. 2026-05-26 perf sweep.
     const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: sc, enableRetinaScaling: false })
     fc.dispose()

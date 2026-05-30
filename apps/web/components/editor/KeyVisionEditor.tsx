@@ -5431,6 +5431,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       sfc.renderAll()
       await new Promise(r => setTimeout(r, 100))
+      // Guard fonts antes do toDataURL (sweep 2026-05-30).
+      const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+      await awaitFontsReadyAndRender(sfc as any)
       // JPEG quality 0.82 — peca tem bg solido, alpha PNG era luxo nao usado.
       // ~60% reducao vs PNG (2026-05-26 sweep).
       const dataUrl = sfc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: 1 })
@@ -5533,6 +5536,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const savedGuides = (fc as any).__safeAreaGuides
       ;(fc as any).__safeAreaGuides = null
       try {
+        // Guard fonts antes do toDataURL (sweep 2026-05-30).
+        const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+        await awaitFontsReadyAndRender(fc)
         const dataUrl = fc.toDataURL({
           // JPEG quality 0.82 — pecas tem bg solido sempre, transparencia
           // verdadeira so em SVGs/logos isolados. Quality 0.82 sweet spot
@@ -5576,6 +5582,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
       const offsetX = vt[4] ?? 0
       const offsetY = vt[5] ?? 0
+      // Guard fonts antes do toDataURL (sweep 2026-05-30).
+      const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+      await awaitFontsReadyAndRender(fc)
       const dataUrl = fc.toDataURL({
         // JPEG quality 0.82 — pecas tem bg solido. ~60% reducao vs PNG.
         // Hist: PNG era pra preservar alpha mas quase nunca usado em pratica.
@@ -5940,6 +5949,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
+        // Guard fonts antes do toDataURL (sweep 2026-05-30).
+        const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+        await awaitFontsReadyAndRender(fc)
         const dataUrl = fc.toDataURL({
           format: "jpeg",
           quality: 0.82,
@@ -6966,6 +6978,9 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         const vt = fc.viewportTransform ?? [1, 0, 0, 1, 0, 0]
         const offsetX = vt[4] ?? 0
         const offsetY = vt[5] ?? 0
+        // Guard fonts antes do toDataURL (sweep 2026-05-30).
+        const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+        await awaitFontsReadyAndRender(fc)
         const dataUrl = fc.toDataURL({
           format: "jpeg",
           quality: 0.82,

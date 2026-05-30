@@ -979,6 +979,11 @@ async function renderToCanvas(pieceLite: { id?: string; name: string; data: any;
   // BG-7: renderiza TODOS os BG layers (solid/gradient/image) antes dos
   // asset layers do fc. Fallback automatico pra bgColor legacy se sem bgLayers.
   await renderBgLayersOntoCanvas(ctx, bgLayersFromData(data), W, H)
+  // Guard antes do drawImage: garante que fonts em flight terminem +
+  // re-render do Fabric antes de copiar bytes pro canvas de saida.
+  // Sem isso, race fonte → drawImage podia capturar fallback Arial.
+  const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
+  await awaitFontsReadyAndRender(fc)
   ctx.drawImage(fc.getElement() as HTMLCanvasElement, 0, 0)
   fc.dispose()
   return { canvas: out, dpi }
@@ -1400,6 +1405,12 @@ export async function exportSVGBlob(piece: { id?: string; name: string; data: an
   }
 
   const fc = await buildPieceCanvas(livePiece, assets)
+  // Guard fonts antes do toSVG: SVG escreve <text font-family=...> baseado
+  // no estado atual do Fabric — se fonte ainda nao carregou, font-family
+  // sai certo mas Illustrator pode cair em fallback se a fonte nao tiver
+  // sido referenciada no document. fonts.ready espera o load completar.
+  const { awaitFontsReadyAndRender: _afr } = await import("@/lib/awaitFontsReady")
+  await _afr(fc)
   // Fabric v6/v7 toSVG: aceita opts (viewBox/width/height) + reviver opcional.
   // viewBox explicito garante que o SVG abre com tamanho fisico exato.
   const svgRaw: string = (fc as any).toSVG({
