@@ -70,13 +70,17 @@ export default function PresentationPage() {
   // User pediu 2026-05-22: "na apresentacao todas as fontes precisam ser
   // a do cliente". Lazy-load via useEffect abaixo quando campaign carrega.
   const clientBrandFont = (campaign?.client as any)?.brandFont as string | undefined
-  // Subset do brand passado aos slides (campos opcionais com fallback nos defaults).
+  // Subset do brand passado aos slides (campos opcionais com fallback nos
+  // defaults). fontFamily eh consumido pelo HTML Slides.tsx (CSS),
+  // fontFace pelo gerador PPTX (pptxgenjs) — user 2026-05-30: PPTX precisa
+  // exportar com a mesma fonte da peca.
   const slideBrand = {
     primaryColor: brand.raw.whiteLabelAccentColor ?? undefined,
     logoUrl: brand.raw.brandLogoUrl ?? undefined,
     secondaryLogoUrl: brand.raw.brandSecondaryLogoUrl ?? undefined,
     footerText: brand.raw.brandFooterText ?? undefined,
     fontFamily: clientBrandFont,
+    fontFace: clientBrandFont,
   }
 
   useEffect(() => {

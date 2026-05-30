@@ -34,6 +34,9 @@ export interface PptxBrand {
   logoUrl?: string       // path ou dataURI
   secondaryLogoUrl?: string
   footerText?: string
+  /** Fonte da marca — usada em TODOS os textos do PPTX (user 2026-05-30:
+   *  "esta exportando o ppt com fonte errada precisa ser a mesma"). */
+  fontFace?: string
 }
 
 interface CampaignData {
@@ -101,6 +104,9 @@ interface Palette {
   primary: string       // hex sem '#'
   primaryLight: string  // hex mais claro (boxes slide 2/3)
   footerText: string
+  /** Fonte de marca usada em TODOS os textos do PPTX. Default Calibri so se
+   *  o cliente nao tiver brandFont configurado. */
+  fontFace: string
   logoUri: string | null              // custom do tenant — slides internos
   secondaryLogoUri: string | null     // custom do tenant — slides internos
   coverLogoUri: string | null         // SEMPRE Suno default — capa
@@ -113,7 +119,7 @@ interface Palette {
 function addFooter(slide: any, pptx: PptxGenJS, palette: Palette) {
   slide.addText(palette.footerText, {
     x: 0, y: 7.0, w: 13.333, h: 0.4,
-    fontFace: "Calibri", fontSize: 10, color: TEXT_GRAY,
+    fontFace: palette.fontFace, fontSize: 10, color: TEXT_GRAY,
     align: "center",
   })
 }
@@ -165,12 +171,12 @@ function addCodeSlide(pptx: PptxGenJS, palette: Palette, campaignName: string, c
   const codeText = (code && code.trim()) ? code.toUpperCase() : "CÓDIGO CAMPANHA"
   slide.addText(codeText, {
     x: 1.0, y: 4.8, w: 11.3, h: 0.6,
-    fontFace: "Calibri", fontSize: 32, bold: true,
+    fontFace: palette.fontFace, fontSize: 32, bold: true,
     color: "FFFFFF",
   })
   slide.addText(campaignName.toUpperCase(), {
     x: 1.0, y: 5.5, w: 11.3, h: 0.6,
-    fontFace: "Calibri", fontSize: 28, bold: false,
+    fontFace: palette.fontFace, fontSize: 28, bold: false,
     color: "FFFFFF",
   })
 
@@ -193,7 +199,8 @@ function addSegmentSlide(pptx: PptxGenJS, palette: Palette, segment: string | nu
   const segText = (segment && segment.trim()) ? segment.toUpperCase() : "SEGMENTO DA CAMPANHA"
   slide.addText(segText, {
     x: 1.0, y: 5.4, w: 11.3, h: 0.8,
-    fontFace: "Calibri", fontSize: 32, bold: true, italic: true,
+    // italic removido (user 2026-05-30: "nada desse Italico nas sub tabs").
+    fontFace: palette.fontFace, fontSize: 32, bold: true,
     color: "FFFFFF",
   })
 
@@ -242,7 +249,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
   })
   slide.addText(name, {
     x: 0.3, y: 0.3, w: nameW, h: nameH,
-    fontFace: "Calibri", fontSize: FONT_SIZE, bold: true,
+    fontFace: palette.fontFace, fontSize: FONT_SIZE, bold: true,
     color: TEXT_DARK, valign: "middle", align: "center",
     margin: 0,
   })
@@ -250,7 +257,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
   const dimsX = 0.3 + nameW + gap
   slide.addText(dims, {
     x: dimsX, y: 0.3, w: 2.5, h: nameH,
-    fontFace: "Calibri", fontSize: FONT_SIZE, bold: false,
+    fontFace: palette.fontFace, fontSize: FONT_SIZE, bold: false,
     color: TEXT_DARK, valign: "middle", align: "left",
     margin: 0,
   })
@@ -319,7 +326,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
         // Label "Step N" alinhada a esquerda, do tamanho do step
         slide.addText(`STEP ${globalIdx + 1}`, {
           x, y: AREA_Y, w: stepW, h: LABEL_H,
-          fontFace: "Calibri", fontSize: 8, bold: true,
+          fontFace: palette.fontFace, fontSize: 8, bold: true,
           color: "888888", align: "center", valign: "middle",
           margin: 0,
         })
@@ -329,7 +336,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
         } else {
           slide.addText("(sem preview)", {
             x, y: y + stepH / 2 - 0.15, w: stepW, h: 0.3,
-            fontFace: "Calibri", fontSize: 10, color: TEXT_GRAY, align: "center",
+            fontFace: palette.fontFace, fontSize: 10, color: TEXT_GRAY, align: "center",
           })
         }
       }
@@ -350,7 +357,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
     } else {
       slide.addText("(Imagem não disponível)", {
         x: PIECE_AREA_X, y: 3.7, w: PIECE_AREA_W, h: 0.6,
-        fontFace: "Calibri", fontSize: 14, color: TEXT_GRAY, align: "center",
+        fontFace: palette.fontFace, fontSize: 14, color: TEXT_GRAY, align: "center",
       })
     }
 
@@ -373,10 +380,10 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
       x: CARD_X, y: AREA_Y + 0.2, w: CARD_W, h: 0.2,
       fill: { color: palette.primary }, line: { color: palette.primary, width: 0 },
     })
-    // Texto "Legenda:" italico no header amarelo
+    // Texto "Legenda:" no header amarelo (italic removido 2026-05-30)
     slide.addText("Legenda:", {
       x: CARD_X + 0.18, y: AREA_Y, w: CARD_W - 0.36, h: 0.4,
-      fontFace: "Calibri", fontSize: 11, bold: true, italic: true,
+      fontFace: palette.fontFace, fontSize: 11, bold: true,
       color: TEXT_DARK, valign: "middle", align: "left",
     })
     // Texto da copy (corpo) — fontSize 11, centralizado verticalmente
@@ -385,7 +392,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
     // que reduz a fonte se o texto nao couber — quebra o tamanho exato pedido).
     slide.addText(piece.copy!.trim(), {
       x: CARD_X + 0.18, y: AREA_Y + 0.55, w: CARD_W - 0.36, h: SPLIT_AREA_H - 0.7,
-      fontFace: "Calibri", fontSize: 11,
+      fontFace: palette.fontFace, fontSize: 11,
       color: TEXT_DARK, valign: "middle", align: "left",
       autoFit: false,
       shrinkText: false,
@@ -404,7 +411,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
         const cellX = AREA_X + i * (cellW + GAP)
         slide.addText(`STEP ${i + 1}`, {
           x: cellX, y: AREA_Y, w: cellW, h: LABEL_H,
-          fontFace: "Calibri", fontSize: 10, bold: true,
+          fontFace: palette.fontFace, fontSize: 10, bold: true,
           color: "888888", align: "center", valign: "middle",
           margin: 0,
         })
@@ -421,7 +428,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
         } else {
           slide.addText("(sem preview)", {
             x: cellX, y: AREA_Y + LABEL_H + 0.15 + cellH / 2 - 0.15, w: cellW, h: 0.3,
-            fontFace: "Calibri", fontSize: 11, color: TEXT_GRAY, align: "center",
+            fontFace: palette.fontFace, fontSize: 11, color: TEXT_GRAY, align: "center",
           })
         }
       }
@@ -442,7 +449,7 @@ function addPieceSlide(pptx: PptxGenJS, palette: Palette, piece: Piece, imgDataU
     } else {
       slide.addText("(Imagem não disponível)", {
         x: 1.9, y: 3.5, w: 9.5, h: 0.6,
-        fontFace: "Calibri", fontSize: 16, color: TEXT_GRAY, align: "center",
+        fontFace: palette.fontFace, fontSize: 16, color: TEXT_GRAY, align: "center",
       })
     }
   }
@@ -470,7 +477,7 @@ function addThanksSlide(pptx: PptxGenJS, palette: Palette) {
   // OBRIGADO bottom-left
   slide.addText("OBRIGADO", {
     x: 0.5, y: 5.6, w: 7.0, h: 1.1,
-    fontFace: "Calibri", fontSize: 60, bold: false,
+    fontFace: palette.fontFace, fontSize: 60, bold: false,
     color: TEXT_DARK, align: "left", valign: "middle",
   })
   // Carinha smiley simples (bolinha amarela com olhos)
@@ -480,7 +487,7 @@ function addThanksSlide(pptx: PptxGenJS, palette: Palette) {
   })
   slide.addText(";)", {
     x: 4.7, y: 5.78, w: 0.85, h: 0.85,
-    fontFace: "Calibri", fontSize: 24, bold: true,
+    fontFace: palette.fontFace, fontSize: 24, bold: true,
     color: TEXT_DARK, align: "center", valign: "middle",
   })
 
@@ -583,6 +590,7 @@ async function buildPptx(data: CampaignData, onProgress?: (msg: string) => void)
     // F9: primaryLight nao eh mais usado nas boxes (paridade com HTML Slides.tsx).
     // Mantido no tipo pra back-compat, mas vale o mesmo `primary` agora.
     primaryLight: primary,
+    fontFace: (data.brand?.fontFace?.trim()) || "Calibri",
     footerText: (data.brand?.footerText?.trim()) || "Classificação da informação: Uso Interno",
     logoUri: await imgToDataUri(data.brand?.logoUrl?.trim() || "/presentation/suno.png"),
     secondaryLogoUri: await imgToDataUri(data.brand?.secondaryLogoUrl?.trim() || "/presentation/united-creators.png"),

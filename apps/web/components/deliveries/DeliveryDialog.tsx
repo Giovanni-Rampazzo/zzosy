@@ -108,6 +108,26 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
       if (includePresentation) {
         setProgress("Gerando apresentação...")
         const { buildCampaignPresentationBlob } = await import("@/lib/generatePresentation")
+        // Fetch brand do cliente (cor primaria, fonte, logos) pra que o PPTX
+        // use a identidade da marca em vez do template default Suno/Calibri.
+        // User reportou 2026-05-30: "esta exportando o ppt com fonte errada
+        // precisa ser a mesma". Falha silenciosa cai no template default.
+        let pptxBrand: any = undefined
+        try {
+          const cr = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+          if (cr.ok) {
+            const camp = await cr.json()
+            const cli = camp?.client
+            if (cli) {
+              pptxBrand = {
+                fontFace: typeof cli.brandFont === "string" && cli.brandFont.trim() ? cli.brandFont.trim() : undefined,
+                primaryColor: Array.isArray(cli.brandColors) && cli.brandColors[0]?.hex ? cli.brandColors[0].hex : undefined,
+                logoUrl: cli.brandLogoUrl ?? undefined,
+                secondaryLogoUrl: cli.brandSecondaryLogoUrl ?? undefined,
+              }
+            }
+          }
+        } catch (e) { console.warn("[DeliveryDialog] fetch brand falhou, usando defaults:", e) }
         const piecesForDeck = allPieces
           .filter(p => selected.has(p.id))
           .map(p => ({
@@ -129,6 +149,7 @@ export function DeliveryDialog({ campaignId, campaignName, campaignCode, onClose
             name: campaignName ?? "Campanha",
             code: campaignCode ?? null,
             pieces: piecesForDeck,
+            brand: pptxBrand,
           }, setProgress)
           const timeoutPromise = new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error("PPTX timeout 90s")), 90_000)
