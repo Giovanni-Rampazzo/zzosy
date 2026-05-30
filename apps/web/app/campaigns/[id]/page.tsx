@@ -584,31 +584,11 @@ export default function CampaignOverviewPage() {
                   title="Browse cartucho — assets do library do cliente com filtros + add em lote">
                   Cartucho
                 </Button>
-                {/* Import PSD + Novo KV lado a lado (user pedido 2026-05-30):
-                    sao os 2 caminhos pra ter uma matriz — importar existente
-                    ou criar do zero. Grid 2-col deixa a opcao paralela visivel. */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <Button variant="secondary" size="sm"
-                    onClick={() => psdMatrixPickerRef.current?.click()}
-                    title="Substitui a matriz (KV) com um novo PSD. Pecas existentes ficam, mas re-mapeadas pros novos assets.">
-                    Import PSD
-                  </Button>
-                  <Button variant="secondary" size="sm"
-                    onClick={async () => {
-                      const hasKv = !!campaign.keyVision?.thumbnailUrl
-                      if (hasKv && !confirm("Ja existe uma matriz. Criar uma nova vazia? Os layers atuais serao perdidos.")) return
-                      const res = await fetch(`/api/campaigns/${id}/key-vision`, {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ layers: [], bgColor: "#ffffff", width: 1920, height: 1080 }),
-                      })
-                      if (!res.ok) { alert("Falha ao criar matriz vazia"); return }
-                      router.push(`/editor?campaignId=${id}`)
-                    }}
-                    title="Cria uma matriz vazia (1920x1080) e abre o editor pra desenhar do zero">
-                    + Novo KV
-                  </Button>
-                </div>
+                <Button variant="secondary" size="sm"
+                  onClick={() => psdMatrixPickerRef.current?.click()}
+                  title="Substitui a matriz (KV) com um novo PSD. Pecas existentes ficam, mas re-mapeadas pros novos assets.">
+                  Import PSD
+                </Button>
                 <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/assets`)}
                   title="Lista de assets desta campanha">
@@ -667,17 +647,35 @@ export default function CampaignOverviewPage() {
               style={{ maxWidth: "100%", maxHeight: 190, objectFit: "contain", borderRadius: 6, border: "1px solid #E0E0E0" }} />
           ) : (
             <div
-              onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}
               style={{
                 width: "100%", minHeight: 110,
                 background: "#FAFAFA", borderRadius: 6, border: "1px dashed #C0C0C0",
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                gap: 10, padding: 16, cursor: "pointer",
+                gap: 10, padding: 16,
               }}>
-              <Button variant="primary" size="md"
-                onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
-                Import PSD
-              </Button>
+              {/* Import PSD + Novo KV lado a lado (user pedido 2026-05-30 —
+                  "no painel central, na coluna 2"): 2 caminhos pra criar a
+                  matriz. Click no dropzone fora dos botoes nao dispara mais
+                  o file picker pra evitar confusao. */}
+              <div style={{ display: "flex", gap: 10 }}>
+                <Button variant="primary" size="md"
+                  onClick={e => { e.stopPropagation(); psdMatrixPickerRef.current?.click() }}>
+                  Import PSD
+                </Button>
+                <Button variant="secondary" size="md"
+                  onClick={async e => {
+                    e.stopPropagation()
+                    const res = await fetch(`/api/campaigns/${id}/key-vision`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ layers: [], bgColor: "#ffffff", width: 1920, height: 1080 }),
+                    })
+                    if (!res.ok) { alert("Falha ao criar matriz vazia"); return }
+                    router.push(`/editor?campaignId=${id}`)
+                  }}>
+                  + Novo KV
+                </Button>
+              </div>
               <span style={{ fontSize: 12, color: "#888" }}>or drop a .psd file here</span>
             </div>
           )}
