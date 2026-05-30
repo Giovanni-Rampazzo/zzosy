@@ -141,8 +141,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const setStepCountSync = stepsApi.setStepCountSync
   const setActiveStepIndexSync = stepsApi.setActiveStepIndexSync
   const [selected, setSelected] = useState<any>(null)
-  // Toggle do popover "+ Add asset" ao lado do botao ASSETS (topo do Layers panel).
+  // Toggle do popover de selecionar asset existente — agora disparado pelo
+  // botao ASSETS (2026-05-30: user inverteu — antes era no botao +).
   const [showAddAsset, setShowAddAsset] = useState(false)
+  // Toggle do dialog "Criar novo asset" — agora disparado pelo botao +.
+  // Antes o + abria o popover de selecao; user pediu 2026-05-30 pra inverter:
+  // ASSETS = selecionar existente, + = criar novo (text/image/shape).
+  const [showCreateAsset, setShowCreateAsset] = useState(false)
+  const [createAssetBusy, setCreateAssetBusy] = useState(false)
+  const createAssetFileRef = useRef<HTMLInputElement>(null)
   // Auto-dismiss do popover de assets apos 3s sem interacao (user pedido
   // 2026-05-27: 'quando eu clicar em + quero que os assets desaparecam em
   // 3 segundos se ninguem selecionar nenhum'). Pausa enquanto mouse esta
@@ -8973,16 +8980,12 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
             properties/ferramentas à direita). */}
         <div style={{ padding: "10px 14px", borderBottom: "1px solid #2a2a2a", display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
         <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
-          <button onClick={() => {
-            const go = () => router.push(`/campaigns/${campaignId}/assets`)
-            if (isDirtyRef.current) setConfirmExit(() => go)
-            else go()
-          }}
+          <button onClick={() => setShowAddAsset(v => !v)}
             onMouseEnter={(e) => { (e.currentTarget.style.background = "rgba(168,85,247,0.12)") }}
             onMouseLeave={(e) => { (e.currentTarget.style.background = "transparent") }}
             style={{
               flex: 1,
-              background: "transparent",
+              background: showAddAsset ? "rgba(168,85,247,0.18)" : "transparent",
               border: "1px solid #a855f7",
               borderRadius: 6,
               padding: "10px 14px",
@@ -8995,20 +8998,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               textAlign: "center",
               transition: "background 0.15s ease",
             }}
-            title="Go to this campaign's assets page">
+            title="Selecionar asset existente pra adicionar ao canvas">
             Assets
           </button>
-          <button onClick={() => setShowAddAsset(v => !v)}
-            title="Add an asset to canvas"
+          <button onClick={() => setShowCreateAsset(true)}
+            title="Criar novo asset (texto / imagem / forma)"
             style={{
-              background: showAddAsset ? "#a855f7" : "transparent",
+              background: showCreateAsset ? "#a855f7" : "transparent",
               border: "1px solid #a855f7",
               borderRadius: 6,
               padding: "0 14px",
               fontSize: 18,
               fontWeight: 700,
               cursor: "pointer",
-              color: showAddAsset ? "#fff" : "#a855f7",
+              color: showCreateAsset ? "#fff" : "#a855f7",
               lineHeight: 1,
               transition: "background 0.15s ease, color 0.15s ease",
             }}>+</button>
@@ -9100,6 +9103,167 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   )
                 })
               )}
+            </div>
+          )}
+          {/* Dialog "Criar novo asset" (user pedido 2026-05-30):
+              + button → modal com 3 tipos (Texto/Imagem/Forma). Cria o
+              asset via POST /api/campaigns/[id]/assets e abre popover de
+              seleção pra user inserir no canvas em seguida. Imagem usa
+              upload via /api/upload + cria asset com imageUrl. */}
+          {showCreateAsset && (
+            <div onClick={() => !createAssetBusy && setShowCreateAsset(false)}
+              style={{
+                position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+                zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              <div onClick={e => e.stopPropagation()}
+                style={{
+                  background: "#1a1a1a", border: "1px solid #2a2a2a",
+                  borderRadius: 10, padding: 20, minWidth: 360, maxWidth: 480,
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+                }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Criar novo asset</div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>Que tipo de asset voce quer criar?</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  {/* TEXTO */}
+                  <button
+                    type="button"
+                    disabled={createAssetBusy}
+                    onClick={async () => {
+                      const text = prompt("Texto do asset:", "Texto")
+                      if (!text) return
+                      setCreateAssetBusy(true)
+                      try {
+                        const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            type: "TEXT",
+                            label: text.slice(0, 30) || "Texto",
+                            content: [{ text, style: {} }],
+                          }),
+                        })
+                        if (!res.ok) { alert("Falha ao criar texto"); return }
+                        setShowCreateAsset(false)
+                        // Reload assets + abre popover de seleção pro user inserir
+                        window.location.reload()
+                      } finally { setCreateAssetBusy(false) }
+                    }}
+                    style={{
+                      background: "#222", border: "1px solid #2a2a2a", borderRadius: 8,
+                      padding: "20px 12px", cursor: createAssetBusy ? "not-allowed" : "pointer",
+                      color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                      transition: "background 0.12s, border-color 0.12s",
+                    }}
+                    onMouseEnter={e => { if (!createAssetBusy) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#F5C400" } }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.borderColor = "#2a2a2a" }}>
+                    <span style={{ fontSize: 24, fontWeight: 800, color: "#F5C400", fontFamily: "Georgia, serif" }}>T</span>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>Texto</span>
+                  </button>
+                  {/* IMAGEM */}
+                  <button
+                    type="button"
+                    disabled={createAssetBusy}
+                    onClick={() => createAssetFileRef.current?.click()}
+                    style={{
+                      background: "#222", border: "1px solid #2a2a2a", borderRadius: 8,
+                      padding: "20px 12px", cursor: createAssetBusy ? "not-allowed" : "pointer",
+                      color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                      transition: "background 0.12s, border-color 0.12s",
+                    }}
+                    onMouseEnter={e => { if (!createAssetBusy) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#a855f7" } }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.borderColor = "#2a2a2a" }}>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: "#a855f7", letterSpacing: 0.5 }}>IMG</span>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>Imagem</span>
+                  </button>
+                  <input
+                    ref={createAssetFileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                    style={{ display: "none" }}
+                    onChange={async e => {
+                      const file = e.target.files?.[0]
+                      e.target.value = ""
+                      if (!file) return
+                      setCreateAssetBusy(true)
+                      try {
+                        // 1. Upload bytes
+                        const fd = new FormData()
+                        fd.append("file", file)
+                        const upRes = await fetch("/api/upload", { method: "POST", body: fd })
+                        if (!upRes.ok) { alert("Falha no upload"); return }
+                        const { url } = await upRes.json()
+                        // 2. Cria asset
+                        const label = file.name.replace(/\.[^.]+$/, "")
+                        const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ type: "IMAGE", label, imageUrl: url }),
+                        })
+                        if (!res.ok) { alert("Falha ao criar asset"); return }
+                        setShowCreateAsset(false)
+                        window.location.reload()
+                      } finally { setCreateAssetBusy(false) }
+                    }}
+                  />
+                  {/* FORMA (sub-menu inline rectangle/rounded/ellipse) */}
+                  <button
+                    type="button"
+                    disabled={createAssetBusy}
+                    onClick={async () => {
+                      const kind = prompt("Forma (rectangle / roundedRect / ellipse):", "rectangle")
+                      if (!kind || !["rectangle", "roundedRect", "ellipse"].includes(kind)) return
+                      setCreateAssetBusy(true)
+                      try {
+                        const { buildShapePath } = await import("@/lib/shapePaths")
+                        const W = 400, H = 300
+                        const cornerRadius = kind === "roundedRect" ? 20 : undefined
+                        const path = buildShapePath(kind as any, W, H, cornerRadius)
+                        const shape: any = {
+                          kind, path,
+                          pathBbox: { left: 0, top: 0, right: W, bottom: H },
+                          fill: { kind: "solid", color: "#4d4d4f" },
+                          stroke: null, fillRule: "nonzero",
+                        }
+                        if (cornerRadius !== undefined) shape.cornerRadius = cornerRadius
+                        const label = kind === "rectangle" ? "Retangulo" : kind === "roundedRect" ? "Retangulo Arredondado" : "Elipse"
+                        const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ type: "SHAPE", label, content: shape }),
+                        })
+                        if (!res.ok) { alert("Falha ao criar forma"); return }
+                        setShowCreateAsset(false)
+                        window.location.reload()
+                      } finally { setCreateAssetBusy(false) }
+                    }}
+                    style={{
+                      background: "#222", border: "1px solid #2a2a2a", borderRadius: 8,
+                      padding: "20px 12px", cursor: createAssetBusy ? "not-allowed" : "pointer",
+                      color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                      transition: "background 0.12s, border-color 0.12s",
+                    }}
+                    onMouseEnter={e => { if (!createAssetBusy) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#86efac" } }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.borderColor = "#2a2a2a" }}>
+                    <span style={{ fontSize: 24, fontWeight: 800, color: "#86efac" }}>◇</span>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>Forma</span>
+                  </button>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16, gap: 8 }}>
+                  <button
+                    type="button"
+                    disabled={createAssetBusy}
+                    onClick={() => setShowCreateAsset(false)}
+                    style={{
+                      background: "transparent", border: "1px solid #333",
+                      borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600,
+                      color: "#aaa", cursor: createAssetBusy ? "not-allowed" : "pointer",
+                    }}>Cancelar</button>
+                </div>
+                {createAssetBusy && (
+                  <div style={{ marginTop: 12, fontSize: 11, color: "#888", textAlign: "center" }}>Criando asset…</div>
+                )}
+              </div>
             </div>
           )}
           {/* Importar PSD: vive abaixo de Assets pq logicamente popula a
