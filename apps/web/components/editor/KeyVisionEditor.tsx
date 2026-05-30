@@ -1,5 +1,6 @@
 "use client"
 import React, { useCallback, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { GeneratePiecesModal } from "./GeneratePiecesModal"
 import { FontPicker, WeightPicker } from "./FontPicker"
@@ -9175,8 +9176,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
               + button → modal com 3 tipos (Texto/Imagem/Forma). Cria o
               asset via POST /api/campaigns/[id]/assets e abre popover de
               seleção pra user inserir no canvas em seguida. Imagem usa
-              upload via /api/upload + cria asset com imageUrl. */}
-          {showCreateAsset && (
+              upload via /api/upload + cria asset com imageUrl.
+
+              createPortal pra document.body: o painel pai do editor tem
+              transform/will-change que cria containing block local, e
+              position:fixed dentro ficava preso na coluna (user reportou
+              "modal cortado/lateral"). Portal escapa pra root do DOM. */}
+          {showCreateAsset && typeof document !== "undefined" && createPortal(
             <div onClick={() => !createAssetBusy && setShowCreateAsset(false)}
               style={{
                 position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
@@ -9330,7 +9336,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   <div style={{ marginTop: 12, fontSize: 11, color: "#888", textAlign: "center" }}>Criando asset…</div>
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
           {/* Importar PSD: vive abaixo de Assets pq logicamente popula a
               matriz/peca a partir de um PSD — pertence ao grupo "assets/dados
