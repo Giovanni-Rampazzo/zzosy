@@ -151,6 +151,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [showCreateAsset, setShowCreateAsset] = useState(false)
   const [createAssetBusy, setCreateAssetBusy] = useState(false)
   const createAssetFileRef = useRef<HTMLInputElement>(null)
+  // Step do dialog "Criar novo asset" — substitui prompt() nativo do browser
+  // (user 2026-05-30: "a web nao pergunta, quem pergunta e o zzosy").
+  type CreateAssetStep = "select" | "text" | "shape"
+  const [createAssetStep, setCreateAssetStep] = useState<CreateAssetStep>("select")
+  const [createAssetTextValue, setCreateAssetTextValue] = useState("")
+  useEffect(() => {
+    if (showCreateAsset) { setCreateAssetStep("select"); setCreateAssetTextValue("") }
+  }, [showCreateAsset])
   // Modo "place text" (user 2026-05-30): botao T na toolbar bottom ativa.
   // Proximo click no canvas cria Fabric.Textbox naquela posicao + enter
   // editing. Ao sair da edicao, o texto vira ClientLibraryAsset type=TEXT.
@@ -9381,33 +9389,110 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   borderRadius: 10, padding: 20, minWidth: 360, maxWidth: 480,
                   boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
                 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Criar novo asset</div>
-                <div style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>Que tipo de asset voce quer criar?</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4 }}>
+                  {createAssetStep === "text" ? "Novo texto" : createAssetStep === "shape" ? "Nova forma" : "Criar novo asset"}
+                </div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>
+                  {createAssetStep === "text"
+                    ? "Digite o texto do asset:"
+                    : createAssetStep === "shape"
+                      ? "Escolha a forma:"
+                      : "Que tipo de asset voce quer criar?"}
+                </div>
+                {/* STEP: text input inline (substitui prompt() nativo — user
+                    2026-05-30: "a web nao pergunta, quem pergunta e o zzosy"). */}
+                {createAssetStep === "text" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={createAssetTextValue}
+                      onChange={e => setCreateAssetTextValue(e.target.value)}
+                      onKeyDown={async e => {
+                        if (e.key === "Enter" && createAssetTextValue.trim() && !createAssetBusy) {
+                          e.preventDefault()
+                          const text = createAssetTextValue.trim()
+                          setCreateAssetBusy(true)
+                          try {
+                            const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ type: "TEXT", label: text.slice(0, 30) || "Texto", content: [{ text, style: {} }] }),
+                            })
+                            if (!res.ok) { alert("Falha ao criar texto"); return }
+                            setShowCreateAsset(false)
+                            window.location.reload()
+                          } finally { setCreateAssetBusy(false) }
+                        } else if (e.key === "Escape") {
+                          setCreateAssetStep("select")
+                        }
+                      }}
+                      placeholder="Texto..."
+                      style={{
+                        background: "#222", border: "1px solid #2a2a2a", borderRadius: 6,
+                        padding: "10px 12px", fontSize: 14, color: "#fff", outline: "none",
+                        fontFamily: "inherit",
+                      }}
+                    />
+                  </div>
+                ) : createAssetStep === "shape" ? (
+                  /* STEP: shape picker inline (substitui prompt rectangle/etc) */
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    {[
+                      { kind: "rectangle" as const, label: "Retangulo", icon: <rect x="4" y="6" width="32" height="24" fill="#86efac"/> },
+                      { kind: "roundedRect" as const, label: "Arredondado", icon: <rect x="4" y="6" width="32" height="24" rx="4" fill="#86efac"/> },
+                      { kind: "ellipse" as const, label: "Elipse", icon: <ellipse cx="20" cy="18" rx="16" ry="12" fill="#86efac"/> },
+                    ].map(s => (
+                      <button
+                        key={s.kind}
+                        type="button"
+                        disabled={createAssetBusy}
+                        onClick={async () => {
+                          setCreateAssetBusy(true)
+                          try {
+                            const { buildShapePath } = await import("@/lib/shapePaths")
+                            const W = 400, H = 300
+                            const cornerRadius = s.kind === "roundedRect" ? 20 : undefined
+                            const path = buildShapePath(s.kind, W, H, cornerRadius)
+                            const shape: any = {
+                              kind: s.kind, path,
+                              pathBbox: { left: 0, top: 0, right: W, bottom: H },
+                              fill: { kind: "solid", color: "#4d4d4f" },
+                              stroke: null, fillRule: "nonzero",
+                            }
+                            if (cornerRadius !== undefined) shape.cornerRadius = cornerRadius
+                            const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ type: "SHAPE", label: s.label, content: shape }),
+                            })
+                            if (!res.ok) { alert("Falha ao criar forma"); return }
+                            setShowCreateAsset(false)
+                            window.location.reload()
+                          } finally { setCreateAssetBusy(false) }
+                        }}
+                        style={{
+                          background: "#222", border: "1px solid #2a2a2a", borderRadius: 8,
+                          padding: "20px 12px", cursor: createAssetBusy ? "not-allowed" : "pointer",
+                          color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                        }}
+                        onMouseEnter={e => { if (!createAssetBusy) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#86efac" } }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.borderColor = "#2a2a2a" }}
+                      >
+                        <div style={{ height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <svg width="40" height="36" viewBox="0 0 40 36" xmlns="http://www.w3.org/2000/svg">{s.icon}</svg>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  {/* TEXTO */}
+                  {/* TEXTO — abre sub-step "text" do dialog */}
                   <button
                     type="button"
                     disabled={createAssetBusy}
-                    onClick={async () => {
-                      const text = prompt("Texto do asset:", "Texto")
-                      if (!text) return
-                      setCreateAssetBusy(true)
-                      try {
-                        const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            type: "TEXT",
-                            label: text.slice(0, 30) || "Texto",
-                            content: [{ text, style: {} }],
-                          }),
-                        })
-                        if (!res.ok) { alert("Falha ao criar texto"); return }
-                        setShowCreateAsset(false)
-                        // Reload assets + abre popover de seleção pro user inserir
-                        window.location.reload()
-                      } finally { setCreateAssetBusy(false) }
-                    }}
+                    onClick={() => { setCreateAssetTextValue(""); setCreateAssetStep("text") }}
                     style={{
                       background: "#222", border: "1px solid #2a2a2a", borderRadius: 8,
                       padding: "20px 12px", cursor: createAssetBusy ? "not-allowed" : "pointer",
@@ -9493,37 +9578,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       } finally { setCreateAssetBusy(false) }
                     }}
                   />
-                  {/* FORMA (sub-menu inline rectangle/rounded/ellipse) */}
+                  {/* FORMA — abre sub-step "shape" do dialog */}
                   <button
                     type="button"
                     disabled={createAssetBusy}
-                    onClick={async () => {
-                      const kind = prompt("Forma (rectangle / roundedRect / ellipse):", "rectangle")
-                      if (!kind || !["rectangle", "roundedRect", "ellipse"].includes(kind)) return
-                      setCreateAssetBusy(true)
-                      try {
-                        const { buildShapePath } = await import("@/lib/shapePaths")
-                        const W = 400, H = 300
-                        const cornerRadius = kind === "roundedRect" ? 20 : undefined
-                        const path = buildShapePath(kind as any, W, H, cornerRadius)
-                        const shape: any = {
-                          kind, path,
-                          pathBbox: { left: 0, top: 0, right: W, bottom: H },
-                          fill: { kind: "solid", color: "#4d4d4f" },
-                          stroke: null, fillRule: "nonzero",
-                        }
-                        if (cornerRadius !== undefined) shape.cornerRadius = cornerRadius
-                        const label = kind === "rectangle" ? "Retangulo" : kind === "roundedRect" ? "Retangulo Arredondado" : "Elipse"
-                        const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ type: "SHAPE", label, content: shape }),
-                        })
-                        if (!res.ok) { alert("Falha ao criar forma"); return }
-                        setShowCreateAsset(false)
-                        window.location.reload()
-                      } finally { setCreateAssetBusy(false) }
-                    }}
+                    onClick={() => setCreateAssetStep("shape")}
                     style={{
                       background: "#222", border: "1px solid #2a2a2a", borderRadius: 8,
                       padding: "20px 12px", cursor: createAssetBusy ? "not-allowed" : "pointer",
@@ -9539,16 +9598,46 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     <span style={{ fontSize: 12, fontWeight: 600 }}>Forma</span>
                   </button>
                 </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16, gap: 8 }}>
+                )}
+                {/* Footer: Cancelar sempre; em sub-steps tambem "← Voltar"; no
+                    step text tambem "Criar" (Enter equivale). */}
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, gap: 8 }}>
                   <button
                     type="button"
                     disabled={createAssetBusy}
-                    onClick={() => setShowCreateAsset(false)}
+                    onClick={() => createAssetStep === "select" ? setShowCreateAsset(false) : setCreateAssetStep("select")}
                     style={{
                       background: "transparent", border: "1px solid #333",
                       borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600,
                       color: "#aaa", cursor: createAssetBusy ? "not-allowed" : "pointer",
-                    }}>Cancelar</button>
+                    }}>{createAssetStep === "select" ? "Cancelar" : "← Voltar"}</button>
+                  {createAssetStep === "text" && (
+                    <button
+                      type="button"
+                      disabled={createAssetBusy || !createAssetTextValue.trim()}
+                      onClick={async () => {
+                        const text = createAssetTextValue.trim()
+                        if (!text) return
+                        setCreateAssetBusy(true)
+                        try {
+                          const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ type: "TEXT", label: text.slice(0, 30) || "Texto", content: [{ text, style: {} }] }),
+                          })
+                          if (!res.ok) { alert("Falha ao criar texto"); return }
+                          setShowCreateAsset(false)
+                          window.location.reload()
+                        } finally { setCreateAssetBusy(false) }
+                      }}
+                      style={{
+                        background: createAssetTextValue.trim() ? "#F5C400" : "#333",
+                        border: "none", borderRadius: 6, padding: "8px 16px",
+                        fontSize: 12, fontWeight: 700,
+                        color: createAssetTextValue.trim() ? "#111" : "#666",
+                        cursor: (createAssetBusy || !createAssetTextValue.trim()) ? "not-allowed" : "pointer",
+                      }}>Criar</button>
+                  )}
                 </div>
                 {createAssetBusy && (
                   <div style={{ marginTop: 12, fontSize: 11, color: "#888", textAlign: "center" }}>Criando asset…</div>
