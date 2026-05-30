@@ -42,11 +42,26 @@ export function DuplicateFormatDialog({ count, originalFormat, onCancel, onConfi
     <div onClick={onCancel}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: "white", borderRadius: 10, padding: 24, width: "min(640px, 92vw)", maxHeight: "85vh", overflow: "auto" }}>
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Duplicar {count > 1 ? `${count} peças` : "peça"}</h3>
-        <p style={{ marginTop: 6, marginBottom: 18, fontSize: 13, color: "#666" }}>
-          Escolha o formato da nova {count > 1 ? "cópias" : "cópia"}. {originalFormat ? <>Formato atual: <strong>{originalFormat}</strong></> : null}
-        </p>
+        style={{ background: "white", borderRadius: 10, width: "min(640px, 92vw)", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header sticky com titulo + acoes (user 2026-05-30: "joga o
+            duplicar, cancelar la pra cima, fica dificil embaixo do usuario
+            ver"). Antes os botoes viviam no footer e ficavam atras de
+            scroll em listas longas de formato. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", borderBottom: "1px solid #E0E0E0", gap: 12, flexShrink: 0 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Duplicar {count > 1 ? `${count} peças` : "peça"}</h3>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#666" }}>
+              Escolha o formato. {originalFormat ? <>Atual: <strong>{originalFormat}</strong></> : null}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <Button variant="secondary" size="sm" onClick={onCancel}>Cancelar</Button>
+            <Button variant="primary" size="sm" onClick={() => onConfirm(selectedId)} disabled={loading}>
+              Duplicar
+            </Button>
+          </div>
+        </div>
+        <div style={{ padding: 24, overflow: "auto", flex: 1 }}>
 
         {loading ? (
           <div style={{ padding: 20, color: "#888" }}>Carregando formatos…</div>
@@ -80,11 +95,6 @@ export function DuplicateFormatDialog({ count, originalFormat, onCancel, onConfi
           </>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
-          <Button variant="secondary" onClick={onCancel}>Cancelar</Button>
-          <Button variant="primary" onClick={() => onConfirm(selectedId)} disabled={loading}>
-            Duplicar
-          </Button>
         </div>
       </div>
     </div>
