@@ -57,7 +57,16 @@ export default function EditSoPage() {
         const res = await fetch(`/api/campaigns/${campaignId}/assets/${assetId}/so-data`)
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
-          throw new Error(body?.error ?? `HTTP ${res.status}`)
+          const msg = body?.error ?? `HTTP ${res.status}`
+          // SO importado de .ai/.pdf (commits 2026-05-29): ag-psd checa
+          // signature "8BPS" no PSD; PDF/AI tem "%PDF" e o reader explode
+          // com "Invalid signature: '%PDF' at 0x0". Esse SO precisa do
+          // sub-editor vetorial (Fabric+pdfjs), nao do edit-so de PSD.
+          // Detecta o erro e troca por mensagem amigavel + roadmap.
+          if (typeof msg === "string" && /Invalid signature.*%PDF/i.test(msg)) {
+            throw new Error("PDF_OR_AI_SO")
+          }
+          throw new Error(msg)
         }
         const json: SoData = await res.json()
         if (!cancelled) {
@@ -152,7 +161,28 @@ export default function EditSoPage() {
     <div style={{ minHeight: "100vh", background: "#F8F9FA" }}>
       <TopNav />
       <div style={{ maxWidth: 720, margin: "0 auto", padding: 32 }}>
-        <div style={{ color: "#c00", marginBottom: 16 }}>{error ?? "Erro desconhecido"}</div>
+        {error === "PDF_OR_AI_SO" ? (
+          // SO importado de .ai/.pdf — pipeline diferente (Fabric+pdfjs vetor),
+          // nao parser PSD. v1 do sub-editor vetorial vive em LIBRARY do cliente
+          // (/clients/[id]/library/[assetId]/edit-vector). Pra campaign asset
+          // direto ainda falta o equivalente — registrado como pendencia.
+          <>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#111", marginBottom: 8 }}>
+              Este Smart Object é vetorial (.ai/.pdf)
+            </div>
+            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.5, marginBottom: 20 }}>
+              O editor antigo (Edit Smart Object) só sabe parsear PSD. Pra editar paths e cores
+              de SO importado de Illustrator/PDF, o sub-editor vetorial novo está disponível
+              SOMENTE em assets do <strong>Library do cliente</strong> por enquanto.
+              <br /><br />
+              <strong>Workaround:</strong> salve este asset no Library do cliente (botão
+              &quot;↑ Tudo p/ Library&quot; ou &quot;Salvar no Library&quot; na lista de assets),
+              depois edite pelo Library → botão &quot;Editar&quot; do card.
+            </div>
+          </>
+        ) : (
+          <div style={{ color: "#c00", marginBottom: 16 }}>{error ?? "Erro desconhecido"}</div>
+        )}
         <Button variant="secondary" size="md" onClick={() => router.push(`/campaigns/${campaignId}/assets`)}>← Assets</Button>
       </div>
     </div>
