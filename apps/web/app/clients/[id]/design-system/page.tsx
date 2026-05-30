@@ -575,24 +575,19 @@ export default function EditClientPage() {
     <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
       <TopNav />
       <div style={{flex:1,overflowY:"auto",padding:32,background:"#F5F5F0"}}>
-        {/* Header padronizado (CLAUDE 1.2 + 1.9 + library/page mesma estrutura):
-            Voltar primary amarelo + ClientLogoBadge 64px a ESQUERDA; acoes
-            de pagina (Salvar) a DIREITA. Breadcrumb redundante + text-button
-            cinza removidos (user pedido 2026-05-29: "cade o botao < sicredi
-            padronizado? e coloca u salvar tmb"). */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,marginBottom:20,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:16}}>
-            <Button variant="primary" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
-            <ClientLogoBadge client={{id,name:client.name,brandLogoUrl:client.brandLogoUrl}} size={64} radius={10} />
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            {savedAt && (
-              <span style={{fontSize:11,color:"#15803d",fontWeight:600}}>✓ salvo</span>
-            )}
-            <Button variant="primary" size="md" onClick={() => handleSave({preventDefault:()=>{}} as React.FormEvent)} loading={saving}>
-              Salvar
-            </Button>
-          </div>
+        {/* Header padronizado (CLAUDE 1.2 + 1.9). User 2026-05-30: "porque
+            salvar la longe a direita, deixa junto a esquerda". Salvar
+            agrupado com Voltar e Logo na esquerda — actions de fluxo
+            (voltar + persistir) ficam vizinhas; status de save ao lado. */}
+        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+          <Button variant="primary" size="md" onClick={() => router.push(`/clients/${id}`)}>← Voltar</Button>
+          <ClientLogoBadge client={{id,name:client.name,brandLogoUrl:client.brandLogoUrl}} size={64} radius={10} />
+          <Button variant="primary" size="md" onClick={() => handleSave({preventDefault:()=>{}} as React.FormEvent)} loading={saving}>
+            Salvar
+          </Button>
+          {savedAt && (
+            <span style={{fontSize:11,color:"#15803d",fontWeight:600}}>✓ salvo</span>
+          )}
         </div>
 
         <div style={{maxWidth:640,marginBottom:18}}>
