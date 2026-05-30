@@ -8814,9 +8814,15 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           // Pergunta SOMENTE quando ha mudancas pendentes. Se tudo salvo,
           // navega direto — perguntar "deseja sair" sem razao real era
           // interrupcao desnecessaria (user clicou em Voltar => quer voltar).
+          // 2026-05-30: defensive flush. User reportou "KV nao salva ao fechar
+          // o editor". Mesmo com isDirty=false, dispara saveNow pra garantir
+          // que qualquer modificacao recente que nao virou dirty (race em
+          // doSave debounceado, T placement async) seja persistida. saveNow
+          // tem guards (init nao terminou, applying history) entao eh seguro.
           if (isDirtyRef.current) {
             setConfirmExit(() => navigate)
           } else {
+            try { await saveNow() } catch (e) { console.warn("[Voltar] saveNow falhou:", e) }
             navigate()
           }
         }} style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
