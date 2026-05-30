@@ -1133,14 +1133,19 @@ export default function CampaignOverviewPage() {
             const hasPieces = pieces.length > 0
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {/* Todos size "md" (padrao settings page, user 2026-05-30). */}
+                {/* Todos secondary md (user 2026-05-30: "porque o botao
+                    apresentacao esta amarelo e nao como os outros"). CLAUDE
+                    1.1: primary nao deve aparecer em COLUNA de actions
+                    equipotentes — cria hierarquia agressiva sem justificativa.
+                    Os 3 sao SAIDAS validas; usuario escolhe pelo proprio
+                    fluxo, nao pela cor. */}
                 <Button variant="secondary" size="md"
                   onClick={() => router.push(`/editor?campaignId=${id}&openGenerator=1`)}
                   disabled={!hasAssets}
                   title={!hasAssets ? "Importe um PSD ou adicione assets primeiro" : "Gerar nova peça a partir da matriz"}>
                   + Gerar peça
                 </Button>
-                <Button variant="primary" size="md"
+                <Button variant="secondary" size="md"
                   onClick={() => router.push(`/campaigns/${id}/presentation`)}
                   disabled={!hasPieces}
                   title={!hasPieces ? "Gere peças primeiro" : "Ver apresentação da campanha"}>
