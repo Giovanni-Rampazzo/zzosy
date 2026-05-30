@@ -626,7 +626,12 @@ export default function CampaignOverviewPage() {
             await psdMatrixImporterRef.current?.importFile(file)
           }}
           style={{
-            background: "white", borderRadius: 10, border: "1px solid #E0E0E0",
+            // BG do container do preview em cinza claro pra criar contraste
+            // com KV de fundo BRANCO (user pedido 2026-05-30: "evitar que essa
+            // confusao visual acontessa e confunda um asset so com fundo
+            // branco do background"). Off-white sutil — nao destoa do tema
+            // bege da pagina mas separa visualmente do asset.
+            background: "#EDEDE7", borderRadius: 10, border: "1px solid #E0E0E0",
             padding: 10,
             display: "flex", alignItems: "center", justifyContent: "center",
             minHeight: 130,
