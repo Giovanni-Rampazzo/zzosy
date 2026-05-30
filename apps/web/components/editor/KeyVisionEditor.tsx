@@ -4331,7 +4331,13 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           const pixelsBaked = (asset as any).pixelsIncludeEffects === true
           applyFabricEffects(img, psdEffects, Shadow, pixelsBaked ? { overlaysOnly: true } : undefined)
           fc.add(img)
-          if (skewX !== 0 || skewY !== 0) { (img as any).set({ skewX, skewY }); (img as any).setCoords() }
+          if (skewX !== 0 || skewY !== 0) { (img as any).set({ skewX, skewY }) }
+          // setCoords incondicional (sweep do mesmo fix aplicado em SHAPE no
+          // commit 08c262e2). Sem isso, bbox/aCoords da img async podem ficar
+          // stale apos o load — handles de transform renderizam em posicao
+          // diferente da imagem visual (user reportou "logo catavento bbox
+          // fora da imagem").
+          ;(img as any).setCoords()
           fc.requestRenderAll()
           return
         } catch (e) { console.error("Image load failed:", e) }
@@ -4692,6 +4698,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       }
       applyFabricEffects(t, psdEffects, Shadow)
       fc.add(t)
+      // setCoords incondicional (sweep do fix bbox aplicado em SHAPE/IMAGE).
+      // Sem isso, bbox/aCoords do textbox podem ficar stale apos initDimensions
+      // — handles renderizam em posicao diferente do visual real.
+      ;(t as any).setCoords()
       // Re-aplica leadingPt MEDINDO o factor real do Fabric depois que o
       // textbox esta totalmente construido (styles, font, dimensions). Sem
       // isso, o lineHeight inicial (fast path com 1.13 hardcoded) podia
@@ -11190,15 +11200,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     title={isLeadingAuto ? `Auto (${Math.round(effectiveLeadingPt)}pt) — Option+↑/↓ adjusts` : "Option+↑/↓ adjusts (Shift = 10pt)"}
                     style={{ ...inpS, color: isLeadingAuto ? "#888" : "white" }}
                   />
+                  {/* "A" sempre habilitado (user 2026-05-30: "deixa o botao
+                      de padronizacao da entrelinhas habilitado, mesmo so com
+                      o box do texto selecionado"). Aplica leadingPt do
+                      textbox inteiro (limpando per-char overrides) — em
+                      estado Auto, click eh no-op visivel mas resetCoords
+                      pode realinhar se houver stale state. */}
                   <button type="button" tabIndex={-1}
                     onClick={() => setLeading(null)}
-                    disabled={isLeadingAuto}
-                    title="Reset to Auto"
+                    title="Reset/Aplicar Auto ao textbox inteiro"
                     style={{
                       width: 28, height: 28, fontSize: 11,
-                      background: isLeadingAuto ? "#1a1a1a" : "#111",
-                      border: "1px solid #2a2a2a", color: isLeadingAuto ? "#444" : "#888",
-                      borderRadius: 4, cursor: isLeadingAuto ? "default" : "pointer",
+                      background: "#111",
+                      border: "1px solid #2a2a2a", color: "#888",
+                      borderRadius: 4, cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}>
                     A
