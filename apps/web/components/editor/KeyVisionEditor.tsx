@@ -7128,11 +7128,24 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     // imagem natural pode ser scaled up). Tambem evita layers grudados na borda
     // direita ao adicionar em sequencia.
     const cw = canvasWRef.current
+    const ch = canvasHRef.current
     const defaultImgWidth = Math.min(400, Math.round(cw * 0.4))
+    const layerW = asset.type === "TEXT" ? Math.min(800, Math.round(cw * 0.6)) : defaultImgWidth
+    // Estimativa de altura pra centralizar verticalmente. TEXT eh dificil
+    // (depende de fontSize, lineHeight, wrap) — usa 200 como hint razoavel.
+    // IMAGE/SMART_OBJECT: aspect ratio nao eh conhecido aqui, assume quadrado
+    // (vai centralizar no centro do bbox quadrado; visualmente ok).
+    const layerH = asset.type === "TEXT" ? 200 : layerW
+    // User reportou 2026-05-30 "logo catavento esta entrando fora do canvas".
+    // Antes posX/posY eram hardcoded 100/100 — em peca grande (1920x1080) a
+    // layer caia colada no canto top-left; pior em peca pequena com canvas
+    // viewport offset (BG nao alinhado a 0,0 em alguns casos) fazia cair
+    // FORA da peca. Centralizar resolve em todos os casos.
+    const posX = Math.max(0, Math.round((cw - layerW) / 2))
+    const posY = Math.max(0, Math.round((ch - layerH) / 2))
     await addAssetToCanvas(fc, asset, {
-      posX: 100,
-      posY: 100,
-      width: asset.type === "TEXT" ? 800 : defaultImgWidth,
+      posX, posY,
+      width: layerW,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
