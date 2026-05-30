@@ -2753,33 +2753,23 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       if (pieceId) {
         autoGenerateMissingStepThumbs().catch(e => console.warn("[auto-thumbs] erro:", e))
       }
-      // AUTO-REGEN ON OPEN: regera o thumb apenas se NECESSARIO.
-      // Antes rodava SEMPRE 1.2s apos open (waste 2-5s por abertura mesmo
-      // quando user so vai olhar). Otimizacao 2026-05-26:
-      //   - PIECE/MATRIZ com thumbnailUrl ja existente: pula (proximo save regenera).
-      //   - Sem thumb: roda (primeira abertura/import sem preview ainda).
-      // Trade-off: thumb pode ficar 1 sessao stale se asset.content mudou
-      // em outra aba. Primeiro save no editor refresca. Mas CLAUDE 2.2
-      // (preview realtime) exige que matriz tambem regen quando nao tem
-      // thumb — restaurado o else branch (review 2026-05-26).
+      // AUTO-REGEN ON OPEN: SEMPRE regera o thumb 1.2s apos open (user
+      // pediu 2026-05-30 "remover o if !hasThumb").
+      // Razao: CLAUDE 2.2 (preview realtime) exige thumb sempre fresh. O
+      // guard antigo `if (!hasThumb) skip` deixava thumbs stale acumular —
+      // quando uma fonte/asset mudava em outra aba ou quando o bug do
+      // forceLoadFontFaces (commit 82d5ee41) afetava render antigo, peca
+      // ficava com thumb errado ATE o proximo save manual. Custo: 2-5s
+      // background por abertura. Beneficio: zero stale thumb, zero fallback
+      // Arial persistente. Combinado com awaitFontsReadyAndRender, todo
+      // regen agora pega fonte real.
       setTimeout(() => {
         const fcc = fabricRef.current
         if (!alive || !fcc || !isInitialized.current) return
         if (pieceId) {
-          const hasThumb = !!(pieceRef.current as any)?.thumbnailUrl
-          if (!hasThumb) {
-            uploadPieceThumb(fcc, pieceId).catch(e => editorLog("[auto-regen piece]", e))
-          } else {
-            editorLog("[auto-regen] pulou — piece ja tem thumb")
-          }
+          uploadPieceThumb(fcc, pieceId).catch(e => editorLog("[auto-regen piece]", e))
         } else {
-          // MATRIZ
-          const kvThumb = (campaignRef.current as any)?.keyVision?.thumbnailUrl
-          if (!kvThumb) {
-            uploadMatrixThumb(fcc).catch(e => editorLog("[auto-regen matrix]", e))
-          } else {
-            editorLog("[auto-regen] pulou — KV ja tem thumb")
-          }
+          uploadMatrixThumb(fcc).catch(e => editorLog("[auto-regen matrix]", e))
         }
       }, 1200)
     }
