@@ -159,6 +159,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   useEffect(() => {
     if (showCreateAsset) { setCreateAssetStep("select"); setCreateAssetTextValue("") }
   }, [showCreateAsset])
+  // Atualiza assets da campanha SEM reload da page (user 2026-05-30: o
+  // beforeunload listener dispara "Reload site? Changes may not be saved"
+  // nativo do browser ao fazer window.location.reload()). Fetch + setState +
+  // ref update mantem o editor montado e o popover ASSETS reflete o novo.
+  async function refreshCampaignAssetsInline() {
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+      if (!res.ok) return
+      const camp = await res.json()
+      setCampaign(camp)
+      campaignRef.current = camp
+    } catch (e) { editorLog("[refreshCampaignAssetsInline]", e) }
+  }
   // Modo "place text" (user 2026-05-30): botao T na toolbar bottom ativa.
   // Proximo click no canvas cria Fabric.Textbox naquela posicao + enter
   // editing. Ao sair da edicao, o texto vira ClientLibraryAsset type=TEXT.
@@ -9421,7 +9434,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                             })
                             if (!res.ok) { alert("Falha ao criar texto"); return }
                             setShowCreateAsset(false)
-                            window.location.reload()
+                            await refreshCampaignAssetsInline()
                           } finally { setCreateAssetBusy(false) }
                         } else if (e.key === "Escape") {
                           setCreateAssetStep("select")
@@ -9468,7 +9481,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                             })
                             if (!res.ok) { alert("Falha ao criar forma"); return }
                             setShowCreateAsset(false)
-                            window.location.reload()
+                            await refreshCampaignAssetsInline()
                           } finally { setCreateAssetBusy(false) }
                         }}
                         style={{
@@ -9574,7 +9587,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                         })
                         if (!res.ok) { alert("Falha ao criar asset"); return }
                         setShowCreateAsset(false)
-                        window.location.reload()
+                        await refreshCampaignAssetsInline()
                       } finally { setCreateAssetBusy(false) }
                     }}
                   />
@@ -9627,7 +9640,7 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                           })
                           if (!res.ok) { alert("Falha ao criar texto"); return }
                           setShowCreateAsset(false)
-                          window.location.reload()
+                          await refreshCampaignAssetsInline()
                         } finally { setCreateAssetBusy(false) }
                       }}
                       style={{
@@ -11999,9 +12012,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ref={psdImporterRef}
           campaignId={campaignId}
           onImported={() => {
-            // Recarrega o editor com a nova KV. window.location forca full reload
-            // (App Router fetch revalida o `/api/campaigns/:id` + KV).
-            if (typeof window !== "undefined") window.location.reload()
+            // PSD import muda dimensoes/layers/assets — refetch inline da
+            // campanha em vez de window.location.reload() pra nao disparar
+            // o "Reload site? Changes may not be saved" nativo.
+            void refreshCampaignAssetsInline()
           }}
         />
       </div>
