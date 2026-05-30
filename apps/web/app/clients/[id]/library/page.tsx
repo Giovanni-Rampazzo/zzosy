@@ -52,6 +52,28 @@ export default function ClientLibraryPage() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [importBusy, setImportBusy] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  // Mega-dropzone do topo (user pedido 2026-05-30: interface mais ludica
+  // e eficiente, multi-arrasto simultaneo). Trackeia progresso por file.
+  const [megaDragOver, setMegaDragOver] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<{ name: string; status: "queued" | "uploading" | "done" | "error"; error?: string }[]>([])
+  // Importa um lote inline reaproveitando o importSmart. Estado por-file
+  // pro overlay "X / Total" visivel no card de drop.
+  async function importBatch(files: File[]) {
+    if (!files.length) return
+    setBatchProgress(files.map(f => ({ name: f.name, status: "queued" })))
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]
+      setBatchProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: "uploading" } : p))
+      try {
+        await importSmart(f)
+        setBatchProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: "done" } : p))
+      } catch (e: any) {
+        setBatchProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: "error", error: e?.message ?? "erro" } : p))
+      }
+    }
+    // Apos 3s, limpa o estado pra liberar o card de novo
+    setTimeout(() => setBatchProgress([]), 3000)
+  }
 
   async function load() {
     setLoading(true)
@@ -261,6 +283,121 @@ export default function ClientLibraryPage() {
           {/* Logo aumentado (48→64) e label "SICREDI · Library" removida — logo
               ja identifica a marca, /library a pagina (CLAUDE 1.2, 2.6). */}
           {client && <ClientLogoBadge client={{ id, name: client.name, brandLogoUrl: client.brandLogoUrl }} size={64} radius={10} />}
+        </div>
+
+        {/* MEGA DROPZONE (user 2026-05-30: "interface mais ludica e eficiente,
+            multi-arrasto simultaneo"). Card grande convidativo com gradient,
+            ilustracao + texto convidativo. Aceita drag de N files de uma vez. */}
+        <div
+          onDragEnter={e => { e.preventDefault(); setMegaDragOver(true) }}
+          onDragOver={e => { e.preventDefault(); if (!megaDragOver) setMegaDragOver(true) }}
+          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setMegaDragOver(false) }}
+          onDrop={async e => {
+            e.preventDefault()
+            setMegaDragOver(false)
+            const files = Array.from(e.dataTransfer.files ?? [])
+            if (files.length === 0) return
+            await importBatch(files)
+          }}
+          onClick={() => {
+            // Click no card abre file picker que aceita multi
+            const inp = document.createElement("input")
+            inp.type = "file"
+            inp.multiple = true
+            inp.accept = "image/png,image/jpeg,image/webp,image/svg+xml,image/gif,.txt,.md,.zzosy,.zip,.psd,.ai,.pdf"
+            inp.onchange = () => {
+              const fs = Array.from(inp.files ?? [])
+              if (fs.length > 0) void importBatch(fs)
+            }
+            inp.click()
+          }}
+          style={{
+            position: "relative",
+            marginBottom: 20,
+            padding: "28px 32px",
+            borderRadius: 16,
+            cursor: importBusy && batchProgress.length === 0 ? "wait" : "pointer",
+            transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+            transform: megaDragOver ? "scale(1.01)" : "scale(1)",
+            background: megaDragOver
+              ? "linear-gradient(135deg, #FFF8DC 0%, #FFE998 100%)"
+              : "linear-gradient(135deg, #FAFAF5 0%, #F0EFE4 100%)",
+            border: `2px dashed ${megaDragOver ? "#F5C400" : "#C0C0B5"}`,
+            boxShadow: megaDragOver ? "0 8px 24px rgba(245,196,0,0.25)" : "0 2px 8px rgba(0,0,0,0.04)",
+            overflow: "hidden",
+          }}
+        >
+          {/* Ilustracao decorativa (3 cards flutuando) — pura decoracao SVG */}
+          <div style={{ position: "absolute", right: 24, top: 16, opacity: megaDragOver ? 0.85 : 0.55, transition: "opacity 0.2s ease, transform 0.2s ease", transform: megaDragOver ? "translateY(-4px)" : "none" }}>
+            <svg width="140" height="100" viewBox="0 0 140 100" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="lib-card-sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#7DB7E0"/>
+                  <stop offset="1" stopColor="#F2C99A"/>
+                </linearGradient>
+              </defs>
+              {/* Card 3 (atras) */}
+              <g transform="translate(60, 28) rotate(8)">
+                <rect width="44" height="32" rx="4" fill="#86efac" stroke="#22c55e" strokeWidth="1.5"/>
+                <text x="22" y="22" textAnchor="middle" fontFamily="Georgia" fontSize="16" fontWeight="800" fill="#15803d">T</text>
+              </g>
+              {/* Card 2 (meio) */}
+              <g transform="translate(40, 36) rotate(-4)">
+                <rect width="44" height="32" rx="4" fill="url(#lib-card-sky)" stroke="#a855f7" strokeWidth="1.5"/>
+                <circle cx="32" cy="10" r="2.5" fill="#FFE08A"/>
+                <polygon points="0,32 12,18 22,26 30,16 44,32" fill="#3D5A6C" transform="scale(1, 1)"/>
+              </g>
+              {/* Card 1 (frente) */}
+              <g transform="translate(20, 44) rotate(2)">
+                <rect width="44" height="32" rx="4" fill="#fef3c7" stroke="#F5C400" strokeWidth="1.5"/>
+                <text x="22" y="22" textAnchor="middle" fontFamily="DM Sans" fontSize="13" fontWeight="800" fill="#111">.ai</text>
+              </g>
+            </svg>
+          </div>
+
+          <div style={{ position: "relative", maxWidth: "calc(100% - 180px)" }}>
+            {batchProgress.length === 0 ? (
+              <>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#111", marginBottom: 6, letterSpacing: -0.3 }}>
+                  {megaDragOver ? "Solte os arquivos aqui" : "Arraste vários assets de uma vez"}
+                </div>
+                <div style={{ fontSize: 13, color: "#555", lineHeight: 1.5, marginBottom: 10 }}>
+                  Imagens, textos, PSDs, Illustrator, PDFs ou cartuchos — pode largar TUDO junto. O ZZOSY
+                  detecta o tipo e importa cada um pro Library automaticamente.
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[".png", ".jpg", ".svg", ".txt", ".psd", ".ai", ".pdf", ".zzosy"].map(ext => (
+                    <span key={ext} style={{
+                      fontSize: 10, fontWeight: 700, color: "#666",
+                      padding: "2px 8px", borderRadius: 999,
+                      background: "rgba(0,0,0,0.05)", letterSpacing: 0.5,
+                    }}>{ext.toUpperCase()}</span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#111", marginBottom: 8 }}>
+                  Importando {batchProgress.length} {batchProgress.length === 1 ? "arquivo" : "arquivos"}…
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 140, overflowY: "auto" }}>
+                  {batchProgress.map((p, idx) => (
+                    <div key={idx} style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      fontSize: 12,
+                      color: p.status === "error" ? "#c00" : p.status === "done" ? "#15803d" : "#555",
+                    }}>
+                      <span style={{ width: 14, textAlign: "center" }}>
+                        {p.status === "done" ? "✓" : p.status === "error" ? "✗" : p.status === "uploading" ? "↑" : "·"}
+                      </span>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                      {p.error && <span style={{ fontSize: 11, color: "#c00" }}>({p.error})</span>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Card box com header de filtros + grid */}
