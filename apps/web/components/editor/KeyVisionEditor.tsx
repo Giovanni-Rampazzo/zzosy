@@ -7182,6 +7182,27 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       rotation: 0,
       overrides: templateOverrides,
     })
+    // Novo asset vai pro TOPO de todos layers (CLAUDE 2.2 + user 2026-05-30:
+    // "adicionou embaixo de todos os layers, precisa ser o contrario").
+    // addAssetToCanvas adiciona via fc.add() no FINAL do array — em Fabric
+    // isso pinta POR CIMA, mas o painel Layers exibe ordem INVERSA (top do
+    // array = bottom visual no painel). Pra ficar no topo do painel, precisa
+    // garantir ordem visual: bringObjectToFront SEMPRE, e bleed overlays
+    // re-elevados pra cima depois.
+    try {
+      const added = fc.getObjects().filter((o: any) => o.__assetId === aid).pop()
+      if (added) {
+        if ((fc as any).bringObjectToFront) (fc as any).bringObjectToFront(added)
+        else (fc as any).bringToFront?.(added)
+        // Re-eleva bleed overlays pra continuarem cobrindo (asset novo nao deve
+        // ficar acima dos overlays de safe area).
+        const overlays = fc.getObjects().filter((o: any) => o.__isBleedOverlay)
+        for (const o of overlays) {
+          try { (fc as any).bringObjectToFront ? (fc as any).bringObjectToFront(o) : (fc as any).bringToFront?.(o) } catch {}
+        }
+        fc.setActiveObject(added)
+      }
+    } catch (e) { editorLog("[addLayer bringToFront]", e) }
     fc.renderAll()
     doSave()
   }
