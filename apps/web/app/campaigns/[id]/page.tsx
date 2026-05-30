@@ -573,26 +573,24 @@ export default function CampaignOverviewPage() {
             // "+ Gerar peca" foi pra direita (gera output = peca nova).
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <Button variant="secondary" size="sm"
-                  onClick={() => campaign.client && router.push(`/clients/${campaign.client.id}/design-system`)}
-                  disabled={!campaign.client}
-                  title="Cores, fontes e tokens do design system do cliente (fonte da identidade visual)">
-                  Design System
-                </Button>
+                {/* Ordem user pedido 2026-05-30: cartucho, asset, design system.
+                    Import PSD saiu da sidebar — vive no empty-state do centro
+                    junto com + Novo KV. */}
                 <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/cartridges`)}
                   title="Browse cartucho — assets do library do cliente com filtros + add em lote">
                   Cartucho
                 </Button>
                 <Button variant="secondary" size="sm"
-                  onClick={() => psdMatrixPickerRef.current?.click()}
-                  title="Substitui a matriz (KV) com um novo PSD. Pecas existentes ficam, mas re-mapeadas pros novos assets.">
-                  Import PSD
-                </Button>
-                <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/assets`)}
                   title="Lista de assets desta campanha">
                   Assets
+                </Button>
+                <Button variant="secondary" size="sm"
+                  onClick={() => campaign.client && router.push(`/clients/${campaign.client.id}/design-system`)}
+                  disabled={!campaign.client}
+                  title="Cores, fontes e tokens do design system do cliente (fonte da identidade visual)">
+                  Design System
                 </Button>
               </div>
             )
