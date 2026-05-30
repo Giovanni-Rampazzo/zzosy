@@ -8657,22 +8657,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     </div>
   )
 
-  // Sem assets cadastrados: nao da pra editar nada (o canvas precisa de pelo
-  // menos 1 asset pra arrastar). Mostra orientacao + link pra pagina de assets.
-  if (!Array.isArray(campaign.assets) || campaign.assets.length === 0) return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#1a1a1a", color: "#aaa", fontSize: 14, gap: 16, padding: 20, textAlign: "center" }}>
-      <div style={{ fontSize: 16, color: "#fff", fontWeight: 600 }}>This campaign has no assets yet.</div>
-      <div style={{ maxWidth: 420 }}>To edit the piece, register at least one asset (image, logo, or text) in the campaign.</div>
-      <button
-        onClick={() => router.push(`/campaigns/${campaignId}/assets`)}
-        style={{ background: "#F5C400", border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111" }}
-      >Register assets</button>
-      <button
-        onClick={() => router.push(`/campaigns/${campaignId}`)}
-        style={{ background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "#aaa" }}
-      >← Back to campaign</button>
-    </div>
-  )
+  // GUARD ANTIGO REMOVIDO 2026-05-30: editor agora abre mesmo com 0 assets
+  // — toolbar bottom-center (T placement + shapes) cria asset inline, dialog
+  // "+ Criar novo asset" tambem. Forcar empty state aqui contradizia o flow
+  // do botao "+ Novo KV" da campaign overview (que cria KV vazio e abre o
+  // editor). User reportou: "cliquei em novo KV e cai aqui, que vergonha ne?".
 
   const isText = selected && (selected.type === "textbox" || selected.type === "i-text")
   const pS = { position: "fixed" as const, top: 0, bottom: 0, background: "rgba(18,18,18,0.97)", backdropFilter: "blur(12px)", zIndex: 100, display: "flex", flexDirection: "column" as const, overflowY: "auto" as const }
