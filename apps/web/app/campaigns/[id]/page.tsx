@@ -584,29 +584,31 @@ export default function CampaignOverviewPage() {
                   title="Browse cartucho — assets do library do cliente com filtros + add em lote">
                   Cartucho
                 </Button>
-                {/* + Novo KV (user pedido 2026-05-30): cria matriz vazia
-                    1920x1080 + abre editor pra desenhar do zero. Quando ja
-                    existe KV, confirma overwrite (perde layers atuais). */}
-                <Button variant="secondary" size="sm"
-                  onClick={async () => {
-                    const hasKv = !!campaign.keyVision?.thumbnailUrl
-                    if (hasKv && !confirm("Ja existe uma matriz. Criar uma nova vazia? Os layers atuais serao perdidos.")) return
-                    const res = await fetch(`/api/campaigns/${id}/key-vision`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ layers: [], bgColor: "#ffffff", width: 1920, height: 1080 }),
-                    })
-                    if (!res.ok) { alert("Falha ao criar matriz vazia"); return }
-                    router.push(`/editor?campaignId=${id}`)
-                  }}
-                  title="Cria uma matriz vazia (1920x1080) e abre o editor pra desenhar do zero">
-                  + Novo KV
-                </Button>
-                <Button variant="secondary" size="sm"
-                  onClick={() => psdMatrixPickerRef.current?.click()}
-                  title="Substitui a matriz (KV) com um novo PSD. Pecas existentes ficam, mas re-mapeadas pros novos assets.">
-                  Import PSD
-                </Button>
+                {/* Import PSD + Novo KV lado a lado (user pedido 2026-05-30):
+                    sao os 2 caminhos pra ter uma matriz — importar existente
+                    ou criar do zero. Grid 2-col deixa a opcao paralela visivel. */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <Button variant="secondary" size="sm"
+                    onClick={() => psdMatrixPickerRef.current?.click()}
+                    title="Substitui a matriz (KV) com um novo PSD. Pecas existentes ficam, mas re-mapeadas pros novos assets.">
+                    Import PSD
+                  </Button>
+                  <Button variant="secondary" size="sm"
+                    onClick={async () => {
+                      const hasKv = !!campaign.keyVision?.thumbnailUrl
+                      if (hasKv && !confirm("Ja existe uma matriz. Criar uma nova vazia? Os layers atuais serao perdidos.")) return
+                      const res = await fetch(`/api/campaigns/${id}/key-vision`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ layers: [], bgColor: "#ffffff", width: 1920, height: 1080 }),
+                      })
+                      if (!res.ok) { alert("Falha ao criar matriz vazia"); return }
+                      router.push(`/editor?campaignId=${id}`)
+                    }}
+                    title="Cria uma matriz vazia (1920x1080) e abre o editor pra desenhar do zero">
+                    + Novo KV
+                  </Button>
+                </div>
                 <Button variant="secondary" size="sm"
                   onClick={() => router.push(`/campaigns/${id}/assets`)}
                   title="Lista de assets desta campanha">
