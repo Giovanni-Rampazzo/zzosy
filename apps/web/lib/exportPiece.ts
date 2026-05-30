@@ -2625,7 +2625,44 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
     // ag-psd serializa esses bytes dentro do PSD; Photoshop reconhece como SO.
     linkedFiles: linkedFiles.length > 0 ? linkedFiles : undefined,
   }
-  const buffer = agpsd.writePsd(psd, { generateThumbnail: false, invalidateTextLayers: true })
+  // SANITY GUARD 2026-05-30: ag-psd writePsd valida cada layer e explode
+  // com erro generico se algum top/left/bottom/right/opacity for NaN ou
+  // ausente. Sanitiza ANTES do write — assert nao destrutivo (apenas
+  // corrige + warn). User reportou PSD export falhando com erro vermelho
+  // sem stack visivel — antes desse guard, qualquer layer bugado matava
+  // o export inteiro silenciosamente.
+  for (const layer of psdLayers) {
+    if (!layer || typeof layer !== "object") continue
+    for (const k of ["top", "left", "right", "bottom"] as const) {
+      if (typeof layer[k] !== "number" || !Number.isFinite(layer[k])) {
+        console.warn(`[psd-export] layer "${layer.name ?? "?"}" tem ${k}=${layer[k]} invalido — coercing pra 0`)
+        layer[k] = 0
+      }
+    }
+    if (layer.right <= layer.left) layer.right = layer.left + 1
+    if (layer.bottom <= layer.top) layer.bottom = layer.top + 1
+    if (layer.opacity != null && (typeof layer.opacity !== "number" || !Number.isFinite(layer.opacity))) {
+      console.warn(`[psd-export] layer "${layer.name ?? "?"}" tem opacity=${layer.opacity} invalido — removendo`)
+      delete layer.opacity
+    }
+    if (typeof layer.name !== "string" || !layer.name.trim()) {
+      layer.name = "Layer"
+    }
+  }
+  let buffer: ArrayBuffer
+  try {
+    const out = agpsd.writePsd(psd, { generateThumbnail: false, invalidateTextLayers: true })
+    // ag-psd retorna Uint8Array; precisamos do ArrayBuffer real pra Blob.
+    buffer = (out as Uint8Array).buffer.slice((out as Uint8Array).byteOffset, (out as Uint8Array).byteOffset + (out as Uint8Array).byteLength) as ArrayBuffer
+  } catch (e: any) {
+    fc.dispose()
+    // Re-throw com contexto rico — vai aparecer no alert/console do user
+    // ja com info do layer culpado e total de layers.
+    const layerNames = psdLayers.map((l: any, i: number) => `[${i}] ${l?.name ?? "?"}`).join(", ")
+    const msg = e?.message ?? String(e)
+    console.error("[psd-export] writePsd falhou:", msg, "\nLayers:", layerNames)
+    throw new Error(`PSD export falhou: ${msg} (${psdLayers.length} layers: ${layerNames.slice(0, 200)}${layerNames.length > 200 ? "..." : ""})`)
+  }
   fc.dispose()
   return new Blob([buffer], { type: "image/vnd.adobe.photoshop" })
 }
