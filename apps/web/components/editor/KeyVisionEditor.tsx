@@ -8544,6 +8544,72 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         <div style={{ lineHeight: 0, flexShrink: 0 }}>
           <canvas ref={canvasRef} style={{ display: "block" }} />
         </div>
+        {/* Toolbar shapes Figma-style (user pedido 2026-05-30): floating
+            bottom-center DENTRO do editor. Click cria SHAPE asset + adiciona
+            ao canvas direto (sem reload). */}
+        <div style={{
+          position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          zIndex: 100, display: "flex", gap: 4,
+          background: "rgba(26,26,26,0.95)", border: "1px solid #2a2a2a",
+          borderRadius: 10, padding: 6,
+          boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
+        }}>
+          {[
+            { kind: "rectangle" as const, label: "Retangulo", icon: <rect x="3" y="5" width="18" height="14" fill="#aaa"/> },
+            { kind: "roundedRect" as const, label: "Retangulo Arredondado", icon: <rect x="3" y="5" width="18" height="14" rx="3" fill="#aaa"/> },
+            { kind: "ellipse" as const, label: "Elipse", icon: <ellipse cx="12" cy="12" rx="9" ry="7" fill="#aaa"/> },
+          ].map(s => (
+            <button
+              key={s.kind}
+              type="button"
+              title={`Adicionar ${s.label}`}
+              onClick={async () => {
+                const { buildShapePath } = await import("@/lib/shapePaths")
+                const W = 400, H = 300
+                const cornerRadius = s.kind === "roundedRect" ? 20 : undefined
+                const path = buildShapePath(s.kind, W, H, cornerRadius)
+                const shape: any = {
+                  kind: s.kind, path,
+                  pathBbox: { left: 0, top: 0, right: W, bottom: H },
+                  fill: { kind: "solid", color: "#4d4d4f" },
+                  stroke: null, fillRule: "nonzero",
+                }
+                if (cornerRadius !== undefined) shape.cornerRadius = cornerRadius
+                const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ type: "SHAPE", label: s.label, content: shape }),
+                })
+                if (!res.ok) { alert("Falha ao criar shape"); return }
+                const newAsset = await res.json()
+                // Atualiza state + ref pro addLayer encontrar o asset novo
+                setCampaign(c => {
+                  if (!c) return c
+                  const updated = { ...c, assets: [...(c.assets ?? []), newAsset] }
+                  campaignRef.current = updated as any
+                  return updated as any
+                })
+                assetIdRef.current = newAsset.id
+                setAssetId(newAsset.id)
+                // Aguarda micro-tarefa pro state propagar antes do addLayer
+                await new Promise(r => setTimeout(r, 30))
+                await addLayer()
+              }}
+              style={{
+                width: 36, height: 36, padding: 0,
+                background: "transparent", border: "1px solid transparent", borderRadius: 6,
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.12s, border-color 0.12s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#3a3a3a" }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent" }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                {s.icon}
+              </svg>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, minHeight: TH, background: "rgba(17,17,17,0.98)", borderBottom: "1px solid #2a2a2a", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "6px 16px", gap: 12, zIndex: 200 }}>
