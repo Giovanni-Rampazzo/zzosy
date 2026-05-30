@@ -151,6 +151,19 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
   const [showCreateAsset, setShowCreateAsset] = useState(false)
   const [createAssetBusy, setCreateAssetBusy] = useState(false)
   const createAssetFileRef = useRef<HTMLInputElement>(null)
+  // Modo "place text" (user 2026-05-30): botao T na toolbar bottom ativa.
+  // Proximo click no canvas cria Fabric.Textbox naquela posicao + enter
+  // editing. Ao sair da edicao, o texto vira ClientLibraryAsset type=TEXT.
+  const [placingText, setPlacingText] = useState(false)
+  const placingTextRef = useRef(false)
+  useEffect(() => { placingTextRef.current = placingText }, [placingText])
+  // Ref pra placeTextAtPointer — useEffect mouse:down captura closure antiga,
+  // entao precisamos de um ref pra chamar a versao atual da funcao.
+  const placeTextAtPointerRef = useRef<((x: number, y: number) => void) | null>(null)
+  // Set de IDs de textboxes "freshly placed" (T mode) que devem virar
+  // Library asset ao sair da edicao. Sem isso, NAO da pra distinguir
+  // textbox de placement vs textbox de asset normal no exited handler.
+  const placedTextIdsRef = useRef<Set<string>>(new Set())
   // Auto-dismiss do popover de assets apos 3s sem interacao (user pedido
   // 2026-05-27: 'quando eu clicar em + quero que os assets desaparecam em
   // 3 segundos se ninguem selecionar nenhum'). Pausa enquanto mouse esta
@@ -1257,8 +1270,16 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       deactivate()
     }
 
-    // Pan via mouse handlers do Fabric, ativos so quando isSpaceDown
+    // Pan via mouse handlers do Fabric, ativos so quando isSpaceDown.
+    // Modo place-text intercepta ANTES — proximo click cria textbox na
+    // posicao do pointer (em coords do mundo do canvas).
     function onMouseDown(opt: any) {
+      if (placingTextRef.current) {
+        const fc = fabricRef.current; if (!fc) return
+        const pointer = fc.getPointer(opt.e)
+        placeTextAtPointerRef.current?.(pointer.x, pointer.y)
+        return
+      }
       if (!isSpaceDown) return
       const fc = fabricRef.current; if (!fc) return
       isPanning = true
@@ -1523,8 +1544,47 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       fc.on("text:editing:entered", () => {
         selPollTimer = setInterval(pollTextSelection, 100)
       })
-      fc.on("text:editing:exited", () => {
+      fc.on("text:editing:exited", (e: any) => {
         clearInterval(selPollTimer)
+        // Se foi um placed text (modo T), promove pra ClientLibraryAsset.
+        // Reset do placingText state aqui — UI volta ao normal apos a primeira
+        // edicao do textbox placed.
+        const tb = e?.target ?? fc.getActiveObject() as any
+        const placedId = tb?.__placedTextId
+        if (placedId && placedTextIdsRef.current.has(placedId)) {
+          placedTextIdsRef.current.delete(placedId)
+          ;(tb as any).__placedTextId = undefined
+          setPlacingText(false)
+          const txt = String(tb?.text ?? "").trim()
+          // Se ficou vazio, remove do canvas — placement abortado.
+          if (!txt) {
+            try { fc.remove(tb) } catch {}
+            return
+          }
+          // POST como ClientLibraryAsset type=TEXT no library do cliente.
+          // Spans format = [{text, style:{}}] (compat com playground/overrides).
+          const clientId = campaignRef.current?.client?.id
+          if (!clientId) return
+          const content = [{ text: txt, style: {
+            fontFamily: tb.fontFamily,
+            fontWeight: tb.fontWeight,
+            fontStyle: tb.fontStyle,
+            color: tb.fill,
+          } }]
+          ;(async () => {
+            try {
+              await fetch(`/api/clients/${clientId}/library/assets`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: txt.slice(0, 50) || "Texto",
+                  type: "TEXT",
+                  content,
+                }),
+              })
+            } catch (err) { editorLog("[placed-text→library]", err) }
+          })()
+        }
       })
       // Limpa interval pendente no cleanup pro caso de unmount durante edicao.
       cleanupFns.push(() => { if (selPollTimer) clearInterval(selPollTimer) })
@@ -7082,6 +7142,51 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
     doSave()
   }
 
+  // Click-to-place text (user 2026-05-30): cria Fabric.Textbox vazio na
+  // posicao do pointer + entra em edicao. Ao sair da edicao (handler em
+  // text:editing:exited dentro do init), o texto vira ClientLibraryAsset
+  // type=TEXT do CLIENTE da campanha — fica disponivel pra reuso global.
+  async function placeTextAtPointer(x: number, y: number) {
+    const fc = fabricRef.current
+    if (!fc) return
+    const fabric = (await import("fabric")) as any
+    // Brand color do cliente como fill default (fonte unica da identidade).
+    // Fallback preto se brand colors nao carregadas.
+    const cliente = campaignRef.current?.client as any
+    const brandColorsRaw = cliente?.brandColors
+    const brandColors = typeof brandColorsRaw === "string"
+      ? (() => { try { return JSON.parse(brandColorsRaw) } catch { return [] } })()
+      : (brandColorsRaw ?? [])
+    const defaultFill = (Array.isArray(brandColors) && brandColors[0]?.hex) || "#111111"
+    const brandFont = (cliente?.brandFont as string | undefined) || "DM Sans"
+    const Textbox = fabric.Textbox ?? fabric.fabric?.Textbox
+    if (!Textbox) return
+    const tb = new Textbox("", {
+      left: x, top: y,
+      width: Math.max(200, Math.round((canvasWRef.current ?? 1920) * 0.3)),
+      fontFamily: brandFont,
+      fontSize: 64,
+      fontWeight: 400,
+      fill: defaultFill,
+      textAlign: "left",
+      editable: true,
+    })
+    // Marca como "freshly placed" pra que text:editing:exited saiba criar
+    // o Library asset depois (set de IDs cadastrado em placedTextIdsRef).
+    const placedId = `placed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    ;(tb as any).__placedTextId = placedId
+    placedTextIdsRef.current.add(placedId)
+    fc.add(tb)
+    fc.setActiveObject(tb)
+    fc.renderAll()
+    // Entra em edicao imediatamente — user comeca a digitar logo.
+    try { tb.enterEditing?.(); tb.hiddenTextarea?.focus?.() } catch {}
+  }
+
+  // Atualiza ref toda render — useEffect mouse:down captura closure antiga,
+  // entao precisamos do ref pra chamar a versao atual.
+  useEffect(() => { placeTextAtPointerRef.current = placeTextAtPointer })
+
   // Indice do BG atualmente sendo editado no painel. Se um BG esta selecionado
   // no canvas, eh o __bgIdx dele. Senao, eh o 0 (fundo) — UX conservadora.
   function currentBgIdx(): number {
@@ -8542,12 +8647,14 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         overflow: "hidden",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
-        <div style={{ lineHeight: 0, flexShrink: 0 }}>
-          <canvas ref={canvasRef} style={{ display: "block" }} />
+        <div style={{ lineHeight: 0, flexShrink: 0, cursor: placingText ? "crosshair" : undefined }}>
+          <canvas ref={canvasRef} style={{ display: "block", cursor: placingText ? "crosshair" : undefined }} />
         </div>
         {/* Toolbar shapes Figma-style (user pedido 2026-05-30): floating
             bottom-center DENTRO do editor. Click cria SHAPE asset + adiciona
-            ao canvas direto (sem reload). */}
+            ao canvas direto (sem reload). T (texto) entra em modo place:
+            proximo click no canvas cria textbox + entra em edicao + ao sair
+            vira ClientLibraryAsset type=TEXT. */}
         <div style={{
           position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
           zIndex: 100, display: "flex", gap: 4,
@@ -8555,6 +8662,26 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           borderRadius: 10, padding: 6,
           boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
         }}>
+          {/* T — modo "place text" */}
+          <button
+            type="button"
+            title={placingText ? "Modo place-text ativo — clique no canvas pra inserir" : "Adicionar Texto (click no canvas pra posicionar)"}
+            onClick={() => setPlacingText(v => !v)}
+            style={{
+              width: 36, height: 36, padding: 0,
+              background: placingText ? "#F5C400" : "transparent",
+              border: "1px solid " + (placingText ? "#F5C400" : "transparent"),
+              borderRadius: 6, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 0.12s, border-color 0.12s",
+            }}
+            onMouseEnter={e => { if (!placingText) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#3a3a3a" } }}
+            onMouseLeave={e => { if (!placingText) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent" } }}
+          >
+            <span style={{ fontSize: 20, fontWeight: 800, color: placingText ? "#111" : "#aaa", fontFamily: "Georgia, serif", lineHeight: 1 }}>T</span>
+          </button>
+          {/* Separador */}
+          <div style={{ width: 1, background: "#3a3a3a", margin: "4px 2px" }} />
           {[
             { kind: "rectangle" as const, label: "Retangulo", icon: <rect x="3" y="5" width="18" height="14" fill="#aaa"/> },
             { kind: "roundedRect" as const, label: "Retangulo Arredondado", icon: <rect x="3" y="5" width="18" height="14" rx="3" fill="#aaa"/> },
