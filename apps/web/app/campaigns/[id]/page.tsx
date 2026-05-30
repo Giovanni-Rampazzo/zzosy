@@ -1058,6 +1058,69 @@ export default function CampaignOverviewPage() {
         </div>
           )
         })()}
+        {/* Toolbar de shapes Figma-style (user pedido 2026-05-30): centralizada
+            na parte inferior da coluna central. Click cria SHAPE asset na
+            campanha (cria KV vazio antes se nao existir) + abre editor pra
+            posicionar. */}
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+          <div style={{ display: "flex", gap: 6, background: "white", border: "1px solid #E0E0E0", borderRadius: 10, padding: 6 }}>
+            {[
+              { kind: "rectangle" as const, label: "Retangulo", icon: <rect x="2" y="4" width="20" height="16" fill="#4d4d4f"/> },
+              { kind: "roundedRect" as const, label: "Retangulo Arredondado", icon: <rect x="2" y="4" width="20" height="16" rx="3" fill="#4d4d4f"/> },
+              { kind: "ellipse" as const, label: "Elipse", icon: <ellipse cx="12" cy="12" rx="10" ry="8" fill="#4d4d4f"/> },
+            ].map(s => (
+              <button
+                key={s.kind}
+                type="button"
+                title={`Adicionar ${s.label} ao KV`}
+                onClick={async () => {
+                  // 1. KV vazio se nao existe
+                  if (!campaign.keyVision?.thumbnailUrl) {
+                    await fetch(`/api/campaigns/${id}/key-vision`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ layers: [], bgColor: "#ffffff", width: 1920, height: 1080 }),
+                    })
+                  }
+                  // 2. Cria SHAPE asset
+                  const { buildShapePath } = await import("@/lib/shapePaths")
+                  const W = 400, H = 300
+                  const cornerRadius = s.kind === "roundedRect" ? 20 : undefined
+                  const path = buildShapePath(s.kind, W, H, cornerRadius)
+                  const shape: any = {
+                    kind: s.kind,
+                    path,
+                    pathBbox: { left: 0, top: 0, right: W, bottom: H },
+                    fill: { kind: "solid", color: "#4d4d4f" },
+                    stroke: null,
+                    fillRule: "nonzero",
+                  }
+                  if (cornerRadius !== undefined) shape.cornerRadius = cornerRadius
+                  const res = await fetch(`/api/campaigns/${id}/assets`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ type: "SHAPE", label: s.label, content: shape }),
+                  })
+                  if (!res.ok) { alert("Falha ao criar shape"); return }
+                  // 3. Abre editor pra posicionar
+                  router.push(`/editor?campaignId=${id}`)
+                }}
+                style={{
+                  width: 40, height: 40, padding: 0,
+                  background: "transparent", border: "1px solid transparent", borderRadius: 6,
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "background 0.12s, border-color 0.12s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#F5F5F0"; e.currentTarget.style.borderColor = "#E0E0E0" }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent" }}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  {s.icon}
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
         </div>
 
         {/* Sidebar SAIDAS (3a coluna): regra global ZZOSY (CLAUDE 1.10) —
