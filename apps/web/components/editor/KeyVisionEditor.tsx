@@ -9947,7 +9947,8 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                       const isDropHere = dragOverFolderKey === h.key
                       return {
                         display: "flex", alignItems: "center", gap: 4,
-                        padding: `6px 8px 6px ${12 + h.depth * 12}px`,
+                        // Padding minimo (consistente com layer rows).
+                        padding: `3px 6px 3px ${8 + h.depth * 12}px`,
                         // pointer (mao pequena) > grab (mao gigante do macOS).
                         // Browser ativa grabbing automaticamente durante o drag HTML5.
                         cursor: "pointer",
@@ -10192,7 +10193,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                   // (acima nesta mesma row) continuam renderizando com onDrop normal.
                   display: isPlaceholder ? "none" : "flex",
                   alignItems: "center", gap: 4,
-                  padding: `8px 8px 8px ${12 + indent}px`,
+                  // Padding minimo (user 2026-05-30: "padding dos layers devem
+                  // ser minimos"). Vertical 8→3, horizontal compacto. Indent
+                  // preservado pra hierarquia de folder ainda ser legivel.
+                  padding: `3px 6px 3px ${8 + indent}px`,
                   cursor: "default",
                   // Selecionado: barra colorida GROSSA (6px) na esquerda + bg
                   // mais intenso pra ficar CRYSTAL CLEAR qual layer esta ativo.
