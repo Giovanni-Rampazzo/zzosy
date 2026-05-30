@@ -375,6 +375,38 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       return next
     })
   }
+  // User pedido 2026-05-30: "default deve ser SEMPRE o grupo de layer
+  // recuado, sem mostrar os layers de dentro; se o usuario abrir a aba,
+  // dai sim deixa aberta". Trackeia folder paths ja conhecidos —
+  // detect novos e adiciona ao collapsed automaticamente. Sem isso o
+  // user veria todo PSD importado expandido por default.
+  const knownFolderPathsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    // Para cada layer com groupPath, coleta TODOS os ancestor paths.
+    // Ex: ["FETIURES 2", "FEATURES", "ICONES"] gera 3 paths:
+    //   "FETIURES 2", "FETIURES 2›FEATURES", "FETIURES 2›FEATURES›ICONES"
+    const allFolderPaths = new Set<string>()
+    for (const l of layers) {
+      const gp: any = (l as any).groupPath
+      if (!Array.isArray(gp) || gp.length === 0) continue
+      for (let d = 0; d < gp.length; d++) {
+        allFolderPaths.add(gp.slice(0, d + 1).join("›"))
+      }
+    }
+    // Folders NOVOS (ainda nao vistos) viram collapsed.
+    const newOnes: string[] = []
+    for (const p of allFolderPaths) {
+      if (!knownFolderPathsRef.current.has(p)) newOnes.push(p)
+    }
+    if (newOnes.length > 0) {
+      setCollapsedFolders(prev => {
+        const next = new Set(prev)
+        for (const p of newOnes) next.add(p)
+        return next
+      })
+      for (const p of newOnes) knownFolderPathsRef.current.add(p)
+    }
+  }, [layers])
   const [zoom, setZoom] = useState(0.5)
   const zoomRef = useRef(0.5)
   const [bgColor, setBgColor] = useState("#ffffff")
