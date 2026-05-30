@@ -23,6 +23,8 @@ const FORMATS: { value: ExportFormat; label: string; desc: string }[] = [
   { value: "PNG", label: "PNG", desc: "Imagem PNG sem perdas, fundo transparente quando aplicavel" },
   { value: "JPG", label: "JPG", desc: "Imagem JPEG comprimida, ideal para web" },
   { value: "PDF", label: "PDF", desc: "PDF com pagina unica do tamanho exato da peca" },
+  { value: "SVG", label: "SVG", desc: "Vetor — abre no Illustrator. Textos e shapes ficam editaveis." },
+  { value: "IDML", label: "IDML", desc: "InDesign — pacote IDML com o composite como imagem (1 frame). v1: sem layers separados." },
 ]
 
 export function ExportDialog({ pieces, onClose, campaignName }: Props) {

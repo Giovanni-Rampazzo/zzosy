@@ -13,7 +13,7 @@ import {
 } from "@/lib/psd/psdHelpers"
 import { leadingPtToFabricLineHeight, applyLeadingPtToFabric } from "@/lib/fabricLineHeight"
 
-export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF"
+export type ExportFormat = "PSD" | "PNG" | "JPG" | "PDF" | "SVG" | "IDML"
 
 // Bake raster mask no bitmap pro pipeline de export (PSD/PNG/JPG/PDF).
 // Mesma logica do composeRasterMaskIntoImage do editor: converte coords da
@@ -64,6 +64,8 @@ const MIME_BY_EXT: Record<string, string> = {
   jpeg: "image/jpeg",
   pdf: "application/pdf",
   zip: "application/zip",
+  svg: "image/svg+xml",
+  idml: "application/vnd.adobe.indesign-idml-package",
 }
 
 /**
@@ -1346,6 +1348,206 @@ function buildStyleRuns(textbox: any, fullText: string, scale: number = 1): any[
   return runs
 }
 
+/**
+ * Export SVG (.svg) — abre no Adobe Illustrator nativamente (Apache 2.0 stack).
+ * Usa Fabric.toSVG() pra extrair os objetos do canvas como vetor — text vira
+ * <text>, paths viram <path>, images ficam embedded raster. BG layer (bgColor
+ * legacy ou bgLayers) eh injetado manualmente como <rect> no topo do SVG
+ * porque Fabric NAO inclui background no toSVG() (apenas children).
+ *
+ * Limitacoes v1:
+ *  - Effects/filters: alguns nao translam (drop shadow simples ok, complex no)
+ *  - Blend modes: nem todos mapeiam pra SVG (multiply ok, color-dodge nao)
+ *  - Per-char styles em textbox: Fabric escreve tspans corretamente
+ *  - Background gradient: convertido pra solid (limitacao v1)
+ */
+export async function exportSVGBlob(piece: { id?: string; name: string; data: any; width: number; height: number }): Promise<Blob> {
+  // Re-roda o pipeline ate ter o Fabric canvas (sem dispose ainda)
+  // — duplica logica do renderToCanvas mas precisamos do fc vivo pra toSVG().
+  const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
+  const W = data?.width ?? piece.width
+  const H = data?.height ?? piece.height
+
+  // Reuso de fetch piece+assets — usar a mesma logica do renderToCanvas
+  // implicaria refactor; mais simples buscar inline aqui.
+  let livePiece: any = piece
+  let assets: Asset[] = []
+  if (piece.id) {
+    if (piece.id.startsWith("kv-")) {
+      const campaignId = piece.id.slice(3)
+      const r = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" })
+      if (r.ok) {
+        const camp = await r.json()
+        if (Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
+      }
+    } else if ((piece as any).__virtualStepOriginalId) {
+      const pres = await fetch(`/api/pieces/${piece.id}`, { cache: "no-store" })
+      if (pres.ok) {
+        const p = await pres.json()
+        if (p?.campaignId) {
+          const cres = await fetch(`/api/campaigns/${p.campaignId}`, { cache: "no-store" })
+          if (cres.ok) {
+            const camp = await cres.json()
+            if (Array.isArray(camp.assets)) assets = camp.assets.map(normalizeAsset)
+          }
+        }
+      }
+    } else {
+      const fetched = await fetchPieceWithAssets(piece.id)
+      livePiece = fetched.piece
+      assets = fetched.assets
+    }
+  }
+
+  const fc = await buildPieceCanvas(livePiece, assets)
+  // Fabric v6/v7 toSVG: aceita opts (viewBox/width/height) + reviver opcional.
+  // viewBox explicito garante que o SVG abre com tamanho fisico exato.
+  const svgRaw: string = (fc as any).toSVG({
+    suppressPreamble: false,
+    viewBox: { x: 0, y: 0, width: W, height: H },
+  })
+  fc.dispose()
+
+  // Injeta BG: Fabric NAO escreve bgColor no toSVG (apenas children objects).
+  // Pra peca abrir no Illustrator com fundo correto, prependa <rect> imediato
+  // apos o <svg> abrir. Usa bgColor legacy se bgLayers ausente; se bgLayers
+  // tem primeira layer solid, usa a cor dela.
+  let bgFill = "#ffffff"
+  const bgLayers = Array.isArray(data?.bgLayers) ? data.bgLayers : null
+  if (bgLayers && bgLayers.length > 0 && bgLayers[0]?.type === "solid" && typeof bgLayers[0]?.color === "string") {
+    bgFill = bgLayers[0].color
+  } else if (typeof data?.bgColor === "string") {
+    bgFill = data.bgColor
+  }
+  const bgRect = `<rect x="0" y="0" width="${W}" height="${H}" fill="${bgFill}"/>`
+  // Insere o rect logo apos a tag <svg ...>. Fabric usa <svg ... xmlns="...">.
+  const withBg = svgRaw.replace(/(<svg\b[^>]*>)/, `$1\n${bgRect}`)
+
+  return new Blob([withBg], { type: "image/svg+xml" })
+}
+
+/**
+ * Export IDML (.idml) — abre no Adobe InDesign (File > Open).
+ *
+ * IDML eh um package ZIP com XML aberto (Adobe spec publica). v1: gera IDML
+ * minimo viavel com 1 spread + 1 image frame ocupando toda a pagina,
+ * apontando pro composite raster (PNG) embedded em Links.
+ *
+ * Limitacoes v1:
+ *  - Tudo vira 1 imagem raster — sem text frames editaveis, sem layers
+ *  - User pode arrastar e editar a imagem inteira no InDesign, mas nao
+ *    edita text individualmente
+ *  - Pra v2: parsear data.layers e gerar text/image frames separados (vai
+ *    permitir editar copy direto no InDesign)
+ *
+ * Estrutura IDML minima requerida pela spec Adobe (sem isso InDesign rejeita):
+ *  - mimetype (1o file do zip, uncompressed)
+ *  - META-INF/container.xml
+ *  - designmap.xml
+ *  - Resources/Fonts.xml, Graphic.xml, Preferences.xml, Styles.xml
+ *  - MasterSpreads/MasterSpread_*.xml
+ *  - Spreads/Spread_*.xml
+ *  - Stories: vazio (ou 1 story dummy)
+ */
+export async function exportIDMLBlob(piece: { id?: string; name: string; data: any; width: number; height: number }): Promise<Blob> {
+  // 1. Gera o composite PNG primeiro (reusa o pipeline existente)
+  const pngBlob = await exportPNGBlob(piece)
+  const pngBytes = new Uint8Array(await pngBlob.arrayBuffer())
+
+  const data = typeof piece.data === "string" ? JSON.parse(piece.data) : piece.data
+  const W = data?.width ?? piece.width
+  const H = data?.height ?? piece.height
+  const dpi = Math.round(Number(data?.dpi)) || 72
+  // InDesign trabalha em PONTOS (1 inch = 72 pt). Converte px → pt.
+  const Wpt = (W * 72) / dpi
+  const Hpt = (H * 72) / dpi
+
+  const JSZip = (await import("jszip")).default
+  const zip = new JSZip()
+
+  // mimetype — DEVE ser o primeiro file no ZIP, uncompressed. Spec IDML.
+  zip.file("mimetype", "application/vnd.adobe.indesign-idml-package", {
+    compression: "STORE",
+  })
+
+  // META-INF/container.xml — aponta o root do package.
+  zip.file("META-INF/container.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+  <rootfiles>
+    <rootfile full-path="designmap.xml" media-type="application/vnd.adobe.indesign-idml-package"/>
+  </rootfiles>
+</container>`)
+
+  // designmap.xml — manifest principal.
+  zip.file("designmap.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<?aid style="50" type="document" readerVersion="6.0" featureSet="257" product="8.0(370)" ?>
+<Document xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging" DOMVersion="8.0" Self="d">
+  <idPkg:Graphic src="Resources/Graphic.xml"/>
+  <idPkg:Fonts src="Resources/Fonts.xml"/>
+  <idPkg:Styles src="Resources/Styles.xml"/>
+  <idPkg:Preferences src="Resources/Preferences.xml"/>
+  <idPkg:Tags src="Resources/Tags.xml"/>
+  <idPkg:MasterSpread src="MasterSpreads/MasterSpread_uMaster.xml"/>
+  <idPkg:Spread src="Spreads/Spread_uSpread1.xml"/>
+  <idPkg:Story src="Stories/Story_uStory1.xml"/>
+</Document>`)
+
+  // Resources stub — InDesign exige todos esses arquivos existirem.
+  const idmlNs = "http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging"
+  const emptyRes = (rootEl: string) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<idPkg:${rootEl} xmlns:idPkg="${idmlNs}" DOMVersion="8.0"></idPkg:${rootEl}>`
+  zip.file("Resources/Graphic.xml", emptyRes("Graphic"))
+  zip.file("Resources/Fonts.xml", emptyRes("Fonts"))
+  zip.file("Resources/Styles.xml", emptyRes("Styles"))
+  zip.file("Resources/Preferences.xml", emptyRes("Preferences"))
+  zip.file("Resources/Tags.xml", emptyRes("Tags"))
+
+  // MasterSpread — pagina mestre vazia.
+  zip.file("MasterSpreads/MasterSpread_uMaster.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<idPkg:MasterSpread xmlns:idPkg="${idmlNs}" DOMVersion="8.0">
+  <MasterSpread Self="uMaster" Name="A-Master" BaseName="A" ShowMasterItems="true" PageCount="1">
+    <Page Self="uMasterPage1" GeometricBounds="0 0 ${Hpt} ${Wpt}" ItemTransform="1 0 0 1 0 0" AppliedMaster="n"/>
+  </MasterSpread>
+</idPkg:MasterSpread>`)
+
+  // Spread principal — 1 pagina com 1 Rectangle frame containing image.
+  // PNG embedded inline via data URI no Link href.
+  const pngB64 = btoa(String.fromCharCode(...pngBytes))
+  const linkHref = `data:image/png;base64,${pngB64}`
+  zip.file("Spreads/Spread_uSpread1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<idPkg:Spread xmlns:idPkg="${idmlNs}" DOMVersion="8.0">
+  <Spread Self="uSpread1" PageCount="1" BindingLocation="0" AllowPageShuffle="true" ItemTransform="1 0 0 1 0 0" ShowMasterItems="true">
+    <Page Self="uPage1" GeometricBounds="0 0 ${Hpt} ${Wpt}" ItemTransform="1 0 0 1 0 0" AppliedMaster="uMaster" MasterPageTransform="1 0 0 1 0 0" Name="1"/>
+    <Rectangle Self="uRect1" ItemLayer="n" Visible="true" Name="ZZOSY Composite" ContentType="GraphicType">
+      <Properties>
+        <PathGeometry>
+          <GeometryPathType PathOpen="false">
+            <PathPointArray>
+              <PathPointType Anchor="0 0" LeftDirection="0 0" RightDirection="0 0"/>
+              <PathPointType Anchor="${Wpt} 0" LeftDirection="${Wpt} 0" RightDirection="${Wpt} 0"/>
+              <PathPointType Anchor="${Wpt} ${Hpt}" LeftDirection="${Wpt} ${Hpt}" RightDirection="${Wpt} ${Hpt}"/>
+              <PathPointType Anchor="0 ${Hpt}" LeftDirection="0 ${Hpt}" RightDirection="0 ${Hpt}"/>
+            </PathPointArray>
+          </GeometryPathType>
+        </PathGeometry>
+      </Properties>
+      <Image Self="uImage1" ItemTransform="${Wpt / W} 0 0 ${Hpt / H} 0 0" Visible="true" Name="Image" ImageTypeName="$ID/PNG">
+        <Link Self="uLink1" LinkResourceURI="${linkHref}" LinkResourceFormat="$ID/PNG" StoredState="Normal" LinkClassID="35906" LinkClientID="257"/>
+      </Image>
+    </Rectangle>
+  </Spread>
+</idPkg:Spread>`)
+
+  // Story stub.
+  zip.file("Stories/Story_uStory1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<idPkg:Story xmlns:idPkg="${idmlNs}" DOMVersion="8.0">
+  <Story Self="uStory1"></Story>
+</idPkg:Story>`)
+
+  const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.adobe.indesign-idml-package" })
+  return blob
+}
+
 // Wrapper que mantem a mesma logica de fetch piece+assets que o legacy.
 // Sem ela, cada caller precisaria duplicar o "se id=kv-* busca da campanha,
 // senao busca da peca" — vital pro KV pseudo-piece e steps virtuais.
@@ -2417,7 +2619,7 @@ export async function exportPSDBlob(pieceLite: { id?: string; name: string; data
   return new Blob([buffer], { type: "image/vnd.adobe.photoshop" })
 }
 
-const EXT_MAP: Record<ExportFormat, string> = { PSD: "psd", PNG: "png", JPG: "jpg", PDF: "pdf" }
+const EXT_MAP: Record<ExportFormat, string> = { PSD: "psd", PNG: "png", JPG: "jpg", PDF: "pdf", SVG: "svg", IDML: "idml" }
 
 async function buildBlob(piece: { id?: string; name: string; data: any; width: number; height: number }, format: ExportFormat): Promise<Blob> {
   switch (format) {
@@ -2425,6 +2627,8 @@ async function buildBlob(piece: { id?: string; name: string; data: any; width: n
     case "JPG": return exportJPGBlob(piece)
     case "PDF": return exportPDFBlob(piece)
     case "PSD": return exportPSDBlob(piece)
+    case "SVG": return exportSVGBlob(piece)
+    case "IDML": return exportIDMLBlob(piece)
   }
 }
 
