@@ -523,9 +523,14 @@ export default function PresentationPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${id}`)}>Voltar</Button>
-          <Button variant="primary" size="md" onClick={() => { setPresentIdx(0); setPresenting(true) }}>Apresentar</Button>
-          <Button variant="primary" size="md" onClick={exportPPTX} disabled={exporting}>
+          {/* CLAUDE 1.1 + 1.1.B: primary so em "← Voltar" no header OU CTA
+              standalone. Row de 3 primary em SAIDA fere a regra (visto em
+              2026-05-30 — "porque esses botoes estao com fill amarelo?").
+              Voltar continua primary (regra header); Apresentar/Exportar
+              viram secondary outline preto. */}
+          <Button variant="primary" size="md" onClick={() => router.push(`/campaigns/${id}`)}>← Voltar</Button>
+          <Button variant="secondary" size="md" onClick={() => { setPresentIdx(0); setPresenting(true) }}>Apresentar</Button>
+          <Button variant="secondary" size="md" onClick={exportPPTX} disabled={exporting}>
             {exporting ? "Exportando…" : "Exportar PPT"}
           </Button>
         </div>

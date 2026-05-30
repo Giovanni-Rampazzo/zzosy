@@ -682,9 +682,12 @@ export function SlidePiece({ name, width, height, widthValue, heightValue, width
             <button
               onClick={(e) => { e.stopPropagation(); setEditing(true) }}
               style={{
+                // CLAUDE 1.1 — primary so em CTA standalone/header. Aqui eh
+                // botao de ACAO (acrescentar legenda) flutuando sobre slide,
+                // padrao secondary outline (user 2026-05-30: "porque amarelo").
                 position: "absolute", bottom: "4%", right: "4%",
-                background: primary, color: TEXT_DARK,
-                border: "none", borderRadius: RADIUS,
+                background: "white", color: TEXT_DARK,
+                border: `2px solid ${TEXT_DARK}`, borderRadius: RADIUS,
                 padding: "0.7cqw 1.7cqw",
                 fontSize: "clamp(11px, 1.25cqw, 16px)", fontWeight: 700,
                 cursor: "pointer",
