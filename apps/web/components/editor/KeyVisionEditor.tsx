@@ -1546,9 +1546,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
       })
       fc.on("text:editing:exited", (e: any) => {
         clearInterval(selPollTimer)
-        // Se foi um placed text (modo T), promove pra ClientLibraryAsset.
-        // Reset do placingText state aqui — UI volta ao normal apos a primeira
-        // edicao do textbox placed.
+        // Se foi um placed text (modo T), CRITICO criar CampaignAsset antes
+        // de qualquer save — senao o textbox fica sem __assetId, eh filtrado
+        // no save matriz (linha 5936) e cleanup orphan (linha 2740) remove
+        // silenciosamente. User reportou 2026-05-30 "texto nao aparece".
         const tb = e?.target ?? fc.getActiveObject() as any
         const placedId = tb?.__placedTextId
         if (placedId && placedTextIdsRef.current.has(placedId)) {
@@ -1556,33 +1557,59 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           ;(tb as any).__placedTextId = undefined
           setPlacingText(false)
           const txt = String(tb?.text ?? "").trim()
-          // Se ficou vazio, remove do canvas — placement abortado.
           if (!txt) {
-            try { fc.remove(tb) } catch {}
+            try { fc.remove(tb); fc.requestRenderAll() } catch {}
             return
           }
-          // POST como ClientLibraryAsset type=TEXT no library do cliente.
-          // Spans format = [{text, style:{}}] (compat com playground/overrides).
-          const clientId = campaignRef.current?.client?.id
-          if (!clientId) return
+          // Cria CampaignAsset type=TEXT, atribui __assetId no textbox, e
+          // dispara performSave pra persistir o layer na matriz. Depois (best
+          // effort, background) clona pro Library do cliente pra reuso global.
           const content = [{ text: txt, style: {
-            fontFamily: tb.fontFamily,
-            fontWeight: tb.fontWeight,
-            fontStyle: tb.fontStyle,
-            color: tb.fill,
+            fontFamily: (tb as any).fontFamily,
+            fontWeight: (tb as any).fontWeight,
+            fontStyle: (tb as any).fontStyle,
+            color: (tb as any).fill,
           } }]
           ;(async () => {
             try {
-              await fetch(`/api/clients/${clientId}/library/assets`, {
+              const res = await fetch(`/api/campaigns/${campaignId}/assets`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  name: txt.slice(0, 50) || "Texto",
                   type: "TEXT",
+                  label: txt.slice(0, 50) || "Texto",
                   content,
                 }),
               })
-            } catch (err) { editorLog("[placed-text→library]", err) }
+              if (!res.ok) { editorLog("[placed-text] POST campaign asset falhou:", res.status); return }
+              const newAsset = await res.json()
+              // Linka o textbox ao novo asset (sem isso o save filtra ele).
+              ;(tb as any).__assetId = newAsset.id
+              ;(tb as any).__assetLabel = newAsset.label
+              // Atualiza state + ref pra outros code paths verem o asset novo.
+              setCampaign(c => {
+                if (!c) return c
+                const updated = { ...c, assets: [...(c.assets ?? []), newAsset] }
+                campaignRef.current = updated as any
+                return updated as any
+              })
+              // Forca save da matriz pra layer persistir.
+              try { await performSave() } catch (err) { editorLog("[placed-text] performSave:", err) }
+              // Clona pro Library do cliente (best effort — nao bloqueia UX).
+              const clientId = campaignRef.current?.client?.id
+              if (clientId) {
+                try {
+                  await fetch(`/api/clients/${clientId}/library/assets`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      cloneFrom: { campaignId, assetId: newAsset.id },
+                      name: txt.slice(0, 50) || "Texto",
+                    }),
+                  })
+                } catch (err) { editorLog("[placed-text→library clone]", err) }
+              }
+            } catch (err) { editorLog("[placed-text→asset]", err) }
           })()
         }
       })
@@ -4087,7 +4114,11 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
           fc.add(ghost)
         }
         fc.add(p)
-        if (skewX !== 0 || skewY !== 0) { (p as any).set({ skewX, skewY }); (p as any).setCoords() }
+        if (skewX !== 0 || skewY !== 0) { (p as any).set({ skewX, skewY }) }
+        // setCoords() incondicional (user 2026-05-30: "bug ao transformar
+        // um layer"). Sem isso, bbox/aCoords ficam stale apos add e o handle
+        // de transform renderiza em posicao diferente da imagem visual.
+        ;(p as any).setCoords()
         fc.requestRenderAll()
         return
       } catch (e) {
