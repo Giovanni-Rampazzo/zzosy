@@ -9356,7 +9356,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     }}
                     onMouseEnter={e => { if (!createAssetBusy) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#F5C400" } }}
                     onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.borderColor = "#2a2a2a" }}>
-                    <span style={{ fontSize: 24, fontWeight: 800, color: "#F5C400", fontFamily: "Georgia, serif" }}>T</span>
+                    {/* Icone com altura fixa 36px pra alinhar labels (user pedido). */}
+                    <div style={{ height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontSize: 28, fontWeight: 800, color: "#F5C400", fontFamily: "Georgia, serif", lineHeight: 1 }}>T</span>
+                    </div>
                     <span style={{ fontSize: 12, fontWeight: 600 }}>Texto</span>
                   </button>
                   {/* IMAGEM */}
@@ -9372,7 +9375,32 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     }}
                     onMouseEnter={e => { if (!createAssetBusy) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#a855f7" } }}
                     onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.borderColor = "#2a2a2a" }}>
-                    <span style={{ fontSize: 18, fontWeight: 800, color: "#a855f7", letterSpacing: 0.5 }}>IMG</span>
+                    {/* Wallpaper macOS-style: sky gradient + sol + montanhas.
+                        Universal "imagem/foto" iconography (estilo Photos.app /
+                        Preview.app do macOS) — user pediu pra substituir o
+                        IMG texto. Altura fixa 36 alinha com T e Forma. */}
+                    <div style={{ height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="44" height="32" viewBox="0 0 44 32" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                          <linearGradient id="zzosy-img-sky" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stopColor="#5BA3DC"/>
+                            <stop offset="0.7" stopColor="#E8B584"/>
+                            <stop offset="1" stopColor="#F3C19A"/>
+                          </linearGradient>
+                          <clipPath id="zzosy-img-clip"><rect x="0" y="0" width="44" height="32" rx="4"/></clipPath>
+                        </defs>
+                        <g clipPath="url(#zzosy-img-clip)">
+                          <rect x="0" y="0" width="44" height="32" fill="url(#zzosy-img-sky)"/>
+                          <circle cx="32" cy="10" r="3.5" fill="#FFE08A"/>
+                          {/* Montanha de tras */}
+                          <polygon points="0,32 12,18 22,26 30,16 44,32" fill="#3D5A6C"/>
+                          {/* Montanha da frente */}
+                          <polygon points="0,32 8,24 18,32" fill="#6B8E7F"/>
+                          <polygon points="20,32 28,22 36,30 44,32" fill="#6B8E7F"/>
+                        </g>
+                        <rect x="0.5" y="0.5" width="43" height="31" rx="3.5" fill="none" stroke="#a855f7" strokeWidth="1" opacity="0.4"/>
+                      </svg>
+                    </div>
                     <span style={{ fontSize: 12, fontWeight: 600 }}>Imagem</span>
                   </button>
                   <input
@@ -9444,7 +9472,10 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
                     }}
                     onMouseEnter={e => { if (!createAssetBusy) { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.borderColor = "#86efac" } }}
                     onMouseLeave={e => { e.currentTarget.style.background = "#222"; e.currentTarget.style.borderColor = "#2a2a2a" }}>
-                    <span style={{ fontSize: 24, fontWeight: 800, color: "#86efac" }}>◇</span>
+                    {/* Altura fixa 36 pra alinhar com Texto/Imagem. */}
+                    <div style={{ height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontSize: 30, fontWeight: 800, color: "#86efac", lineHeight: 1 }}>◇</span>
+                    </div>
                     <span style={{ fontSize: 12, fontWeight: 600 }}>Forma</span>
                   </button>
                 </div>
