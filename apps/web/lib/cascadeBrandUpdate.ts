@@ -130,8 +130,11 @@ async function renderPieceThumbBlob(piece: any, assets: any[], target = 960): Pr
     // Guard fonts antes do toDataURL (sweep 2026-05-30).
     const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
     await awaitFontsReadyAndRender(fc)
-    // JPEG quality 0.82 (era PNG) — peca tem bg solido. 2026-05-26 perf sweep.
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: sc, enableRetinaScaling: false })
+    // JPEG quality 0.82 + crop explicito ao bbox da peca (sweep 2026-05-30).
+    const dataUrl = fc.toDataURL({
+      format: "jpeg", quality: 0.82, multiplier: sc, enableRetinaScaling: false,
+      left: 0, top: 0, width: W, height: H,
+    })
     fc.dispose()
     return await (await fetch(dataUrl)).blob()
   } catch (e) {

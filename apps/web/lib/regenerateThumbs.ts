@@ -55,7 +55,16 @@ async function buildThumbnailFromPieceData(pieceData: any, assets: Asset[]): Pro
     // Guard fonts antes do toDataURL (sweep 2026-05-30).
     const { awaitFontsReadyAndRender } = await import("@/lib/awaitFontsReady")
     await awaitFontsReadyAndRender(fc)
-    const dataUrl = fc.toDataURL({ format: "jpeg", quality: 0.82, multiplier: scale })
+    // CROP EXPLICITO 2026-05-30: left/top/width/height forcam captura
+    // SOMENTE do bbox da peca. Sem isso, layers que extrapolam (texto com
+    // posY<0 ou width estourando) aparecem no thumb mesmo com clipPath
+    // do fc — Fabric ignora clipPath em alguns paths de toDataURL.
+    // User reportou peca com texto "Rampazzo" aparecendo CORTADO no topo
+    // da apresentacao (peca Story vertical com texto em posY proximo de 0).
+    const dataUrl = fc.toDataURL({
+      format: "jpeg", quality: 0.82, multiplier: scale,
+      left: 0, top: 0, width: W, height: H,
+    })
     try { fc.dispose() } catch {}
     const res = await fetch(dataUrl)
     return await res.blob()
