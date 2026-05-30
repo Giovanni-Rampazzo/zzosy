@@ -141,6 +141,11 @@ interface Props {
   fabricRef: React.RefObject<any>
   onClose: () => void
   onGenerated: () => void
+  /** Forca save da matriz antes do generate fetchar do DB. Sem isso, race
+   *  entre adicao recente de asset (doSave async em flight) e o fetch do
+   *  modal pode gerar pecas com matrixLayers stale (sem assets recentes).
+   *  User reportou 2026-05-30: "pecas geradas sem assets, so background". */
+  ensureSaved?: () => Promise<void>
 }
 
 // Renderiza preview de UMA peca: cria canvas no tamanho da peca e desenha os
@@ -173,7 +178,7 @@ async function renderPieceThumb(
   }
 }
 
-export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerated }: Props) {
+export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerated, ensureSaved }: Props) {
   const [formats, setFormats] = useState<MediaFormat[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -210,6 +215,15 @@ export function GeneratePiecesModal({ campaignId, fabricRef, onClose, onGenerate
     // IDs de peças onde a thumb falhou ou nao foi confirmada — disparam regen
     // offscreen como fallback (apos o loop principal, em background).
     const createdIds: string[] = []
+
+    // CRITICO: forca save da matriz antes do fetch (user reportou 2026-05-30
+    // "pecas geradas sem assets, so background"). Se doSave da matriz esta em
+    // flight (acabou de adicionar asset via toolbar/popover), o fetch abaixo
+    // pega layers stale do DB. ensureSaved aguarda o save terminar.
+    if (ensureSaved) {
+      setProgress("Salvando matriz antes de gerar...")
+      try { await ensureSaved() } catch (e) { console.warn("[generate] ensureSaved falhou:", e) }
+    }
 
     // Le matriz: dimensoes + layers (do bg + objetos) com posicoes
     const bg = fc.getObjects().find((o: any) => o.__isBg)

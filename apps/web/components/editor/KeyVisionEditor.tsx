@@ -11840,7 +11840,20 @@ export function KeyVisionEditor({ campaignId, pieceId, from, initialStepIndex, o
         />
       )}
 
-      {modal && <GeneratePiecesModal campaignId={campaignId} fabricRef={fabricRef} onClose={() => setModal(false)} onGenerated={() => { setModal(false); router.push(`/pieces?campaignId=${campaignId}`) }} />}
+      {modal && <GeneratePiecesModal
+        campaignId={campaignId}
+        fabricRef={fabricRef}
+        onClose={() => setModal(false)}
+        onGenerated={() => { setModal(false); router.push(`/pieces?campaignId=${campaignId}`) }}
+        ensureSaved={async () => {
+          // performSave() faz o flush sincrono REAL pro DB (doSaveNow so
+          // marca dirty). User reportou 2026-05-30 que pecas geradas vinham
+          // sem assets recem-adicionados — race entre addLayer (async save
+          // debounceado) e o fetch do modal. performSave aguarda PUT
+          // terminar antes do generate prosseguir.
+          try { await performSave() } catch (e) { console.warn("[ensureSaved] performSave falhou:", e) }
+        }}
+      />}
 
       {/* PsdImporter renderizado escondido — usado pelo botao "Importar PSD"
           da topbar via ref.importFile(file). Sem isso, teriamos que duplicar
